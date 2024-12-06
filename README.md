@@ -1,5 +1,5 @@
 # Purpose
-Fitting Lifetime variables using SPCImage can be error-prone, especially when analyzing big datasets on one's own. 
+Fitting Lifetime images using SPCImage can be error-prone, especially when analyzing big datasets on one's own. 
 Therefore, a sanity check method is in need. We use principal component analysis on your uploaded datasets and selected lifetime and morphological variables. PCA is chosen over UMAP and t-SNE because of its speed, which makes it approiate for online usage. 
 
 # Design 
