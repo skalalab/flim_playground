@@ -3,7 +3,7 @@ Fitting Lifetime variables using SPCImage can be error-prone, especially when an
 Therefore, a sanity check method is in need. We use principal component analysis on your uploaded datasets and selected lifetime and morphological variables. PCA is chosen over UMAP and t-SNE because of its speed, which makes it approiate for online usage. 
 
 # Design 
-You can identify the outliers by hovering over the points that show the `base_name` (we assume you dataset has a column called `base_name` which has the image name and cell number.)
+You can identify the outliers by hovering over the points that show the `base_name` (we assume you dataset has a column called `base_name` which has the image name and cell number). The rationale is that if all the outlier points belong to the same image, them that image should probably be reanalyzed. 
 
 # Deployment 
 It is deployed on https://skalalab-outlier-finder-main-jwlwqc.streamlit.app/ using streamlit's cummunity server. It is free and will automatically fetch the new commits and update the app. 
