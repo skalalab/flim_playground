@@ -6,7 +6,9 @@ Due to the latency/speed constraint, some steps (regionprops, classification) of
 
 # Components
 ## Outlier finder
-There are two ways to identify outliers 
+There are two ways to identify outliers: perform dimension reduction on
+1. fitted parameters
+2. inputs (sdt and mask)
 ### On fitted parameters 
 #### Purpose
 Fitting Lifetime images using SPCImage can be error-prone, especially when analyzing big datasets on one's own. 
