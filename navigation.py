@@ -1,5 +1,13 @@
 import streamlit as st
+page_1 = "region_props"
+page_2 = "outlier_finder"
+page_3 = "unsupervised_clustering"
+page_4 = "phasor_analysis"
+page_5 = "classification"
 
+pages = [page_1, page_2, page_3, page_4, page_5]
+def link_2_name(link):
+    return link.replace("_", " ").title()
 def render_top_menu():
     # Adjust these links based on your actual page routes
     # The links below assume default multipage naming conventions:
@@ -20,16 +28,19 @@ def render_top_menu():
         """, unsafe_allow_html=True
     )
     
+
     # Define the menu bar as a horizontal list of links
     # Use relative links that Streamlit sets for pages.
     # Typically, after running `streamlit run main.py`, visit each page from the sidebar
     # and note the URL. Adjust below accordingly.
-    menu_html = """
+    menu_html = f"""
     <div style='background-color:#f0f0f0; padding:10px; border-bottom:1px solid #ccc;'>
-    <a href='/' style='margin-right:20px; text-decoration:none; font-weight:bold;'>Home</a>
-    <a href='/outlier_finder_fit' style='margin-right:20px; text-decoration:none; font-weight:bold;'>Page 1</a>
-    <a href='/Page2' style='margin-right:20px; text-decoration:none; font-weight:bold;'>Page 2</a>
-    <a href='/Page3' style='text-decoration:none; font-weight:bold;'>Page 3</a>
-    </div>
-    """
+    <a href='/' style='margin-right:20px; text-decoration:none; font-weight:bold;'>Index</a>"""
+
+    for page in pages:
+        menu_html += f"""
+        <a href='/{page}' style='margin-right:20px; text-decoration:none; font-weight:bold;'>{link_2_name(page)}</a>"""
+    
+    menu_html += "</div>"
+
     st.markdown(menu_html, unsafe_allow_html=True)
