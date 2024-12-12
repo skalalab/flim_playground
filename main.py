@@ -28,6 +28,8 @@ with col2:
         st.markdown(sdtSuite)
     elif selected_step == "Classification":
         pass
+    elif selected_step == "Plotting":
+        pass
     
     
 

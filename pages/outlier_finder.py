@@ -94,7 +94,7 @@ with col1:
         st.markdown("Instead of asking user to upload raw data files separately, **user can copy and paste the \
                  *path* of the folder containing the sdt files and masks in the text box below.**")
         
-        st.markdown("<h5 style='text-align: center; color: red;'>Note: due to security concerns, this tool only works offline, as it will expose your local file system</h5>", unsafe_allow_html=True)
+        st.markdown("<h5 style='text-align: center; color: red;'>Note: due to security concerns, this tool only works offline, as the online app does not have access to your local file system</h5>", unsafe_allow_html=True)
         
         folder_path = st.text_input("Enter a folder path:")
 
