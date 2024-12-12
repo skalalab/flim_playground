@@ -3,9 +3,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import seaborn as sns
+import os
 from dimension_reduction import dimension_reduction
-# from sklearn.preprocessing import StandardScaler
-# from sklearn.decomposition import PCA
 from navigation import render_top_menu
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -92,13 +91,28 @@ with col1:
                 )
         
     elif "raw data" in method:
-        uploaded_sdt = st.file_uploader("Upload the raw sdt file", type=["sdt"])
-        uploaded_mask = st.file_uploader("Upload the mask file", type=["tiff", "tif"])
-        if uploaded_sdt is not None and uploaded_mask is not None:
-            upload_complete = True
+        st.markdown("Instead of asking user to upload raw data files separately, **user can copy and paste the \
+                 *path* of the folder containing the sdt files and masks in the text box below.**")
+        
+        st.markdown("<h5 style='text-align: center; color: red;'>Note: due to security concerns, this tool only works offline, as it will expose your local file system</h5>", unsafe_allow_html=True)
+        
+        folder_path = st.text_input("Enter a folder path:")
+
+        if folder_path and st.button("List Files"):
+            if os.path.isdir(folder_path):
+                files = os.listdir(folder_path)
+                st.write(f"Files in `{folder_path}`:")
+                st.write(files)
+                upload_complete = True
+            else:
+                st.markdown("***Warning: The provided path is not a directory or doesn't exist.***")
+        # uploaded_sdt = st.file_uploader("Upload the raw sdt file", type=["sdt"])
+        # uploaded_mask = st.file_uploader("Upload the mask file", type=["tiff", "tif"])
+        # if uploaded_sdt is not None and uploaded_mask is not None:
+        #     upload_complete = True
 
     if upload_complete is False:
-        st.write("Please upload a file to begin.")
+        st.write("Please upload a file/folder path to begin.")
 
 
 with col2:
@@ -192,4 +206,4 @@ with col2:
         elif "raw data" in method:
             pass
     else:
-        st.write("Waiting for file upload")
+        st.write("Waiting for file/folder path upload")
