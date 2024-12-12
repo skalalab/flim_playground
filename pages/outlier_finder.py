@@ -148,7 +148,7 @@ with col2:
                     # If no treatment column, create a dummy one
                     df_reduced["treatment"] = "Not Specified"
  
-                st.markdown("<h5 style='text-align: center; color: black;'>Hover over to find the base_name of the outliers</h5>", unsafe_allow_html=True)
+                st.markdown("<h5 style='text-align: center;'>Hover over to find the base_name of the outliers</h5>", unsafe_allow_html=True)
             
                 unique_treatments = df_reduced["treatment"].unique()
                 palette = sns.color_palette("tab20", n_colors=len(unique_treatments))
@@ -182,12 +182,9 @@ with col2:
 
                 st.plotly_chart(fig, use_container_width=True)
             else:
-                st.markdown("<h5 style='text-align: center; color: black;'>Please select at least two numeric variables for performing dimension reduction.</h5>", unsafe_allow_html=True)
+                st.markdown("<h5 style='text-align: center;'>Please select at least two numeric variables for performing dimension reduction.</h5>", unsafe_allow_html=True)
         elif method == "Image Level Boxplots":
-            if selected_var != "Select":
-               #  st.markdown(f"<h5 style='text-align: center; color: black;'>You selected '{selected_var}'.</h5>", unsafe_allow_html=True)
-
-               
+            if selected_var != "Select": 
                 for index, row in df.iterrows():
                     basename = row['base_name']
                     try: 
@@ -200,7 +197,7 @@ with col2:
                 st.plotly_chart(fig, use_container_width=True)
   
             else:
-                st.markdown("<h5 style='text-align: center; color: black;'>Please select one variable to plot.</h5>", unsafe_allow_html=True)
+                st.markdown("<h5 style='text-align: center;'>Please select one variable to plot.</h5>", unsafe_allow_html=True)
 
 
         elif "raw data" in method:
