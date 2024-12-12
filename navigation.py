@@ -1,13 +1,15 @@
 import streamlit as st
 page_1 = "region_props"
 page_2 = "outlier_finder"
-page_3 = "unsupervised_clustering"
-page_4 = "phasor_analysis"
-page_5 = "classification"
+page_3 = "sdt_suite"
+page_4 = "classification"
 
-pages = [page_1, page_2, page_3, page_4, page_5]
+pages = [page_1, page_2, page_3, page_4]
 def link_2_name(link):
+    if link == "outlier_finder":
+        return "Clustering & " + link.replace("_", " ").title()
     return link.replace("_", " ").title()
+
 def render_top_menu():
     # Adjust these links based on your actual page routes
     # The links below assume default multipage naming conventions:
