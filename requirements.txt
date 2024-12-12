@@ -1,3 +1,5 @@
 plotly
 scikit-learn
 pandas
+umap-learn
+seaborn

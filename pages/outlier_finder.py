@@ -1,8 +1,11 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
+import plotly.graph_objects as go
+import seaborn as sns
+from dimension_reduction import dimension_reduction
+# from sklearn.preprocessing import StandardScaler
+# from sklearn.decomposition import PCA
 from navigation import render_top_menu
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -11,13 +14,13 @@ render_top_menu()
 
 col1, col2 = st.columns([0.4, 1])
 with col1:
-    st.title("Finding outliers")
+    st.title("Clustering")
     method = st.selectbox(
-        "Select a outlier detection method",
-        ["Image Level Boxplots", "PCA: fitted features", "PCA: raw data"]
+        "Select a clustering & outlier detection method",
+        ["PCA: fitted features", "PCA: raw data", "UMAP: fitted features", "UMAP: raw data", "Image Level Boxplots"],
     )  
     upload_complete = False 
-    if method == "Image Level Boxplots" or method == "PCA: fitted features":
+    if method == "Image Level Boxplots" or "fitted features" in method:
         uploaded_csv = st.file_uploader("Upload the CSV file from Region Props", type=["csv"])
     
         if uploaded_csv is not None:
@@ -88,7 +91,7 @@ with col1:
                     help="Select one or more columns corresponding to morphology variables."
                 )
         
-    elif method == "PCA: raw data":
+    elif "raw data" in method:
         uploaded_sdt = st.file_uploader("Upload the raw sdt file", type=["sdt"])
         uploaded_mask = st.file_uploader("Upload the mask file", type=["tiff", "tif"])
         if uploaded_sdt is not None and uploaded_mask is not None:
@@ -100,7 +103,7 @@ with col1:
 
 with col2:
     if upload_complete: 
-        if method == "PCA: fitted features": 
+        if "fitted features" in method: 
             if "All NADH Variables" in nadh_vars:
                 nadh_vars = nadh_cols
             if "All FAD Variables" in fad_vars:
@@ -110,49 +113,83 @@ with col2:
             if len(nadh_vars + fad_vars + morphology_vars) > 1:
                 selected_vars = nadh_vars + fad_vars + morphology_vars
                 X = df[selected_vars]
-                # Standardize features before PCA
-                X_std = StandardScaler().fit_transform(X)
-
-                # Perform PCA to reduce to 2 components
-                pca = PCA(n_components=2)
-                principal_components = pca.fit_transform(X_std)
-                df_pca = pd.DataFrame(principal_components, columns=["PC1", "PC2"])
+                if "PCA" in method: 
+                    df_reduced, exp_var  = dimension_reduction(X, n_components=2, method="PCA")
+                    axis_labels = ["PC1", "PC2"]
+                elif "UMAP" in method:
+                    df_reduced, exp_var = dimension_reduction(X, n_components=2, method="UMAP")
+                    axis_labels = ["UMAP1", "UMAP2"]
+                else: 
+                    st.write("Method not supported")
 
                 # Add treatment and base_name back to the df for plotting/hovering
                 if "base_name" in df.columns:
-                    df_pca["base_name"] = df["base_name"]
+                    df_reduced["base_name"] = df["base_name"]
                 else:
                     # If no base_name column, create a dummy one
-                    df_pca["base_name"] = "Not Specified"
+                   df_reduced["base_name"] = "Not Specified"
                 if "treatment" in df.columns:
-                    df_pca["treatment"] = df["treatment"]
+                    df_reduced["treatment"] = df["treatment"]
                 else:
                     # If no treatment column, create a dummy one
-                    df_pca["treatment"] = "Not Specified"
+                    df_reduced["treatment"] = "Not Specified"
+ 
+                st.markdown("<h5 style='text-align: center; color: black;'>Hover over to find the base_name of the outliers</h5>", unsafe_allow_html=True)
+            
+                unique_treatments = df_reduced["treatment"].unique()
+                palette = sns.color_palette("tab20", n_colors=len(unique_treatments))
+                color_sequence = [f"rgba({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)}, 0.6)" for color in palette]
+                color_map = {t: color_sequence[i] for i, t in enumerate(unique_treatments)}
 
-                # Create a Plotly scatter plot
-                # Hover data is set so that only base_name is shown on hover
-                fig = px.scatter(
-                    df_pca,
-                    x="PC1",
-                    y="PC2",
-                    color="treatment",
-                    hover_data={"base_name": True, "PC1": False, "PC2": False, "treatment": False},
-                    title="PCA Plot"
+                # Create scatter plot
+                fig = go.Figure()
+
+                for t in unique_treatments:
+                    t_df =  df_reduced[df_reduced["treatment"] == t]
+                    fig.add_trace(
+                        go.Scatter(
+                            x=t_df[axis_labels[0]],
+                            y=t_df[axis_labels[1]],
+                            mode='markers',
+                            name=f'{t}',
+                            text=t_df["base_name"],
+                            hovertemplate="<b>%{text}</b>",
+                            marker=dict(color=color_map[t])
+                        ),
                 )
 
                 # Update axis labels to include explained variance
-                exp_var = pca.explained_variance_ratio_ * 100
-                fig.update_xaxes(title_text=f"PC1 ({exp_var[0]:.2f}%)")
-                fig.update_yaxes(title_text=f"PC2 ({exp_var[1]:.2f}%)")
+                if exp_var is not None: 
+                    fig.update_xaxes(title_text=f"{axis_labels[0]}({exp_var[0]:.2f}%)")
+                    fig.update_yaxes(title_text=f"{axis_labels[1]}({exp_var[1]:.2f}%)")
+                else:
+                    fig.update_xaxes(title_text=f"{axis_labels[0]}")
+                    fig.update_yaxes(title_text=f"{axis_labels[1]}")
 
                 st.plotly_chart(fig, use_container_width=True)
             else:
-                st.write("Please select at least two numeric variables for PCA.")
+                st.markdown("<h5 style='text-align: center; color: black;'>Please select at least two numeric variables for performing dimension reduction.</h5>", unsafe_allow_html=True)
         elif method == "Image Level Boxplots":
-            pass
+            if selected_var != "Select":
+               #  st.markdown(f"<h5 style='text-align: center; color: black;'>You selected '{selected_var}'.</h5>", unsafe_allow_html=True)
 
-        elif method == "PCA: raw data":
+               
+                for index, row in df.iterrows():
+                    basename = row['base_name']
+                    try: 
+                        # we assume that the image name is the base_name without the cell number (which is found after the last underscore)
+                        df.at[index, 'image_name'] = basename.rsplit('_', 1)[0]
+                    except: 
+                        st.markdown("<h5 style='text-align: center; color: Red;'>Warning: We cannot infer image name from you base_name. We assume that the image name is the base_name without the cell number (which is found after the last underscore) </h5>", unsafe_allow_html=True)
+                # Create a boxplot for the selected variable
+                fig = px.box(df, x="image_name", y=selected_var, title=f"Boxplot for {selected_var}")
+                st.plotly_chart(fig, use_container_width=True)
+  
+            else:
+                st.markdown("<h5 style='text-align: center; color: black;'>Please select one variable to plot.</h5>", unsafe_allow_html=True)
+
+
+        elif "raw data" in method:
             pass
     else:
         st.write("Waiting for file upload")
