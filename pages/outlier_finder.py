@@ -1,11 +1,11 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-import seaborn as sns
+from streamlit_plotly_events import plotly_events
 import os
-from dimension_reduction import dimension_reduction
+from dimension_reduction import dimension_reduction, create_figure
 from navigation import render_top_menu
+from features import get_features, fix_df
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -23,14 +23,16 @@ with col1:
         uploaded_csv = st.file_uploader("Upload the CSV file from Region Props", type=["csv"])
     
         if uploaded_csv is not None:
-            upload_complete = True
         # Read the uploaded data
             df = pd.read_csv(uploaded_csv)
-            numeric_cols = [ col for col in df.columns if pd.to_numeric(df[col], errors='coerce').notna().all()]
-            nadh_cols = [c for c in numeric_cols if (c.startswith("nadh") or c.startswith("redox")) and "mean" in c and "stdev" not in c and "weighted" not in c]
-            fad_cols = [c for c in numeric_cols if c.startswith("fad") and "mean" in c and "stdev" not in c and "weighted" not in c]
-            morphology_cols = [c for c in numeric_cols if not c.startswith("nadh") and not c.startswith("fad") and "mask" not in c and "redox" not in c and "flirr" not in c]
-            
+            numeric_cols, nadh_cols, fad_cols, morphology_cols, error_msg = get_features(df)
+            if error_msg != "":
+                st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)
+                upload_complete = False
+            else:
+                df = fix_df(df)
+               # st.markdown("<h6 style='text-align: center;'>File uploaded successfully.</h6>", unsafe_allow_html=True)
+                upload_complete = True
             if method == "Image Level Boxplots":
                 # Define a callback function to reset other menus
                 def reset_other_menus(selected_menu):
@@ -135,70 +137,74 @@ with col2:
                     axis_labels = ["UMAP1", "UMAP2"]
                 else: 
                     st.write("Method not supported")
-
-                # Add treatment and base_name back to the df for plotting/hovering
-                if "base_name" in df.columns:
-                    df_reduced["base_name"] = df["base_name"]
-                else:
-                    # If no base_name column, create a dummy one
-                   df_reduced["base_name"] = "Not Specified"
-                if "treatment" in df.columns:
-                    df_reduced["treatment"] = df["treatment"]
-                else:
-                    # If no treatment column, create a dummy one
-                    df_reduced["treatment"] = "Not Specified"
- 
+    
                 st.markdown("<h5 style='text-align: center;'>Hover over to find the base_name of the outliers</h5>", unsafe_allow_html=True)
-            
-                unique_treatments = df_reduced["treatment"].unique()
-                palette = sns.color_palette("tab20", n_colors=len(unique_treatments))
-                color_sequence = [f"rgba({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)}, 0.6)" for color in palette]
-                color_map = {t: color_sequence[i] for i, t in enumerate(unique_treatments)}
+                # Add treatment and base_name back to the df_reduced for plotting/hovering
+                df_reduced["base_name"] = df["base_name"]
+                df_reduced["image_name"] = df["image_name"]
+                df_reduced["treatment"] = df["treatment"]
+                if "df_reduced" not in st.session_state:
+                     st.session_state["df_reduced"] = df_reduced
+                if "removed_images" not in st.session_state:
+                    st.session_state["removed_images"] = []
+                
+                fig = create_figure(st.session_state["df_reduced"], axis_labels=axis_labels, exp_var=exp_var)
 
-                # Create scatter plot
-                fig = go.Figure()
-
-                for t in unique_treatments:
-                    t_df =  df_reduced[df_reduced["treatment"] == t]
-                    fig.add_trace(
-                        go.Scatter(
-                            x=t_df[axis_labels[0]],
-                            y=t_df[axis_labels[1]],
-                            mode='markers',
-                            name=f'{t}',
-                            text=t_df["base_name"],
-                            hovertemplate="<b>%{text}</b>",
-                            marker=dict(color=color_map[t])
-                        ),
+                clicked_points = plotly_events(
+                    fig, 
+                    click_event=True, 
+                    hover_event=False, 
+                    select_event=False
                 )
+                if clicked_points:
+                    clicked_point = clicked_points[0]
+                    point_index =  clicked_point["pointIndex"]
+                    trace_index = clicked_point["curveNumber"]
+                    clicked_image_name = fig.data[trace_index]['customdata'][point_index]
+                    st.write(f"You clicked on image: {clicked_image_name}. Do you want to remove this image?")
 
-                # Update axis labels to include explained variance
-                if exp_var is not None: 
-                    fig.update_xaxes(title_text=f"{axis_labels[0]}({exp_var[0]:.2f}%)")
-                    fig.update_yaxes(title_text=f"{axis_labels[1]}({exp_var[1]:.2f}%)")
-                else:
-                    fig.update_xaxes(title_text=f"{axis_labels[0]}")
-                    fig.update_yaxes(title_text=f"{axis_labels[1]}")
+                    if st.button("Confirm Removal"):
+                        # Remove rows with the clicked base_name
+                        st.session_state["df_reduced"] = st.session_state["df_reduced"][
+                            st.session_state["df_reduced"]["image_name"] != clicked_image_name
+                        ]
+                        st.session_state["removed_images"].append(clicked_image_name)
+                        st.rerun()
+                    
 
-                st.plotly_chart(fig, use_container_width=True)
+
+                if len(st.session_state["removed_images"]) > 0:
+                    st.write("Removed images:")
+                    st.write(st.session_state["removed_images"])
+                    col1, col2 = st.columns([0.1, 1])
+                    with col1:
+                        if st.button("Reset"):
+                            st.session_state["df_reduced"] = df_reduced
+                            st.session_state["removed_images"] = []
+                            st.rerun()
+                    with col2:
+                        df_outliers_removed = df[~df["image_name"].isin(st.session_state["removed_images"])]
+                        st.download_button(
+                            label="Download Outliers Removed CSV",
+                            data=df_outliers_removed.to_csv(index=False),
+                            file_name=f"{uploaded_csv.name}_outliers_removed.csv",
+                            mime="text/csv"
+                        )
+
+                st.markdown("<h5 style='text-align: center;'>Click points to remove images where the outliers belong to</h5>", unsafe_allow_html=True)
+            
             else:
                 st.markdown("<h5 style='text-align: center;'>Please select at least two numeric variables for performing dimension reduction.</h5>", unsafe_allow_html=True)
         elif method == "Image Level Boxplots":
             if selected_var != "Select": 
-                for index, row in df.iterrows():
-                    basename = row['base_name']
-                    try: 
-                        # we assume that the image name is the base_name without the cell number (which is found after the last underscore)
-                        df.at[index, 'image_name'] = basename.rsplit('_', 1)[0]
-                    except: 
-                        st.markdown("<h5 style='text-align: center; color: Red;'>Warning: We cannot infer image name from you base_name. We assume that the image name is the base_name without the cell number (which is found after the last underscore) </h5>", unsafe_allow_html=True)
+                if (df["image_name"] == "missing image name").any():
+                    st.markdown("<h5 style='text-align: center; color: Red;'>Warning: We cannot infer some/all image names from you base_name. We assume that the image name is the base_name without the cell number (which is found after the last underscore) </h5>", unsafe_allow_html=True)
                 # Create a boxplot for the selected variable
                 fig = px.box(df, x="image_name", y=selected_var, title=f"Boxplot for {selected_var}")
                 st.plotly_chart(fig, use_container_width=True)
   
             else:
                 st.markdown("<h5 style='text-align: center;'>Please select one variable to plot.</h5>", unsafe_allow_html=True)
-
 
         elif "raw data" in method:
             pass
