@@ -1,4 +1,4 @@
-# FLIM Image Analysis Pipeline
+# FLIM Playground
 An interactive, ui-based pipeline that takes in FLIM inputs: sdt files, fitted parameter files and masks. The pipeline will include data/feature extraction from inputs (regionprops), outlier finder based on extracted features or input data itself (sdt), unsupervised clusetering visualization (UMAP, PCA), classification/prediction (e.g. random forest), single-cell phasor plots, simple plots (e.g. box/swarm plot with t-tests between conditions on a given feature). 
 
 # Installation
@@ -23,7 +23,7 @@ You can identify the outliers by hovering over the points that show the `base_na
 
 
 # Deployment 
-It is deployed on using streamlit's cummunity server at: [https://flim-analysis.streamlit.app/](https://flim-playground.streamlit.app/). It is free and will automatically fetch the new commits and update the app. 
+It is deployed on using streamlit's cummunity server at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). It is free and will automatically fetch the new commits and update the app. 
 
 # Progress
 - 12/6/24: bootstrapping the app with very minimal elements. Finished the deployment. 
