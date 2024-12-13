@@ -33,7 +33,9 @@ sdtSuite = """
 It features a list tools that takes SDT files as inputs and perform operations on them. 
 
 ## Tools
+### ROI Summing 
 
+### SDT fitting 
 ### Phasor Analysis 
 The phasor approach is an alternative, quick, and fit-free method for analyzing FLIM data. It is based on the Fourier transformation of the fluorescence decay curve. 
 The phasor plot is a scatter plot of the real and imaginary components of the Fourier transformation of the fluorescence decay curve. It can be used to identify different fluorophores in a sample, to distinguish between free and bound states of a fluorophore, and to detect changes in the microenvironment of a fluorophore.
@@ -52,3 +54,4 @@ Single cell phasor coordinates; singke cell phasor plots.
 
 classification = """"""
 regionProps = """"""
+plotting = """"""
