@@ -108,10 +108,6 @@ with col1:
                 upload_complete = True
             else:
                 st.markdown("***Warning: The provided path is not a directory or doesn't exist.***")
-        # uploaded_sdt = st.file_uploader("Upload the raw sdt file", type=["sdt"])
-        # uploaded_mask = st.file_uploader("Upload the mask file", type=["tiff", "tif"])
-        # if uploaded_sdt is not None and uploaded_mask is not None:
-        #     upload_complete = True
 
     if upload_complete is False:
         st.write("Please upload a file/folder path to begin.")
@@ -170,8 +166,6 @@ with col2:
                         ]
                         st.session_state["removed_images"].append(clicked_image_name)
                         st.rerun()
-                    
-
 
                 if len(st.session_state["removed_images"]) > 0:
                     st.write("Removed images:")
