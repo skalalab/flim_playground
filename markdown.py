@@ -1,31 +1,26 @@
 
 
 outlierFinder = """
-## Overview 
-This tools performs **clustering** on your data (fitted data or raw data) using dimension reduction algorithms (**PCA** and **UMAP**). 
+## Cluster & Outlier finder
+### Dimension Reduction 
+Flim playground offers two dimension reduction algorithms, Principal Componenet Analysis (PCA) and UMAP, to provide unsupervised clustering on the input data. Then it selects and visualizes the first two dimensions of the reduced data (the output of the dimension reduction algorithm). The visualization can help people identify **clusters** and **outliers**. 
 
-After clustering it can be used to identify outliers.  
-Specifically, the tool provides 3 ways to identify outliers: 
-- perform dimension reduction on fitted parameters
-- perform dimension reduction on raw inputs (sdt and mask)
-- plot image level features 
+### Outlier finder
+Thus, the tool can identify outliers by: 
+- performing dimension reduction on selected subset of fitted parameters
+    - Fitting Lifetime images using SPCImage can be error-prone, especially when analyzing big datasets on one's own. 
+    - Therefore, a sanity check method is in need. We use principal component analysis on your uploaded datasets using selected lifetime and morphological variables. PCA is chosen over UMAP and t-SNE because of its speed, which makes it approiate for online usage. 
+- performing dimension reduction on raw inputs (sdt and mask)
+    - To be developed. 
+    - Some outliers are not caused by errors using SPCImage. Instead, it may be due to inconsistencies occurred during image/data acquisition or masking. Therefore, PCA can be performed on input data (SDTs and Masks) directly: each cell occupies a set of spatial pixels, under each of which is 256 time bins. We can sum the times spatially to get the cell-level 256 time bins and perform PCA on them. 
 
-### 1. Dimension Reduction on Fitted Parameters
-#### Motivation 
-Fitting Lifetime images using SPCImage can be error-prone, especially when analyzing big datasets on one's own. Therefore, a sanity check method is in need. The tools uses principal component analysis on your uploaded datasets using selected lifetime and morphological variables. In the online setting, PCA is preferred over UMAP because of its speed.
+### Design 
+You can identify the outliers by hovering over the points that show the `base_name` (we assume you dataset has a column called `base_name`, which is of this format: `image_name` + `_` + `cell_number`). You can select the outlier by clicking on it, then you will have the option to remove it and cells that belongs to the same image. Then the algorithm and visualization will be rerun on the new data without the outlier image. The rationale is that if all the outlier points belong to the same image, them that image should probably be reanalyzed. 
 
-### 2. Dimension Reduction on Raw Inputs
-#### Motivation
-Some outliers are not caused by errors using SPCImage. Instead, it may be due to inconsistencies occurred during image/data acquisition or masking. Therefore, dimension reduction methods (PCA and UMAP) can be performed on input data (SDTs and Masks) directly: each cell occupies a set of spatial pixels, under each of which is 256 time bins. We can sum the time bins spatially to get the cell-level 256 time bins and perform PCA on them.
+For big datasets such as the redox dataset, which has multiple experiments, cell lines, treatments, and media, it offers filtering based on those columns. 
 
-#### Design
-In the above two ways, user can identify the outliers by hovering over the points that show the `base_name` (we assume you dataset has a column called `base_name` which has the image name and cell number). The rationale is that if all the outlier points belong to the same image, them that image should probably be reanalyzed or inspected or kicked out.
-
-### 3. Image Level Features
-#### Motivation
-This is another way to find fitting errors. A boxplot is plotted over all images/ROIs of you dataset for the selected feature (lifetimes and intensities and morphologies). 
-The `image_name` column is the y-axis, which is inferred from the `base_name` column (it assumes `base_name` = `image_name` + "_cell_number"), and the selected feature is the x-axis. 
-
+Additionally, it can
+- plot image-level boxplots on a selected fitted parameters.
 """
 
 sdtSuite = """
@@ -52,6 +47,6 @@ Single cell phasor coordinates; singke cell phasor plots.
 """
 
 
-classification = """"""
-regionProps = """"""
-plotting = """"""
+classification = """to be developed."""
+regionProps = """to be developed. """
+plotting = """to be developed. """

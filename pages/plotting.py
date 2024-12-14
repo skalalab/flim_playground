@@ -7,7 +7,7 @@ from features import get_features, fix_df
 from navigation import render_top_menu
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
-
+st.write("To be developed")
 col1, col2 = st.columns([0.4, 1])
 with col1:
     st.title("Visualizations")

@@ -10,8 +10,8 @@ def safe_split_with_logging(base_name):
 def get_features(df):
     error_msg = ""
     numeric_cols = [col for col in df.columns if pd.to_numeric(df[col], errors='coerce').notna().all()]    
-    nadh_cols = [c for c in numeric_cols if (c.startswith("nadh") or c.startswith("redox")) and "mean" in c and "stdev" not in c and "weighted" not in c]
-    fad_cols = [c for c in numeric_cols if c.startswith("fad") and "mean" in c and "stdev" not in c and "weighted" not in c]
+    nadh_cols = [c for c in numeric_cols if (c.startswith("n") or c.startswith("redox")) and "mean" in c and "stdev" not in c and "weighted" not in c]
+    fad_cols = [c for c in numeric_cols if c.startswith("f") and "mean" in c and "stdev" not in c and "weighted" not in c]
     morphology_cols = [c for c in numeric_cols if not c.startswith("nadh") and not c.startswith("fad") and "mask" not in c and "redox" not in c and "flirr" not in c]
     if len(numeric_cols) == 0 or (len(nadh_cols) + len(fad_cols) + len(morphology_cols)) == 0:
         error_msg += "No feature found in the uploaded file."
