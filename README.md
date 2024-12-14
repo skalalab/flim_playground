@@ -26,7 +26,7 @@ Thus, the tool can identify outliers by:
     - Therefore, a sanity check method is in need. We use principal component analysis on your uploaded datasets using selected lifetime and morphological variables. PCA is chosen over UMAP and t-SNE because of its speed, which makes it approiate for online usage. 
 - performing dimension reduction on raw inputs (sdt and mask)
     - To be developed. 
-    - Some outliers are not caused by errors using SPCImage. Instead, it may be due to inconsistencies occurred during image/data acquisition or masking. Therefore, PCA can be performed on input data (SDTs and Masks) directly: each cell occupies a set of spatial pixels, under each of which is 256 time bins. We can sum the times spatially to get the cell-level 256 time bins and perform PCA on them. 
+    - Some outliers are not caused by errors using SPCImage. Instead, it may be due to inconsistencies occurred during image/data acquisition or masking. Therefore, PCA can be performed on input data (SDTs and Masks) directly: each cell occupies a set of spatial pixels, under each of which is 256 time bins. We can sum the times spatially to get the cell-level 256 time bins and perform PCA on them. It does not need the IRF file. 
 
 ### Design 
 You can identify the outliers by hovering over the points that show the `base_name` (we assume you dataset has a column called `base_name`, which is of this format: `image_name` + `_` + `cell_number`). You can select the outlier by clicking on it, then you will have the option to remove it and cells that belongs to the same image. Then the algorithm and visualization will be rerun on the new data without the outlier image. The rationale is that if all the outlier points belong to the same image, them that image should probably be reanalyzed. 
@@ -52,3 +52,4 @@ It is deployed on using streamlit's cummunity server at: [https://flim-playgroun
 - 12/6/24: bootstrapping the app with very minimal elements. Finished the deployment. 
 - 12/9/24: working on designing the modules and the layout of the app. 
 - 12/11/24 - 12/13/24: working on the clustering & outlier finder module.
+- 12/14/24: working on adding filtering mechanism for cluster& outlier finder module to support exploring big datasets. TODO: add more coloring mechanism so that it can color by more than one columns (i.e. combination of columns)
