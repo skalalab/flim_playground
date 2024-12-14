@@ -46,7 +46,7 @@ To be developed.
 To be developed. 
 
 # Deployment 
-It is deployed on using streamlit's cummunity server at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). It is free and will automatically fetch the new commits and update the app. 
+It is deployed on using streamlit's cummunity server at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). It is free and will automatically fetch the new commits and update the app. The first time visit will have longer delay because Streamlit is managing in the background to set up machines and a python environment to run this app. 
 
 # Progress
 - 12/6/24: bootstrapping the app with very minimal elements. Finished the deployment. 
