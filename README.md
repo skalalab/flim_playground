@@ -50,5 +50,5 @@ It is deployed on using streamlit's cummunity server at: [https://flim-playgroun
 
 # Progress
 - 12/6/24: bootstrapping the app with very minimal elements. Finished the deployment. 
-- 12/9/24: working on 
+- 12/9/24: working on designing the modules and the layout of the app. 
 - 12/11/24 - 12/13/24: working on the clustering & outlier finder module.
