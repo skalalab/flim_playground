@@ -123,8 +123,12 @@ with col2:
             if "All Morphology Variables" in morphology_vars:
                 morphology_vars = morphology_cols
             if len(nadh_vars + fad_vars + morphology_vars) > 1:
+                if "df_removed" not in st.session_state:
+                    st.session_state["df_removed"] = df
+                if "removed_images" not in st.session_state:
+                    st.session_state["removed_images"] = []
                 selected_vars = nadh_vars + fad_vars + morphology_vars
-                X = df[selected_vars]
+                X = st.session_state["df_removed"][selected_vars]
                 if "PCA" in method: 
                     df_reduced, exp_var  = dimension_reduction(X, n_components=2, method="PCA")
                     axis_labels = ["PC1", "PC2"]
@@ -136,15 +140,11 @@ with col2:
     
                 st.markdown("<h5 style='text-align: center;'>Hover over to find the base_name of the outliers</h5>", unsafe_allow_html=True)
                 # Add treatment and base_name back to the df_reduced for plotting/hovering
-                df_reduced["base_name"] = df["base_name"]
-                df_reduced["image_name"] = df["image_name"]
-                df_reduced["treatment"] = df["treatment"]
-                if "df_reduced" not in st.session_state:
-                     st.session_state["df_reduced"] = df_reduced
-                if "removed_images" not in st.session_state:
-                    st.session_state["removed_images"] = []
+                df_reduced["base_name"] = st.session_state["df_removed"]["base_name"]
+                df_reduced["image_name"] = st.session_state["df_removed"]["image_name"]
+                df_reduced["treatment"] = st.session_state["df_removed"]["treatment"]
                 
-                fig = create_figure(st.session_state["df_reduced"], axis_labels=axis_labels, exp_var=exp_var)
+                fig = create_figure(df_reduced, axis_labels=axis_labels, exp_var=exp_var)
 
                 clicked_points = plotly_events(
                     fig, 
@@ -161,8 +161,8 @@ with col2:
 
                     if st.button("Confirm Removal"):
                         # Remove rows with the clicked base_name
-                        st.session_state["df_reduced"] = st.session_state["df_reduced"][
-                            st.session_state["df_reduced"]["image_name"] != clicked_image_name
+                        st.session_state["df_removed"] = st.session_state["df_removed"][
+                            st.session_state["df_removed"]["image_name"] != clicked_image_name
                         ]
                         st.session_state["removed_images"].append(clicked_image_name)
                         st.rerun()
@@ -173,7 +173,7 @@ with col2:
                     col1, col2 = st.columns([0.1, 1])
                     with col1:
                         if st.button("Reset"):
-                            st.session_state["df_reduced"] = df_reduced
+                            st.session_state["df_removed"] = df
                             st.session_state["removed_images"] = []
                             st.rerun()
                     with col2:
