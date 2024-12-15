@@ -5,7 +5,7 @@ An interactive, ui-based data-centric playground that focus on FLIM analysis. It
 Due to the latency/speed constraint, some modules (regionprops, classification) of the playground are better to be run offline. To do that, user needs to have the python environment installed on their local desktop. For other modules (e.g. visualizations), user can go to the [website](https://flim-playground.streamlit.app/) without the need to install *anything*. 
 
 ## Environment Setup
-Just as we need the `seg`/`segnew` environment to run the `cell-analysis-tools` and segment the cell, we need an environment to run this playground. After downloading this repository from github and navigating to it, you can run `conda env create -f environment.yml` and conda will take care of the setup process. The new environment includes packages from `seg` such as `napari`, `cellpose`, and `cell-analysis-tools`. 
+Just as we need the `seg`/`segnew` environment to run the `cell-analysis-tools` and segment the cell, we need an environment to run this playground. After downloading this repository from github and navigating to it, you can run `conda env create -f conda_environment.yml` and conda will take care of the setup process. The new environment includes packages from `seg` such as `napari`, `cellpose`, and `cell-analysis-tools`. 
 
 ## Run the app offline
 To run it, use the command `streamlit run main.py` in anaconda prompt/terminal. The app will spin up webpages to your default web browser. 
