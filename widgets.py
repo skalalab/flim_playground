@@ -13,7 +13,7 @@ def update_multiselect(key, options):
             # all is selected with other options
             st.session_state[key] = [option for option in current_selection if option != "All"]
 
-def create_filters(df): 
+def create_filters(df, color=True): 
         # Check for existence of columns
         exp_exists = "experiment" in df.columns
         cl_exists = "cell_line" in df.columns
@@ -72,7 +72,7 @@ def create_filters(df):
         # If more than one of experiment, cell_line, treatment columns exist, add a color_by multiselect
         # Only include columns that actually exist
         existing_filter_columns = [col for col in ["experiment", "cell_line", "treatment"] if col in df.columns]
-        if len(existing_filter_columns) > 1:
+        if len(existing_filter_columns) > 1 and color is True:
             with cols[3]:
                 color_by_options = st.multiselect("Color by", existing_filter_columns, default=existing_filter_columns[-1])
         else:
@@ -81,11 +81,66 @@ def create_filters(df):
         return filtered_df, color_by_options, cols
 
 def reset_other_menus(selected_menu, menus):
-                selected_value = st.session_state[selected_menu]
-                if selected_value != "Select":  # Only reset if the selection is not "Select"
-                    for menu in ["menu_nadh", "menu_fad", "menu_morphology"]:
-                        if menu != selected_menu:
-                            st.session_state[menu] = "Select"
-                    st.session_state.selected_menu = selected_menu
+    selected_value = st.session_state[selected_menu]
+    if selected_value != "Select":  # Only reset if the selection is not "Select"
+        for menu in menus:
+            if menu != selected_menu:
+                st.session_state[menu] = "Select"
+        st.session_state.selected_menu = selected_menu
 
-     
+# create selectboxs for variables
+def create_singleSelects_vars(nadh_cols, fad_cols, morphology_cols):
+    menus = ["menu_nadh", "menu_fad", "menu_morphology"]           
+    # Render the dropdowns with callbacks
+    selected_nadh = st.selectbox(
+        "Nadh Variables", 
+        ["Select"] + nadh_cols, 
+        index=0, 
+        key="menu_nadh",
+        on_change=reset_other_menus, 
+        args=("menu_nadh",menus)
+    )
+
+    selected_fad = st.selectbox(
+        "Fad Variables", 
+        ["Select"] + fad_cols, 
+        index=0, 
+        key="menu_fad",
+        on_change=reset_other_menus, 
+        args=("menu_fad",menus)
+    )
+
+    selected_morphology = st.selectbox(
+        "Morphology Variables", 
+        ["Select"] + morphology_cols, 
+        index=0, 
+        key="menu_morphology",
+        on_change=reset_other_menus, 
+        args=("menu_morphology",menus)
+    )
+
+    selected_var =  selected_nadh if selected_nadh != "Select" else selected_fad if selected_fad != "Select" else selected_morphology
+    return selected_var
+
+
+def create_multiSelects_vars(nadh_cols, fad_cols, morphology_cols):
+    nadh_vars = st.multiselect(
+        "Select NADH Variables",
+        options= ["All NADH Variables"] + nadh_cols if len(nadh_cols) > 0 else nadh_cols,
+        default=[],
+        help="Select one or more columns corresponding to NADH variables."
+    )
+    fad_vars = st.multiselect(
+        "Select FAD Variables",
+        options= ["All FAD Variables"] + fad_cols if len(fad_cols) > 0 else fad_cols,
+        default=[],
+        help="Select one or more columns corresponding to FAD variables."
+    )
+    morphology_vars = st.multiselect(
+        "Select Morphology Variables",
+        options= ["All Morphology Variables"] + morphology_cols if len(morphology_cols) > 0 else morphology_cols,
+        default=[],
+        help="Select one or more columns corresponding to morphology variables."
+    )
+
+    return nadh_vars, fad_vars, morphology_vars
