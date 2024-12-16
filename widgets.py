@@ -30,9 +30,9 @@ def create_filters(df, color=True):
             if len(experiments) > 1:
                 experiments.append("All")  # Add "all" option
                 with cols[0]:
-                    selected_experiment = st.selectbox("Select experiment", experiments, index=0)
+                    selected_experiment = st.multiselect("Select experiment", experiments, default=experiments[0], key="experiment_multiselect",on_change=update_multiselect, args=("experiment_multiselect", experiments))
                 if selected_experiment != "All":
-                    filtered_df = filtered_df[filtered_df["experiment"] == selected_experiment]
+                    filtered_df = filtered_df[filtered_df["experiment"].isin(selected_experiment)]
                 available_for_color.append("experiment")
 
         ### Handle "cell_line" column ###
@@ -74,7 +74,7 @@ def create_filters(df, color=True):
         existing_filter_columns = [col for col in ["experiment", "cell_line", "treatment"] if col in df.columns]
         if len(existing_filter_columns) > 1 and color is True:
             with cols[3]:
-                color_by_options = st.multiselect("Color by", existing_filter_columns, default=existing_filter_columns[-1])
+                color_by_options = st.multiselect("Color by", existing_filter_columns, default=existing_filter_columns[-1])                   
         else:
             color_by_options = ["treatment"]
 

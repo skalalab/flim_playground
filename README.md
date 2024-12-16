@@ -1,5 +1,5 @@
 # FLIM Playground
-An interactive, ui-based data-centric playground that focus on FLIM analysis. It includes data/feature extraction from inputs (regionprops), unsupervised clusetering visualization (UMAP, PCA), outlier finder based on extracted features or raw data, classification/prediction (e.g. random forest), a SDT toolbox that has tool such as single-cell phasor plots, and simple plots (e.g. box/swarm plot with t-tests between conditions on a given feature). 
+An interactive, ui-based data-centric playground that focus on FLIM analysis. It includes data/feature extraction from inputs (regionprops), unsupervised clusetering visualization (UMAP, PCA), outlier finder based on extracted features or raw data, classification/prediction (e.g. random forest), a SDT toolbox that has tool such as single-cell phasor plots, and simple plots (e.g. box/swarm plot with t-tests between conditions on a given feature). For tools that are not feasible but interesting and useful that I am aware of, there is also a page for exteral resources. 
 
 # Installation
 Due to the latency/speed and the **data security** constraint, some modules (regionprops, classification) of the playground are better to be run offline. To do that, user needs to have the python environment installed on their local desktop. For other modules (e.g. visualizations), user can go to the [website](https://flim-playground.streamlit.app/) without the need to install *anything*. 
@@ -52,4 +52,5 @@ It is deployed on using streamlit's cummunity server at: [https://flim-playgroun
 - 12/6/24: bootstrapping the app with very minimal elements. Finished the deployment. 
 - 12/9/24: working on designing the modules and the layout of the app. 
 - 12/11/24 - 12/13/24: working on the clustering & outlier finder module.
-- 12/14/24: working on adding filtering mechanism for cluster& outlier finder module to support exploring big datasets. TODO: add more coloring mechanism so that it can color by more than one columns (i.e. combination of columns)
+- 12/14/24: working on adding filtering mechanism for cluster& outlier finder module to support exploring big datasets. 
+- 12/16/24: code refactorization, add the option to color by more than one column. If more than one column is selected to produce colors, different colors are made for each unique combination of unique values of the selected columns (e.g. If you dataset has 3 treatments and 4 cell lines, and you want to colored by treatments and cell_lines, it will create 12 = 3 x 4 colors for each unique combination)
