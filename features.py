@@ -7,12 +7,20 @@ def safe_split_with_logging(base_name):
         return "missing image name"
 
 
+
+def get_cols(cols, weighted_cols = False):
+    nadh_prefixes = ["nadh", "redox", "na", "nt","ntm", "nint", "normrr"] # put redox in nadh 
+    fad_prefixes = ["fad", "fa", "ft", "ftm", "fint"]
+
+    nadh_cols = [c for c in cols if any(c.startswith(prefix) for prefix in nadh_prefixes) and "stdev" not in c and (weighted_cols or "weighted" not in c)]
+    fad_cols = [c for c in cols if any(c.startswith(prefix) for prefix in fad_prefixes) and "stdev" not in c and (weighted_cols or "weighted" not in c)]
+    morphology_cols = [c for c in cols if not any(c.startswith(prefix) for prefix in nadh_prefixes + fad_prefixes) and "mask" not in c and "flirr" not in c and "Unnamed" not in c] 
+    return nadh_cols, fad_cols, morphology_cols
+
 def get_features(df):
     error_msg = ""
     numeric_cols = [col for col in df.columns if pd.to_numeric(df[col], errors='coerce').notna().all()]    
-    nadh_cols = [c for c in numeric_cols if (c.startswith("nadh") or c.startswith("redox")) and "mean" in c and "stdev" not in c and "weighted" not in c]
-    fad_cols = [c for c in numeric_cols if c.startswith("fad") and "mean" in c and "stdev" not in c and "weighted" not in c]
-    morphology_cols = [c for c in numeric_cols if not c.startswith("nadh") and not c.startswith("fad") and "mask" not in c and "redox" not in c and "flirr" not in c]
+    nadh_cols, fad_cols, morphology_cols = get_cols(numeric_cols)
     if len(numeric_cols) == 0 or (len(nadh_cols) + len(fad_cols) + len(morphology_cols)) == 0:
         error_msg += "No feature found in the uploaded file."
     

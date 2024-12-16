@@ -2,7 +2,7 @@
 An interactive, ui-based data-centric playground that focus on FLIM analysis. It includes data/feature extraction from inputs (regionprops), unsupervised clusetering visualization (UMAP, PCA), outlier finder based on extracted features or raw data, classification/prediction (e.g. random forest), a SDT toolbox that has tool such as single-cell phasor plots, and simple plots (e.g. box/swarm plot with t-tests between conditions on a given feature). 
 
 # Installation
-Due to the latency/speed constraint, some modules (regionprops, classification) of the playground are better to be run offline. To do that, user needs to have the python environment installed on their local desktop. For other modules (e.g. visualizations), user can go to the [website](https://flim-playground.streamlit.app/) without the need to install *anything*. 
+Due to the latency/speed and the **data security** constraint, some modules (regionprops, classification) of the playground are better to be run offline. To do that, user needs to have the python environment installed on their local desktop. For other modules (e.g. visualizations), user can go to the [website](https://flim-playground.streamlit.app/) without the need to install *anything*. 
 
 ## Environment Setup
 Just as we need the `seg`/`segnew` environment to run the `cell-analysis-tools` and segment the cell, we need an environment to run this playground. After downloading this repository from github and navigating to it, you can run `conda env create -f conda_environment.yml` and conda will take care of the setup process. The new environment includes packages from `seg` such as `napari`, `cellpose`, and `cell-analysis-tools`. 

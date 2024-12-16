@@ -6,7 +6,7 @@ import os
 from dimension_reduction import dimension_reduction, create_figure
 from navigation import render_top_menu
 from features import get_features, fix_df
-from widgets import create_filters
+from widgets import create_filters, create_singleSelects_vars, create_multiSelects_vars
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -35,63 +35,9 @@ with col1:
                # st.markdown("<h6 style='text-align: center;'>File uploaded successfully.</h6>", unsafe_allow_html=True)
                 upload_complete = True
             if method == "Image Level Boxplots":
-                # Define a callback function to reset other menus
-                def reset_other_menus(selected_menu):
-                    selected_value = st.session_state[selected_menu]
-                    if selected_value != "Select":  # Only reset if the selection is not "Select"
-                        for menu in ["menu_nadh", "menu_fad", "menu_morphology"]:
-                            if menu != selected_menu:
-                                st.session_state[menu] = "Select"
-                        st.session_state.selected_menu = selected_menu
-
-                # Render the dropdowns with callbacks
-                selected_nadh = st.selectbox(
-                    "Nadh Variables", 
-                    ["Select"] + nadh_cols, 
-                    index=0, 
-                    key="menu_nadh",
-                    on_change=reset_other_menus, 
-                    args=("menu_nadh",)
-                )
-
-                selected_fad = st.selectbox(
-                    "Fad Variables", 
-                    ["Select"] + fad_cols, 
-                    index=0, 
-                    key="menu_fad",
-                    on_change=reset_other_menus, 
-                    args=("menu_fad",)
-                )
-
-                selected_morphology = st.selectbox(
-                    "Morphology Variables", 
-                    ["Select"] + morphology_cols, 
-                    index=0, 
-                    key="menu_morphology",
-                    on_change=reset_other_menus, 
-                    args=("menu_morphology",)
-                )
-
-                selected_var =  selected_nadh if selected_nadh != "Select" else selected_fad if selected_fad != "Select" else selected_morphology
+                selected_var = create_singleSelects_vars(nadh_cols, fad_cols, morphology_cols)
             else:
-                nadh_vars = st.multiselect(
-                    "Select NADH Variables",
-                    options= ["All NADH Variables"] + nadh_cols if len(nadh_cols) > 0 else nadh_cols,
-                    default=[],
-                    help="Select one or more columns corresponding to NADH variables."
-                )
-                fad_vars = st.multiselect(
-                    "Select FAD Variables",
-                    options= ["All FAD Variables"] + fad_cols if len(fad_cols) > 0 else fad_cols,
-                    default=[],
-                    help="Select one or more columns corresponding to FAD variables."
-                )
-                morphology_vars = st.multiselect(
-                    "Select Morphology Variables",
-                    options= ["All Morphology Variables"] + morphology_cols if len(morphology_cols) > 0 else morphology_cols,
-                    default=[],
-                    help="Select one or more columns corresponding to morphology variables."
-                )
+                nadh_vars, fad_vars, morphology_vars = create_multiSelects_vars(nadh_cols, fad_cols, morphology_cols)
         
     elif "raw data" in method:
         st.markdown("Instead of asking user to upload raw data files separately, **user can copy and paste the \
@@ -127,8 +73,6 @@ with col2:
                 # Step 1: Filter the data
                 filtered_df, color_by_options, cols = create_filters(df)
 
-                if "df_removed" not in st.session_state:
-                    st.session_state["df_removed"] = filtered_df
                 if "removed_images" not in st.session_state:
                     st.session_state["removed_images"] = []
 
@@ -200,11 +144,12 @@ with col2:
             else:
                 st.markdown("<h5 style='text-align: center;'>Please select at least two numeric variables for performing dimension reduction.</h5>", unsafe_allow_html=True)
         elif method == "Image Level Boxplots":
+            filtered_df, color_by_options, cols = create_filters(df, color=False)
             if selected_var != "Select": 
                 if (df["image_name"] == "missing image name").any():
                     st.markdown("<h5 style='text-align: center; color: Red;'>Warning: We cannot infer some/all image names from you base_name. We assume that the image name is the base_name without the cell number (which is found after the last underscore) </h5>", unsafe_allow_html=True)
                 # Create a boxplot for the selected variable
-                fig = px.box(df, x="image_name", y=selected_var, title=f"Boxplot for {selected_var}")
+                fig = px.box(filtered_df, x="image_name", y=selected_var, title=f"Boxplot for {selected_var}")
                 st.plotly_chart(fig, use_container_width=True)
   
             else:
