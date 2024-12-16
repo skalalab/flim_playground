@@ -3,7 +3,7 @@ import pandas as pd
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
 import os
-from dimension_reduction import dimension_reduction, create_figure
+from dimension_reduction import dimension_reduction, create_dim_reduction_figure
 from navigation import render_top_menu
 from features import get_features, fix_df
 from widgets import create_filters, create_singleSelects_vars, create_multiSelects_vars
@@ -98,7 +98,7 @@ with col2:
 
                     for col in color_by_options:
                         df_reduced[col] = st.session_state["df_removed"][col]
-                    fig = create_figure(df_reduced, axis_labels=axis_labels, colored_by=color_by_options, exp_var=exp_var)
+                    fig = create_dim_reduction_figure(df_reduced, axis_labels=axis_labels, colored_by=color_by_options, exp_var=exp_var)
                     clicked_points = plotly_events(
                         fig, 
                         click_event=True, 

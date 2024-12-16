@@ -4,7 +4,8 @@ page_2 = "outlier_finder"
 page_3 = "sdt_suite"
 page_4 = "classification"
 page_5 = "plotting"
-pages = [page_1, page_2, page_3, page_4, page_5]
+page_6 = "external_tools"
+pages = [page_1, page_2, page_3, page_4, page_5, page_6]
 def link_2_name(link):
     if link == "outlier_finder":
         return "Clustering & " + link.replace("_", " ").title()
