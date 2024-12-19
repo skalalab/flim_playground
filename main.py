@@ -1,6 +1,6 @@
 import streamlit as st
 from navigation import render_top_menu, pages, link_2_name
-from markdown import outlierFinder, sdtSuite, classification, regionProps, plotting, externalTools
+from markdown import clusterOutlier, sdtSuite, classification, regionProps, plotting, externalTools
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on the main page
 render_top_menu()
@@ -27,9 +27,7 @@ with col2:
     if selected_step == "Region Props":
         st.markdown(regionProps)
     elif selected_step == "Clustering & Outlier Finder":
-        st.markdown(outlierFinder)
-    elif selected_step == "Unsupervised Clustering":
-        st.markdown(outlierFinder)
+        st.markdown(clusterOutlier)
     elif selected_step == "Sdt Suite":
         st.markdown(sdtSuite)
     elif selected_step == "Classification":
