@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 Created on Fri Dec 13 14:59:27 2024
-
 roi summing
-
 @author: chris
+@modified by Wenxuan to fit better with with flim-playground: 12/18/2024
 """
 
 import tifffile as tiff

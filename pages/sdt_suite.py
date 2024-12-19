@@ -9,5 +9,5 @@ with col1:
     st.title("SDT toolbox")
     method = st.selectbox(
         "Select a sdt tool",
-        ["Phasor Analysis", "ROI Summing", "SDT Fitting"],
+        ["Phasor Analysis", "ROI Summing", "SDT Fitting", "SDT Conversion"],
     )  
