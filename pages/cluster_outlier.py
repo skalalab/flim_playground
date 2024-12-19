@@ -82,8 +82,10 @@ with col2:
                 if "remove_cells" not in st.session_state:
                     st.session_state.remove_cells = False  # Initialize 'Remove Cells' unchecked
 
-                st.session_state["df_removed"] = filtered_df[~filtered_df["image_name"].isin(st.session_state["removed_images"])].reset_index(drop=True)
-                st.session_state["df_removed"] = filtered_df[~filtered_df["base_name"].isin(st.session_state["removed_cells"])].reset_index(drop=True)
+                st.session_state["df_removed"] = filtered_df[
+                    (~filtered_df["image_name"].isin(st.session_state["removed_images"])) &
+                    (~filtered_df["base_name"].isin(st.session_state["removed_cells"]))
+                ].reset_index(drop=True)
 
                 ## Step 2: Dimension reduction
                 selected_vars = nadh_vars + fad_vars + morphology_vars
@@ -127,15 +129,15 @@ with col2:
                         if st.button("Confirm Removal"):
                             # Remove rows with the clicked base_name
                             if st.session_state.remove_cells:
-                                st.session_state["df_removed"] = st.session_state["df_removed"][
-                                    st.session_state["df_removed"]["base_name"] != clicked_data
-                                ]
+                                # st.session_state["df_removed"] = st.session_state["df_removed"][
+                                #     st.session_state["df_removed"]["base_name"] != clicked_data
+                                # ]
                                 st.session_state["removed_cells"].append(clicked_data)
 
                             else: 
-                                st.session_state["df_removed"] = st.session_state["df_removed"][
-                                    st.session_state["df_removed"]["image_name"] != clicked_data
-                                ]
+                                # st.session_state["df_removed"] = st.session_state["df_removed"][
+                                #     st.session_state["df_removed"]["image_name"] != clicked_data
+                                # ]
                                 st.session_state["removed_images"].append(clicked_data)
                             st.rerun()
 
