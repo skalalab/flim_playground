@@ -15,7 +15,7 @@ def update_multiselect(key, options):
 
 def create_filters(df, color=True): 
         # Check for existence of columns
-        exp_exists = "experiment" in df.columns
+        exp_day_exists = "experiment" in df.columns or "day" in df.columns
         cl_exists = "cell_line" in df.columns
         tr_exists = "treatment" in df.columns
         # Initially, filtered_df is the original df
@@ -25,15 +25,25 @@ def create_filters(df, color=True):
         ### Handle "experiment" column ###
         cols = st.columns(4)
 
-        if exp_exists:
-            experiments = sorted(df["experiment"].unique().tolist())
-            if len(experiments) > 1:
-                experiments.append("All")  # Add "all" option
-                with cols[0]:
-                    selected_experiment = st.multiselect("Select experiment", experiments, default=experiments[0], key="experiment_multiselect",on_change=update_multiselect, args=("experiment_multiselect", experiments))
-                if selected_experiment != "All":
-                    filtered_df = filtered_df[filtered_df["experiment"].isin(selected_experiment)]
-                available_for_color.append("experiment")
+        if exp_day_exists:
+            if "experiment" in df.columns:
+                experiments = sorted(df["experiment"].unique().tolist())
+                if len(experiments) > 1:
+                    experiments.append("All")  # Add "all" option
+                    with cols[0]:
+                        selected_experiment = st.multiselect("Select experiment", experiments, default=experiments[0], key="experiment_multiselect",on_change=update_multiselect, args=("experiment_multiselect", experiments))
+                    if selected_experiment != "All":
+                        filtered_df = filtered_df[filtered_df["experiment"].isin(selected_experiment)]
+                    available_for_color.append("experiment")
+            else:
+                days = sorted(df["day"].unique().tolist())
+                if len(days) > 1:
+                    days.append("All")
+                    with cols[0]:
+                        selected_day = st.multiselect("Select day", days, default=days[0], key="day_multiselect",on_change=update_multiselect, args=("day_multiselect", days))
+                    if selected_day != "All":
+                        filtered_df = filtered_df[filtered_df["day"].isin(selected_day)]
+                    available_for_color.append("day")
 
         ### Handle "cell_line" column ###
         if cl_exists:
@@ -71,10 +81,10 @@ def create_filters(df, color=True):
 
         # If more than one of experiment, cell_line, treatment columns exist, add a color_by multiselect
         # Only include columns that actually exist
-        existing_filter_columns = [col for col in ["experiment", "cell_line", "treatment"] if col in df.columns]
-        if len(existing_filter_columns) > 1 and color is True:
+       
+        if len(available_for_color) > 1 and color is True:
             with cols[3]:
-                color_by_options = st.multiselect("Color by", existing_filter_columns, default=existing_filter_columns[-1])                   
+                color_by_options = st.multiselect("Color by", available_for_color, default=available_for_color[-1])                   
         else:
             color_by_options = ["treatment"]
 
@@ -144,3 +154,37 @@ def create_multiSelects_vars(nadh_cols, fad_cols, morphology_cols):
     )
 
     return nadh_vars, fad_vars, morphology_vars
+
+def ensure_exclusive_images():
+    # If user tries to uncheck "Remove Images", make sure "Remove Cells" is checked
+    if not st.session_state.remove_images:
+        st.session_state.remove_cells = True
+    else:
+        # If "Remove Images" is checked, ensure "Remove Cells" is unchecked
+        st.session_state.remove_cells = False
+
+def ensure_exclusive_cells():
+    # If user tries to uncheck "Remove Cells", make sure "Remove Images" is checked
+    if not st.session_state.remove_cells:
+        st.session_state.remove_images = True
+    else:
+        # If "Remove Cells" is checked, ensure "Remove Images" is unchecked
+        st.session_state.remove_images = False
+    
+def create_checkboxes():
+    col1, col2 = st.columns([0.3, 1])
+    with col1:
+        st.checkbox(
+            "Remove Images",
+            key="remove_images",
+            on_change=ensure_exclusive_images
+        )
+
+    with col2:
+        st.checkbox(
+            "Remove Cells",
+            key="remove_cells",
+            on_change=ensure_exclusive_cells
+        )
+
+    return col1, col2

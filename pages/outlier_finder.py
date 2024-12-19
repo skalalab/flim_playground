@@ -6,7 +6,7 @@ import os
 from dimension_reduction import dimension_reduction, create_dim_reduction_figure
 from navigation import render_top_menu
 from features import get_features, fix_df
-from widgets import create_filters, create_singleSelects_vars, create_multiSelects_vars
+from widgets import create_filters, create_singleSelects_vars, create_multiSelects_vars, create_checkboxes
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -75,8 +75,15 @@ with col2:
 
                 if "removed_images" not in st.session_state:
                     st.session_state["removed_images"] = []
+                if "removed_cells" not in st.session_state:
+                    st.session_state["removed_cells"] = []
+                if "remove_images" not in st.session_state:
+                    st.session_state.remove_images = True  # Initialize 'Remove Images' checked
+                if "remove_cells" not in st.session_state:
+                    st.session_state.remove_cells = False  # Initialize 'Remove Cells' unchecked
 
                 st.session_state["df_removed"] = filtered_df[~filtered_df["image_name"].isin(st.session_state["removed_images"])].reset_index(drop=True)
+                st.session_state["df_removed"] = filtered_df[~filtered_df["base_name"].isin(st.session_state["removed_cells"])].reset_index(drop=True)
 
                 ## Step 2: Dimension reduction
                 selected_vars = nadh_vars + fad_vars + morphology_vars
@@ -105,32 +112,54 @@ with col2:
                         hover_event=False, 
                         select_event=False
                     )
+                    checkbox1, checkbox2 = create_checkboxes()
                     if clicked_points:
                         clicked_point = clicked_points[0]
                         point_index =  clicked_point["pointIndex"]
                         trace_index = clicked_point["curveNumber"]
-                        clicked_image_name = fig.data[trace_index]['customdata'][point_index]
-                        st.write(f"You clicked on image: {clicked_image_name}. Do you want to remove this image?")
+                        if st.session_state.remove_cells:
+                            clicked_data = fig.data[trace_index]['text'][point_index]
+                            st.write(f"You clicked on cell: {clicked_data}. Do you want to remove this cell?")
+                        else:
+                            clicked_data = fig.data[trace_index]['customdata'][point_index]
+                            st.write(f"You clicked on image: {clicked_data}. Do you want to remove this image?")
 
                         if st.button("Confirm Removal"):
                             # Remove rows with the clicked base_name
-                            st.session_state["df_removed"] = st.session_state["df_removed"][
-                                st.session_state["df_removed"]["image_name"] != clicked_image_name
-                            ]
-                            st.session_state["removed_images"].append(clicked_image_name)
+                            if st.session_state.remove_cells:
+                                st.session_state["df_removed"] = st.session_state["df_removed"][
+                                    st.session_state["df_removed"]["base_name"] != clicked_data
+                                ]
+                                st.session_state["removed_cells"].append(clicked_data)
+
+                            else: 
+                                st.session_state["df_removed"] = st.session_state["df_removed"][
+                                    st.session_state["df_removed"]["image_name"] != clicked_data
+                                ]
+                                st.session_state["removed_images"].append(clicked_data)
                             st.rerun()
 
-                    if len(st.session_state["removed_images"]) > 0:
-                        st.write("Removed images:")
-                        st.write(st.session_state["removed_images"])
-                        col1, col2 = st.columns([0.1, 1])
+                    if len(st.session_state["removed_images"]) > 0 or len(st.session_state["removed_cells"]) > 0:
+                        show_images, show_cells = st.columns([0.5, 0.5])
+                        with show_images: 
+                            st.write("Removed images:")
+                            st.write(st.session_state["removed_images"])
+                        with show_cells:
+                            st.write("Removed cells:")
+                            st.write(st.session_state["removed_cells"])
+
+                        col1, col2 = st.columns([0.2, 1])
                         with col1:
                             if st.button("Reset"):
                         #      st.session_state["df_removed"] = filtered_df
                                 st.session_state["removed_images"] = []
+                                st.session_state["removed_cells"] = []
                                 st.rerun()
                         with col2:
-                            df_outliers_removed = df[~df["image_name"].isin(st.session_state["removed_images"])]
+                            df_outliers_removed = df[
+                                (~df["image_name"].isin(st.session_state["removed_images"])) &
+                                (~df["base_name"].isin(st.session_state["removed_cells"]))
+                            ]
                             st.download_button(
                                 label="Download Outliers Removed CSV",
                                 data=df_outliers_removed.to_csv(index=False),
@@ -138,7 +167,8 @@ with col2:
                                 mime="text/csv"
                             )
 
-                    st.markdown("<h5 style='text-align: center;'>Click on points to remove images where the outliers belong to</h5>", unsafe_allow_html=True)
+                    st.markdown("<h5 style='text-align: center;'>Click on points to remove outlier cells or images to where the outliers belong</h5>", unsafe_allow_html=True)
+
                 else: 
                     st.write("No data to plot")
             else:

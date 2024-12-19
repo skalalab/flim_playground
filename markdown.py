@@ -44,6 +44,12 @@ SDT files and the corresponding masks, and IRF.
 
 ##### Outputs
 Single cell phasor coordinates; singke cell phasor plots. 
+
+### SDT Conversion
+Convert between different versions of SDT files: 
+- 8-bit and 10-bit
+- Becker & Hickl and Swabian
+
 """
 
 
