@@ -1,6 +1,6 @@
 
 
-outlierFinder = """
+clusterOutlier = """
 ## Cluster & Outlier finder
 ### Dimension Reduction 
 Flim playground offers two dimension reduction algorithms, Principal Componenet Analysis (PCA) and UMAP, to provide unsupervised clustering on the input data. Then it selects and visualizes the first two dimensions of the reduced data (the output of the dimension reduction algorithm). The visualization can help people identify **clusters** and **outliers**. 

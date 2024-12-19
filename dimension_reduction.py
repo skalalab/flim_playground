@@ -50,6 +50,10 @@ def create_dim_reduction_figure(df, axis_labels=["PC1", "PC2"], colored_by=["tre
                 marker=dict(color=color_map[g])
             ),
     )
+        
+    fig.update_layout(
+        hovermode='closest'
+    )
 
     # Update axis labels to include explained variance
     if exp_var is not None: 
