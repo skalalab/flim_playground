@@ -7,7 +7,7 @@ from pathlib import Path
 from dimension_reduction import dimension_reduction, create_dim_reduction_figure
 from navigation import render_top_menu
 from features import get_features, fix_df
-from widgets import create_filters, create_singleSelects_vars, create_multiSelects_vars, create_checkboxes
+from widgets import create_filters, create_singleSelects_vars, create_multiSelects_vars, create_checkboxes, create_umap_hyperParams
 from roi_sum import roi_sum_dimensionReduction
 from input import sdts_in_dir, fad_suffix, nadh_suffix, mask_suffix
 
@@ -35,19 +35,22 @@ with col1:
                 upload_complete = False
             else:
                 df = fix_df(df)
-               # st.markdown("<h6 style='text-align: center;'>File uploaded successfully.</h6>", unsafe_allow_html=True)
                 upload_complete = True
+
+            # create the number widgets for selecting umap hyperparameters
+            if "UMAP" in method:
+                n_neighbors, min_dist = create_umap_hyperParams()
+
             if method == "Image Level Boxplots":
                 selected_var = create_singleSelects_vars(nadh_cols, fad_cols, morphology_cols)
             else:
                 nadh_vars, fad_vars, morphology_vars = create_multiSelects_vars(nadh_cols, fad_cols, morphology_cols)
         
     elif "raw data" in method:
-        st.markdown("**Copy and paste the *path* to the folder containing the sdt files *and* masks in the text box below.**")
-        st.markdown("<h7 style='text-align: center; color: red;'>Note: this tool only works ***offline***, as the online app does not have access to your files.</h7>", unsafe_allow_html=True)
-        
-        folder_path = st.text_input("Enter a folder path:")
+        folder_path = st.text_input("Copy and paste the *path* to the folder containing the sdt files *and* masks:")
         selected_raw = st.selectbox("Select NADH or FAD", ["NADH", "FAD"])
+        if "UMAP" in method:
+            n_neighbors, min_dist = create_umap_hyperParams()
         if folder_path and st.button("List Files & Run"):
             if os.path.isdir(folder_path):
                 images, error_msg, has_nadh, has_fad  = sdts_in_dir(folder_path)
@@ -61,6 +64,7 @@ with col1:
                 if not has_fad and selected_raw == "FAD":
                     st.markdown(f"<h5 style='text-align: center; color: red'>No FAD sdts found in the folder.</h5>", unsafe_allow_html=True)
                     upload_complete = False
+               
                 st.write(images)
 
                 if upload_complete is False: 
@@ -69,6 +73,8 @@ with col1:
                                 and 'mask' keyword for mask files. </h7>", unsafe_allow_html=True)
             else:
                 st.markdown("***Warning: The provided path is not a directory or doesn't exist.***")
+                st.markdown("<h7 style='text-align: center; color: red;'>Note: this tool only works ***offline***, as the online app does not have access to your files.</h7>", unsafe_allow_html=True)
+        
 
     if upload_complete is False:
         st.write("Please upload a file/folder path to begin.")
@@ -106,7 +112,10 @@ with col2:
                 # Make sure that after filtering, the data is not empty
                 if not X.empty:
                     method = "PCA" if "PCA" in method else "UMAP"
-                    df_reduced, exp_var  = dimension_reduction(X, n_components=2, method=method)
+                    if method == "UMAP":
+                        df_reduced, exp_var  = dimension_reduction(X, n_components=2, method=method, umap_neighbors=n_neighbors, umap_min_dist=min_dist)
+                    else:
+                        df_reduced, exp_var  = dimension_reduction(X, n_components=2, method=method)
                 
                 ## Step 3: Plotting with the interactivity of removing outliers
                     df_reduced["base_name"] = st.session_state["df_removed"]["base_name"]
@@ -188,7 +197,10 @@ with col2:
 
         elif "raw data" in method:
             method = "PCA" if "PCA" in method else "UMAP"
-            nadh_df, nadh_exp_var, fad_df, fad_exp_var, error_message = roi_sum_dimensionReduction(images, method=method)
+            if method == "UMAP":
+                nadh_df, nadh_exp_var, fad_df, fad_exp_var, error_message = roi_sum_dimensionReduction(images, method=method, umap_neighbors=n_neighbors, umap_min_dist=min_dist)
+            else:
+                nadh_df, nadh_exp_var, fad_df, fad_exp_var, error_message = roi_sum_dimensionReduction(images, method=method)
 
             if nadh_df is not None and fad_df is not None:
                 if selected_raw == "NADH":
