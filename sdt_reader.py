@@ -12,12 +12,11 @@ def read_sdt_info_brukerSDT(filename):
     gives tarr, x.shape,y.shape,t.shape,c.shape
     """
     ## HEADER
-    with open(filename, 'rb') as fh:
-        header = np.rec.fromfile(fh, dtype=sdtfile.sdtfile.FILE_HEADER, shape=1, byteorder='<')
-        
     measure_info = []
     dtype = np.dtype(sdtfile.sdtfile.MEASURE_INFO)
     with open(filename, 'rb') as fh:
+        ## HEADER
+        header = np.rec.fromfile(fh, dtype=sdtfile.sdtfile.FILE_HEADER, shape=1, byteorder='<')
         fh.seek(header.meas_desc_block_offs[0])
         for _ in range(header.no_of_meas_desc_blocks[0]):
             measure_info.append(
@@ -33,8 +32,7 @@ def read_sdt_info_brukerSDT(filename):
         routing_channels_x = 1
 
     offset = header.data_block_offs[0]
-
-    print()
+ 
     with open(filename, 'rb') as fh:
         for _ in range(header.no_of_data_blocks[0]): ## 
             fh.seek(offset)
@@ -60,7 +58,6 @@ def read_sdt150(filename):
     import warnings
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     t, XYTC = read_sdt_info_brukerSDT(filename)
-    
     with zipfile.ZipFile(filename) as myzip:
         z1 = myzip.infolist()[0]  # "data_block"
         with myzip.open(z1.filename) as myfile:
@@ -68,6 +65,7 @@ def read_sdt150(filename):
             
     dataSDT = np.fromstring(dataspl, np.uint16)
 
+    # reshape XYTC to CXYT
     if XYTC[3] > 1:
         dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2] * XYTC[3]].reshape([XYTC[3], XYTC[0], XYTC[1], XYTC[2]])
         # if dataSDT[0, :, :, :].sum() == 0:  # bruker uses two channels and keeps one empty!!!
@@ -79,6 +77,6 @@ def read_sdt150(filename):
         #     else:
         #         pass
     else:
-        dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2] * XYTC[3]].reshape([XYTC[0], XYTC[1], XYTC[2]])
+        dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2]].reshape([XYTC[0], XYTC[1], XYTC[2]])
     # print("READ DATA IN:",dataSDT.shape)
     return (dataSDT)

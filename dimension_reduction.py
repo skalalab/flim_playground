@@ -22,12 +22,18 @@ def dimension_reduction(X, n_components=2, method="PCA"):
     return df, exp_var
 
 
-def create_dim_reduction_figure(df, axis_labels=["PC1", "PC2"], colored_by=["treatment"], exp_var=None):
+def create_dim_reduction_figure(df, method="PCA", colored_by=["treatment"], exp_var=None):
     
     fig = go.Figure()
     if len(colored_by) < 1: # a sanity check, color_by should never be empty
         return fig
 
+    if method == "PCA":
+        axis_labels = ["PC1", "PC2"]
+    elif method == "UMAP":
+        axis_labels = ["UMAP1", "UMAP2"]
+    else:
+        axis_labels = ["dim1", "dim2"]
     # create a new copy of df 
     df['unique_color_group'] = df[colored_by].agg('_'.join, axis=1)
     unique_color_groups = df['unique_color_group'].unique()

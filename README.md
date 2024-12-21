@@ -55,8 +55,9 @@ It is deployed on using streamlit's cummunity server at: [https://flim-playgroun
 # Progress
 - 12/6/24: bootstrapping the app with very minimal elements. Finished the deployment. 
 - 12/9/24: working on designing the modules and the layout of the app. 
-- 12/11/24 - 12/13/24: working on the clustering & outlier finder module. User can interactively select and remove outliers from the visualization and download the outliers-removed dataset. 
+- 12/11 - 12/13/24: working on the clustering & outlier finder module. User can interactively select and remove outliers from the visualization and download the outliers-removed dataset. 
 - 12/14/24: working on adding filtering mechanism for cluster& outlier finder module to support exploring big datasets. 
 - 12/16/24: code refactorization, add the option to color by more than one column. If more than one column is selected to produce colors, different colors are made for each unique combination of unique values of the selected columns (e.g. If your dataset has 3 treatments and 4 cell lines, and you want to colored by treatments and cell_lines, it will create 12 = 3 x 4 colors for each unique combination)
-- 12/17/24: verified setting up the required conda environment on mac and windows.
+- 12/17/24: verified setting up the required conda environment on mac and windows. Thanks Kayvan for testing in out!
 - 12/19/24: add the functionality for removing single cell outliers; add the filter & color_by day option (per Alexa's requests)
+- 12/20 - 12/22/24: working on the pipeline of roi summing and then dimension reduction and then outlier removal.
