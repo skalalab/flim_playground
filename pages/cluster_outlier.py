@@ -47,16 +47,23 @@ with col1:
         st.markdown("<h7 style='text-align: center; color: red;'>Note: this tool only works ***offline***, as the online app does not have access to your files.</h7>", unsafe_allow_html=True)
         
         folder_path = st.text_input("Enter a folder path:")
-
+        selected_raw = st.selectbox("Select NADH or FAD", ["NADH", "FAD"])
         if folder_path and st.button("List Files & Run"):
             if os.path.isdir(folder_path):
-                images, error_msg = sdts_in_dir(folder_path)
-                if error_msg != "":
-                    st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)
-                st.write(images)
+                images, error_msg, has_nadh, has_fad  = sdts_in_dir(folder_path)
                 if len(images) > 0:
                     upload_complete = True
-                else: 
+                if error_msg != "":
+                    st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)
+                if not has_nadh and selected_raw == "NADH":
+                    st.markdown(f"<h5 style='text-align: center; color: red'>No NADH sdts found in the folder.</h5>", unsafe_allow_html=True)
+                    upload_complete = False
+                if not has_fad and selected_raw == "FAD":
+                    st.markdown(f"<h5 style='text-align: center; color: red'>No FAD sdts found in the folder.</h5>", unsafe_allow_html=True)
+                    upload_complete = False
+                st.write(images)
+
+                if upload_complete is False: 
                     st.markdown(f"<h7 style='text-align: center;'>See error msgs. No sdt found or no mask associated with sdts found. \
                                 It looks for {nadh_suffix} suffix for nadh sdts, {fad_suffix} for fad sdts, and {mask_suffix} suffix \
                                 and 'mask' keyword for mask files. </h7>", unsafe_allow_html=True)
@@ -184,11 +191,10 @@ with col2:
             nadh_df, nadh_exp_var, fad_df, fad_exp_var, error_message = roi_sum_dimensionReduction(images, method=method)
 
             if nadh_df is not None and fad_df is not None:
-                st.selectbox("Nadh or Fad", ["NADH", "FAD"])
-                if st.selectbox == "NADH":
-                    fig = create_dim_reduction_figure(nadh_df, method=method, colored_by=["treatment"], exp_var=nadh_exp_var)
+                if selected_raw == "NADH":
+                    fig = create_dim_reduction_figure(nadh_df, method=method, colored_by=["color_category"], exp_var=nadh_exp_var)
                 else:
-                    fig = create_dim_reduction_figure(fad_df, method=method, colored_by=["treatment"], exp_var=fad_exp_var)
+                    fig = create_dim_reduction_figure(fad_df, method=method, colored_by=["color_category"], exp_var=fad_exp_var)
                 st.plotly_chart(fig, use_container_width=True)
 
     else:

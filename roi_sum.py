@@ -101,23 +101,33 @@ def roi_sum_dimensionReduction(images, method="PCA"):
     fad_cell_labels = []
     nadh_timebins_imageName = []
     fad_timebins_imageName = []
+    nadh_categories = []
+    fad_categories = []
 
     # from python 3.7, dictionaries maintain the insertion order of their keys
     for image, properties in images.items():
         if "nadh_timebins" in properties:
             # stack the nadh timebins for each image
             stacked_timebins = np.vstack(properties["nadh_timebins"])
-            # we need to keep track of which image the timebin belongs to
+            # we need to keep track of which image and which cell the timebin belongs to
             nadh_timebins_imageName.append(np.array([image]*stacked_timebins.shape[0]))
             nadh_cell_labels.append(properties["cells"])
             nadh_timebins.append(stacked_timebins)
+            
+            # use the parent folder name as the category
+            nadh_parent = Path(properties["nadh_sdt"]).parent.name
+            nadh_categories.append(np.array([nadh_parent]*stacked_timebins.shape[0]))
         if "fad_timebins" in properties:
             # stack the fad timebins for each image 
             stacked_timebins = np.vstack(properties["fad_timebins"])
-            # we need to keep track of which image the timebin belongs to
+            # we need to keep track of which image and which cell the timebin belongs to
             fad_timebins_imageName.append(np.array([image]*stacked_timebins.shape[0]))
             fad_cell_labels.append(properties["cells"])
             fad_timebins.append(stacked_timebins)  
+
+            # use the parent folder name as the category
+            fad_parent = Path(properties["fad_sdt"]).parent.name
+            fad_categories.append(np.array([fad_parent]*stacked_timebins.shape[0]))
 
     nadh_timebins = np.vstack(nadh_timebins)
     fad_timebins = np.vstack(fad_timebins)
@@ -125,6 +135,8 @@ def roi_sum_dimensionReduction(images, method="PCA"):
     fad_cell_labels = np.hstack(fad_cell_labels)
     nadh_timebins_imageName = np.hstack(nadh_timebins_imageName)
     fad_timebins_imageName = np.hstack(fad_timebins_imageName)
+    nadh_categories = np.hstack(nadh_categories)
+    fad_categories = np.hstack(fad_categories)
 
     # step 2: perform dimension reduction
     if nadh_timebins.size != 0:
@@ -133,6 +145,7 @@ def roi_sum_dimensionReduction(images, method="PCA"):
         nadh_df["image_name"] = nadh_timebins_imageName
         nadh_df["cell_labels"] = nadh_cell_labels
         nadh_df["base_name"] = nadh_df["image_name"] + "_" + nadh_df["cell_labels"].astype(str)
+        nadh_df["color_category"] = nadh_categories
         nadh_df = fix_df(nadh_df)
     else: 
         nadh_df = None
@@ -143,6 +156,7 @@ def roi_sum_dimensionReduction(images, method="PCA"):
         fad_df["image_name"] = fad_timebins_imageName
         fad_df["cell_labels"] = fad_cell_labels
         fad_df["base_name"] = fad_df["image_name"] + "_" + fad_df["cell_labels"].astype(str)
+        fad_df["color_category"] = fad_categories
         fad_df = fix_df(fad_df)
     else:
         fad_df = None
