@@ -26,7 +26,7 @@ with col2:
 
     if selected_step == "Region Props":
         st.markdown(regionProps)
-    elif selected_step == "Clustering & Outlier Finder":
+    elif selected_step == "Clustering & Outlier":
         st.markdown(clusterOutlier)
     elif selected_step == "Sdt Suite":
         st.markdown(sdtSuite)

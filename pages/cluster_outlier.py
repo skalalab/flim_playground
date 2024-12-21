@@ -3,10 +3,13 @@ import pandas as pd
 import plotly.express as px
 from streamlit_plotly_events import plotly_events
 import os
+from pathlib import Path
 from dimension_reduction import dimension_reduction, create_dim_reduction_figure
 from navigation import render_top_menu
 from features import get_features, fix_df
 from widgets import create_filters, create_singleSelects_vars, create_multiSelects_vars, create_checkboxes
+from roi_sum import roi_sum_dimensionReduction
+from input import sdts_in_dir, fad_suffix, nadh_suffix, mask_suffix
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -40,25 +43,28 @@ with col1:
                 nadh_vars, fad_vars, morphology_vars = create_multiSelects_vars(nadh_cols, fad_cols, morphology_cols)
         
     elif "raw data" in method:
-        st.markdown("Instead of asking user to upload raw data files separately, **user can copy and paste the \
-                 *path* to the folder containing the sdt files and masks in the text box below.**")
-        
-        st.markdown("<h5 style='text-align: center; color: red;'>Note: due to security concerns, this tool only works offline, as the online app does not have access to your local file system</h5>", unsafe_allow_html=True)
+        st.markdown("**Copy and paste the *path* to the folder containing the sdt files *and* masks in the text box below.**")
+        st.markdown("<h7 style='text-align: center; color: red;'>Note: this tool only works ***offline***, as the online app does not have access to your files.</h7>", unsafe_allow_html=True)
         
         folder_path = st.text_input("Enter a folder path:")
 
-        if folder_path and st.button("List Files"):
+        if folder_path and st.button("List Files & Run"):
             if os.path.isdir(folder_path):
-                files = os.listdir(folder_path)
-                st.write(f"Files in `{folder_path}`:")
-                st.write(files)
-                upload_complete = True
+                images, error_msg = sdts_in_dir(folder_path)
+                if error_msg != "":
+                    st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)
+                st.write(images)
+                if len(images) > 0:
+                    upload_complete = True
+                else: 
+                    st.markdown(f"<h7 style='text-align: center;'>See error msgs. No sdt found or no mask associated with sdts found. \
+                                It looks for {nadh_suffix} suffix for nadh sdts, {fad_suffix} for fad sdts, and {mask_suffix} suffix \
+                                and 'mask' keyword for mask files. </h7>", unsafe_allow_html=True)
             else:
                 st.markdown("***Warning: The provided path is not a directory or doesn't exist.***")
 
     if upload_complete is False:
         st.write("Please upload a file/folder path to begin.")
-
 
 with col2:
     if upload_complete: 
@@ -92,14 +98,8 @@ with col2:
                 X = st.session_state["df_removed"][selected_vars]
                 # Make sure that after filtering, the data is not empty
                 if not X.empty:
-                    if "PCA" in method: 
-                        df_reduced, exp_var  = dimension_reduction(X, n_components=2, method="PCA")
-                        axis_labels = ["PC1", "PC2"]
-                    elif "UMAP" in method:
-                        df_reduced, exp_var = dimension_reduction(X, n_components=2, method="UMAP")
-                        axis_labels = ["UMAP1", "UMAP2"]
-                    else: 
-                        st.write("Method not supported")
+                    method = "PCA" if "PCA" in method else "UMAP"
+                    df_reduced, exp_var  = dimension_reduction(X, n_components=2, method=method)
                 
                 ## Step 3: Plotting with the interactivity of removing outliers
                     df_reduced["base_name"] = st.session_state["df_removed"]["base_name"]
@@ -107,7 +107,7 @@ with col2:
 
                     for col in color_by_options:
                         df_reduced[col] = st.session_state["df_removed"][col]
-                    fig = create_dim_reduction_figure(df_reduced, axis_labels=axis_labels, colored_by=color_by_options, exp_var=exp_var)
+                    fig = create_dim_reduction_figure(df_reduced, method=method, colored_by=color_by_options, exp_var=exp_var)
                     clicked_points = plotly_events(
                         fig, 
                         click_event=True, 
@@ -129,15 +129,8 @@ with col2:
                         if st.button("Confirm Removal"):
                             # Remove rows with the clicked base_name
                             if st.session_state.remove_cells:
-                                # st.session_state["df_removed"] = st.session_state["df_removed"][
-                                #     st.session_state["df_removed"]["base_name"] != clicked_data
-                                # ]
                                 st.session_state["removed_cells"].append(clicked_data)
-
                             else: 
-                                # st.session_state["df_removed"] = st.session_state["df_removed"][
-                                #     st.session_state["df_removed"]["image_name"] != clicked_data
-                                # ]
                                 st.session_state["removed_images"].append(clicked_data)
                             st.rerun()
 
@@ -153,7 +146,6 @@ with col2:
                         col1, col2 = st.columns([0.2, 1])
                         with col1:
                             if st.button("Reset"):
-                        #      st.session_state["df_removed"] = filtered_df
                                 st.session_state["removed_images"] = []
                                 st.session_state["removed_cells"] = []
                                 st.rerun()
@@ -188,6 +180,16 @@ with col2:
                 st.markdown("<h5 style='text-align: center;'>Please select one variable to plot.</h5>", unsafe_allow_html=True)
 
         elif "raw data" in method:
-            pass
+            method = "PCA" if "PCA" in method else "UMAP"
+            nadh_df, nadh_exp_var, fad_df, fad_exp_var, error_message = roi_sum_dimensionReduction(images, method=method)
+
+            if nadh_df is not None and fad_df is not None:
+                st.selectbox("Nadh or Fad", ["NADH", "FAD"])
+                if st.selectbox == "NADH":
+                    fig = create_dim_reduction_figure(nadh_df, method=method, colored_by=["treatment"], exp_var=nadh_exp_var)
+                else:
+                    fig = create_dim_reduction_figure(fad_df, method=method, colored_by=["treatment"], exp_var=fad_exp_var)
+                st.plotly_chart(fig, use_container_width=True)
+
     else:
         st.write("Waiting for file/folder path upload")
