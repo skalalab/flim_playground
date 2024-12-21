@@ -188,3 +188,24 @@ def create_checkboxes():
         )
 
     return col1, col2
+
+def create_umap_hyperParams():
+    col1, col2 = st.columns(2)
+    # First number incrementor in the first column
+    with col1:
+        n_neighbors = st.number_input(
+            "n_neighbors",
+            value=15,  # Initial value
+            step=5,             # Increment/Decrement step
+            format="%d"            # Integer format
+        )
+
+    # Second number incrementor in the second column
+    with col2:
+        min_dist = st.number_input(
+            "min_dist",
+            value=0.1,  # Initial value
+            step=0.1,            
+        )
+
+    return n_neighbors, min_dist

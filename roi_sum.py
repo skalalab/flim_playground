@@ -89,7 +89,7 @@ def sum_sdts(images, write_tiff=False, write_sdt=False):
                 properties["fad_timebins"].append(summed_sdt[mask == cell][0])
     return images, error_message
 
-def roi_sum_dimensionReduction(images, method="PCA"):
+def roi_sum_dimensionReduction(images, method="PCA", umap_neighbors=15, umap_min_dist=0.1):
     images, error_message = sum_sdts(images, write_tiff=False, write_sdt=False)
     if images is None:
         return None, error_message
@@ -140,7 +140,7 @@ def roi_sum_dimensionReduction(images, method="PCA"):
 
     # step 2: perform dimension reduction
     if nadh_timebins.size != 0:
-        nadh_df, nadh_exp_var = dimension_reduction(nadh_timebins, n_components=2, method=method)
+        nadh_df, nadh_exp_var = dimension_reduction(nadh_timebins, n_components=2, method=method, umap_neighbors=umap_neighbors, umap_min_dist=umap_min_dist)
         # augment the dimensional reduction df with metadata
         nadh_df["image_name"] = nadh_timebins_imageName
         nadh_df["cell_labels"] = nadh_cell_labels
@@ -151,7 +151,7 @@ def roi_sum_dimensionReduction(images, method="PCA"):
         nadh_df = None
         nadh_exp_var = None
     if fad_timebins.size != 0:
-        fad_df, fad_exp_var = dimension_reduction(fad_timebins, n_components=2, method=method)
+        fad_df, fad_exp_var = dimension_reduction(fad_timebins, n_components=2, method=method, umap_neighbors=umap_neighbors, umap_min_dist=umap_min_dist)
         # augment the dimensional reduction df with metadata
         fad_df["image_name"] = fad_timebins_imageName
         fad_df["cell_labels"] = fad_cell_labels
