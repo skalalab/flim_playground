@@ -6,10 +6,10 @@ nadh_suffix = "n.sdt"
 mask_suffix = ("tif", "tiff")
 irf_suffix = ("txt", "csv")
 
-def list_files_with_suffixes_and_keyword(folder_path, suffixes, keyword=""):
+def list_files_with_suffixes_and_keyword(folder_path, suffixes, keywords=[""]):
     path = Path(folder_path)
     # rglob searches files recursively
-    return [str(file) for file in path.rglob("*") if str(file).endswith(suffixes) and keyword in str(file).lower()]
+    return [str(file) for file in path.rglob("*") if file.name.endswith(suffixes) and any(keyword in file.name.lower() for keyword in keywords)]
 
 
 def sdts_in_dir(folder_path, mask=True):
@@ -27,7 +27,7 @@ def sdts_in_dir(folder_path, mask=True):
         return {}, error_msg, has_nadh, has_fad
     
     if mask:
-        mask_files = list_files_with_suffixes_and_keyword(folder_path, mask_suffix, "mask")
+        mask_files = list_files_with_suffixes_and_keyword(folder_path, mask_suffix, ["mask", "cellpose"])
         if len(mask_files) == 0:
             error_msg += "no mask file found! "
             return {}, error_msg, has_nadh, has_fad 
@@ -98,22 +98,22 @@ def sdt_folder_check(folder_path, irf_check=False):
                             and 'mask' keyword for mask files. </h7>", unsafe_allow_html=True)
                 
             if irf_check:
-                irf_file = list_files_with_suffixes_and_keyword(folder_path, irf_suffix, keyword="irf")
+                irf_file = list_files_with_suffixes_and_keyword(folder_path, irf_suffix, keywords=["irf"])
 
                 try:
                     irf_file = irf_file[0]
                     with open(irf_file, "r") as f:
                         irf = f.readlines()
-                    irf_arrays = []
+                    irf_array = []
                     for line in irf:
                         line = line.strip() # Remove any whitespace or newline characters
                         if line:  # Check if the line is not empty
                             try:
-                                irf_arrays.append(int(line))  # Convert to float (or int if preferred)
+                                irf_array.append(int(line))  # Convert to float (or int if preferred)
                             except ValueError:
                                 upload_complete = False
                                 st.markdown(f"<h5 style='text-align: center; color: red'>IRF file should contains numbers only.</h5>", unsafe_allow_html=True)
-                    images["irf"] = irf_arrays
+                    images["original_irf"] = irf_array
                 except:
                     st.markdown(f"<h5 style='text-align: center; color: red'>No IRF file found in the folder.</h5>", unsafe_allow_html=True)
                     upload_complete = False

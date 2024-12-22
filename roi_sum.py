@@ -14,7 +14,7 @@ import pandas as pd
 from pathlib import Path
 from dimension_reduction import dimension_reduction
 from features import fix_df
-from phasor import irf_shift
+
 #%%
 def sum_sdt(sdt_data, mask):
     """
@@ -73,8 +73,8 @@ def sum_sdts(images, selected_channel="NADH", write_tiff=False, write_sdt=False)
     timeBin_name = f"{selected_channel.lower()}_timebins"
     sdt_Path = f"{selected_channel.lower()}_sdt"
     for image, properties in images.items():
-        mask = tiff.imread(Path(properties["mask"]))
-        if sdt_Path in properties:
+        if "mask" in properties and sdt_Path in properties:
+            mask = tiff.imread(Path(properties["mask"])) 
             sdt_data = sdt_reader.read_sdt150(Path(properties[sdt_Path]))
             labels, summed_sdt, error_msg = sum_sdt(sdt_data, mask)
             error_message +=  error_msg
@@ -87,14 +87,14 @@ def sum_sdts(images, selected_channel="NADH", write_tiff=False, write_sdt=False)
 
 def roi_sum_dimensionReduction(images, selected_channel="NADH", method="PCA", umap_neighbors=15, umap_min_dist=0.1):
     """
-    method = "PCA" or "UMAP" or "Phasor", as "Phasor" also reduces timebins into phasor coordinates"
+    method = "PCA" or "UMAP"
 
     """
 
     images, error_message = sum_sdts(images,selected_channel=selected_channel, write_tiff=False, write_sdt=False)
     if images is None:
         return None, error_message
-    
+         
     # step 1 : create a dataframe with all the time bins
     timebins = []
     cell_labels = []
@@ -125,9 +125,6 @@ def roi_sum_dimensionReduction(images, selected_channel="NADH", method="PCA", um
 
     # step 2: perform dimension reduction
     if timebins.size != 0:
-        if method == "Phasor":
-            # shift the irf and attach the irf to the last row of the timebins
-            timebins = irf_shift(timebins, images["irf"])
         df, exp_var = dimension_reduction(timebins, n_components=2, method=method, umap_neighbors=umap_neighbors, umap_min_dist=umap_min_dist)
         # augment the dimensional reduction df with metadata
         df["image_name"] = timebins_imageName
@@ -140,3 +137,5 @@ def roi_sum_dimensionReduction(images, selected_channel="NADH", method="PCA", um
         exp_var = None
 
     return df, exp_var, error_message
+
+

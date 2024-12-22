@@ -1,7 +1,6 @@
 import streamlit as st
 from input import sdt_folder_check
-from roi_sum import roi_sum_dimensionReduction
-from phasor import phasor_plot
+from phasor import phasor_plot, calculate_phasor
 
 from navigation import render_top_menu
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -18,8 +17,8 @@ with col1:
     if method == "Phasor Analysis":
         folder_path = st.text_input("Copy and paste the *path* to the folder containing the sdt files *and* masks:")
         images, selected_channel, upload_complete = sdt_folder_check(folder_path, irf_check=True)
-        if "irf" in images:
-            st.write(f"The uploaded irf has {len(images["irf"])} timebins. If this is not as expected, the tool expects one number a row.")
+        if "original_irf" in images:
+            st.write(f"The uploaded irf has {len(images["original_irf"])} timebins. If this is not as expected, the tool expects one number a row.")
         if images is not None and len(images) > 0:   
             st.write(images)
 
@@ -29,10 +28,16 @@ with col1:
 with col2:
     if upload_complete:
         if method == "Phasor Analysis":
-            df, exp_var, error_message = roi_sum_dimensionReduction(images, selected_channel=selected_channel, method="Phasor")
+            df, error_message = calculate_phasor(images, selected_channel)
             if df is not None:
                 fig = phasor_plot(df)
-                st.plotly_chart(fig, use_container_width=True)
+               # st.plotly_chart(fig, use_container_width=True)
+                st.download_button(
+                    label="Download Phasor Coordinates",
+                    data=df.to_csv(index=False),
+                    file_name="phasor.csv",
+                    mime="text/csv"
+                )
             else:
                 st.markdown(f"<h5 style='text-align: center; color: red'>{error_message}</h5>", unsafe_allow_html=True)
     else:
