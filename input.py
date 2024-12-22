@@ -1,34 +1,39 @@
 from pathlib import Path
-    
+import streamlit as st   
+import os
 fad_suffix = "f.sdt"
 nadh_suffix = "n.sdt"
 mask_suffix = ("tif", "tiff")
+irf_suffix = ("txt", "csv")
+
 def list_files_with_suffixes_and_keyword(folder_path, suffixes, keyword=""):
     path = Path(folder_path)
     # rglob searches files recursively
-    return [str(file) for file in path.rglob("*") if str(file).endswith(suffixes) and keyword in str(file)]
+    return [str(file) for file in path.rglob("*") if str(file).endswith(suffixes) and keyword in str(file).lower()]
 
 
 def sdts_in_dir(folder_path, mask=True):
     """
     Handles single channel sdts. Mutli-channel sdts are not (yet) supported.
+    mask: bool, if True, it requires for mask files in the same folder
     """
+    has_fad = has_nadh = False
     fad_sdt_files = list_files_with_suffixes_and_keyword(folder_path, fad_suffix)
     nadh_sdt_files = list_files_with_suffixes_and_keyword(folder_path, nadh_suffix)
     
     error_msg = ""
     if len(nadh_sdt_files) == 0 and len(fad_sdt_files) == 0:
         error_msg += "no sdt file found! "
-        return {}, error_msg
+        return {}, error_msg, has_nadh, has_fad
     
     if mask:
         mask_files = list_files_with_suffixes_and_keyword(folder_path, mask_suffix, "mask")
         if len(mask_files) == 0:
             error_msg += "no mask file found! "
-            return {}, error_msg
+            return {}, error_msg, has_nadh, has_fad 
     
     images = {}
-    has_fad = has_nadh = False
+   
     if len(nadh_sdt_files) > 0:
         for nadh_sdt in nadh_sdt_files:
             # use the image_name as the key 
@@ -65,3 +70,60 @@ def sdts_in_dir(folder_path, mask=True):
                         error_msg += f"no mask found for image {image_name}! "
                      
     return images, error_msg, has_nadh, has_fad
+
+def sdt_folder_check(folder_path, irf_check=False):
+    """
+    Check if the folder contains sdts and masks.
+    check_irf: bool, if True, it requires for irf files in the same folder
+    """
+    upload_complete = False
+    selected_channel = st.selectbox("Select NADH or FAD", ["NADH", "FAD"])
+    if folder_path and st.button("List Files & Run"):
+        if os.path.isdir(folder_path):
+            images, error_msg, has_nadh, has_fad = sdts_in_dir(folder_path)
+            if len(images) > 0:
+                upload_complete = True
+            if error_msg != "":
+                st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)
+            if not has_nadh and selected_channel == "NADH":
+                st.markdown(f"<h5 style='text-align: center; color: red'>No NADH sdts found in the folder.</h5>", unsafe_allow_html=True)
+                upload_complete = False
+            if not has_fad and selected_channel== "FAD":
+                st.markdown(f"<h5 style='text-align: center; color: red'>No FAD sdts found in the folder.</h5>", unsafe_allow_html=True)
+                upload_complete = False
+
+            if upload_complete is False: 
+                st.markdown(f"<h7 style='text-align: center;'>See error msgs. No sdt found or no mask associated with sdts found. \
+                            It looks for {nadh_suffix} suffix for nadh sdts, {fad_suffix} for fad sdts, and {mask_suffix} suffix \
+                            and 'mask' keyword for mask files. </h7>", unsafe_allow_html=True)
+                
+            if irf_check:
+                irf_file = list_files_with_suffixes_and_keyword(folder_path, irf_suffix, keyword="irf")
+
+                try:
+                    irf_file = irf_file[0]
+                    with open(irf_file, "r") as f:
+                        irf = f.readlines()
+                    irf_arrays = []
+                    for line in irf:
+                        line = line.strip() # Remove any whitespace or newline characters
+                        if line:  # Check if the line is not empty
+                            try:
+                                irf_arrays.append(int(line))  # Convert to float (or int if preferred)
+                            except ValueError:
+                                upload_complete = False
+                                st.markdown(f"<h5 style='text-align: center; color: red'>IRF file should contains numbers only.</h5>", unsafe_allow_html=True)
+                    images["irf"] = irf_arrays
+                except:
+                    st.markdown(f"<h5 style='text-align: center; color: red'>No IRF file found in the folder.</h5>", unsafe_allow_html=True)
+                    upload_complete = False
+                    return {}, selected_channel, upload_complete
+                
+        else:
+            st.markdown("***Warning: The provided path is not a directory or doesn't exist.***")
+            st.markdown("<h7 style='text-align: center; color: red;'>Note: this tool only works ***offline***, as the online app does not have access to your files.</h7>", unsafe_allow_html=True)
+            return {}, selected_channel, upload_complete
+        
+        return images, selected_channel, upload_complete
+    return {}, selected_channel, upload_complete
+

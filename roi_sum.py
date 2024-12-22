@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Created on Fri Dec 13 14:59:27 2024
+Created on Fri Dec 20 14:59:27 2024
 roi summing
-@author: chris
-@modified by Wenxuan to fit better with with flim-playground: 12/20/2024
+@author: Wenxuan Zhao
+@Adopted from Chris' and Kayvan's roi summing code to fit better with with flim-playground
 """
 
 import tifffile as tiff
@@ -14,6 +14,7 @@ import pandas as pd
 from pathlib import Path
 from dimension_reduction import dimension_reduction
 from features import fix_df
+from phasor import irf_shift
 #%%
 def sum_sdt(sdt_data, mask):
     """
@@ -60,7 +61,7 @@ def sum_sdt(sdt_data, mask):
     return cell_labels, summed_sdt, error_msg
 
 
-def sum_sdts(images, write_tiff=False, write_sdt=False): 
+def sum_sdts(images, selected_channel="NADH", write_tiff=False, write_sdt=False): 
     """
     Sum all the sdts with in a folder recursively
     """
@@ -68,98 +69,74 @@ def sum_sdts(images, write_tiff=False, write_sdt=False):
     if len(images) == 0:
         error_message += "Either no sdt file found or no mask found associated with the sdt file! "
         return None, error_message
+    
+    timeBin_name = f"{selected_channel.lower()}_timebins"
+    sdt_Path = f"{selected_channel.lower()}_sdt"
     for image, properties in images.items():
         mask = tiff.imread(Path(properties["mask"]))
-        if "nadh_sdt" in properties:
-            nadh_data = sdt_reader.read_sdt150(Path(properties["nadh_sdt"]))
-            labels, summed_sdt, error_msg = sum_sdt(nadh_data, mask)
+        if sdt_Path in properties:
+            sdt_data = sdt_reader.read_sdt150(Path(properties[sdt_Path]))
+            labels, summed_sdt, error_msg = sum_sdt(sdt_data, mask)
             error_message +=  error_msg
             properties["cells"] = labels
-            properties["nadh_timebins"] = []
+            properties[timeBin_name] = []
             for cell in labels: 
-                properties["nadh_timebins"].append(summed_sdt[mask == cell][0])
+                properties[timeBin_name].append(summed_sdt[mask == cell][0])
  
-        if "fad_sdt" in properties:
-            fad_data = sdt_reader.read_sdt150(Path(properties["fad_sdt"]))
-            labels, summed_sdt, error_msg = sum_sdt(fad_data, mask)
-            error_message += error_msg
-            properties["cells"] = labels
-            properties["fad_timebins"] = []
-            for cell in labels: 
-                properties["fad_timebins"].append(summed_sdt[mask == cell][0])
     return images, error_message
 
-def roi_sum_dimensionReduction(images, method="PCA", umap_neighbors=15, umap_min_dist=0.1):
-    images, error_message = sum_sdts(images, write_tiff=False, write_sdt=False)
+def roi_sum_dimensionReduction(images, selected_channel="NADH", method="PCA", umap_neighbors=15, umap_min_dist=0.1):
+    """
+    method = "PCA" or "UMAP" or "Phasor", as "Phasor" also reduces timebins into phasor coordinates"
+
+    """
+
+    images, error_message = sum_sdts(images,selected_channel=selected_channel, write_tiff=False, write_sdt=False)
     if images is None:
         return None, error_message
     
     # step 1 : create a dataframe with all the time bins
-    nadh_timebins = []
-    fad_timebins = []
-    nadh_cell_labels = []
-    fad_cell_labels = []
-    nadh_timebins_imageName = []
-    fad_timebins_imageName = []
-    nadh_categories = []
-    fad_categories = []
+    timebins = []
+    cell_labels = []
+    timebins_imageName = []
+    categories = []
 
+    # selected_channel.lower() = nadh or fad
+    timeBin_name = f"{selected_channel.lower()}_timebins"
+    sdt_Path = f"{selected_channel.lower()}_sdt"
     # from python 3.7, dictionaries maintain the insertion order of their keys
     for image, properties in images.items():
-        if "nadh_timebins" in properties:
+        if timeBin_name in properties:
             # stack the nadh timebins for each image
-            stacked_timebins = np.vstack(properties["nadh_timebins"])
+            stacked_timebins = np.vstack(properties[timeBin_name])
             # we need to keep track of which image and which cell the timebin belongs to
-            nadh_timebins_imageName.append(np.array([image]*stacked_timebins.shape[0]))
-            nadh_cell_labels.append(properties["cells"])
-            nadh_timebins.append(stacked_timebins)
+            timebins_imageName.append(np.array([image]*stacked_timebins.shape[0]))
+            cell_labels.append(properties["cells"])
+            timebins.append(stacked_timebins)
             
             # use the parent folder name as the category
-            nadh_parent = Path(properties["nadh_sdt"]).parent.name
-            nadh_categories.append(np.array([nadh_parent]*stacked_timebins.shape[0]))
-        if "fad_timebins" in properties:
-            # stack the fad timebins for each image 
-            stacked_timebins = np.vstack(properties["fad_timebins"])
-            # we need to keep track of which image and which cell the timebin belongs to
-            fad_timebins_imageName.append(np.array([image]*stacked_timebins.shape[0]))
-            fad_cell_labels.append(properties["cells"])
-            fad_timebins.append(stacked_timebins)  
+            image_parent = Path(properties[sdt_Path]).parent.name
+            categories.append(np.array([image_parent]*stacked_timebins.shape[0]))
 
-            # use the parent folder name as the category
-            fad_parent = Path(properties["fad_sdt"]).parent.name
-            fad_categories.append(np.array([fad_parent]*stacked_timebins.shape[0]))
-
-    nadh_timebins = np.vstack(nadh_timebins)
-    fad_timebins = np.vstack(fad_timebins)
-    nadh_cell_labels = np.hstack(nadh_cell_labels)
-    fad_cell_labels = np.hstack(fad_cell_labels)
-    nadh_timebins_imageName = np.hstack(nadh_timebins_imageName)
-    fad_timebins_imageName = np.hstack(fad_timebins_imageName)
-    nadh_categories = np.hstack(nadh_categories)
-    fad_categories = np.hstack(fad_categories)
+    timebins = np.vstack(timebins)
+    cell_labels = np.hstack(cell_labels)
+    timebins_imageName = np.hstack(timebins_imageName)
+    categories = np.hstack(categories)
 
     # step 2: perform dimension reduction
-    if nadh_timebins.size != 0:
-        nadh_df, nadh_exp_var = dimension_reduction(nadh_timebins, n_components=2, method=method, umap_neighbors=umap_neighbors, umap_min_dist=umap_min_dist)
+    if timebins.size != 0:
+        if method == "Phasor":
+            # shift the irf and attach the irf to the last row of the timebins
+            timebins = irf_shift(timebins, images["irf"])
+        df, exp_var = dimension_reduction(timebins, n_components=2, method=method, umap_neighbors=umap_neighbors, umap_min_dist=umap_min_dist)
         # augment the dimensional reduction df with metadata
-        nadh_df["image_name"] = nadh_timebins_imageName
-        nadh_df["cell_labels"] = nadh_cell_labels
-        nadh_df["base_name"] = nadh_df["image_name"] + "_" + nadh_df["cell_labels"].astype(str)
-        nadh_df["color_category"] = nadh_categories
-        nadh_df = fix_df(nadh_df)
+        df["image_name"] = timebins_imageName
+        df["cell_labels"] = cell_labels
+        df["base_name"] = df["image_name"] + "_" + df["cell_labels"].astype(str)
+        df["color_category"] = categories
+        df = fix_df(df)
     else: 
-        nadh_df = None
-        nadh_exp_var = None
-    if fad_timebins.size != 0:
-        fad_df, fad_exp_var = dimension_reduction(fad_timebins, n_components=2, method=method, umap_neighbors=umap_neighbors, umap_min_dist=umap_min_dist)
-        # augment the dimensional reduction df with metadata
-        fad_df["image_name"] = fad_timebins_imageName
-        fad_df["cell_labels"] = fad_cell_labels
-        fad_df["base_name"] = fad_df["image_name"] + "_" + fad_df["cell_labels"].astype(str)
-        fad_df["color_category"] = fad_categories
-        fad_df = fix_df(fad_df)
-    else:
-        fad_df = None
-        fad_exp_var = None
+        df = None
+        exp_var = None
 
-    return nadh_df, nadh_exp_var, fad_df, fad_exp_var, error_message
+    return df, exp_var, error_message

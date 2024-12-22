@@ -9,7 +9,7 @@ from navigation import render_top_menu
 from features import get_features, fix_df
 from widgets import create_filters, create_singleSelects_vars, create_multiSelects_vars, create_checkboxes, create_umap_hyperParams
 from roi_sum import roi_sum_dimensionReduction
-from input import sdts_in_dir, fad_suffix, nadh_suffix, mask_suffix
+from input import sdt_folder_check
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -48,34 +48,12 @@ with col1:
         
     elif "raw data" in method:
         folder_path = st.text_input("Copy and paste the *path* to the folder containing the sdt files *and* masks:")
-        selected_raw = st.selectbox("Select NADH or FAD", ["NADH", "FAD"])
+        images, selected_channel, upload_complete = sdt_folder_check(folder_path)
         if "UMAP" in method:
             n_neighbors, min_dist = create_umap_hyperParams()
-        if folder_path and st.button("List Files & Run"):
-            if os.path.isdir(folder_path):
-                images, error_msg, has_nadh, has_fad  = sdts_in_dir(folder_path)
-                if len(images) > 0:
-                    upload_complete = True
-                if error_msg != "":
-                    st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)
-                if not has_nadh and selected_raw == "NADH":
-                    st.markdown(f"<h5 style='text-align: center; color: red'>No NADH sdts found in the folder.</h5>", unsafe_allow_html=True)
-                    upload_complete = False
-                if not has_fad and selected_raw == "FAD":
-                    st.markdown(f"<h5 style='text-align: center; color: red'>No FAD sdts found in the folder.</h5>", unsafe_allow_html=True)
-                    upload_complete = False
-               
-                st.write(images)
 
-                if upload_complete is False: 
-                    st.markdown(f"<h7 style='text-align: center;'>See error msgs. No sdt found or no mask associated with sdts found. \
-                                It looks for {nadh_suffix} suffix for nadh sdts, {fad_suffix} for fad sdts, and {mask_suffix} suffix \
-                                and 'mask' keyword for mask files. </h7>", unsafe_allow_html=True)
-            else:
-                st.markdown("***Warning: The provided path is not a directory or doesn't exist.***")
-                st.markdown("<h7 style='text-align: center; color: red;'>Note: this tool only works ***offline***, as the online app does not have access to your files.</h7>", unsafe_allow_html=True)
-        
-
+        if images is not None and len(images) > 0:   
+            st.write(images)
     if upload_complete is False:
         st.write("Please upload a file/folder path to begin.")
 
@@ -197,17 +175,17 @@ with col2:
 
         elif "raw data" in method:
             method = "PCA" if "PCA" in method else "UMAP"
-            if method == "UMAP":
-                nadh_df, nadh_exp_var, fad_df, fad_exp_var, error_message = roi_sum_dimensionReduction(images, method=method, umap_neighbors=n_neighbors, umap_min_dist=min_dist)
-            else:
-                nadh_df, nadh_exp_var, fad_df, fad_exp_var, error_message = roi_sum_dimensionReduction(images, method=method)
 
-            if nadh_df is not None and fad_df is not None:
-                if selected_raw == "NADH":
-                    fig = create_dim_reduction_figure(nadh_df, method=method, colored_by=["color_category"], exp_var=nadh_exp_var)
-                else:
-                    fig = create_dim_reduction_figure(fad_df, method=method, colored_by=["color_category"], exp_var=fad_exp_var)
+            if method == "UMAP":
+                df, exp_var, error_message = roi_sum_dimensionReduction(images, selected_channel=selected_channel, method=method, umap_neighbors=n_neighbors, umap_min_dist=min_dist)
+            else:
+                df, exp_var, error_message = roi_sum_dimensionReduction(images, selected_channel=selected_channel, method=method)
+
+            if df is not None:
+                fig = create_dim_reduction_figure(df, method=method, colored_by=["color_category"], exp_var=exp_var)
                 st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.markdown(f"<h5 style='text-align: center; color: red'>{error_message}</h5>", unsafe_allow_html=True)
 
     else:
         st.write("Waiting for file/folder path upload")
