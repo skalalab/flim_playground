@@ -4,7 +4,6 @@ import pandas as pd
 import umap
 import plotly.graph_objects as go
 import seaborn as sns
-from phasor import calculate_phasor
 
 def dimension_reduction(X, n_components=2, method="PCA", umap_neighbors=15, umap_min_dist=0.1):
     # Standardize features before PCA and umap
@@ -19,8 +18,6 @@ def dimension_reduction(X, n_components=2, method="PCA", umap_neighbors=15, umap
         reducer = umap.UMAP(n_neighbors=umap_neighbors,min_dist=umap_min_dist,   
                metric='euclidean', n_components=n_components)
         df = pd.DataFrame(reducer.fit_transform(X_std), columns=["UMAP1", "UMAP2"])
-    elif method == "Phasor":
-        df = pd.DataFrame(calculate_phasor(X), columns=["G", "S"])
     return df, exp_var
 
 
