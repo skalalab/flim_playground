@@ -17,7 +17,7 @@ def create_filters(df, color=True):
         # Check for existence of columns
         exp_day_exists = "experiment" in df.columns or "day" in df.columns
         cl_exists = "cell_line" in df.columns
-        tr_exists = "treatment" in df.columns
+        tr_category_exists = "treatment" in df.columns or "color_category" in df.columns
         # Initially, filtered_df is the original df
         filtered_df = df.copy()
         # Keep track of which columns are available for color_by
@@ -27,23 +27,19 @@ def create_filters(df, color=True):
 
         if exp_day_exists:
             if "experiment" in df.columns:
-                experiments = sorted(df["experiment"].unique().tolist())
-                if len(experiments) > 1:
-                    experiments.append("All")  # Add "all" option
-                    with cols[0]:
-                        selected_experiment = st.multiselect("Select experiment", experiments, default=experiments[0], key="experiment_multiselect",on_change=update_multiselect, args=("experiment_multiselect", experiments))
-                    if selected_experiment != "All":
-                        filtered_df = filtered_df[filtered_df["experiment"].isin(selected_experiment)]
-                    available_for_color.append("experiment")
+                column = "experiment"
             else:
-                days = sorted(df["day"].unique().tolist())
-                if len(days) > 1:
-                    days.append("All")
-                    with cols[0]:
-                        selected_day = st.multiselect("Select day", days, default=days[0], key="day_multiselect",on_change=update_multiselect, args=("day_multiselect", days))
-                    if selected_day != "All":
-                        filtered_df = filtered_df[filtered_df["day"].isin(selected_day)]
-                    available_for_color.append("day")
+                column = "day"
+
+            values = sorted(df[column].unique().tolist())
+            if len(values) > 1:
+                values.append("All")  # Add "all" option
+                with cols[0]:
+                    selected_experiment = st.multiselect(f"Select {column}(s)", values, default=values[0], key="experiment_day_multiselect",on_change=update_multiselect, args=("experiment_day_multiselect", values))
+                if "All" not in selected_experiment:
+                    filtered_df = filtered_df[filtered_df[column].isin(selected_experiment)]
+                available_for_color.append(column)
+
 
         ### Handle "cell_line" column ###
         if cl_exists:
@@ -63,17 +59,21 @@ def create_filters(df, color=True):
                 pass
 
         ### Handle "treatment" column ###
-        if tr_exists:
+        if tr_category_exists:
             # Based on the current filtered_df (which may be filtered by experiment and/or cell line)
-            treatments = sorted(filtered_df["treatment"].unique().tolist())
+            if "color_category" in df.columns:
+                column = "color_category"
+            else:
+                column = "treatment"
+            values = sorted(filtered_df[column].unique().tolist())
             # If more than one treatment, show the widget
-            if len(treatments) > 1:
-                treatments.append("All")
+            if len(values) > 1:
+                values.append("All")
                 with cols[2]:
-                    selected_treatments = st.multiselect("Select treatment(s)", treatments, default=treatments[-1], key="treatment_multiselect",on_change=update_multiselect, args=("treatment_multiselect", treatments))
+                    selected_treatments = st.multiselect(f"Select {column}(s)", values, default=values[-1], key="tr_cat_multiselect",on_change=update_multiselect, args=("tr_cat_multiselect", values))
                 if "All" not in selected_treatments:
-                    filtered_df = filtered_df[filtered_df["treatment"].isin(selected_treatments)]
-                available_for_color.append("treatment")
+                    filtered_df = filtered_df[filtered_df[column].isin(selected_treatments)]
+                available_for_color.append(column)
             else:
                 # Only one treatment or none
                 # No widget needed
