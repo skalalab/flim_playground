@@ -30,8 +30,9 @@ with col2:
         if method == "Phasor Analysis":
             df, error_message = calculate_phasor(images, selected_channel)
             if df is not None:
+                
                 fig = phasor_plot(df)
-               # st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True)
                 st.download_button(
                     label="Download Phasor Coordinates",
                     data=df.to_csv(index=False),

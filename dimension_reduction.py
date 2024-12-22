@@ -36,8 +36,9 @@ def create_dim_reduction_figure(df, method="PCA", colored_by=["treatment"], exp_
     # create a new copy of df 
     df['unique_color_group'] = df[colored_by].agg('_'.join, axis=1)
     unique_color_groups = df['unique_color_group'].unique()
+    alpha = 0.6 if len(unique_color_groups) > 1 else 1.0
     palette = sns.color_palette("tab10", n_colors=len(unique_color_groups))
-    color_sequence = [f"rgba({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)}, 0.6)" for color in palette]
+    color_sequence = [f"rgba({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)}, {alpha})" for color in palette]
     color_map = {t: color_sequence[i] for i, t in enumerate(unique_color_groups)}
 
     # plot scatter plot iteratively, once for each color group

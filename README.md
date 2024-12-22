@@ -61,3 +61,4 @@ It is deployed on using streamlit's cummunity server at: [https://flim-playgroun
 - 12/17/24: verified setting up the required conda environment on mac and windows. Thanks Kayvan for testing in out!
 - 12/19/24: add the functionality for removing single cell outliers; add the filter & color_by day option (per Alexa's requests)
 - 12/20 - 12/21/24: working on the pipeline of roi summing and then dimension reduction.
+- 12/22/24: finished phasor calculation and plotting.
