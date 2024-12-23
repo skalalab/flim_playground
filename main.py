@@ -1,6 +1,6 @@
 import streamlit as st
 from navigation import render_top_menu, pages, link_2_name
-from markdown import clusterOutlier, sdtSuite, classification, regionProps, plotting, externalTools
+from markdown import clusterOutlier, sdtSuite, classification, regionProps, plotting, aiTools
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on the main page
 render_top_menu()
@@ -34,8 +34,8 @@ with col2:
         st.markdown(classification)
     elif selected_step == "Plotting":
         st.markdown(plotting)
-    elif selected_step == "External Tools":
-        st.markdown(externalTools)
+    elif selected_step == "AI Tools":
+        st.markdown(aiTools)
     
     
 

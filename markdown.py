@@ -56,4 +56,4 @@ Convert between different versions of SDT files:
 classification = """to be developed."""
 regionProps = """to be developed. """
 plotting = """to be developed. """
-externalTools = """to be developed. This tool cannot cover all the tools you need, especially AI tools that are useful but not feasible to be implemented here."""
+aiTools = """to be developed."""
