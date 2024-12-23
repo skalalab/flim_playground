@@ -13,7 +13,7 @@ def update_multiselect(key, options):
             # all is selected with other options
             st.session_state[key] = [option for option in current_selection if option != "All"]
 
-def create_filters(df, color=True): 
+def create_filters(df, color=True, compare=False): 
         # Check for existence of columns
         exp_day_exists = "experiment" in df.columns or "day" in df.columns
         cl_exists = "cell_line" in df.columns
@@ -83,8 +83,9 @@ def create_filters(df, color=True):
         # Only include columns that actually exist
        
         if len(available_for_color) > 1 and color is True:
+            selectText = "Compare by" if compare else "Color by"
             with cols[3]:
-                color_by_options = st.multiselect("Color by", available_for_color, default=available_for_color[-1])                   
+                color_by_options = st.multiselect(selectText, available_for_color, default=available_for_color[-1])                   
         else:
             color_by_options = ["treatment"]
 

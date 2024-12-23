@@ -11,6 +11,9 @@ def link_2_name(link):
         return "Clustering & Outlier" 
     if link == "ai_tools":
         return "AI Tools"
+    if link == "sdt_suite":
+        return "SDT Suite"
+    
     return link.replace("_", " ").title()
 
 def render_top_menu():
