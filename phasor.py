@@ -250,7 +250,7 @@ def phasor_plot(df, f=0.08):
                 text=g_df["base_name"],
                 customdata=g_df["image_name"],
                 hovertemplate="<b>%{text}</b>",
-                marker=dict(color=color_map[g])
+                marker=dict(color=color_map[g],size=3)
             ),
         )
     return fig

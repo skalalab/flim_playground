@@ -6,3 +6,4 @@ seaborn
 sdtfile
 streamlit-plotly-events
 statannotations 
+tifffile

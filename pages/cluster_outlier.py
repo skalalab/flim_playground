@@ -11,6 +11,12 @@ from widgets import create_filters, create_singleSelects_vars, create_multiSelec
 from roi_sum import roi_sum_dimensionReduction
 from input import sdt_folder_check
 
+# Initialize session state so that 
+if "raw_df" not in st.session_state:
+    st.session_state.raw_df = None
+if "raw_exp_var" not in st.session_state:
+    st.session_state.raw_exp_var = None
+
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
 render_top_menu()
@@ -51,14 +57,33 @@ with col1:
         images, selected_channel, upload_complete = sdt_folder_check(folder_path)
         if "UMAP" in method:
             n_neighbors, min_dist = create_umap_hyperParams()
-
+       # print("I am here2: " + str(upload_complete))    
         if images is not None and len(images) > 0:   
             st.write(images)
+        if upload_complete and images is not None:
+            dr_method = "PCA" if "PCA" in method else "UMAP"
+            if "UMAP" in method:
+                df, exp_var, error_message = roi_sum_dimensionReduction(images, selected_channel=selected_channel, method=dr_method, umap_neighbors=n_neighbors, umap_min_dist=min_dist)
+            else:
+                df, exp_var, error_message = roi_sum_dimensionReduction(images, selected_channel=selected_channel, method=dr_method)
+            
+            if df is not None:
+                st.session_state.raw_df = df
+                st.session_state.raw_exp_var = exp_var
+            else:
+                st.markdown(f"<h5 style='text-align: center; color: red'>{error_message}</h5>",unsafe_allow_html=True)
+        #else: upload_complete = False
     if upload_complete is False:
         st.write("Please upload a file/folder path to begin.")
 
 with col2:
-    if upload_complete: 
+    if "raw data" in method and st.session_state.raw_df is not None:
+    # Create filters on df (does not re-upload or re-create df)
+        filtered_df, color_by_options, cols = create_filters(st.session_state.raw_df, color=False)
+        dr_method = "PCA" if "PCA" in method else "UMAP"
+        fig = create_dim_reduction_figure(filtered_df, method=dr_method, colored_by=["color_category"], exp_var=st.session_state.raw_exp_var)
+        st.plotly_chart(fig, use_container_width=True)
+    elif upload_complete: 
         if "fitted features" in method: 
             if "All NADH Variables" in nadh_vars:
                 nadh_vars = nadh_cols
@@ -172,20 +197,6 @@ with col2:
   
             else:
                 st.markdown("<h5 style='text-align: center;'>Please select one variable to plot.</h5>", unsafe_allow_html=True)
-
-        elif "raw data" in method:
-            method = "PCA" if "PCA" in method else "UMAP"
-
-            if method == "UMAP":
-                df, exp_var, error_message = roi_sum_dimensionReduction(images, selected_channel=selected_channel, method=method, umap_neighbors=n_neighbors, umap_min_dist=min_dist)
-            else:
-                df, exp_var, error_message = roi_sum_dimensionReduction(images, selected_channel=selected_channel, method=method)
-
-            if df is not None:
-                fig = create_dim_reduction_figure(df, method=method, colored_by=["color_category"], exp_var=exp_var)
-                st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.markdown(f"<h5 style='text-align: center; color: red'>{error_message}</h5>", unsafe_allow_html=True)
 
     else:
         st.write("Waiting for file/folder path upload")
