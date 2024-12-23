@@ -93,7 +93,7 @@ def roi_sum_dimensionReduction(images, selected_channel="NADH", method="PCA", um
 
     images, error_message = sum_sdts(images,selected_channel=selected_channel, write_tiff=False, write_sdt=False)
     if images is None:
-        return None, error_message
+        return None, None, error_message
          
     # step 1 : create a dataframe with all the time bins
     timebins = []

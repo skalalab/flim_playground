@@ -4,11 +4,13 @@ page_2 = "cluster_outlier"
 page_3 = "sdt_suite"
 page_4 = "classification"
 page_5 = "plotting"
-page_6 = "external_tools"
+page_6 = "ai_tools"
 pages = [page_1, page_2, page_3, page_4, page_5, page_6]
 def link_2_name(link):
     if link == "cluster_outlier":
         return "Clustering & Outlier" 
+    if link == "ai_tools":
+        return "AI Tools"
     return link.replace("_", " ").title()
 
 def render_top_menu():
