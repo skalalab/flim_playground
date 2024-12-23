@@ -101,36 +101,44 @@ def reset_other_menus(selected_menu, menus):
 
 # create selectboxs for variables
 def create_singleSelects_vars(nadh_cols, fad_cols, morphology_cols):
+    col1, col2, col3 = st.columns(3)
     menus = ["menu_nadh", "menu_fad", "menu_morphology"]           
     # Render the dropdowns with callbacks
-    selected_nadh = st.selectbox(
-        "Nadh Variables", 
-        ["Select"] + nadh_cols, 
-        index=0, 
-        key="menu_nadh",
-        on_change=reset_other_menus, 
-        args=("menu_nadh",menus)
-    )
+    with col1:
+        if len(nadh_cols) > 0:
+            selected_nadh = st.selectbox(
+                "Nadh Variables", 
+                ["Select"] + nadh_cols, 
+                index=0, 
+                key="menu_nadh",
+                on_change=reset_other_menus, 
+                args=("menu_nadh",menus)
+            )
+        else: selected_nadh = "Select"
+    with col2:
+        if len(fad_cols) > 0: 
+            selected_fad = st.selectbox(
+                "Fad Variables", 
+                ["Select"] + fad_cols, 
+                index=0, 
+                key="menu_fad",
+                on_change=reset_other_menus, 
+                args=("menu_fad",menus)
+            )
+        else: selected_fad = "Select"
+    with col3:
+        if len(morphology_cols) > 0:         
+            selected_morphology = st.selectbox(
+                "Morphology", 
+                ["Select"] + morphology_cols, 
+                index=0, 
+                key="menu_morphology",
+                on_change=reset_other_menus, 
+                args=("menu_morphology",menus)
+            )
+        else: selected_morphology = "Select"
 
-    selected_fad = st.selectbox(
-        "Fad Variables", 
-        ["Select"] + fad_cols, 
-        index=0, 
-        key="menu_fad",
-        on_change=reset_other_menus, 
-        args=("menu_fad",menus)
-    )
-
-    selected_morphology = st.selectbox(
-        "Morphology Variables", 
-        ["Select"] + morphology_cols, 
-        index=0, 
-        key="menu_morphology",
-        on_change=reset_other_menus, 
-        args=("menu_morphology",menus)
-    )
-
-    selected_var =  selected_nadh if selected_nadh != "Select" else selected_fad if selected_fad != "Select" else selected_morphology
+    selected_var =  selected_nadh if selected_nadh and selected_nadh != "Select" else selected_fad if selected_fad and selected_fad != "Select" else selected_morphology
     return selected_var
 
 

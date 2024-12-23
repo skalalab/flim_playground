@@ -1,11 +1,11 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
-import seaborn as sns
 
 from features import get_features, fix_df
 from widgets import create_singleSelects_vars, create_filters
 from navigation import render_top_menu
+from visualization import feature_comparison_plot
+
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
 
@@ -37,13 +37,16 @@ with col1:
                 st.write("We cannot extract data from your uploaded file.")
         
         selected_var = create_singleSelects_vars(nadh_cols, fad_cols, morphology_cols)
+        selected_test = st.selectbox("Select a statistical test", ["N/A", "Mann-Whitney", "t-test_ind"], index=0)
 
 with col2:
     if st.session_state.vis_df is not None:
         filtered_df, compare_by_options, cols = create_filters(st.session_state.vis_df, color=True, compare=True)
         if selected_var != "Select": 
-            st.write(f"Selected variable: {selected_var}")
-        
+            # Plot the filtered dataframe
+            fig = feature_comparison_plot(filtered_df, selected_var, compare_by_options, stats_test=selected_test)
+            st.pyplot(fig, use_container_width=True)
+            
     else:
         st.write("Please upload a file to begin.")
 
