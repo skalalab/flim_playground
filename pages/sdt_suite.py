@@ -1,8 +1,13 @@
 import streamlit as st
-from input import sdt_folder_check
+from input import sdt_folder_check, get_sdts
 from phasor import phasor_plot, calculate_phasor
 from widgets import create_filters
 from navigation import render_top_menu
+from sdt_io import write_sdt, read_sdt150
+from roi_sum import sum_sdt
+import tifffile as tiff
+import os
+from pathlib import Path
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 
 if "phasor_df" not in st.session_state:
@@ -15,7 +20,7 @@ with col1:
     st.title("SDT toolbox")
     method = st.selectbox(
         "Select a sdt tool",
-        ["Phasor Analysis", "ROI Summing", "SDT Fitting", "SDT Conversion"],
+        ["Phasor Analysis", "ROI Summing", "SDT Fitting"],
     )  
     if method == "Phasor Analysis":
         folder_path = st.text_input("Copy and paste the *path* to the folder containing the sdt files *and* masks:")
@@ -35,6 +40,26 @@ with col1:
                     f"<h5 style='text-align: center; color: red'>{error_message}</h5>",
                     unsafe_allow_html=True
                 )
+    elif method == "ROI Summing":
+        folder_path = st.text_input("Copy and paste the *path* to the folder containing the sdt files *and* masks:")
+        _, images, error_message = get_sdts(folder_path, mask=True)
+        if error_message != "":
+            st.markdown(f"<h5 style='text-align: center; color: red'>{error_message}</h5>", unsafe_allow_html=True)
+        if len(images) > 0:
+            st.write(images)
+            upload_complete = True
+
+    elif method == "SDT Fitting":
+        st.write("Coming soon!")
+
+    # elif method == "SDT Conversion":
+    #     folder_path = st.text_input("Copy and paste the *path* to the folder containing the 10-bit sdt files:")
+    #     sdts, _,_ = get_sdts(folder_path, mask=False)
+    #     if len(sdts) == 0:
+    #         st.markdown("<h7 style='text-align: center; color: red;'>We cannot find files that ends in .sdt inside the provided path. Note: this tool only works ***offline***, as the online app does not have access to your files.</h7>", unsafe_allow_html=True)
+    #     else: 
+    #         st.write([Path(sdt).name for sdt in sdts])
+    #         upload_complete = True
 
     if upload_complete is False:
         st.write("Please upload a file/folder path to begin.")
@@ -56,6 +81,36 @@ with col2:
             file_name="phasor.csv",
             mime="text/csv"
         )
+
+    elif method == "ROI Summing" and images != {}:
+        st.write("Creating a folder called 'summed_sdts' in the same directory as the input folder.")
+        os.makedirs(os.path.join(folder_path, "summed_sdts"), exist_ok=True)
+        for image in images:
+            sdt = images[image]["sdt"]
+            if "mask" not in images[image]:
+                continue
+            
+            mask = images[image]["mask"]
+            mask = tiff.imread(Path(mask))
+            sdt_data = read_sdt150(sdt)
+            _, summed_sdt, error_msg = sum_sdt(sdt_data, mask)
+            if error_msg != "":
+                st.write(f"Error summing {Path(sdt).name}: {error_msg}")
+            else:
+                resolution = sdt_data.shape[1]
+                write_sdt(os.path.join(folder_path, "summed_sdts", f"{image}_summed.sdt"), summed_sdt, resolution=resolution)
+                st.write(f"Summed {Path(sdt).name} and wrote to the 'summed_sdts' folder.")
+
+    # elif method == "SDT Conversion" and sdts != []:
+    #     st.write("Creating a folder called 'converted_sdts' in the same directory as the input folder.")
+    #     os.makedirs(os.path.join(folder_path, "converted_sdts"), exist_ok=True)
+    #     for sdt in sdts:
+    #         error_message = sdt_convert(sdt, os.path.join(folder_path, "converted_sdts"))
+            
+    #         if error_message != "":
+    #             st.write(f"Error converting {Path(sdt).name}: {error_message}")
+    #         else:
+    #             st.write(f"Converted {Path(sdt).name} and wrote to the 'converted_sdts' folder.")
            
     else:
         st.write("Waiting for file/folder path upload")

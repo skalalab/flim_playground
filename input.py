@@ -5,6 +5,7 @@ fad_suffix = "f.sdt"
 nadh_suffix = "n.sdt"
 mask_suffix = ("tif", "tiff")
 irf_suffix = ("txt", "csv")
+sdt_suffix = ".sdt"
 
 def list_files_with_suffixes_and_keyword(folder_path, suffixes, keywords=[""]):
     path = Path(folder_path)
@@ -127,3 +128,38 @@ def sdt_folder_check(folder_path, irf_check=False):
         return images, selected_channel, upload_complete
     return {}, selected_channel, upload_complete
 
+def get_sdts(folder_path, mask=True):
+    """
+    Check if the folder contains sdts.
+    """
+    error_msg = ""  
+    if os.path.isdir(folder_path):
+        sdt_files = list_files_with_suffixes_and_keyword(folder_path, sdt_suffix)
+        if len(sdt_files) == 0:
+            error_msg += "no sdt file found! "
+            return [], [], error_msg
+        if mask:
+            mask_files = list_files_with_suffixes_and_keyword(folder_path, mask_suffix, ["mask", "cellpose"])
+            if len(mask_files) == 0:
+                error_msg += "No mask file found! "
+                return [], [], error_msg
+            # now we have both sdt and mask files
+            # we need to align them
+            images = {}
+            for sdt in sdt_files:
+                image_name = Path(sdt).name.removesuffix(sdt_suffix)
+                mask = [path for path in mask_files if Path(path).name.startswith(image_name)]
+                try:
+                    mask = mask[0]
+                    images[image_name] = {}
+                    images[image_name]["sdt"] = sdt
+                    images[image_name]["mask"] = mask
+                except:
+                    error_msg += f"no mask found for image {image_name}! "
+            return [], images, error_msg
+        else:
+            return sdt_files, [], error_msg
+
+    else: 
+        error_msg += "The provided path is not a directory or doesn't exist. "
+        return [], [], error_msg   
