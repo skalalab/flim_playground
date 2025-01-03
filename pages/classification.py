@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 from itertools import combinations
+
+from train import classify
 from features import get_features, fix_df
 from navigation import render_top_menu
 from widgets import create_multiSelects_vars
@@ -8,7 +10,6 @@ st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on this page as well
 render_top_menu()
 st.title("Classification")
-
 col1, col2 = st.columns([0.4, 1])
 with col1:
     uploaded_csv = st.file_uploader(" Please Upload the CSV file from Region Props", type=["csv"])
@@ -37,6 +38,11 @@ with col1:
                 classification_options.extend([" VS ".join(c) for c in classification])
             selected_option = st.selectbox("Select a way to classify", classification_options)
             selected_classification = classifications[classification_options.index(selected_option)]
+            cols = st.columns(2)
+            with cols[0]:
+                classification_method = st.selectbox("Select a classification method", ["Random Forest", "SVM", "Logistic Regression"])
+            with cols[1]:
+                splits = st.slider("Select the train size (percentage of training data)", 0.5, 0.9, 0.7, 0.1)
             
     else:
         st.write("Please upload a file/folder path to begin.")
@@ -52,7 +58,12 @@ with col2:
             morphology_vars = morphology_cols
         selected_vars = nadh_vars + fad_vars + morphology_vars
         df_classify = df[df[class_by].isin(selected_classification)][selected_vars+[class_by]]
-        st.write(df_classify.shape)
-    
+        st.write(f"Running {classification_method} to classify between: {selected_option}, trained on {int(splits*100)}% of the data.")
+        fig1, accuracy, fig2 = classify(df_classify, classification_method, splits)
+        st.pyplot(fig1)
+        st.write(f"Accuracy: {accuracy:.2f}")
+        if fig2 is not None:
+            st.pyplot(fig2)
+
     else:
         st.write("Waiting for file/folder path upload")
