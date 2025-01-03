@@ -67,3 +67,4 @@ It is deployed on using streamlit's cummunity server at: [https://flim-playgroun
 - 12/20 - 12/21/24: working on the pipeline of roi summing and then dimension reduction.
 - 12/22/24: finished phasor calculation and plotting.
 - 12/23/24: added filters for phasor and the dimension reduction on roi sum data method; finished the feature comparison plot with statistical tests. 
+- 12/27/24: finished ROI summing, removed the SDT conversion module. 

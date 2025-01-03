@@ -8,7 +8,7 @@ roi summing
 
 import tifffile as tiff
 import numpy as np
-import sdt_io
+from sdt_io import read_sdt150
 from pathlib import Path
 from dimension_reduction import dimension_reduction
 from features import fix_df
@@ -73,7 +73,7 @@ def sum_sdts(images, selected_channel="NADH", write_tiff=False, write_sdt=False)
     for image, properties in images.items():
         if "mask" in properties and sdt_Path in properties:
             mask = tiff.imread(Path(properties["mask"])) 
-            sdt_data = sdt_io.read_sdt150(Path(properties[sdt_Path]))
+            sdt_data = read_sdt150(Path(properties[sdt_Path]))
             labels, summed_sdt, error_msg = sum_sdt(sdt_data, mask)
             error_message +=  error_msg
             properties["cells"] = labels

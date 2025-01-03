@@ -30,7 +30,7 @@ with col1:
     )  
     upload_complete = False 
     if method == "Image Level Boxplots" or "fitted features" in method:
-        uploaded_csv = st.file_uploader("Upload the CSV file from Region Props", type=["csv"])
+        uploaded_csv = st.file_uploader(" Please Upload the CSV file from Region Props", type=["csv"])
     
         if uploaded_csv is not None:
         # Read the uploaded data
