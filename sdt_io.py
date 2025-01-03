@@ -110,7 +110,7 @@ def read_sdt150(filename):
     else:
         dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2]].reshape([XYTC[0], XYTC[1], XYTC[2]])
     # print("READ DATA IN:",dataSDT.shape)
-    return (dataSDT)
+    return dataSDT
 
 
 def write_sdt(path_output, sdt_data, manufacturer="BH", resolution=256):
@@ -130,8 +130,7 @@ def write_sdt(path_output, sdt_data, manufacturer="BH", resolution=256):
     path_header = Path(f"./sdt_headers/header_{resolution}_{manufacturer}.dat")
     
     with open(path_header,'rb') as fid:
-        header_ = fid.read() # prebuilt header_file for all 256x256 files
-
+        header_ = fid.read() # prebuilt header_file 
     # combine header and data
     phantom_data = header_ + sdt_data.tobytes()
     

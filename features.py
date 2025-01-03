@@ -14,7 +14,7 @@ def get_cols(cols, weighted_cols = False):
 
     nadh_cols = [c for c in cols if any(c.startswith(prefix) for prefix in nadh_prefixes) and "stdev" not in c and (weighted_cols or "weighted" not in c)]
     fad_cols = [c for c in cols if any(c.startswith(prefix) for prefix in fad_prefixes) and "stdev" not in c and (weighted_cols or "weighted" not in c)]
-    morphology_cols = [c for c in cols if not any(c.startswith(prefix) for prefix in nadh_prefixes + fad_prefixes) and "mask" not in c and "flirr" not in c and "Unnamed" not in c] 
+    morphology_cols = [c for c in cols if not any(c.startswith(prefix) for prefix in nadh_prefixes + fad_prefixes) and "mask" not in c and "flirr" not in c and "Unnamed" not in c and "day" not in c and "date" not in c] 
     return nadh_cols, fad_cols, morphology_cols
 
 def get_features(df):

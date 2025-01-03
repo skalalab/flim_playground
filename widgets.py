@@ -142,25 +142,59 @@ def create_singleSelects_vars(nadh_cols, fad_cols, morphology_cols):
     return selected_var
 
 
-def create_multiSelects_vars(nadh_cols, fad_cols, morphology_cols):
-    nadh_vars = st.multiselect(
-        "Select NADH Variables",
-        options= ["All NADH Variables"] + nadh_cols if len(nadh_cols) > 0 else nadh_cols,
-        default=[],
-        help="Select one or more columns corresponding to NADH variables."
-    )
-    fad_vars = st.multiselect(
-        "Select FAD Variables",
-        options= ["All FAD Variables"] + fad_cols if len(fad_cols) > 0 else fad_cols,
-        default=[],
-        help="Select one or more columns corresponding to FAD variables."
-    )
-    morphology_vars = st.multiselect(
-        "Select Morphology Variables",
-        options= ["All Morphology Variables"] + morphology_cols if len(morphology_cols) > 0 else morphology_cols,
-        default=[],
-        help="Select one or more columns corresponding to morphology variables."
-    )
+def create_multiSelects_vars(nadh_cols, fad_cols, morphology_cols, columns=False):
+    vars = [nadh_cols, fad_cols, morphology_cols]
+    var_names = ["NADH", "FAD", "Morphology"]
+    # Filter out empty lists
+    non_empty_vars = [(name, lst) for name, lst in zip(var_names, vars) if len(lst) > 0]
+    
+    # Initialize selected items
+    selected_items = [None] * len(vars)
+    if columns:
+        cols = st.columns(len(non_empty_vars))
+        for col, (name, var_list) in zip(cols, non_empty_vars):
+            with col:
+                selected_items[var_names.index(name)] = st.multiselect(f"Select from {name} Variables", 
+                                options= [f"All {name} Variables"] + var_list if len(var_list) > 1 else var_list,
+                                default=[f"All {name} Variables"],
+                                help=f"Select one or more columns corresponding to {name} variables."
+                                )
+    else:
+        for name, var_list in non_empty_vars:
+            selected_items[var_names.index(name)] = st.multiselect(f"Select from {name} Variables", 
+                            options= [f"All {name} Variables"] + var_list if len(var_list) > 1 else var_list,
+                            default=[f"All {name} Variables"],
+                            help=f"Select one or more columns corresponding to {name} variables."
+                            )
+    # if nadh_cols != []:
+    #     nadh_vars = st.multiselect(
+    #         "Select NADH Variables",
+    #         options= ["All NADH Variables"] + nadh_cols if len(nadh_cols) > 0 else nadh_cols,
+    #         default=["All NADH Variables"],
+    #         help="Select one or more columns corresponding to NADH variables."
+    #     )
+    # else:
+    #     nadh_vars = []
+    # if fad_cols != []:
+    #     fad_vars = st.multiselect(
+    #         "Select FAD Variables",
+    #         options= ["All FAD Variables"] + fad_cols if len(fad_cols) > 0 else fad_cols,
+    #         default=["All FAD Variables"],
+    #         help="Select one or more columns corresponding to FAD variables."
+    #     )
+    # else:
+    #     fad_vars = []
+    # if morphology_cols != []:
+    #     morphology_vars = st.multiselect(
+    #         "Select Morphology Variables",
+    #         options= ["All Morphology Variables"] + morphology_cols if len(morphology_cols) > 0 else morphology_cols,
+    #         default=["All Morphology Variables"],
+    #         help="Select one or more columns corresponding to morphology variables."
+    #     )
+    # else:
+    #     morphology_vars = []
+    selected_items = (selected if selected is not None else [] for selected in selected_items)
+    nadh_vars, fad_vars, morphology_vars = selected_items
 
     return nadh_vars, fad_vars, morphology_vars
 
