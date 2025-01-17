@@ -1,6 +1,6 @@
 import streamlit as st
 from navigation import render_top_menu, pages, link_2_name
-from markdown import clusterOutlier, sdtSuite, classification, regionProps, plotting, aiTools
+from markdown import clusterOutlier, sdtSuite, classification, dataExtraction, plotting, aiTools
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on the main page
 render_top_menu()
@@ -24,8 +24,8 @@ with col1:
 with col2: 
     st.markdown("<h5 style='text-align: center;'>Explanation</h5>", unsafe_allow_html=True)
 
-    if selected_step == "Region Props":
-        st.markdown(regionProps)
+    if selected_step == "Data Extraction":
+        st.markdown(dataExtraction)
     elif selected_step == "Clustering & Outlier":
         st.markdown(clusterOutlier)
     elif selected_step == "SDT Suite":

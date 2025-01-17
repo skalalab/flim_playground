@@ -45,13 +45,22 @@ Additionally, it can
 ### Single Cell Phasor Plotting 
 Copy and paste the path to the folder that contains all your sdt files and masks and one IRF file. This only works in the *offline* mode, as the online app does have access to your local file system. The folder can and is recommended to have sub-folders, each of which contains files for a different treatment. 
 
-## Classification
+### ROI Summing 
+Input: a path to a folder that contains sdt files and the associating masks. Output: a folder named `summed_sdt` inside the folder users provided that contains the ROI summed sdt file. 
+
+### SDT fitting 
 To be developed. 
+
+## Classification
+User uploads a CSV file that has column named `treatment`, and the tool will extract the NADH, FAD, and morphology features that user can choose as features to classify between the treatments. If there is more than two unique treatments, user can choose among all the possible ways to classify. User can also choose how to split the training and test size. Additionally, the tool provides three classification methods: random forest, support vector machine, logistic regression. In all of them, the tool reports the accuracy and plots the confusion matrix and the ROC curve. The tool also plots the random forest's feature importance graph.
 
 ## Visualizations
-To be developed. 
+### Feature comparison 
+Many times we want to compare a feature (e.g. NADH a1) between different treatments or cell types, and perform statistical tests on that feature. 
+The feature comparison module supports comparison of a feature selected by the user and performs pair-wise statistical tests between pairs of treatments/cell types, with the capability of user chosing which pair to conduct the test on. 
 
 ## AI toolbox
+To be developed. 
 
 # Deployment 
 It is deployed on using streamlit's cummunity server at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). It is free and will automatically fetch the new commits and update the app. The first time visit will have longer delay because Streamlit is managing in the background to set up machines and a python environment to run this app. 
@@ -68,3 +77,4 @@ It is deployed on using streamlit's cummunity server at: [https://flim-playgroun
 - 12/22/24: finished phasor calculation and plotting.
 - 12/23/24: added filters for phasor and the dimension reduction on roi sum data method; finished the feature comparison plot with statistical tests. 
 - 12/27/24: finished ROI summing, removed the SDT conversion module. 
+- 1/3/25: finished the classification module that contains SVM, Logistic Regression, and Random Forest. Did classfication and plotted the confusion matrix, ROC curve and feature importance graph (for random forest only). 
