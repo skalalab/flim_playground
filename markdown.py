@@ -54,6 +54,6 @@ Convert between different versions of SDT files:
 
 
 classification = """to be developed."""
-regionProps = """to be developed. """
+dataExtraction = """to be developed. """
 plotting = """to be developed. """
 aiTools = """to be developed."""

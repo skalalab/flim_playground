@@ -1,5 +1,5 @@
 import streamlit as st
-page_1 = "region_props"
+page_1 = "data_extraction"
 page_2 = "cluster_outlier"
 page_3 = "sdt_suite"
 page_4 = "classification"
