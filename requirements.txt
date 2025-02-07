@@ -1,9 +1,9 @@
-plotly
+plotly==5.24.1
 scikit-learn
 pandas
 umap-learn
 seaborn
 sdtfile
-streamlit-plotly-events
+streamlit-plotly-events==0.0.6
 statannotations 
 tifffile
