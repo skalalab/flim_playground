@@ -4,6 +4,11 @@ from markdown import clusterOutlier, sdtSuite, classification, dataExtraction, p
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on the main page
 render_top_menu()
+left_column, center_column, right_column = st.columns([1, 1, 1])
+# Display the image in the center column
+with center_column:
+    st.image("FP_trans_540.png")
+
 deployed_url = "https://flim-playground.streamlit.app/"
 github_repo_url = "https://github.com/skalalab/flim_playground"
 st.title("Flim Playground")

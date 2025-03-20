@@ -40,4 +40,7 @@ def fix_df(df):
     else:
         # If no treatment column, create a dummy one
         df["treatment"] = "Not Specified"
+    if "day" in df.columns:
+        df["day"] = df["day"].astype(str)
+        
     return df
