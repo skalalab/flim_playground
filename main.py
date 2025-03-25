@@ -10,20 +10,19 @@ logo_file = "logo/FP_trans_320.png"
 with center_column:
     st.image(logo_file)
 
-deployed_url = "https://flim-playground.streamlit.app/"
-github_repo_url = "https://github.com/skalalab/flim_playground"
-st.title("Flim Playground")
-st.write(f"Welcome! This tool can be run in two modes: **Online** and **Offline**. You can access the online mode by clicking on this [link]({deployed_url}). \
-          The **online** mode does not require any setup, but it is **slower** and **NOT secure** (it uses some remote, free (crappy) machines kindly offerd by Streamlit and they can see your data). \
-         The **offline** mode is faster and secure because it runs on your local machine. To run the **offline** mode, you just need to set up a python environment and install the required packages after downloading the \
-         necessary files. For detailed instructions, you can come to me or visit the [github repo]({github_repo_url}).")
+st.markdown("""
+<div style="font-size: 16px;">
+    Welcome to <span style="font-size: 20px; font-weight: bold;">Fluorescence Lifetime Imaging Microscopy Playground!</span> 
+    For detailed instructions, you can come to me or read the docs below.
+</div>
+""", unsafe_allow_html=True)
 
 st.markdown("<h4 style='text-align: center;'>Select a playground to know more</h4>", unsafe_allow_html=True)
 col1, col2 = st.columns([0.5, 1])
 with col1: 
     selected_playground = st.selectbox(
                     "Playgrounds", 
-                    titles, 
+                    titles + ["General Info"], 
                     index=0, 
                     key="menu_steps",
     )

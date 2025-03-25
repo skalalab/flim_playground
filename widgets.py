@@ -100,7 +100,8 @@ def reset_other_menus(selected_menu, menus):
         st.session_state.selected_menu = selected_menu
 
 # create selectboxs for variables
-def create_singleSelects_vars(nadh_cols, fad_cols, morphology_cols):
+def create_singleSelects_vars(feature_cols):
+    
     col1, col2, col3 = st.columns(3)
     menus = ["menu_nadh", "menu_fad", "menu_morphology"]           
     # Render the dropdowns with callbacks
