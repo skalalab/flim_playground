@@ -4,7 +4,7 @@ import pandas as pd
 from features import get_features, fix_df
 from widgets import create_singleSelects_vars, create_filters
 from navigation import render_top_menu
-from visualization import feature_comparison_plot
+from visualization_functions import feature_comparison_plot
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
