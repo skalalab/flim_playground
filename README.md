@@ -78,3 +78,4 @@ It is deployed on using streamlit's cummunity server at: [https://flim-playgroun
 - 12/23/24: added filters for phasor and the dimension reduction on roi sum data method; finished the feature comparison plot with statistical tests. 
 - 12/27/24: finished ROI summing, removed the SDT conversion module. 
 - 1/3/25: finished the classification module that contains SVM, Logistic Regression, and Random Forest. Did classfication and plotted the confusion matrix, ROC curve and feature importance graph (for random forest only). 
+- 3/25/25: started working on FLIM Playground 2.0 

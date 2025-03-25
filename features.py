@@ -1,4 +1,5 @@
 import pandas as pd
+from feature_groups import required_cols, categorical_cols, feature_groups_default, feature_groups_prefixes, feature_groups_order
 
 def safe_split_with_logging(base_name):
     try:
@@ -6,41 +7,94 @@ def safe_split_with_logging(base_name):
     except Exception as e:   
         return "missing image name"
 
-
-
-def get_cols(cols, weighted_cols = False):
-    nadh_prefixes = ["nadh", "redox", "na", "nt","ntm", "nint", "normrr"] # put redox in nadh 
-    fad_prefixes = ["fad", "fa", "ft", "ftm", "fint"]
-
-    nadh_cols = [c for c in cols if any(c.startswith(prefix) for prefix in nadh_prefixes) and "stdev" not in c and (weighted_cols or "weighted" not in c)]
-    fad_cols = [c for c in cols if any(c.startswith(prefix) for prefix in fad_prefixes) and "stdev" not in c and (weighted_cols or "weighted" not in c)]
-    morphology_cols = [c for c in cols if not any(c.startswith(prefix) for prefix in nadh_prefixes + fad_prefixes) and "mask" not in c and "flirr" not in c and "Unnamed" not in c and "day" not in c and "date" not in c] 
-    return nadh_cols, fad_cols, morphology_cols
+def get_feature_cols(cols, weighted_cols = False):
+    
+    feature_cols = tuple()
+    for feature_group in feature_groups_order:
+        # if the column is in the default list, add it to the group_cols
+        # or if the column starts with any of the prefixes in the prefix list, add it to the group_cols
+        group_cols = [c for c in cols if c in feature_groups_default[feature_group] or 
+            any(c.startswith(prefix) for prefix in feature_groups_prefixes[feature_group])]
+        # remove the stdev columns from the group_cols
+        # and remove the weighted columns if weighted_cols is False
+        group_cols = [c for c in group_cols if "stdev" not in c and (weighted_cols or "weighted" not in c)]
+        feature_cols += (group_cols,)
+  
+    return feature_cols
 
 def get_features(df):
-    error_msg = ""
-    numeric_cols = [col for col in df.columns if pd.to_numeric(df[col], errors='coerce').notna().all()]    
-    nadh_cols, fad_cols, morphology_cols = get_cols(numeric_cols)
-    if len(numeric_cols) == 0 or (len(nadh_cols) + len(fad_cols) + len(morphology_cols)) == 0:
-        error_msg += "No feature found in the uploaded file."
+    """
+    Extract all numeric features from the dataframe. Categorize them into:
+    - NADH fit variables 
+    - FAD fit variables
+    - morphology (mask morphology and feature distribution)
+    - fit-free variables (e.g. phasor coordinates)
     
-    if "base_name" not in df.columns:
-        error_msg += "<br> base_name column is missing in the uploaded file."
-    
-    return numeric_cols, nadh_cols, fad_cols, morphology_cols, error_msg
+    """
+    warning_msg = error_msg = ""
+    numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+    feature_cols = get_feature_cols(numeric_cols)
+    nadh_fit_cols, fad_fit_cols, mask_morphology_cols, feature_distribution_fit_cols, fit_free_cols, feature_distribution_fit_free_cols = feature_cols
+    all_features_cols = nadh_fit_cols + fad_fit_cols + mask_morphology_cols + feature_distribution_fit_cols + fit_free_cols + feature_distribution_fit_free_cols
 
-def fix_df(df):
-    df["base_name"] = df["base_name"].fillna("missing base name")
+    if len(all_features_cols) == 0 :
+        error_msg += "Error: No feature found in the uploaded file.\n"
+
+    # keep only the columns that are later used in downstream analysis
+    columns_to_keep = required_cols + categorical_cols + all_features_cols
+    df = df[columns_to_keep]  
+    # delete rows with NaN values in any column
+    original_row_count = len(df)
+    # Print columns that contain NaN values
+    columns_with_na = [col for col in df.columns if df[col].isna().any()]
+    if columns_with_na:
+        print(f"Columns containing NaN values: {columns_with_na}")
+        
+    df = df.dropna()
+    rows_removed = original_row_count - len(df)
+    if rows_removed > 0:
+        warning_msg += f"Warning: {rows_removed} rows containing NaN values were removed.\n"
+    if len(df) == 0:
+        error_msg += "Error: No data available after removing NaN values.\n"
+    
+    return df, feature_cols, warning_msg, error_msg
+
+def check_and_fix_df(df):
+    """
+    check for df's metadata: 
+    - single-cell unique_identifier: `cell_id` (required)
+    - the image the cell comes from: `image_name`: base_name = {image_name}_{cell_label}
+   
+    - fill in na values for categorical columns
+    """
+    warning_msg = error_msg = ""
+    # handle the required column: cell_id
+    if "base" in df.columns:
+        df.rename(columns={"base": "cell_id"}, inplace=True)
+    if "base_name" in df.columns:
+        df.rename(columns={"base_name": "cell_id"}, inplace=True)
+    if "cell_id" not in df.columns:
+        error_msg += "Error: cell_id/base_name column is missing in the uploaded file. It is required. \n"
+
+    if df["cell_id"].isna().any():
+        warning_msg += "Warning: cell_id/base_name column contains NaN values.\n"
+    
     if "image_name" not in df.columns:
-        df['image_name'] = df['base_name'].apply(safe_split_with_logging)
+        df['image_name'] = df["cell_id"].apply(safe_split_with_logging)
     else: 
         df["image_name"] = df["image_name"].fillna("missing image name")
-    if "treatment" in df.columns:
-        df["treatment"] = df["treatment"].fillna("Not Specified")
-    else:
-        # If no treatment column, create a dummy one
-        df["treatment"] = "Not Specified"
-    if "day" in df.columns:
-        df["day"] = df["day"].astype(str)
-        
-    return df
+
+    for col in categorical_cols: 
+        if col in df.columns:
+            df[col] = df[col].fillna("N/A")
+            df[col] = df[col].astype(str) # make sure all the values are not numbers
+        else:
+            # If no column, create a dummy one
+            df[col] = "N/A"
+    # drop off the all empty columns
+    empty_cols = df.columns[df.isnull().all()]
+    if len(empty_cols) > 0:
+        warning_msg += f"Warning: {len(empty_cols)} empty columns were removed.\n"
+        df.drop(columns=empty_cols, inplace=True)
+
+    return df, warning_msg, error_msg
