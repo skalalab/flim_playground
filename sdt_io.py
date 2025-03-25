@@ -132,7 +132,7 @@ def write_sdt(path_output, sdt_data, manufacturer="BH", resolution=256):
     with open(path_header,'rb') as fid:
         header_ = fid.read() # prebuilt header_file 
     # combine header and data
-    phantom_data = header_ + sdt_data.tobytes()
+    phantom_data = header_ + sdt_data.astype(np.uint16).tobytes()
     
     with open(path_output,'wb') as fid:
         fid.write(phantom_data)   
