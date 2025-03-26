@@ -1,7 +1,7 @@
 import streamlit as st
 from input import sdt_folder_check, get_sdts
 from phasor import phasor_plot, calculate_phasor
-from widgets import create_filters
+from selection_widgets import create_filters
 from navigation import render_top_menu
 from sdt_io import write_sdt, read_sdt150
 from roi_sum import sum_sdt

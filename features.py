@@ -1,5 +1,5 @@
 import pandas as pd
-from feature_groups import required_cols, categorical_cols, feature_groups_default, feature_groups_prefixes, feature_groups_order
+from feature_groups import required_cols, categorical_cols, feature_groups_default, feature_groups_prefixes, feature_groups
 
 def safe_split_with_logging(base_name):
     try:
@@ -8,9 +8,11 @@ def safe_split_with_logging(base_name):
         return "missing image name"
 
 def get_feature_cols(cols, weighted_cols = False):
-    
-    feature_cols = tuple()
-    for feature_group in feature_groups_order:
+    """
+    feature_cols_dict: a dictionary. Keys are the names of the feature group and values are a list of columns that belong to the group.
+    """
+    feature_cols_dict = {}
+    for feature_group in feature_groups:
         # if the column is in the default list, add it to the group_cols
         # or if the column starts with any of the prefixes in the prefix list, add it to the group_cols
         group_cols = [c for c in cols if c in feature_groups_default[feature_group] or 
@@ -18,9 +20,11 @@ def get_feature_cols(cols, weighted_cols = False):
         # remove the stdev columns from the group_cols
         # and remove the weighted columns if weighted_cols is False
         group_cols = [c for c in group_cols if "stdev" not in c and (weighted_cols or "weighted" not in c)]
-        feature_cols += (group_cols,)
-  
-    return feature_cols
+        # only add non-empty feature groups to the dictionary
+        if len(group_cols) > 0:
+            feature_cols_dict[feature_group] = group_cols
+    
+    return feature_cols_dict
 
 def get_features(df):
     """
@@ -33,9 +37,11 @@ def get_features(df):
     """
     warning_msg = error_msg = ""
     numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
-    feature_cols = get_feature_cols(numeric_cols)
-    nadh_fit_cols, fad_fit_cols, mask_morphology_cols, feature_distribution_fit_cols, fit_free_cols, feature_distribution_fit_free_cols = feature_cols
-    all_features_cols = nadh_fit_cols + fad_fit_cols + mask_morphology_cols + feature_distribution_fit_cols + fit_free_cols + feature_distribution_fit_free_cols
+    feature_cols_dict = get_feature_cols(numeric_cols)
+    
+    all_features_cols = []
+    for feature_group, cols in feature_cols_dict.items():
+        all_features_cols.extend(cols)
 
     if len(all_features_cols) == 0 :
         error_msg += "Error: No feature found in the uploaded file.\n"
@@ -57,7 +63,7 @@ def get_features(df):
     if len(df) == 0:
         error_msg += "Error: No data available after removing NaN values.\n"
     
-    return df, feature_cols, warning_msg, error_msg
+    return df, feature_cols_dict, warning_msg, error_msg
 
 def check_and_fix_df(df):
     """

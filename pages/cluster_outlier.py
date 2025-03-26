@@ -7,7 +7,7 @@ from pathlib import Path
 from dimension_reduction import dimension_reduction, create_dim_reduction_figure
 from navigation import render_top_menu
 from features import get_features, fix_df
-from widgets import create_filters, create_singleSelects_vars, create_multiSelects_vars, create_checkboxes, create_umap_hyperParams
+from selection_widgets import create_filters, create_singleSelects_vars, create_multiSelects_vars, create_checkboxes, create_umap_hyperParams
 from roi_sum import roi_sum_dimensionReduction
 from input import sdt_folder_check
 
