@@ -7,7 +7,7 @@ from pathlib import Path
 from dimension_reduction import dimension_reduction, create_dim_reduction_figure
 from navigation import render_top_menu
 from features import get_features, fix_df
-from selection_widgets import create_filters, create_singleSelects_vars, create_multiSelects_vars, create_checkboxes, create_umap_hyperParams
+from widgets.selection_widgets import create_filters, create_singleSelects_vars, create_multiSelects_vars, create_checkboxes, create_umap_hyperParams
 from roi_sum import roi_sum_dimensionReduction
 from input import sdt_folder_check
 
@@ -95,14 +95,6 @@ with col2:
                 # Step 1: Filter the data
                 filtered_df, color_by_options, cols = create_filters(df)
 
-                if "removed_images" not in st.session_state:
-                    st.session_state["removed_images"] = []
-                if "removed_cells" not in st.session_state:
-                    st.session_state["removed_cells"] = []
-                if "remove_images" not in st.session_state:
-                    st.session_state.remove_images = True  # Initialize 'Remove Images' checked
-                if "remove_cells" not in st.session_state:
-                    st.session_state.remove_cells = False  # Initialize 'Remove Cells' unchecked
 
                 st.session_state["df_removed"] = filtered_df[
                     (~filtered_df["image_name"].isin(st.session_state["removed_images"])) &
