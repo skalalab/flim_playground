@@ -5,7 +5,8 @@ from itertools import combinations
 from train import classify
 from features import get_features, fix_df
 from navigation import render_top_menu
-from widgets import create_multiSelects_vars
+from selection_widgets import create_multiSelects_vars
+from filter_widgets import create_filters
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on this page as well
 render_top_menu()
