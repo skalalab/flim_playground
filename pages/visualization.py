@@ -1,13 +1,15 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 from streamlit_plotly_events import plotly_events
 
 from features import get_features, check_and_fix_df
-from selection_widgets import create_singleSelects_vars
-from filter_widgets import create_filters
+from widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget
+from widgets.custom_widgets import umap_hyperParams_widget
+from widgets.filter_widgets import filters_widget
+from widgets.outlier_removal_widgets import remove_image_or_cell_widget
 from navigation import render_top_menu
-from visualization_functions import feature_comparison_plot
+from visualization_functions import feature_comparison_plot, dimension_reduction_plot
+from dimension_reduction import dimension_reduction
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
@@ -19,10 +21,10 @@ if "removed_images" not in st.session_state:
     st.session_state["removed_images"] = []
 if "removed_cells" not in st.session_state:
     st.session_state["removed_cells"] = []
-if "remove_images" not in st.session_state:
-    st.session_state.remove_images = True  # Initialize 'Remove Images' checked
-if "remove_cells" not in st.session_state:
-    st.session_state.remove_cells = False  # Initialize 'Remove Cells' unchecked
+if "remove_image" not in st.session_state:
+    st.session_state.remove_image = True  # Initialize 'Remove Images' checked
+if "remove_cell" not in st.session_state:
+    st.session_state.remove_cell = False  # Initialize 'Remove Cells' unchecked
 
 
 col1, col2 = st.columns([0.4, 1])
@@ -32,7 +34,7 @@ with col1:
         "Select a visualization method",
         ["Feature Comparison", "Principal Component Analysis", "UMAP", "Phasor Plot", "Image Comparison"],
     )  
-
+    dimension_reduction_methods = ["UMAP", "Principal Component Analysis"]
     uploaded_csv = st.file_uploader("Upload the CSV file obtained from [Data Extraction](/data_extraction)", type=["csv"])
     upload_complete = False
     # check and fix the uploaded csv 
@@ -59,19 +61,40 @@ with col1:
                 upload_complete = True
                 st.session_state.vis_df = df
     if upload_complete:
-        if method == "Feature Comparison":
-            selected_var = create_singleSelects_vars(feature_cols_dict)
-            selected_test = st.selectbox("Select a statistical test", ["N/A", "Mann-Whitney", "t-test_ind"], index=0)
+        if method == "Feature Comparison" or method == "Image Comparison":
+            # single feature selection widget 
+            selected_var = single_feature_select_widget(feature_cols_dict, n_per_row=2)
+            if method == "Feature Comparison":
+                selected_test = st.selectbox("Select a statistical test", ["None", "Mann-Whitney", "t-test_ind"], index=0)
+        elif method in dimension_reduction_methods:
+            # multiple features selection widget 
+            selected_features = multi_feature_select_widget(feature_cols_dict, n_per_row=2)
+            if method == "UMAP":
+                n_neighbors, min_dist = umap_hyperParams_widget()
 
 with col2:
     if upload_complete:
-        filtered_df, compare_by_options, cols = create_filters(st.session_state.vis_df, color=True, compare=True)
-        if selected_var != "Select": 
-            print(f"Selected variable: {selected_var}")
-            # Plot the filtered dataframe
-            # fig = feature_comparison_plot(filtered_df, selected_var, compare_by_options, stats_test=selected_test)
-            # st.pyplot(fig, use_container_width=True)
-            
+        filtered_df, color_by_options, cols = filters_widget(st.session_state.vis_df, color=True)
+        st.session_state["df_outlier_removed"] = filtered_df[
+                    (~filtered_df["image_name"].isin(st.session_state["removed_images"])) &
+                    (~filtered_df["cell_id"].isin(st.session_state["removed_cells"]))
+                ].reset_index(drop=True)
+        if method == "Feature Comparison":
+            if selected_var != "Select": 
+                # Plot the filtered dataframe
+                fig = feature_comparison_plot(st.session_state["df_removed"], selected_var, color_by_options, stats_test=selected_test)
+                st.pyplot(fig, use_container_width=True)
+        
+        elif method in dimension_reduction_methods:
+            if len(selected_features) < 2:
+                st.write("Please select at least two features for dimension reduction methods like PCA or UMAP.")
+            else: 
+                X = st.session_state["df_outlier_removed"][selected_features]
+                # perform dimension reduction
+                
+                
+        
+        image_removal, cell_removal = remove_image_or_cell_widget()
     else:
         st.write("Please upload a file to begin.")
 

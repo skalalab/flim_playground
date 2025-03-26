@@ -16,7 +16,7 @@ def update_multiselect(key, options):
             st.session_state[key] = [option for option in current_selection if option != "All"]
 
 
-def create_filters(df, color=True, compare=False): 
+def filters_widget(df, color=True): 
     """
     color: True if we want to color or compare the plot by a categorical variable
     compare: True if we want to compare the plot by a categorical variable
@@ -27,8 +27,8 @@ def create_filters(df, color=True, compare=False):
     categories_to_filter = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1]
     
     if len(categories_to_filter) > 0:
-        if color or compare:
-            cols = st.columns(len(categories_to_filter) + 1) # +1 for color_by/compare_by
+        if color:
+            cols = st.columns(len(categories_to_filter) + 1) # +1 for color_by
         else:
             cols = st.columns(len(categories_to_filter))
 
@@ -67,11 +67,11 @@ def create_filters(df, color=True, compare=False):
                 # Otherwise, filter the dataframe
                 filtered_df = filtered_df[filtered_df[category].isin(selected_values)] 
             
-    if color or compare:
-        selectText = "Compare by" if compare else "Color by"
+    if color:
+        selectText = "Color by"
         with cols[-1]:
-            colo_compare_by_options = st.multiselect(selectText, categories_to_filter, default=categories_to_filter[-1])                   
+            color_by_options = st.multiselect(selectText, categories_to_filter, default=categories_to_filter[-1])                   
     else:
-        colo_compare_by_options = []
+        color_by_options = []
 
-    return filtered_df, colo_compare_by_options, cols
+    return filtered_df, color_by_options, cols

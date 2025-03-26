@@ -3,10 +3,10 @@ import pandas as pd
 from itertools import combinations
 
 from train import classify
-from features import get_features, fix_df
+from features import get_features, check_and_fix_df
 from navigation import render_top_menu
-from selection_widgets import create_multiSelects_vars
-from filter_widgets import create_filters
+from widgets.selection_widgets import create_multiSelects_vars
+from widgets.filter_widgets import create_filters
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on this page as well
 render_top_menu()
@@ -18,7 +18,7 @@ with col1:
     if uploaded_csv is not None:
     # Read the uploaded data
         df = pd.read_csv(uploaded_csv)
-        df = fix_df(df)
+        df = check_and_fix_df(df)
         numeric_cols, nadh_cols, fad_cols, morphology_cols, error_msg = get_features(df)
         if error_msg != "":
             st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)

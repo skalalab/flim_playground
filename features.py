@@ -10,6 +10,7 @@ def safe_split_with_logging(base_name):
 def get_feature_cols(cols, weighted_cols = False):
     """
     feature_cols_dict: a dictionary. Keys are the names of the feature group and values are a list of columns that belong to the group.
+    Only feature groups that have at least one column are included in the dictionary.
     """
     feature_cols_dict = {}
     for feature_group in feature_groups:
