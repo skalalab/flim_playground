@@ -5,66 +5,67 @@ from itertools import combinations
 from train import classify
 from features import get_features, check_and_fix_df
 from navigation import render_top_menu
-from widgets.selection_widgets import create_multiSelects_vars
-from widgets.filter_widgets import create_filters
+from widgets.selection_widgets import multi_feature_select_widget
+from widgets.filter_widgets import filters_widget
+from widgets.load_data_widgets import load_csv, happy_emoji, sad_emoji
+
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on this page as well
 render_top_menu()
 st.title("Classification")
 col1, col2 = st.columns([0.4, 1])
 with col1:
-    uploaded_csv = st.file_uploader(" Please Upload the CSV file from Region Props", type=["csv"])
-        
-    if uploaded_csv is not None:
     # Read the uploaded data
-        df = pd.read_csv(uploaded_csv)
-        df = check_and_fix_df(df)
-        numeric_cols, nadh_cols, fad_cols, morphology_cols, error_msg = get_features(df)
-        if error_msg != "":
-            st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)
-            df = None
-
-        class_by = "treatment"
-        treatments = df[class_by].unique()
-        if len(treatments) <= 1:
-            st.write("Either no treatment column found or only one treatment found in the uploaded file.")
-            df = None
-        else:
-            # get all possible combinations of treatments as ways to classify the data
-            classifications = []
-            classification_options = []
-            for i in range(len(treatments)+1, 1, -1):
-                classification = list(combinations(treatments, i))
-                classifications.extend(classification)
-                classification_options.extend([" VS ".join(c) for c in classification])
-            selected_option = st.selectbox("Select a way to classify", classification_options)
-            selected_classification = classifications[classification_options.index(selected_option)]
-            cols = st.columns(2)
-            with cols[0]:
-                classification_method = st.selectbox("Select a classification method", ["Random Forest", "SVM", "Logistic Regression"])
-            with cols[1]:
-                splits = st.slider("Select the train size (percentage of training data)", 0.5, 0.9, 0.7, 0.1)
-            
-    else:
-        st.write("Please upload a file/folder path to begin.")
-        df = None
+    uploaded_csv = st.file_uploader("Upload the CSV file obtained from [Data Extraction](/data_extraction)", type=["csv"])
+    df, feature_cols_dict, upload_complete = load_csv(uploaded_csv)
+    if upload_complete:
+        cols = st.columns(2)
+        with cols[0]:
+            classification_method = st.selectbox("Select a classification method", ["Random Forest", "SVM", "Logistic Regression"])
+        with cols[1]:
+            splits = st.slider("Select the train size (percentage of training data)", 0.5, 0.9, 0.7, 0.1)
+        selected_features = multi_feature_select_widget(feature_cols_dict, n_per_row=1)
+        
 with col2:
-    if df is not None:
-        nadh_vars, fad_vars, morphology_vars = create_multiSelects_vars(nadh_cols, fad_cols, morphology_cols, columns=True)
-        if "All NADH Variables" in nadh_vars:
-            nadh_vars = nadh_cols
-        if "All FAD Variables" in fad_vars:
-            fad_vars = fad_cols
-        if "All Morphology Variables" in morphology_vars:
-            morphology_vars = morphology_cols
-        selected_vars = nadh_vars + fad_vars + morphology_vars
-        df_classify = df[df[class_by].isin(selected_classification)][selected_vars+[class_by]]
-        st.write(f"Running {classification_method} to classify between: {selected_option}, trained on {int(splits*100)}% of the data.")
-        fig1, accuracy, fig2 = classify(df_classify, classification_method, splits)
-        st.pyplot(fig1)
-        st.write(f"Accuracy: {accuracy:.2f}")
-        if fig2 is not None:
-            st.pyplot(fig2)
+    if upload_complete:   
+        filtered_df, classify_by_options, cols = filters_widget(df, wildcard=True, wildCardSelectText="Classify by")
+        filtered_df['classes'] = filtered_df[classify_by_options].agg('_'.join, axis=1)
+        classes = filtered_df['classes'].unique()
+        if len(classes) <= 1 or len(selected_features) == 0:
+            if len(classes) <= 1:
+                st.write(f"No more than one class available for classification {sad_emoji}.")
+            else:
+                st.write("Please select features.")
+        else: 
+            classification_options = []
+            for i in range(len(classes)+1, 1, -1):
+                classification_option = list(combinations(classes, i))
+                classification_options.extend(classification_option)
+
+            # support classification of 1 class vs rest
+            for cls in classes:
+                classification_options.append([cls, "the rest"])
+            classification_options.reverse()
+            classification_options_text= [" VS ".join(c) for c in classification_options]
+            selected_option_text = st.selectbox("Select a way to classify", classification_options_text)
+            selected_option = classification_options[classification_options_text.index(selected_option_text)]
+
+            # handle the case of 1 class vs rest
+            if "the rest" in selected_option:
+                df_classify = filtered_df[selected_features+['classes']]
+                df_classify['classes'] = df_classify['classes'].apply(lambda x: x if x == selected_option[0] else "the rest")
+            else:
+                df_classify = filtered_df[filtered_df['classes'].isin(selected_option)][selected_features+['classes']]
+            
+            if "the rest" in selected_option:
+                the_rest = [cls for cls in classes if cls != selected_option[0]]
+                selected_option_text = f"{selected_option[0]} VS {', '.join(the_rest)}"
+            st.write(f"Running {classification_method} to classify between: {selected_option_text}, trained on {int(splits*100)}% of the data {happy_emoji}.")
+            fig1, accuracy, fig2 = classify(df_classify, classification_method, splits)
+            st.pyplot(fig1)
+            st.write(f"Accuracy: {accuracy:.2f}")
+            if fig2 is not None:
+                st.pyplot(fig2)
 
     else:
         st.write("Waiting for file/folder path upload")
