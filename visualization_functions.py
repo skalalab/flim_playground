@@ -35,13 +35,11 @@ def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"):
     return fig
 
 
-def dimension_reduction_plot(df, method="PCA", colored_by=["treatment"], exp_var=None):
+def dimension_reduction_plot(df, method="UMAP", colored_by=[], exp_var=None):
     
     fig = go.Figure()
-    if len(colored_by) < 1: # a sanity check, color_by should never be empty
-        return fig
 
-    if method == "PCA":
+    if method == "Principal Component Analysis":
         axis_labels = ["PC1", "PC2"]
     elif method == "UMAP":
         axis_labels = ["UMAP1", "UMAP2"]
@@ -64,7 +62,7 @@ def dimension_reduction_plot(df, method="PCA", colored_by=["treatment"], exp_var
                 y=g_df[axis_labels[1]],
                 mode='markers',
                 name=f'{g}',
-                text=g_df["base_name"],
+                text=g_df["cell_id"],
                 customdata=g_df["image_name"],
                 hovertemplate="<b>%{text}</b>",
                 marker=dict(color=color_map[g])

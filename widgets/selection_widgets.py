@@ -97,7 +97,7 @@ def multi_feature_select_widget(feature_cols_dict, n_per_row=2):
                 selected = st.multiselect(
                     f"{feature_group}",
                     options=options,
-                    default=st.session_state[key],
+                    #default=st.session_state[key],
                     key=key,
                     on_change=update_multiselect,
                     args=(key, options),
