@@ -16,10 +16,12 @@ def update_multiselect(key, options):
             st.session_state[key] = [option for option in current_selection if option != "All"]
 
 
-def filters_widget(df, color=True): 
+def filters_widget(df, wildcard=True, wildCardSelectText="Color by"): 
     """
-    color: True if we want to color or compare the plot by a categorical variable
-    compare: True if we want to compare the plot by a categorical variable
+    wildcard: True if we want to add a wildcard multi-selection. It can be one of the following: 
+        color by: True if we want to color the plot by a categorical variable or a combination of categorical variables
+        compare by: True if we want to compare a feature by a categorical variable or a combination of categorical variables
+        classify by: True if we want to classify by a categorical variable or a combination of categorical variables
     """
     # Initially, filtered_df is the original df
     filtered_df = df.copy()
@@ -27,7 +29,7 @@ def filters_widget(df, color=True):
     categories_to_filter = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1]
     
     if len(categories_to_filter) > 0:
-        if color:
+        if wildcard:
             cols = st.columns(len(categories_to_filter) + 1) # +1 for color_by
         else:
             cols = st.columns(len(categories_to_filter))
@@ -36,7 +38,7 @@ def filters_widget(df, color=True):
         with cols[i]:
             # Create a multiselect for each category
             # Try to convert to numeric for sorting if the column contains numbers as strings
-            unique_values = df[category].unique().tolist()
+            unique_values = filtered_df[category].unique().tolist()
             try:
                 # Check if the values can be converted to numeric
                 # if it can, sort them in their numeric order
@@ -67,11 +69,10 @@ def filters_widget(df, color=True):
                 # Otherwise, filter the dataframe
                 filtered_df = filtered_df[filtered_df[category].isin(selected_values)] 
             
-    if color:
-        selectText = "Color by"
+    if wildcard:
         with cols[-1]:
-            color_by_options = st.multiselect(selectText, categories_to_filter, default=categories_to_filter[-1])                   
+            wildcard_options = st.multiselect(wildCardSelectText, categories_to_filter, default=categories_to_filter[-1])                   
     else:
-        color_by_options = []
+        wildcard_options = []
 
-    return filtered_df, color_by_options, cols
+    return filtered_df, wildcard_options, cols

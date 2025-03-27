@@ -46,6 +46,7 @@ def get_features(df):
 
     if len(all_features_cols) == 0 :
         error_msg += "Error: No feature found in the uploaded file.\n"
+        return None, None, None, error_msg
 
     # keep only the columns that are later used in downstream analysis
     columns_to_keep = required_cols + categorical_cols + all_features_cols
@@ -63,6 +64,7 @@ def get_features(df):
         warning_msg += f"Warning: {rows_removed} rows containing NaN values were removed.\n"
     if len(df) == 0:
         error_msg += "Error: No data available after removing NaN values.\n"
+        return None, None, None, error_msg
     
     return df, feature_cols_dict, warning_msg, error_msg
 
@@ -82,7 +84,8 @@ def check_and_fix_df(df):
         df.rename(columns={"base_name": "cell_id"}, inplace=True)
     if "cell_id" not in df.columns:
         error_msg += "Error: cell_id/base_name column is missing in the uploaded file. It is required. \n"
-
+        return None, warning_msg, error_msg
+    
     if df["cell_id"].isna().any():
         warning_msg += "Warning: cell_id/base_name column contains NaN values.\n"
     
