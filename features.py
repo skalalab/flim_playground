@@ -56,12 +56,12 @@ def get_features(df):
     # Print columns that contain NaN values
     columns_with_na = [col for col in df.columns if df[col].isna().any()]
     if columns_with_na:
-        print(f"Columns containing NaN values: {columns_with_na}")
-        
-    df = df.dropna()
-    rows_removed = original_row_count - len(df)
-    if rows_removed > 0:
-        warning_msg += f"Warning: {rows_removed} rows containing NaN values were removed.\n"
+        num_na_columns = len(columns_with_na)
+        warning_msg += f"Warning: {', '.join(columns_with_na)} column{'s' if num_na_columns > 1 else ''} contain{'s' if num_na_columns == 1 else ''} NaN values. "
+        df = df.dropna()
+        rows_removed = original_row_count - len(df)
+        if rows_removed > 0:
+            warning_msg += f"{rows_removed} rows containing NaN values were removed.\n"
     if len(df) == 0:
         error_msg += "Error: No data available after removing NaN values.\n"
         return None, None, None, error_msg
@@ -85,9 +85,6 @@ def check_and_fix_df(df):
     if "cell_id" not in df.columns:
         error_msg += "Error: cell_id/base_name column is missing in the uploaded file. It is required. \n"
         return None, warning_msg, error_msg
-    
-    if df["cell_id"].isna().any():
-        warning_msg += "Warning: cell_id/base_name column contains NaN values.\n"
     
     if "image_name" not in df.columns:
         df['image_name'] = df["cell_id"].apply(safe_split_with_logging)

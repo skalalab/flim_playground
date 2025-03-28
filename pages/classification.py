@@ -2,8 +2,7 @@ import streamlit as st
 import pandas as pd
 from itertools import combinations
 
-from train import classify
-from features import get_features, check_and_fix_df
+from classify import classify
 from navigation import render_top_menu
 from widgets.selection_widgets import multi_feature_select_widget
 from widgets.filter_widgets import filters_widget
@@ -14,6 +13,7 @@ st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
 st.title("Classification")
 col1, col2 = st.columns([0.4, 1])
+
 with col1:
     # Read the uploaded data
     uploaded_csv = st.file_uploader("Upload the CSV file obtained from [Data Extraction](/data_extraction)", type=["csv"])
@@ -25,7 +25,8 @@ with col1:
         with cols[1]:
             splits = st.slider("Select the train size (percentage of training data)", 0.5, 0.9, 0.7, 0.1)
         selected_features = multi_feature_select_widget(feature_cols_dict, n_per_row=1)
-        
+        filtered_df = df 
+
 with col2:
     if upload_complete:   
         filtered_df, classify_by_options, cols = filters_widget(df, wildcard=True, wildCardSelectText="Classify by")
@@ -42,9 +43,10 @@ with col2:
                 classification_option = list(combinations(classes, i))
                 classification_options.extend(classification_option)
 
-            # support classification of 1 class vs rest
-            for cls in classes:
-                classification_options.append([cls, "the rest"])
+            # support classification of 1 class vs rest. If only two classes are available, then no need to show those option
+            if len(classes) > 2:
+                for cls in classes:
+                    classification_options.append([cls, "the rest"])
             classification_options.reverse()
             classification_options_text= [" VS ".join(c) for c in classification_options]
             selected_option_text = st.selectbox("Select a way to classify", classification_options_text)
@@ -53,7 +55,7 @@ with col2:
             # handle the case of 1 class vs rest
             if "the rest" in selected_option:
                 df_classify = filtered_df[selected_features+['classes']]
-                df_classify['classes'] = df_classify['classes'].apply(lambda x: x if x == selected_option[0] else "the rest")
+                df_classify.loc[:,'classes'] = df_classify['classes'].apply(lambda x: x if x == selected_option[0] else "the rest")
             else:
                 df_classify = filtered_df[filtered_df['classes'].isin(selected_option)][selected_features+['classes']]
             

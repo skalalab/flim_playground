@@ -80,3 +80,8 @@ It is deployed on using streamlit's cummunity server at: [https://flim-playgroun
 - 1/3/25: finished the classification module that contains SVM, Logistic Regression, and Random Forest. Did classfication and plotted the confusion matrix, ROC curve and feature importance graph (for random forest only). 
 - 3/25/25: started working on FLIM Playground 2.0 
 - 3/26/25: refactoring the visulization playground
+- 3/27/25: finished classification; started on feature comparison 
+
+# TODO
+- add detailed classification reports
+- polpulation hetergenity 
