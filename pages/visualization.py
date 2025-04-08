@@ -39,7 +39,7 @@ with col1:
             # single feature selection widget 
             selected_var = single_feature_select_widget(feature_cols_dict, n_per_row=2)
             if method == "Feature Comparison":
-                selected_test = st.selectbox("Select a statistical test", ["None", "Mann-Whitney", "t-test_ind"], index=0)
+                selected_test = st.selectbox("Select a statistical test", ["None", "Glass's Delta"], index=0)
         elif method in dimension_reduction_methods:
             hyperParam_dict = {}
             # multiple features selection widget 

@@ -23,3 +23,12 @@ def umap_hyperParams_widget():
         )
 
     return n_neighbors, min_dist
+
+def stats_comparison_pair_widget(available_pairs):
+    selected_pairs = st.multiselect(
+        "Select statistical tests compare pairs",
+        available_pairs,
+        default=available_pairs,
+        key="compare_pairs"
+    )
+    return selected_pairs

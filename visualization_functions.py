@@ -1,4 +1,3 @@
-
 import seaborn as sns
 import matplotlib.pyplot as plt
 from statannotations.Annotator import Annotator
@@ -6,6 +5,13 @@ from itertools import combinations
 import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
+from widgets.custom_widgets import stats_comparison_pair_widget
+
+def glass_delta(group1, group2):
+    mean_diff = np.mean(group1) - np.mean(group2)
+    group2_sd = np.std(group2, ddof=1)  # Using Bessel's correction with ddof=1
+    return mean_diff / group2_sd
+
 def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"): 
     # create a new copy of df 
     df['compare_group'] = df[compared_by].agg('_'.join, axis=1)
@@ -45,7 +51,7 @@ def interactive_feature_comparison_plot(df, selected_var, compared_by, stats_tes
     jitter_amount = 1
     point_size = 5
 
-    # --- 3. Plotting Traces using go.Box (with hidden box) ---
+    # --- 1. Plotting Traces using go.Box (with hidden box) ---
     for group in compare_groups:
         # Filter data for the current group
         g_df = df[df['compare_group'] == group].copy()
@@ -111,11 +117,86 @@ def interactive_feature_comparison_plot(df, selected_var, compared_by, stats_tes
        # boxmode='group' 
     )
 
-    # --- 4. Add statistical annotations ---
+    # --- 2. Add statistical annotations ---
     if compare_pairs != [] and stats_test != "None":
-        pair_chose = st.multiselect("Select statistical tests compare pairs", compare_pairs, default=[compare_pairs[0]],key="compare_pairs")
-        if pair_chose != []:
-            print(pair_chose)
+        selected_pairs = stats_comparison_pair_widget(compare_pairs)
+        if selected_pairs != []:
+            if stats_test == "Glass's Delta":
+                # Calculate glasser's delta for each pair
+                
+                # Keep track of the highest y-position used for annotations so far
+                max_annotation_y = -np.inf 
+                # Define vertical spacing parameters
+                offset_from_data = 0.05 * (df[selected_var].max() - df[selected_var].min()) # Initial offset based on data range
+                vertical_spacing = 0.08 * (df[selected_var].max() - df[selected_var].min()) # Space between annotations
+                bracket_vertical_length = 0.03 * (df[selected_var].max() - df[selected_var].min()) # Length of bracket arms
+                text_offset_from_bracket = 0.02 * (df[selected_var].max() - df[selected_var].min()) # Space between bracket and text
+
+                # Sort pairs based on the x-position to draw lower annotations first (optional but can help)
+                sorted_pairs = sorted(selected_pairs, key=lambda p: max(compare_groups.tolist().index(p[0]), compare_groups.tolist().index(p[1])))
+
+                for pair in sorted_pairs:
+                    group1 = df[df['compare_group'] == pair[0]][selected_var]
+                    group2 = df[df['compare_group'] == pair[1]][selected_var]
+                    # Skip if either group is empty
+                    if group1.empty or group2.empty:
+                        continue
+                        
+                    delta = glass_delta(group1, group2)
+                    # Add annotation to the figure
+                    # Get indices for positioning
+                    x_indices = [compare_groups.tolist().index(pair[0]), compare_groups.tolist().index(pair[1])]
+                    x_positions = sorted(x_indices)
+                    
+                    # Determine the highest data point under this annotation range
+                    current_pair_max_y = max(group1.max(), group2.max())
+                    
+                    # Calculate initial desired position for the bracket top
+                    y_bracket_top_initial = current_pair_max_y + offset_from_data
+                    
+                    # Check if this position is below the highest annotation drawn so far
+                    # If so, place it above the highest one with spacing
+                    y_bracket_top = max(y_bracket_top_initial, max_annotation_y + vertical_spacing)
+                    
+                    # Calculate the final text position
+                    y_text_annotation = y_bracket_top + text_offset_from_bracket
+
+                    # Update the highest y position used
+                    max_annotation_y = y_text_annotation 
+
+                    # Add horizontal line for the top of the square bracket
+                    fig.add_shape(
+                        type="line",
+                        x0=x_positions[0],
+                        y0=y_bracket_top,
+                        x1=x_positions[1],
+                        y1=y_bracket_top,
+                        line=dict(color="black", width=1.5),
+                    )
+                    
+                    # Add vertical lines for the sides of square brackets
+                    for x_pos in x_positions:
+                        fig.add_shape(
+                            type="line",
+                            x0=x_pos,
+                            y0=y_bracket_top,
+                            x1=x_pos,
+                            y1=y_bracket_top - bracket_vertical_length, 
+                            line=dict(color="black", width=1.5),
+                        )
+                    
+                    # Add text annotation above the bracket
+                    fig.add_annotation(
+                        x=(x_positions[0] + x_positions[1])/2,
+                        y=y_text_annotation, 
+                        text=f"Δ={delta:.2f}",
+                        showarrow=False,
+                        font=dict(size=12),
+                        bgcolor="rgba(255, 255, 255, 0.8)",
+                        bordercolor="black",
+                        borderwidth=1,
+                        align="center"
+                    )
 
     df.drop(columns=['compare_group'], inplace=True)
     return fig
