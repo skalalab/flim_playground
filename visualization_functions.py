@@ -12,35 +12,7 @@ def glass_delta(group1, group2):
     group2_sd = np.std(group2, ddof=1)  # Using Bessel's correction with ddof=1
     return mean_diff / group2_sd
 
-def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"): 
-    # create a new copy of df 
-    df['compare_group'] = df[compared_by].agg('_'.join, axis=1)
-    compare_groups = df['compare_group'].unique()
-    compare_pairs = list(combinations(compare_groups, 2))
-    # assign a different color to each compare_group
-    alpha = 1 
-    palette = sns.color_palette("tab10", n_colors=len(compare_groups))
-    color_map = {group: (color[0], color[1], color[2], alpha) for group, color in zip(compare_groups, palette)}
-   
-    fig, ax = plt.subplots()
-    sns.boxplot(x="compare_group", y=selected_var, data=df, showfliers=False, palette=color_map, hue="compare_group", ax=ax, boxprops=dict(facecolor="none", edgecolor="black"),)
-    sns.swarmplot(x="compare_group", y=selected_var, data=df, palette=color_map,  hue="compare_group", ax=ax, size =2)
-
-    # Add statistical annotations
-    if compare_pairs != [] and stats_test != "None":
-        pair_chose = st.multiselect("Select statistical tests compare pairs", compare_pairs, default=compare_pairs, key="compare_pairs")
-        if pair_chose != []:
-            annotator = Annotator(ax, pair_chose, data=df, x="compare_group", y=selected_var)
-            annotator.configure(test=stats_test, text_format="star", loc="outside", verbose=2)
-            annotator.apply_and_annotate()
-    # dynmically adjust the font size of x-axis labels
-  #  ax.set_xticklabels(ax.get_xticklabels(), fontsize=12 if len(compare_groups) < 4 else (6 if len(compare_groups) <= 8 else 4))
-   # ax.tick_params(axis='x', labelsize=12 if len(compare_groups) < 4 else (6 if len(compare_groups) <= 8 else 4))
-    plt.tight_layout()
-    df.drop(columns=['compare_group'], inplace=True)
-    return fig
-
-def interactive_feature_comparison_plot(df, selected_var, compared_by, stats_test="None"):
+def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"):
     fig = go.Figure()
     df['compare_group'] = df[compared_by].agg('_'.join, axis=1)
     compare_groups = df['compare_group'].unique()
@@ -248,4 +220,34 @@ def dimension_reduction_plot(df, method="UMAP", colored_by=[], exp_var=None):
         fig.update_yaxes(title_text=f"{axis_labels[1]}")
     # remove the column after plotting
     df.drop(columns=['unique_color_group'], inplace=True)
+    return fig
+
+def image_comparison_plot(df, selected_var):
+    if (df["image_name"] == "missing image name").any():
+        st.markdown("<h5 style='text-align: center; color: Red;'>Warning: We cannot infer some/all image names from you cell_id column. We assume that the image name is the cell_id without the cell number (which is found after the last underscore) </h5>", unsafe_allow_html=True)
+    
+    fig = go.Figure()
+    
+    image_names = df['image_name'].unique()
+    
+    for image_name in image_names:
+        image_df = df[df['image_name'] == image_name]
+        fig.add_trace(go.Box(
+            y=image_df[selected_var],
+            name=image_name, # Store image_name here to retrieve on click
+            boxpoints=False, # Only show the box
+            # customdata=[image_name] * len(image_df), # Alternative if name doesn't work reliably
+            # hovertemplate=f"<b>Image:</b> {image_name}<br><b>{selected_var}:</b> %{{y}}<extra></extra>"
+        ))
+
+    fig.update_layout(
+        title=f'Distribution of {selected_var} by Image',
+        xaxis_title='Image Name',
+        yaxis_title=selected_var,
+        showlegend=False, # Hide legend if too many images
+        hovermode='closest',
+        xaxis={'categoryorder':'array', 'categoryarray': sorted(image_names)}, # Sort boxes by name
+        margin=dict(l=50, r=20, t=50, b=max(80, len(max(image_names, key=len, default=''))*5)) # Adjust bottom margin for long names
+    )
+    
     return fig
