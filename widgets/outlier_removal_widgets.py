@@ -43,7 +43,7 @@ def remove_image_or_cell_widget():
 
     return image_removal, cell_removal
 
-def remove_outlier_widget(clicked_points, fig):
+def remove_img_cell_outlier_widget(clicked_points, fig):
     """
     Function to handle the removal of outliers based on user clicked points."""
 
@@ -63,6 +63,17 @@ def remove_outlier_widget(clicked_points, fig):
             st.session_state["removed_cells"].append(clicked_data)
         else: 
             st.session_state["removed_images"].append(clicked_data)
+        st.rerun()
+
+def remove_img_outlier_widget(clicked_points, fig):
+    clicked_curve_index = clicked_points[0]["curveNumber"]
+    # Retrieve image name from the trace's name property
+    clicked_image_name = fig.data[clicked_curve_index].name 
+    
+    st.write(f"You clicked on image: {clicked_image_name}. Do you want to remove this image?")
+    if st.button(f"Confirm Removal of {clicked_image_name}", key=f"remove_{clicked_image_name}"):
+        if clicked_image_name not in st.session_state["removed_images"]:
+            st.session_state["removed_images"].append(clicked_image_name)
         st.rerun()
 
 def display_outliers_widget():

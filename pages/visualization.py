@@ -6,9 +6,9 @@ from widgets.load_data_widgets import load_csv, happy_emoji, sad_emoji
 from widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget
 from widgets.custom_widgets import umap_hyperParams_widget
 from widgets.filter_widgets import filters_widget
-from widgets.outlier_removal_widgets import remove_image_or_cell_widget, remove_outlier_widget, display_outliers_widget, reset_export_widget
+from widgets.outlier_removal_widgets import remove_image_or_cell_widget, remove_img_cell_outlier_widget, display_outliers_widget, reset_export_widget, remove_img_outlier_widget
 from navigation import render_top_menu
-from visualization_functions import interactive_feature_comparison_plot, dimension_reduction_plot
+from visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot
 from dimension_reduction import dimension_reduction
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -63,7 +63,7 @@ with col2:
             if method == "Feature Comparison":
                 if selected_var != "Select": 
                     # Plot the filtered dataframe
-                    fig = interactive_feature_comparison_plot(st.session_state["df_outlier_removed"], selected_var, color_by_options, stats_test=selected_test)
+                    fig = feature_comparison_plot(st.session_state["df_outlier_removed"], selected_var, color_by_options, stats_test=selected_test)
                     fig_ready = True
             
             elif method in dimension_reduction_methods:
@@ -85,20 +85,39 @@ with col2:
             elif method == "Phasor Plot":
                 st.write("Will be available once the Data Extraction Playground is ready.")
 
-            # outlier removal module
+            elif method == "Image Comparison":
+                if selected_var != "Select":
+                    fig = image_comparison_plot(st.session_state["df_outlier_removed"], selected_var)
+                    fig_ready = True
+                                      
+            # outlier removal module (only for methods other than Image Comparison)
             if fig_ready: 
-                clicked_points = plotly_events(
-                    fig, click_event=True, hover_event=False, select_event=False,
-                )
-                image_removal, cell_removal = remove_image_or_cell_widget()
-                if clicked_points:
-                    remove_outlier_widget(clicked_points, fig)
+                if method == "Image Comparison":
+                    clicked_points_img = plotly_events(
+                        fig, click_event=True, hover_event=False, select_event=False, key="image_removal_only" # Use a unique key
+                    )                                 
+                    # --- Specific logic for Image Comparison outlier removal ---
+                    if clicked_points_img:
+                        remove_img_outlier_widget(clicked_points_img, fig)
+                else:
+                    clicked_points = plotly_events(
+                        fig, click_event=True, hover_event=False, select_event=False, key="image_and_cell_removal" # Use a unique key
+                    )
+                    image_removal, cell_removal = remove_image_or_cell_widget()
+                
+                    if clicked_points:
+                        # Standard outlier removal widget call
+                        remove_img_cell_outlier_widget(clicked_points, fig) 
                     
+                # Display removed items and reset/export options (common logic)
                 if len(st.session_state["removed_images"]) > 0 or len(st.session_state["removed_cells"]) > 0:
                     display_outliers_widget()
-                    reset_export_widget(uploaded_csv, df)
+                    reset_export_widget(uploaded_csv, df) # Pass original df for export
 
-                st.markdown(f"<h5 style='text-align: center;'>Click on points to remove outlier cells or images {happy_emoji}</h5>", unsafe_allow_html=True)
+                if method == "Image Comparison":
+                    st.markdown(f"<h5 style='text-align: center;'>Click on points to remove outlier images {happy_emoji}</h5>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<h5 style='text-align: center;'>Click on points to remove outlier images or cells {happy_emoji}</h5>", unsafe_allow_html=True)
         else: 
             st.markdown(f"<h5 style='text-align: center; color: red'>No data available after removing outliers and/or filtering {sad_emoji}</h5>", unsafe_allow_html=True)
     else:

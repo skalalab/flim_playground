@@ -96,20 +96,19 @@ def read_sdt150(filename):
             
     dataSDT = np.fromstring(dataspl, np.uint16)
 
-    # reshape XYTC to CXYT
-    if XYTC[3] > 1:
-        dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2] * XYTC[3]].reshape([XYTC[3], XYTC[0], XYTC[1], XYTC[2]])
-        # if dataSDT[0, :, :, :].sum() == 0:  # bruker uses two channels and keeps one empty!!!
-        #     dataSDT = np.squeeze(dataSDT[1, :, :, :])
-        # else:
-        #     if dataSDT[1, :, :, :].sum() == 0:  # bruker uses two channels and keeps one empty!!!
-        #         dataSDT = np.squeeze(dataSDT[0, :, :, :])
-        #         # print ' ch1 is empty'
-        #     else:
-        #         pass
-    else:
+    if XYTC[3] == 1:
+        # reduce the 4D data to 3d (CXYT to XYT)
         dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2]].reshape([XYTC[0], XYTC[1], XYTC[2]])
-    # print("READ DATA IN:",dataSDT.shape)
+    # reshape XYTC to CXYT
+    elif XYTC[3] > 1:
+        # Check for empty channels and filter them out
+        non_empty_channels =  len(dataSDT) // (XYTC[0] * XYTC[1] * XYTC[2])
+        if non_empty_channels == 1:
+            # If only one channel is present, reshape to 3D
+            dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2]].reshape([XYTC[0], XYTC[1], XYTC[2]])
+        else:
+            dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2] * XYTC[3]].reshape([XYTC[3], XYTC[0], XYTC[1], XYTC[2]])
+            
     return dataSDT
 
 
