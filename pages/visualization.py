@@ -21,6 +21,10 @@ if "removed_images" not in st.session_state:
     st.session_state["removed_images"] = []
 if "removed_cells" not in st.session_state:
     st.session_state["removed_cells"] = []
+if "last_processed_click" not in st.session_state:
+    st.session_state.last_processed_click = None
+if "last_processed_click_img" not in st.session_state:
+    st.session_state.last_processed_click_img = None
 
 dimension_reduction_methods = ["UMAP", "Principal Component Analysis"]
 col1, col2 = st.columns([0.4, 1])
@@ -93,32 +97,41 @@ with col2:
             # outlier removal module (only for methods other than Image Comparison)
             if fig_ready: 
                 if method == "Image Comparison":
-                    clicked_points_img = plotly_events(
+                    current_clicked_points_img = plotly_events(
                         fig, click_event=True, hover_event=False, select_event=False, key="image_removal_only" # Use a unique key
                     )                                 
                     # --- Specific logic for Image Comparison outlier removal ---
-                    if clicked_points_img:
-                        remove_img_outlier_widget(clicked_points_img, fig)
+                    # Process only if it's a new, non-empty click
+                    if current_clicked_points_img and current_clicked_points_img != st.session_state.last_processed_click_img:
+                        remove_img_outlier_widget(current_clicked_points_img, fig)
+                       
+                    # Reset if the current event is empty (no click)
+                    elif not current_clicked_points_img:
+                         st.session_state.last_processed_click_img = None
                 else:
-                    clicked_points = plotly_events(
+                    current_clicked_points = plotly_events(
                         fig, click_event=True, hover_event=False, select_event=False, key="image_and_cell_removal" # Use a unique key
                     )
                     image_removal, cell_removal = remove_image_or_cell_widget()
                 
-                    if clicked_points:
+                    # Process only if it's a new, non-empty click
+                    if current_clicked_points and current_clicked_points != st.session_state.last_processed_click:
                         # Standard outlier removal widget call
-                        remove_img_cell_outlier_widget(clicked_points, fig) 
-                    
-                # Display removed items and reset/export options (common logic)
-                if len(st.session_state["removed_images"]) > 0 or len(st.session_state["removed_cells"]) > 0:
-                    display_outliers_widget()
-                    reset_export_widget(uploaded_csv, df) # Pass original df for export
+                        remove_img_cell_outlier_widget(current_clicked_points, fig) 
 
+                    # Reset if the current event is empty (no click)
+                    elif not current_clicked_points:
+                         st.session_state.last_processed_click = None
+        
                 if method == "Image Comparison":
-                    st.markdown(f"<h5 style='text-align: center;'>Click on points to remove outlier images {happy_emoji}</h5>", unsafe_allow_html=True)
+                    st.markdown(f"<h5 style='text-align: center;'>Click on a boxplot to remove an outlier image {happy_emoji}</h5>", unsafe_allow_html=True)
                 else:
-                    st.markdown(f"<h5 style='text-align: center;'>Click on points to remove outlier images or cells {happy_emoji}</h5>", unsafe_allow_html=True)
+                    st.markdown(f"<h5 style='text-align: center;'>Click on a point to remove an outlier image or a cell {happy_emoji}</h5>", unsafe_allow_html=True)
         else: 
             st.markdown(f"<h5 style='text-align: center; color: red'>No data available after removing outliers and/or filtering {sad_emoji}</h5>", unsafe_allow_html=True)
+        # Display removed items and reset/export options (common logic)
+        if len(st.session_state["removed_images"]) > 0 or len(st.session_state["removed_cells"]) > 0:
+            display_outliers_widget()
+            reset_export_widget(uploaded_csv, df) # Pass original df for export
     else:
         st.write("Please upload a file to begin.")

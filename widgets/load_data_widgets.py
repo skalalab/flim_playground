@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from features import get_features, check_and_fix_df
+from folder_util import list_files_with_suffix, file_suffix_default
 import random
 
 happy_celebratory_emojis = [
@@ -78,3 +79,24 @@ def load_csv(uploaded_csv):
                 st.write(f"Data uploaded successfully {happy_emoji}")
                 upload_complete = True
     return df, feature_cols_dict, upload_complete
+
+def load_data_suffix_widget(extraction_type, fit_free, has_nadh, has_fad):
+    """
+    ROI summing fit: requires mask, IRF, and raw lifetime decay files for nadh and fad
+    SPCImage: requires mask and SPC fitting outputs (a1, a2, t1, t2, and shift) for nadh and fad, and raw lifetime decay files for nadh and fad (if fit_free)
+    K-Flow: requires cell histograms and IRF 
+    Categorical Features: requires single cell features csv files
+    """
+    # based on the extraction type, display the default suffix for each require file type
+    actual_file_suffix = {}
+    if extraction_type == "Categorical Features": 
+        pass
+    
+
+
+def load_data_from_folder_widget(folder_path, extraction_type, fit_free, has_nadh, has_fad):    
+    """
+    Load data from a folder and check its validity.
+    """
+    load_data_suffix_widget(extraction_type, fit_free, has_nadh, has_fad)
+    return

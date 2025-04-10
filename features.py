@@ -1,5 +1,5 @@
 import pandas as pd
-from feature_groups import required_cols, categorical_cols, feature_groups_default, feature_groups_prefixes, feature_groups
+from feature_groups import required_cols, categorical_cols, feature_groups_default, feature_groups_prefix, feature_groups
 
 def safe_split_with_logging(base_name):
     try:
@@ -17,7 +17,7 @@ def get_feature_cols(cols, weighted_cols = False):
         # if the column is in the default list, add it to the group_cols
         # or if the column starts with any of the prefixes in the prefix list, add it to the group_cols
         group_cols = [c for c in cols if c in feature_groups_default[feature_group] or 
-            any(c.startswith(prefix) for prefix in feature_groups_prefixes[feature_group])]
+        c.startswith(feature_groups_prefix[feature_group])]
         # remove the stdev columns from the group_cols
         # and remove the weighted columns if weighted_cols is False
         group_cols = [c for c in group_cols if "stdev" not in c and (weighted_cols or "weighted" not in c)]
@@ -39,7 +39,6 @@ def get_features(df):
     warning_msg = error_msg = ""
     numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
     feature_cols_dict = get_feature_cols(numeric_cols)
-    
     all_features_cols = []
     for feature_group, cols in feature_cols_dict.items():
         all_features_cols.extend(cols)

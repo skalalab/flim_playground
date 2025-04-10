@@ -1,5 +1,5 @@
 import streamlit as st
-from input import sdt_folder_check, get_sdts
+from folder_util import sdt_folder_check, get_sdts
 from phasor import phasor_plot, calculate_phasor
 from selection_widgets import create_filters
 from navigation import render_top_menu
