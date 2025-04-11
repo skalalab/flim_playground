@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-from ..features import get_features, check_and_fix_df
-from ..folder_util import list_files_with_suffix, file_suffix_default
+from features import get_features, check_and_fix_df
+from folder_util import list_files_with_suffix, file_suffix_default
 import random
 
 happy_celebratory_emojis = [
