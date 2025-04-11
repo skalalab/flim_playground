@@ -89,14 +89,60 @@ def load_data_suffix_widget(extraction_type, fit_free, has_nadh, has_fad):
     """
     # based on the extraction type, display the default suffix for each require file type
     actual_file_suffix = {}
+    error_msg = ""
     if extraction_type == "Categorical Features": 
         pass
+    elif extraction_type == "ROI Summing Fit":
+        # required files: mask, IRF
+        actual_file_suffix["mask"] = ""
+        actual_file_suffix["irf"] = ""
+        if has_nadh:
+            actual_file_suffix["nadh decay"] = ""
+        if has_fad:
+            actual_file_suffix["fad decay"] = ""
+    elif "SPCImage" in extraction_type:
+        # required files: mask, SPC fitting outputs (a1, a2, t1, t2, and shift)
+        actual_file_suffix["mask"] = ""
+        # only use the shift. The rest will be deduced from the suffix of the shift 
+        actual_file_suffix["shift"] = ""
+        if fit_free:
+            if has_nadh:
+                actual_file_suffix["nadh decay"] = ""
+            if has_fad:
+                actual_file_suffix["fad decay"] = ""
+    elif extraction_type == "K-Flow":
+        # required files: cell histograms and IRF
+        actual_file_suffix["irf"] = ""
+        if has_nadh:
+            actual_file_suffix["nadh histogram"] = ""
+        if has_fad:
+            actual_file_suffix["red histogram"] = ""
+    
+    # create a text input widget for each suffix in the dictionary, maximum 2 per row
+    # dynamically determine how many rows are needed
+    num_rows = (len(actual_file_suffix) + 1) // 2
+    cols = st.columns(2)
+    for i, (key, value) in enumerate(actual_file_suffix.items()):
+        col = cols[i % 2]
+        with col:
+            # create a text input for the suffix
+            suffix = st.text_input(f"Suffix for {key}", file_suffix_default[key], key=f"{key}_suffix", help="The filenames are expected to consist of two parts: \
+            *image_name + suffix*. All files from the same image should share the **same** image_name, with the only difference being the suffix.")
+            if suffix == "":
+                error_msg += f"Please provide a suffix for {key}! "
+            else:
+                actual_file_suffix[key] = suffix
+    return actual_file_suffix, error_msg
+        
     
 
 
-def load_data_from_folder_widget(folder_path, extraction_type, fit_free, has_nadh, has_fad):    
+def load_data_from_folder_widget(folder_path, extraction_type, fit_free, has_nadh, has_fad, file_suffix):    
     """
-    Load data from a folder and check its validity.
+    Load data from a folder and check its validity. Display the file sets for each image group.
+    file_names = image_name + suffix (exactly that, no more, no less)
     """
-    load_data_suffix_widget(extraction_type, fit_free, has_nadh, has_fad)
-    return
+    error_msg = ""
+    image_groups = {}
+
+    return image_groups, error_msg

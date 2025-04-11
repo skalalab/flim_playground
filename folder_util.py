@@ -2,12 +2,22 @@ from pathlib import Path
 import streamlit as st   
 import os
 file_suffix_default = {
-    'mask': 'mask.tiff',
-    'nadh sdt ': 'n.sdt',
-    'fad sdt': 'f.sdt',
+    'mask': '_mask.tiff',
+    'nadh decay': 'n.sdt',
+    'fad decay': 'f.sdt',
     'irf': '.txt',
     'single cell features': '.csv',
-    'cells decay histogram': '.csv',
+    'nadh histogram': '_ch1.csv',
+    'red histogram': '_ch2.csv',
+    "shift": "_shift.asc"
+}
+
+spc_output_suffix = {
+    "a1[%]": "_a1[%].asc",
+    "a2[%]": "_a2[%].asc",
+    "t1": "_t1.asc",
+    "t2": "_t2.asc",
+    "shift": "_shift.asc",
 }
 
 def list_files_with_suffix(folder_path, suffix):
