@@ -7,3 +7,4 @@ build/
 *.spec
 streamlit_wrapper.py
 build_app.py
+.venv/

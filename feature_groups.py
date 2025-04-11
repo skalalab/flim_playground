@@ -13,7 +13,8 @@ feature_groups_default = {
     "Fad Fit": ["ftm", "fa1", "fa2", "ft1", "ft2", "fint", "fad_tau_mean_mean", "fad_a1_mean", "fad_a2_mean", "fad_t1_mean", "fad_t2_mean"],
     "Mask Morphology": ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length"],
     "Feature Distribution Fit": ["cell_mean", "cell_std", "cell_median"],
-    "Fit Free": ["phasor_x", "phasor_y"],
+    "Fit Free Nadh": ["phasor_x", "phasor_y"],
+    "Fit Free Fad": ["phasor_x", "phasor_y"],
     "Feature Distribution Fit Free": ["cell_mean", "cell_std", "cell_median"],
 }
 
@@ -27,7 +28,8 @@ feature_groups_prefix = {
     "Fad Fit":"fit_fad: ",
     "Mask Morphology": "mask_morphology: ",
     "Feature Distribution Fit": "fd_fit: ",
-    "Fit Free": "fit_free: ",
+    "Fit Free Nadh": "fit_free_nadh: ",
+    "Fit Free Fad": "fit_free_fad: ",
     "Feature Distribution Fit Free": "fd_fit_free: ",
 }
 # host all features that are capable of being extracted
@@ -35,14 +37,16 @@ feature_groups_features = {
     "Nadh Fit": ["a1", "a2", "t1", "t2", "tm", "intensity", "redox"], # put redox in nadh 
     "Fad Fit":["a1", "a2", "t1", "t2", "tm", "intensity"],
     "Mask Morphology": ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length"],
-    "Fit Free": ["G(1st)", "S(1st)", "G(2nd)", "S(2nd)"],
+    "Fit Free Nadh": ["G(1st)", "S(1st)", "G(2nd)", "S(2nd)"],
+    "Fit Free Fad": ["G(1st)", "S(1st)", "G(2nd)", "S(2nd)"],
 }
 
 feature_distribution_vars = ["polarity"]
 for feature_distribution_var in feature_distribution_vars:
     feature_groups_features["Feature Distribution Fit"] = [ "nadh_" +  feature  + "_" + feature_distribution_var for feature in feature_groups_features["Nadh Fit"]]
     feature_groups_features["Feature Distribution Fit"] += [ "fad_" +  feature  + "_" + feature_distribution_var for feature in feature_groups_features["Fad Fit"]]
-    feature_groups_features["Feature Distribution Fit Free"] = [ feature + "_" + feature_distribution_var for feature in feature_groups_features["Fit Free"] ]
+    feature_groups_features["Feature Distribution Fit Free"] = [ "nadh_" + feature + "_" + feature_distribution_var for feature in feature_groups_features["Fit Free Nadh"] ]
+    feature_groups_features["Feature Distribution Fit Free"] += [ "fad_" + feature + "_" + feature_distribution_var for feature in feature_groups_features["Fit Free Fad"]]
 
 def get_feature_name(feature_groups):
     """
@@ -50,8 +54,8 @@ def get_feature_name(feature_groups):
     """
     feature_groups_names = {}
     for feature_group in feature_groups:
-        if feature_group in feature_groups_prefixes:
-            prefix = feature_groups_prefixes[feature_group]
+        if feature_group in feature_groups_prefix:
+            prefix = feature_groups_prefix[feature_group]
             feature_groups_names[feature_group] = [prefix + feature for feature in feature_groups_features[feature_group]]
         else:
             feature_groups_names[feature_group] = feature_groups_features[feature_group]

@@ -1,6 +1,5 @@
 import seaborn as sns
 import matplotlib.pyplot as plt
-from statannotations.Annotator import Annotator
 from itertools import combinations
 import streamlit as st
 import plotly.graph_objects as go

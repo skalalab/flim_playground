@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from navigation import render_top_menu
 from feature_groups import feature_groups_features, get_feature_name
-from widgets.load_data_widgets import happy_emoji, sad_emoji, load_data_from_folder_widget
+from widgets.load_data_widgets import happy_emoji, sad_emoji, load_data_from_folder_widget, load_data_suffix_widget
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
 render_top_menu()
@@ -22,7 +22,8 @@ with col1:
     # Create two columns for the checkboxes (2x2 grid)
     if selected_extraction_type in numeric_feature_extraction_types:
         checkbox_col1, checkbox_col2 = st.columns(2)
-        
+        check_boxes_success = False
+        suffix_correct = False
         with checkbox_col1:
             if selected_extraction_type == "ROI Summing Fit" or selected_extraction_type == "K-Flow":
                 fix_shift = st.checkbox("Fix Shift", value=True, help="If checked, the shift will be inferred one time and fixed for all the images/cells in the folder (i.e. they were imaged suring the same session). \
@@ -31,15 +32,28 @@ with col1:
         
         with checkbox_col2:
             has_nadh = st.checkbox("Has NAD(P)H Data", value=True)
-            has_fad =  st.checkbox("Has FAD Data", value=True)    
-            # Add an empty placeholder in the second column to maintain grid symmetry if needed
-            # You can add another checkbox here in the future if required
+            has_fad =  st.checkbox("Has FAD Data", value=True)   
+            if has_nadh or has_fad:
+                check_boxes_success = True
+            else: st.error(f"Please check at least one of the channels {sad_emoji}")
+        if check_boxes_success:
+            actual_file_suffix, error_msg = load_data_suffix_widget(selected_extraction_type, fit_free, has_nadh, has_fad)
+            if error_msg != "":
+                st.error(error_msg)
+            else:
+                suffix_correct = True
+                folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the raw data that is needed for the selected data extraction type. " \
+                , key="folder_path")
+                      
+    else:   
+        # Categorical features extraction
+        pass
 
-    folder_ready = False
-    folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the raw data that is needed for the selected data extraction type. " \
-    , key="folder_path")
+with col2: 
     # check if the folder exists
-    if os.path.isdir(folder_path):
-        load_data_from_folder_widget(folder_path, selected_extraction_type, fit_free, has_nadh, has_fad)
-    elif folder_path != "":
-        st.warning(f"Folder not found! Please check the path. {sad_emoji}")
+    if suffix_correct: 
+        if os.path.isdir(folder_path): 
+            images, error_msg = load_data_from_folder_widget(folder_path, selected_extraction_type, fit_free=fit_free, has_nadh=has_nadh, has_fad=has_fad, file_suffix=actual_file_suffix)
+
+        elif folder_path != "":
+            st.warning(f"Folder not found! Please check the path. {sad_emoji}")
