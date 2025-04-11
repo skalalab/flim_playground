@@ -8,3 +8,4 @@ build/
 streamlit_wrapper.py
 build_app.py
 .venv/
+.python-version
