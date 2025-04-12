@@ -6,7 +6,7 @@ from widgets.load_data_widgets import load_csv, happy_emoji, sad_emoji
 from widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget
 from widgets.custom_widgets import umap_hyperParams_widget
 from widgets.filter_widgets import filters_widget
-from widgets.outlier_removal_widgets import remove_image_or_cell_widget, remove_img_cell_outlier_widget, display_outliers_widget, reset_export_widget, remove_img_outlier_widget
+from widgets.outlier_removal_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
 from navigation import render_top_menu
 from visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot
 from dimension_reduction import dimension_reduction
@@ -17,10 +17,10 @@ render_top_menu()
 # initialize session_states
 if "vis_df" not in st.session_state:
     st.session_state.vis_df = None
-if "removed_images" not in st.session_state:
-    st.session_state["removed_images"] = []
-if "removed_cells" not in st.session_state:
-    st.session_state["removed_cells"] = []
+if "added_images" not in st.session_state:
+    st.session_state["added_images"] = []
+if "added_cells" not in st.session_state:
+    st.session_state["added_cells"] = []
 if "last_processed_click" not in st.session_state:
     st.session_state.last_processed_click = None
 if "last_processed_click_img" not in st.session_state:
@@ -58,12 +58,12 @@ with col2:
         fig_ready = False
         filtered_df, color_by_options, cols = filters_widget(st.session_state.vis_df, wildcard=True)
         # remove user selected outliers 
-        st.session_state["df_outlier_removed"] = filtered_df[
-                    (~filtered_df["image_name"].isin(st.session_state["removed_images"])) &
-                    (~filtered_df["cell_id"].isin(st.session_state["removed_cells"]))
-                ].reset_index(drop=True)
+        # st.session_state["df_outlier_removed"] = filtered_df[
+        #             (~filtered_df["image_name"].isin(st.session_state["removed_images"])) &
+        #             (~filtered_df["cell_id"].isin(st.session_state["removed_cells"]))
+        #         ].reset_index(drop=True)
         # check if the df is empty after removing outliers and /or filtering
-        if not st.session_state["df_outlier_removed"].empty:
+        if not filtered_df.empty:
             if method == "Feature Comparison":
                 if selected_var != "Select": 
                     # Plot the filtered dataframe
@@ -94,7 +94,6 @@ with col2:
                     fig = image_comparison_plot(st.session_state["df_outlier_removed"], selected_var)
                     fig_ready = True
                                       
-            # outlier removal module (only for methods other than Image Comparison)
             if fig_ready: 
                 if method == "Image Comparison":
                     current_clicked_points_img = plotly_events(
@@ -103,7 +102,7 @@ with col2:
                     # --- Specific logic for Image Comparison outlier removal ---
                     # Process only if it's a new, non-empty click
                     if current_clicked_points_img and current_clicked_points_img != st.session_state.last_processed_click_img:
-                        remove_img_outlier_widget(current_clicked_points_img, fig)
+                        add_img_widget(current_clicked_points_img, fig)
                        
                     # Reset if the current event is empty (no click)
                     elif not current_clicked_points_img:
@@ -112,26 +111,26 @@ with col2:
                     current_clicked_points = plotly_events(
                         fig, click_event=True, hover_event=False, select_event=False, key="image_and_cell_removal" # Use a unique key
                     )
-                    image_removal, cell_removal = remove_image_or_cell_widget()
+                    image_removal, cell_removal = add_image_or_cell_widget()
                 
                     # Process only if it's a new, non-empty click
                     if current_clicked_points and current_clicked_points != st.session_state.last_processed_click:
                         # Standard outlier removal widget call
-                        remove_img_cell_outlier_widget(current_clicked_points, fig) 
+                        add_img_cell_widget(current_clicked_points, fig) 
 
                     # Reset if the current event is empty (no click)
                     elif not current_clicked_points:
                          st.session_state.last_processed_click = None
         
                 if method == "Image Comparison":
-                    st.markdown(f"<h5 style='text-align: center;'>Click on a boxplot to remove an outlier image {happy_emoji}</h5>", unsafe_allow_html=True)
+                    st.markdown(f"<h5 style='text-align: center;'>Click on a boxplot to show the detailed info of the selected image {happy_emoji}</h5>", unsafe_allow_html=True)
                 else:
-                    st.markdown(f"<h5 style='text-align: center;'>Click on a point to remove an outlier image or a cell {happy_emoji}</h5>", unsafe_allow_html=True)
+                    st.markdown(f"<h5 style='text-align: center;'>Click on a point to show the detailed info of the selected image or cell {happy_emoji}</h5>", unsafe_allow_html=True)
         else: 
             st.markdown(f"<h5 style='text-align: center; color: red'>No data available after removing outliers and/or filtering {sad_emoji}</h5>", unsafe_allow_html=True)
-        # Display removed items and reset/export options (common logic)
-        if len(st.session_state["removed_images"]) > 0 or len(st.session_state["removed_cells"]) > 0:
-            display_outliers_widget()
-            reset_export_widget(uploaded_csv, df) # Pass original df for export
+        # Display added items and reset options (common logic)
+        if len(st.session_state["added_images"]) > 0 or len(st.session_state["added_cells"]) > 0:
+            display_infoList_widget()
+            reset_widget() 
     else:
         st.write("Please upload a file to begin.")
