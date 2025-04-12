@@ -126,16 +126,15 @@ def load_data_suffix_widget(extraction_type, fit_free, has_nadh, has_fad):
         col = cols[i % 2]
         with col:
             # create a text input for the suffix
-            suffix = st.text_input(f"Suffix for {key}", file_suffix_default[key], key=f"{key}_suffix", help="The filenames are expected to consist of two parts: \
-            *image_name + suffix*. All files from the same image should share the **same** image_name, with the only difference being the suffix.")
+            suffix = st.text_input(f"Suffix for {key}", file_suffix_default[key], key=f"{key}_suffix", help=f"The filenames are expected to have *exactly* two parts: \
+            *image_name + suffix*. All files from the same image should share the **same** image_name, with the only difference being the suffix. This is the \
+                                   suffix for the {key} file.")
             if suffix == "":
                 error_msg += f"Please provide a suffix for {key}! "
             else:
                 actual_file_suffix[key] = suffix
     return actual_file_suffix, error_msg
         
-    
-
 
 def load_data_from_folder_widget(folder_path, extraction_type, fit_free, has_nadh, has_fad, file_suffix):    
     """
