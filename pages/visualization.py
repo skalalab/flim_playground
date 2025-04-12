@@ -57,32 +57,28 @@ with col2:
     if upload_complete:
         fig_ready = False
         filtered_df, color_by_options, cols = filters_widget(st.session_state.vis_df, wildcard=True)
-        # remove user selected outliers 
-        # st.session_state["df_outlier_removed"] = filtered_df[
-        #             (~filtered_df["image_name"].isin(st.session_state["removed_images"])) &
-        #             (~filtered_df["cell_id"].isin(st.session_state["removed_cells"]))
-        #         ].reset_index(drop=True)
-        # check if the df is empty after removing outliers and /or filtering
+
+        # check if the df is empty after filtering
         if not filtered_df.empty:
             if method == "Feature Comparison":
                 if selected_var != "Select": 
                     # Plot the filtered dataframe
-                    fig = feature_comparison_plot(st.session_state["df_outlier_removed"], selected_var, color_by_options, stats_test=selected_test)
+                    fig = feature_comparison_plot(filtered_df, selected_var, color_by_options, stats_test=selected_test)
                     fig_ready = True
             
             elif method in dimension_reduction_methods:
                 if len(selected_features) < 2:
                     st.write("Please select at least two features for dimension reduction methods like PCA or UMAP.")
                 else: 
-                    X = st.session_state["df_outlier_removed"][selected_features]
+                    X = filtered_df[selected_features]
                     # perform dimension reduction
                     df_reduced, exp_var = dimension_reduction(X, n_components=2, method=method, hyperParam_dict=hyperParam_dict)
                     # augment df_reduced with required columns and categorical columns used for coloring
-                    df_reduced["cell_id"] = st.session_state["df_outlier_removed"]["cell_id"]
-                    df_reduced["image_name"] = st.session_state["df_outlier_removed"]["image_name"]
+                    df_reduced["cell_id"] = filtered_df["cell_id"]
+                    df_reduced["image_name"] = filtered_df["image_name"]
                     # Add all color columns at once if there are any
                     if color_by_options:
-                        df_reduced[color_by_options] = st.session_state["df_outlier_removed"][color_by_options]
+                        df_reduced[color_by_options] = filtered_df[color_by_options]
                     # plot the reduced data
                     fig = dimension_reduction_plot(df_reduced, method=method, colored_by=color_by_options, exp_var=exp_var)
                     fig_ready = True
@@ -91,7 +87,7 @@ with col2:
 
             elif method == "Image Comparison":
                 if selected_var != "Select":
-                    fig = image_comparison_plot(st.session_state["df_outlier_removed"], selected_var)
+                    fig = image_comparison_plot(filtered_df, selected_var)
                     fig_ready = True
                                       
             if fig_ready: 
