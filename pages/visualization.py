@@ -6,7 +6,7 @@ from widgets.load_data_widgets import load_csv, happy_emoji, sad_emoji
 from widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget
 from widgets.custom_widgets import umap_hyperParams_widget
 from widgets.filter_widgets import filters_widget
-from widgets.outlier_removal_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
+from widgets.click_plot_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
 from navigation import render_top_menu
 from visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot
 from dimension_reduction import dimension_reduction
@@ -74,11 +74,11 @@ with col2:
                     # perform dimension reduction
                     df_reduced, exp_var = dimension_reduction(X, n_components=2, method=method, hyperParam_dict=hyperParam_dict)
                     # augment df_reduced with required columns and categorical columns used for coloring
-                    df_reduced["cell_id"] = filtered_df["cell_id"]
-                    df_reduced["image_name"] = filtered_df["image_name"]
+                    df_reduced["cell_id"] = filtered_df["cell_id"].values
+                    df_reduced["image_name"] = filtered_df["image_name"].values
                     # Add all color columns at once if there are any
                     if color_by_options:
-                        df_reduced[color_by_options] = filtered_df[color_by_options]
+                        df_reduced[color_by_options] = filtered_df[color_by_options].values
                     # plot the reduced data
                     fig = dimension_reduction_plot(df_reduced, method=method, colored_by=color_by_options, exp_var=exp_var)
                     fig_ready = True
