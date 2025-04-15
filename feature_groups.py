@@ -18,11 +18,8 @@ feature_groups_default = {
     "Feature Distribution Fit Free": ["cell_mean", "cell_std", "cell_median"],
 }
 
-# feature groups names
-# Later we can do between group correlations
-feature_groups = feature_groups_default.keys()
-
-# customizable numeric column prefixes (in Feature Extraction module, it will produce the features with their corresponding feature group prefixes)
+# customizable numeric column prefixes (in Data Extraction module, it will produce the features with their corresponding feature group prefixes)
+# used in Visualization module and Classification module to math features in the uploaded csv file
 feature_groups_prefix = {
     "Nadh Fit": "fit_nadh: ", # put redox in nadh 
     "Fad Fit":"fit_fad: ",
@@ -31,8 +28,13 @@ feature_groups_prefix = {
     "Fit Free Nadh": "fit_free_nadh: ",
     "Fit Free Fad": "fit_free_fad: ",
     "Feature Distribution Fit Free": "fd_fit_free: ",
+    "Mitochrondria Feature": "mito: ",
 }
-# host all features that are capable of being extracted
+
+# feature groups names that are used to name widgets that host those feature groups
+feature_groups = feature_groups_prefix.keys()
+# host all features that are capable of being extracted from raw data
+# used only in data_extraction module to name the features that can be extracted 
 feature_groups_features = {
     "Nadh Fit": ["a1", "a2", "t1", "t2", "tm", "intensity", "redox"], # put redox in nadh 
     "Fad Fit":["a1", "a2", "t1", "t2", "tm", "intensity"],

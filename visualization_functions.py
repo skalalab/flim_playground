@@ -182,7 +182,8 @@ def dimension_reduction_plot(df, method="UMAP", colored_by=[], exp_var=None):
         axis_labels = ["UMAP1", "UMAP2"]
     else:
         axis_labels = ["dim1", "dim2"]
-    # create a new copy of df 
+
+    # colored by unique combinations of the selected categorical columns
     df['unique_color_group'] = df[colored_by].agg('_'.join, axis=1)
     unique_color_groups = df['unique_color_group'].unique()
     alpha = 0.6 if len(unique_color_groups) > 1 else 1.0
@@ -249,4 +250,78 @@ def image_comparison_plot(df, selected_var):
         margin=dict(l=50, r=20, t=50, b=max(80, len(max(image_names, key=len, default=''))*5)) # Adjust bottom margin for long names
     )
     
+    return fig
+
+def feature_histogram_plot(df, selected_var, color_by=[]):
+    df['unique_color_group'] = df[color_by].agg('_'.join, axis=1)
+    unique_color_groups = df['unique_color_group'].unique()
+    # Using solid colors for lines
+    palette = sns.color_palette("tab10", n_colors=len(unique_color_groups))
+    color_sequence = [f"rgb({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)})" for color in palette]
+    color_map = {t: color_sequence[i] for i, t in enumerate(unique_color_groups)}
+    fig = go.Figure()
+
+    # Determine common binning for all groups to make lines comparable
+    # Handle potential NaN values before calculating min/max
+    valid_data = df[selected_var].dropna()
+    if valid_data.empty:
+        # Handle case where there's no valid data at all
+        st.warning(f"No valid data found for variable '{selected_var}' to plot.")
+        # remove the column before returning an empty figure
+        df.drop(columns=['unique_color_group'], inplace=True)
+        return fig # Return empty figure
+
+    # use plotly's automatic binning logic by not specifying nbins explicitly in np.histogram
+    # Calculate bins using numpy based on the overall data range
+    counts_all, bin_edges_all = np.histogram(valid_data, bins='auto') # Use 'auto' for a start
+    nbins = len(bin_edges_all) - 1
+    if nbins > 1:
+        default_bin_width = bin_edges_all[1] - bin_edges_all[0]
+        # add a widget to adjust the bin_width, use text input to get the bin width
+        # Ensure bin_width is positive to avoid errors in np.arange
+        min_val = df[selected_var].dropna().min()
+        max_val = df[selected_var].dropna().max()
+        range = max_val - min_val
+        bin_width = st.number_input(label="Bin Width", min_value=0.01, max_value=range/2, value=default_bin_width, step=range/100,)
+        # Add a small epsilon to max_val to ensure the rightmost edge includes the max value
+        epsilon = 1e-9
+        # Calculate common bin edges based on the user-provided bin_width
+        common_bin_edges = np.arange(min_val, max_val + bin_width + epsilon, bin_width)
+
+    for color_group in unique_color_groups:
+        group_df = df[df['unique_color_group'] == color_group]
+        x_data = group_df[selected_var].dropna()
+
+        if x_data.empty:
+            continue # Skip empty groups
+        # Calculate histogram counts using the common bin edges derived from bin_width
+        counts, bin_edges = np.histogram(x_data, bins=common_bin_edges)
+
+        # Calculate bin centers
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+    
+        # Add line trace connecting bin centers
+        fig.add_trace(go.Scatter(
+            x=bin_centers,
+            y=counts,
+            mode='lines', # Use lines instead of markers+lines
+            name=color_group,
+            line=dict(color=color_map[color_group], width=2),
+            hovertemplate=(
+                f"<b>Group:</b> {color_group}<br>"
+                f"<b>Count:</b> %{{y}}<extra></extra>"
+            )
+        ))
+
+    fig.update_layout(
+        title=f'Frequency Polygon of {selected_var} by {", ".join(color_by)}',
+        xaxis_title=selected_var,
+        yaxis_title='Count',
+        legend_title_text='Groups',
+        hovermode='x unified', # Good for comparing counts at specific x-values
+        margin=dict(l=50, r=20, t=50, b=80)
+        # Removed barmode='overlay'
+    )
+    # remove the column after plotting
+    df.drop(columns=['unique_color_group'], inplace=True)
     return fig
