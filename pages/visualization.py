@@ -8,7 +8,7 @@ from widgets.custom_widgets import umap_hyperParams_widget
 from widgets.filter_widgets import filters_widget
 from widgets.click_plot_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
 from navigation import render_top_menu
-from visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot
+from visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot, feature_histogram_plot
 from dimension_reduction import dimension_reduction
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -27,19 +27,21 @@ if "last_processed_click_img" not in st.session_state:
     st.session_state.last_processed_click_img = None
 
 dimension_reduction_methods = ["UMAP", "Principal Component Analysis"]
+# methods to visualize based on a single feature
+feature_visualization_methods = ["Feature Comparison", "Image Comparison", "Feature Histogram"]
 col1, col2 = st.columns([0.4, 1])
 with col1:
     st.title("Visualizations")
     method = st.selectbox(
         "Select a visualization method",
-        ["Feature Comparison"] + dimension_reduction_methods + ["Phasor Plot", "Image Comparison"],
+        dimension_reduction_methods + feature_visualization_methods + ["Phasor Plot"],
     )  
     uploaded_csv = st.file_uploader("Upload the CSV file obtained from [Data Extraction](/data_extraction)", type=["csv"])
     df, feature_cols_dict, upload_complete = load_csv(uploaded_csv)
     st.session_state.vis_df = df
 
     if upload_complete:
-        if method == "Feature Comparison" or method == "Image Comparison":
+        if method in feature_visualization_methods:
             # single feature selection widget 
             selected_var = single_feature_select_widget(feature_cols_dict, n_per_row=2)
             if method == "Feature Comparison":
@@ -55,16 +57,24 @@ with col1:
 
 with col2:
     if upload_complete:
-        fig_ready = False
+        # click_ready: boolean to check if the plot is ready for click events
+        click_ready = False
         filtered_df, color_by_options, cols = filters_widget(st.session_state.vis_df, wildcard=True)
 
         # check if the df is empty after filtering
         if not filtered_df.empty:
-            if method == "Feature Comparison":
+            if method in feature_visualization_methods:
                 if selected_var != "Select": 
                     # Plot the filtered dataframe
-                    fig = feature_comparison_plot(filtered_df, selected_var, color_by_options, stats_test=selected_test)
-                    fig_ready = True
+                    if method == "Feature Comparison":
+                        fig = feature_comparison_plot(filtered_df, selected_var, color_by_options, stats_test=selected_test)
+                        click_ready = True
+                    elif method == "Image Comparison":
+                        fig = image_comparison_plot(filtered_df, selected_var)
+                        click_ready = True
+                    elif method == "Feature Histogram":
+                        fig = feature_histogram_plot(filtered_df, selected_var, color_by_options)
+                        st.plotly_chart(fig, use_container_width=True)
             
             elif method in dimension_reduction_methods:
                 if len(selected_features) < 2:
@@ -81,16 +91,11 @@ with col2:
                         df_reduced[color_by_options] = filtered_df[color_by_options].values
                     # plot the reduced data
                     fig = dimension_reduction_plot(df_reduced, method=method, colored_by=color_by_options, exp_var=exp_var)
-                    fig_ready = True
+                    click_ready = True
             elif method == "Phasor Plot":
                 st.write("Will be available once the Data Extraction Playground is ready.")
-
-            elif method == "Image Comparison":
-                if selected_var != "Select":
-                    fig = image_comparison_plot(filtered_df, selected_var)
-                    fig_ready = True
                                       
-            if fig_ready: 
+            if click_ready: 
                 if method == "Image Comparison":
                     current_clicked_points_img = plotly_events(
                         fig, click_event=True, hover_event=False, select_event=False, key="image_removal_only" # Use a unique key
