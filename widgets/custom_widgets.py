@@ -1,5 +1,5 @@
 import streamlit as st
-
+import numpy as np
 """
 This file contains widgets that are specific to certain visualization or classification methods."""
 
@@ -32,3 +32,25 @@ def stats_comparison_pair_widget(available_pairs):
         key="compare_pairs"
     )
     return selected_pairs
+
+
+def histogram_bin_width_widget(x_data): 
+    # x_data: 1D numpy array of data to be binned (already na dropped)
+    # use np's automatic binning logic by not specifying nbins explicitly in np.histogram
+    # Calculate bins using numpy based on the overall data range
+    counts_all, bin_edges_all = np.histogram(x_data, bins='auto') # Use 'auto' as default
+    nbins = len(bin_edges_all) - 1
+    if nbins > 1:
+        default_bin_width = bin_edges_all[1] - bin_edges_all[0]
+        # add a widget to adjust the bin_width, use text input to get the bin width
+        # Ensure bin_width is positive to avoid errors in np.arange
+        min_val = x_data.min()
+        max_val = x_data.max()
+        range = max_val - min_val
+        bin_width = st.number_input(label="Bin Width", min_value=0.01, max_value=range/3, value=default_bin_width, step=range/100,)
+        # Add a small epsilon to max_val to ensure the rightmost edge includes the max value
+        epsilon = 1e-9
+        # Calculate common bin edges based on the user-provided bin_width
+        common_bin_edges = np.arange(min_val, max_val + bin_width + epsilon, bin_width)
+    
+    return common_bin_edges
