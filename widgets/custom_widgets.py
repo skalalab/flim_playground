@@ -47,7 +47,7 @@ def histogram_bin_width_widget(x_data):
         min_val = x_data.min()
         max_val = x_data.max()
         range = max_val - min_val
-        bin_width = st.number_input(label="Bin Width", min_value=0.01, max_value=range/3, value=default_bin_width, step=range/100,)
+        bin_width = st.number_input(label="Bin Width", min_value=0.01, max_value=range/3, value=default_bin_width, step=range/50,)
         # Add a small epsilon to max_val to ensure the rightmost edge includes the max value
         epsilon = 1e-9
         # Calculate common bin edges based on the user-provided bin_width

@@ -76,7 +76,9 @@ with col2:
                         # create a switch to select between GMM and histogram
                         apply_gmm = st.checkbox("Apply GMM to the feature distribution", value=False)
                         if apply_gmm:
-                            fig = feature_gmm_plot(filtered_df, selected_var, color_by_options)
+                            fig, h_index_msg = feature_gmm_plot(filtered_df, selected_var, color_by_options)
+                            if h_index_msg != "": 
+                                st.info(h_index_msg)
                         else: 
                             fig = feature_histogram_plot(filtered_df, selected_var, color_by_options)
                         st.plotly_chart(fig, use_container_width=True)

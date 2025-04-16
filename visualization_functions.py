@@ -269,17 +269,7 @@ def feature_histogram_plot(df, selected_var, color_by=[]):
     color_map = create_color_map(unique_color_groups, overlap_point=False)
     fig = go.Figure()
 
-    # Determine common binning for all groups to make lines comparable
-    # Handle potential NaN values before calculating min/max
-    valid_data = df[selected_var].dropna()
-    if valid_data.empty:
-        # Handle case where there's no valid data at all
-        st.warning(f"No valid data found for variable '{selected_var}' to plot.")
-        # remove the column before returning an empty figure
-        df.drop(columns=['unique_color_group'], inplace=True)
-        return fig # Return empty figure
-
-    bin_edges = histogram_bin_width_widget(valid_data)
+    bin_edges = histogram_bin_width_widget(df[selected_var])
 
     for color_group in unique_color_groups:
         group_df = df[df['unique_color_group'] == color_group]
@@ -320,6 +310,7 @@ def feature_histogram_plot(df, selected_var, color_by=[]):
     return fig
 
 def feature_gmm_plot(df, selected_var, color_by=[]):
+    h_index_msg = ""    
     df['unique_color_group'] = df[color_by].agg('_'.join, axis=1)
     unique_color_groups = df['unique_color_group'].unique()
     # Using solid colors for lines
@@ -327,16 +318,6 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
     color_map = create_color_map(unique_color_groups, overlap_point=False)
     fig = go.Figure()
 
-    # Determine common binning for all groups to make lines comparable
-    # Handle potential NaN values before calculating min/max
-    valid_data = df[selected_var].dropna()
-    if valid_data.empty:
-        # Handle case where there's no valid data at all
-        st.warning(f"No valid data found for variable '{selected_var}' to plot.")
-        # remove the column before returning an empty figure
-        df.drop(columns=['unique_color_group'], inplace=True)
-        return fig # Return empty figure
-    
     # fit a Gaussian Mixture Model (GMM) to each color group
     for color_group in unique_color_groups:
         group_df = df[df['unique_color_group'] == color_group]
@@ -348,18 +329,24 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
         # Fit GMM to the data
         # --- Fit GMMs with 1 to 3 components ---
         data_2d = x_data.values.reshape(-1, 1)  # GMM expects 2D array
-        aic_scores = []
-        gmms = []
-        for n in range(1, 4): 
-            gmm = GaussianMixture(n_components=n, random_state=42).fit(data_2d)
-            gmms.append(gmm)
-            aic_scores.append(gmm.aic(data_2d))
-        
-        # Select best model based on AIC
-        best_idx = np.argmin(aic_scores)
-        best_gmm = gmms[best_idx]
-        n_components = best_idx + 1
-        print(f"Best GMM for {color_group} has {n_components} components with AIC: {aic_scores[best_idx]}")
+        best_gmm = None
+        lowest_bic = np.inf
+        max_components = 3 # Or determine dynamically
+        valid_models = {} # Store valid models (k: gmm_model)
+        for k in range(1, max_components + 1):
+            gmm = GaussianMixture(n_components=k, random_state=42)
+            gmm.fit(data_2d)
+            bic = gmm.bic(data_2d)
+
+            # Check the constraint: all weights must be >= 0.10
+            min_weight = gmm.weights_.min() 
+            if min_weight >= 0.10:
+                valid_models[k] = gmm
+                # Keep track of the best model among valid ones based on BIC
+                if bic < lowest_bic:
+                    lowest_bic = bic
+                    best_gmm = gmm
+                    
         # use plotly to plot curve of the best gmm
         x = np.linspace(x_data.min(), x_data.max(), 1000).reshape(-1, 1)
         logprob = best_gmm.score_samples(x)
@@ -375,22 +362,49 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
             line=dict(color=color_map[color_group], width=2),
             hovertemplate=(
                 f"<b>Group:</b> {color_group}<br>"
-                f"<b>Count:</b> %{{y}}<extra></extra>"
             )
         ))
-        # Plot individual components
-        for i in range(n_components):
-            fig.add_trace(go.Scatter(
-                x=x.flatten(),
-                y=pdf_individual[:, i],
-                mode='lines',
-                name=f'{color_group} Component {i+1}',
-                line=dict(color=color_map[color_group], width=1, dash='dash'),
-                hovertemplate=(
-                    f"<b>Group:</b> {color_group}<br>"
-                    f"<b>Count:</b> %{{y}}<extra></extra>"
-                )
-            ))
+        # Plot individual components if more than one
+        if best_gmm.n_components > 1:
+            # Plot individual components
+            # pdf_individual is already calculated above
+            # Plot each component with a different color
+            gmm_overall_mean = np.sum(best_gmm.weights_ * best_gmm.means_.flatten())
+            h_index = 0
+            dash_styles = ['dash', 'dot', 'dashdot']
+            for i in range(best_gmm.n_components):
+                fig.add_trace(go.Scatter(
+                    x=x.flatten(),
+                    y=pdf_individual[:, i],
+                    mode='lines',
+                    name=f'{color_group} Component {i+1}',
+                    line=dict(color=color_map[color_group], width=1, dash=dash_styles[i % len(dash_styles)]),
+                    hovertemplate=(
+                        f"<b>Group:</b> {color_group}<br>"
+                    )
+                ))
+                # Calculate H-index for this subpopulation
+                h_index += -best_gmm.weights_[i] * np.log(best_gmm.weights_[i]) * np.abs(best_gmm.means_[i][0] - gmm_overall_mean)
+            # Add H-index message
+            h_index_msg += f"H-index for {color_group}: {h_index:.3f}. "
+        # predict the component membership for each point
+        data_indices = x_data.index
+            # Predict the component membership for each point
+        subpopulation_labels = best_gmm.predict(data_2d)
+            # Assign the predicted labels (0-based) to the new column in the original DataFrame
+            # Add 1 if you prefer 1-based component indexing (e.g., Subpopulation 1, 2, ...)
+        assigned_labels = [f"{color_group}_group{label + 1}" for label in subpopulation_labels]
+        df.loc[data_indices, "GMM_group"] = assigned_labels
+
+        # have a button to export the GMM group augmented dataframe
+    st.download_button(
+        label="Download GMM Grouped Data",
+        data=df.to_csv(index=False),
+        file_name="gmm_grouped_data.csv",
+        mime="text/csv",
+        key="gmm_download"
+    )
+
     fig.update_layout(
         title=f'Gaussian Mixture Model of {selected_var} by {", ".join(color_by)}',
         xaxis_title=selected_var,
@@ -401,4 +415,5 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
     )
     # remove the column after plotting
     df.drop(columns=['unique_color_group'], inplace=True)
-    return fig
+    df.drop(columns=['GMM_group'], inplace=True)
+    return fig, h_index_msg
