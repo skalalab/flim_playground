@@ -16,6 +16,7 @@ feature_groups_default = {
     "Fit Free Nadh": ["phasor_x", "phasor_y"],
     "Fit Free Fad": ["phasor_x", "phasor_y"],
     "Feature Distribution Fit Free": ["cell_mean", "cell_std", "cell_median"],
+    "Mitochrondria Feature": ["mito_area"],
 }
 
 # customizable numeric column prefixes (in Data Extraction module, it will produce the features with their corresponding feature group prefixes)

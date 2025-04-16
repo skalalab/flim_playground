@@ -4,21 +4,32 @@ from itertools import combinations
 import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
-from widgets.custom_widgets import stats_comparison_pair_widget
+from sklearn.mixture import GaussianMixture
+from widgets.custom_widgets import stats_comparison_pair_widget, histogram_bin_width_widget
 
 def glass_delta(group1, group2):
     mean_diff = np.mean(group1) - np.mean(group2)
     group2_sd = np.std(group2, ddof=1)  # Using Bessel's correction with ddof=1
     return mean_diff / group2_sd
 
+def create_color_map(groups, overlap_point):
+    # if points in the visulization is going to overlap, use a transparent color
+    if overlap_point: 
+        alpha = 0.6 if len(groups) > 1 else 1.0
+    else:
+        alpha = 1.0
+    palette = sns.color_palette("tab10", n_colors=len(groups))
+    color_sequence = [f"rgba({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)}, {alpha})" for color in palette]
+    color_map = {t: color_sequence[i] for i, t in enumerate(groups)}
+    return color_map
+
+
 def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"):
     fig = go.Figure()
     df['compare_group'] = df[compared_by].agg('_'.join, axis=1)
     compare_groups = df['compare_group'].unique()
     compare_pairs = list(combinations(compare_groups, 2))
-    palette = sns.color_palette("tab10", n_colors=len(compare_groups))
-    color_sequence = [f"rgba({int(c[0]*255)}, {int(c[1]*255)}, {int(c[2]*255)}, 1)" for c in palette]
-    color_map = {group: color for group, color in zip(compare_groups, color_sequence)}
+    color_map = create_color_map(compare_groups, overlap_point=False)
     jitter_amount = 1
     point_size = 5
 
@@ -186,10 +197,8 @@ def dimension_reduction_plot(df, method="UMAP", colored_by=[], exp_var=None):
     # colored by unique combinations of the selected categorical columns
     df['unique_color_group'] = df[colored_by].agg('_'.join, axis=1)
     unique_color_groups = df['unique_color_group'].unique()
-    alpha = 0.6 if len(unique_color_groups) > 1 else 1.0
-    palette = sns.color_palette("tab10", n_colors=len(unique_color_groups))
-    color_sequence = [f"rgba({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)}, {alpha})" for color in palette]
-    color_map = {t: color_sequence[i] for i, t in enumerate(unique_color_groups)}
+
+    color_map = create_color_map(unique_color_groups, overlap_point=True)
 
     # plot scatter plot iteratively, once for each color group
     for g in unique_color_groups:
@@ -256,9 +265,8 @@ def feature_histogram_plot(df, selected_var, color_by=[]):
     df['unique_color_group'] = df[color_by].agg('_'.join, axis=1)
     unique_color_groups = df['unique_color_group'].unique()
     # Using solid colors for lines
-    palette = sns.color_palette("tab10", n_colors=len(unique_color_groups))
-    color_sequence = [f"rgb({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)})" for color in palette]
-    color_map = {t: color_sequence[i] for i, t in enumerate(unique_color_groups)}
+   
+    color_map = create_color_map(unique_color_groups, overlap_point=False)
     fig = go.Figure()
 
     # Determine common binning for all groups to make lines comparable
@@ -271,22 +279,7 @@ def feature_histogram_plot(df, selected_var, color_by=[]):
         df.drop(columns=['unique_color_group'], inplace=True)
         return fig # Return empty figure
 
-    # use plotly's automatic binning logic by not specifying nbins explicitly in np.histogram
-    # Calculate bins using numpy based on the overall data range
-    counts_all, bin_edges_all = np.histogram(valid_data, bins='auto') # Use 'auto' for a start
-    nbins = len(bin_edges_all) - 1
-    if nbins > 1:
-        default_bin_width = bin_edges_all[1] - bin_edges_all[0]
-        # add a widget to adjust the bin_width, use text input to get the bin width
-        # Ensure bin_width is positive to avoid errors in np.arange
-        min_val = df[selected_var].dropna().min()
-        max_val = df[selected_var].dropna().max()
-        range = max_val - min_val
-        bin_width = st.number_input(label="Bin Width", min_value=0.01, max_value=range/2, value=default_bin_width, step=range/100,)
-        # Add a small epsilon to max_val to ensure the rightmost edge includes the max value
-        epsilon = 1e-9
-        # Calculate common bin edges based on the user-provided bin_width
-        common_bin_edges = np.arange(min_val, max_val + bin_width + epsilon, bin_width)
+    bin_edges = histogram_bin_width_widget(valid_data)
 
     for color_group in unique_color_groups:
         group_df = df[df['unique_color_group'] == color_group]
@@ -295,7 +288,7 @@ def feature_histogram_plot(df, selected_var, color_by=[]):
         if x_data.empty:
             continue # Skip empty groups
         # Calculate histogram counts using the common bin edges derived from bin_width
-        counts, bin_edges = np.histogram(x_data, bins=common_bin_edges)
+        counts, bin_edges = np.histogram(x_data, bins=bin_edges)
 
         # Calculate bin centers
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
@@ -314,13 +307,97 @@ def feature_histogram_plot(df, selected_var, color_by=[]):
         ))
 
     fig.update_layout(
-        title=f'Frequency Polygon of {selected_var} by {", ".join(color_by)}',
+        title=f'Frequency histogram of {selected_var} by {", ".join(color_by)}',
         xaxis_title=selected_var,
         yaxis_title='Count',
         legend_title_text='Groups',
         hovermode='x unified', # Good for comparing counts at specific x-values
         margin=dict(l=50, r=20, t=50, b=80)
         # Removed barmode='overlay'
+    )
+    # remove the column after plotting
+    df.drop(columns=['unique_color_group'], inplace=True)
+    return fig
+
+def feature_gmm_plot(df, selected_var, color_by=[]):
+    df['unique_color_group'] = df[color_by].agg('_'.join, axis=1)
+    unique_color_groups = df['unique_color_group'].unique()
+    # Using solid colors for lines
+   
+    color_map = create_color_map(unique_color_groups, overlap_point=False)
+    fig = go.Figure()
+
+    # Determine common binning for all groups to make lines comparable
+    # Handle potential NaN values before calculating min/max
+    valid_data = df[selected_var].dropna()
+    if valid_data.empty:
+        # Handle case where there's no valid data at all
+        st.warning(f"No valid data found for variable '{selected_var}' to plot.")
+        # remove the column before returning an empty figure
+        df.drop(columns=['unique_color_group'], inplace=True)
+        return fig # Return empty figure
+    
+    # fit a Gaussian Mixture Model (GMM) to each color group
+    for color_group in unique_color_groups:
+        group_df = df[df['unique_color_group'] == color_group]
+        x_data = group_df[selected_var].dropna()
+
+        if x_data.empty:
+            continue # Skip empty groups
+
+        # Fit GMM to the data
+        # --- Fit GMMs with 1 to 3 components ---
+        data_2d = x_data.values.reshape(-1, 1)  # GMM expects 2D array
+        aic_scores = []
+        gmms = []
+        for n in range(1, 4): 
+            gmm = GaussianMixture(n_components=n, random_state=42).fit(data_2d)
+            gmms.append(gmm)
+            aic_scores.append(gmm.aic(data_2d))
+        
+        # Select best model based on AIC
+        best_idx = np.argmin(aic_scores)
+        best_gmm = gmms[best_idx]
+        n_components = best_idx + 1
+        print(f"Best GMM for {color_group} has {n_components} components with AIC: {aic_scores[best_idx]}")
+        # use plotly to plot curve of the best gmm
+        x = np.linspace(x_data.min(), x_data.max(), 1000).reshape(-1, 1)
+        logprob = best_gmm.score_samples(x)
+        pdf = np.exp(logprob)
+        responsibilities = best_gmm.predict_proba(x)  # Component weights per point
+        pdf_individual = responsibilities * pdf[:, np.newaxis]  # Individual component densities
+        # Plot the GMM
+        fig.add_trace(go.Scatter(
+            x=x.flatten(),
+            y=pdf,
+            mode='lines',
+            name=f'{color_group} GMM',
+            line=dict(color=color_map[color_group], width=2),
+            hovertemplate=(
+                f"<b>Group:</b> {color_group}<br>"
+                f"<b>Count:</b> %{{y}}<extra></extra>"
+            )
+        ))
+        # Plot individual components
+        for i in range(n_components):
+            fig.add_trace(go.Scatter(
+                x=x.flatten(),
+                y=pdf_individual[:, i],
+                mode='lines',
+                name=f'{color_group} Component {i+1}',
+                line=dict(color=color_map[color_group], width=1, dash='dash'),
+                hovertemplate=(
+                    f"<b>Group:</b> {color_group}<br>"
+                    f"<b>Count:</b> %{{y}}<extra></extra>"
+                )
+            ))
+    fig.update_layout(
+        title=f'Gaussian Mixture Model of {selected_var} by {", ".join(color_by)}',
+        xaxis_title=selected_var,
+        yaxis_title='Density',
+        legend_title_text='Groups',
+        hovermode='x unified', # Good for comparing counts at specific x-values
+        margin=dict(l=50, r=20, t=50, b=80)
     )
     # remove the column after plotting
     df.drop(columns=['unique_color_group'], inplace=True)

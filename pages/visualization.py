@@ -8,7 +8,7 @@ from widgets.custom_widgets import umap_hyperParams_widget
 from widgets.filter_widgets import filters_widget
 from widgets.click_plot_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
 from navigation import render_top_menu
-from visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot, feature_histogram_plot
+from visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot, feature_histogram_plot, feature_gmm_plot
 from dimension_reduction import dimension_reduction
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -28,7 +28,7 @@ if "last_processed_click_img" not in st.session_state:
 
 dimension_reduction_methods = ["UMAP", "Principal Component Analysis"]
 # methods to visualize based on a single feature
-feature_visualization_methods = ["Feature Comparison", "Image Comparison", "Feature Histogram"]
+feature_visualization_methods = ["Feature Comparison", "Image Comparison", "Feature Histogram (GMM optional)"]
 col1, col2 = st.columns([0.4, 1])
 with col1:
     st.title("Visualizations")
@@ -59,7 +59,7 @@ with col2:
     if upload_complete:
         # click_ready: boolean to check if the plot is ready for click events
         click_ready = False
-        filtered_df, color_by_options, cols = filters_widget(st.session_state.vis_df, wildcard=True)
+        filtered_df, color_by_options = filters_widget(st.session_state.vis_df, wildcard=True)
 
         # check if the df is empty after filtering
         if not filtered_df.empty:
@@ -72,8 +72,13 @@ with col2:
                     elif method == "Image Comparison":
                         fig = image_comparison_plot(filtered_df, selected_var)
                         click_ready = True
-                    elif method == "Feature Histogram":
-                        fig = feature_histogram_plot(filtered_df, selected_var, color_by_options)
+                    elif method == "Feature Histogram (GMM optional)":
+                        # create a switch to select between GMM and histogram
+                        apply_gmm = st.checkbox("Apply GMM to the feature distribution", value=False)
+                        if apply_gmm:
+                            fig = feature_gmm_plot(filtered_df, selected_var, color_by_options)
+                        else: 
+                            fig = feature_histogram_plot(filtered_df, selected_var, color_by_options)
                         st.plotly_chart(fig, use_container_width=True)
             
             elif method in dimension_reduction_methods:

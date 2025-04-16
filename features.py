@@ -76,15 +76,28 @@ def check_and_fix_df(df):
     - fill in na values for categorical columns
     """
     warning_msg = error_msg = ""
-    # handle the required column: cell_id
-    if "base" in df.columns:
-        df.rename(columns={"base": "cell_id"}, inplace=True)
-    if "base_name" in df.columns:
+    df = df.reset_index(drop=True)
+
+    # handle the required column: cell_id 
+    # for backward compatibility, we also check for base_name and base
+    if "base" in df.columns or "base_name" in df.columns:
+        if "cell_id" in df.columns:
+            # drop the cell_id column if it is not the same as base_name
+            df.drop(columns=["cell_id"], inplace=True)
+        df.rename(columns={"base": "base_name"}, inplace=True)
         df.rename(columns={"base_name": "cell_id"}, inplace=True)
     if "cell_id" not in df.columns:
         error_msg += "Error: cell_id/base_name column is missing in the uploaded file. It is required. \n"
         return None, warning_msg, error_msg
     
+    if df["cell_id"].duplicated().any():
+        first_duplicate = df["cell_id"].duplicated()
+        first_duplicate_value = df["cell_id"][first_duplicate].iloc[0]
+        first_duplicate_index = df.loc[first_duplicate].index[0]
+        warning_msg += f"Warning: Duplicate values found in `cell_id` column. First duplicate found with cell_id: '{first_duplicate_value}' at row {first_duplicate_index}.\
+            The duplicate rows will be dropped, only the first one will be kept.\n"
+        # drop the duplicate rows, only keep the first one
+        df = df.drop_duplicates(subset=["cell_id"], keep="first")
     if "image_name" not in df.columns:
         df['image_name'] = df["cell_id"].apply(safe_split_with_logging)
     else: 
