@@ -29,7 +29,7 @@ with col1:
 
 with col2:
     if upload_complete:   
-        filtered_df, classify_by_options, cols = filters_widget(df, wildcard=True, wildCardSelectText="Classify by")
+        filtered_df, classify_by_options = filters_widget(df, wildcard=True, wildCardSelectText="Classify by")
         filtered_df['classes'] = filtered_df[classify_by_options].agg('_'.join, axis=1)
         classes = filtered_df['classes'].unique()
         if len(classes) <= 1 or len(selected_features) == 0:

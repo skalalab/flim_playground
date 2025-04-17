@@ -48,7 +48,8 @@ def get_features(df):
         return None, None, None, error_msg
 
     # keep only the columns that are later used in downstream analysis
-    columns_to_keep = required_cols + categorical_cols + all_features_cols
+    avilable_categorical_cols = [col for col in categorical_cols if col in df.columns]
+    columns_to_keep = required_cols + avilable_categorical_cols + all_features_cols
     df = df[columns_to_keep]  
     # delete rows with NaN values in any column
     original_row_count = len(df)
@@ -105,6 +106,11 @@ def check_and_fix_df(df):
 
     for col in categorical_cols: 
         if col in df.columns:
+            # check if the column is all empty
+            if df[col].isnull().all():
+                warning_msg += f"Warning: {col} column is all empty. It will be removed.\n"
+                df.drop(columns=[col], inplace=True)
+                continue
             df[col] = df[col].fillna("N/A")
             df[col] = df[col].astype(str) # make sure all the values are not numbers
         else:

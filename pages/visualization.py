@@ -74,7 +74,9 @@ with col2:
                         click_ready = True
                     elif method == "Feature Histogram (GMM optional)":
                         # create a switch to select between GMM and histogram
-                        apply_gmm = st.checkbox("Apply GMM to the feature distribution", value=False)
+                        apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, help="Fit Gaussian Mixture Models\
+                        for each color group on the selected feature with 1, 2, and 3 components (fit on raw distribution, not on the histograms). \
+                        Choose the one in which all the components are at least of 10% weight and has the lowest BIC score.")
                         if apply_gmm:
                             fig, h_index_msg = feature_gmm_plot(filtered_df, selected_var, color_by_options)
                             if h_index_msg != "": 
