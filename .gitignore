@@ -7,5 +7,6 @@ build/
 *.spec
 streamlit_wrapper.py
 build_app.py
+test.py
 .venv/
 .python-version
