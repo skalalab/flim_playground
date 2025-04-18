@@ -137,7 +137,7 @@ with col2:
                 else:
                     st.markdown(f"<h5 style='text-align: center;'>Click on a point to show the detailed info of the selected image or cell {happy_emoji}</h5>", unsafe_allow_html=True)
         else: 
-            st.markdown(f"<h5 style='text-align: center; color: red'>No data available after removing outliers and/or filtering {sad_emoji}</h5>", unsafe_allow_html=True)
+            st.markdown(f"<h5 style='text-align: center; color: red'>No data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)
         # Display added items and reset options (common logic)
         if len(st.session_state["added_images"]) > 0 or len(st.session_state["added_cells"]) > 0:
             display_infoList_widget()

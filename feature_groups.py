@@ -5,7 +5,7 @@ The meta data for the Data Extraction outputted CSV file. Can be extended. If ne
 required_cols = ["cell_id", "image_name"]
 
 # customizable categorical columns
-categorical_cols = [ "experiment", "day", "cell_type", "media", "cell_line", "treatment", "patient_id", "GMM_group"]
+categorical_cols = [ "experiment", "day", "cell_type", "media", "cell_line", "treatment", "dish", "patient_id", "GMM_group"]
 
 # customizable numeric column dicionary that store the default names of the features we want to extract (for backward compatibility)
 feature_groups_default = {
@@ -22,7 +22,7 @@ feature_groups_default = {
 # customizable numeric column prefixes (in Data Extraction module, it will produce the features with their corresponding feature group prefixes)
 # used in Visualization module and Classification module to math features in the uploaded csv file
 feature_groups_prefix = {
-    "Nadh Fit": "fit_nadh: ", # put redox in nadh 
+    "Nadh Fit": "fit_nadh: ", # put redox in nadh
     "Fad Fit":"fit_fad: ",
     "Mask Morphology": "mask_morphology: ",
     "Feature Distribution Fit": "fd_fit: ",
@@ -30,10 +30,14 @@ feature_groups_prefix = {
     "Fit Free Fad": "fit_free_fad: ",
     "Feature Distribution Fit Free": "fd_fit_free: ",
     "Mitochrondria Feature": "mito: ",
+
+    "Uncategorized Features": "", # features that are not in the above groups, a fallback, should always be the last
 }
 
 # feature groups names that are used to name widgets that host those feature groups
-feature_groups = feature_groups_prefix.keys()
+# In Python 3.7+, dictionary keys maintain insertion order.
+# Convert keys view to a list to explicitly capture this order.
+feature_groups = list(feature_groups_prefix.keys())
 # host all features that are capable of being extracted from raw data
 # used only in data_extraction module to name the features that can be extracted 
 feature_groups_features = {
