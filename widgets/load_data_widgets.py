@@ -59,7 +59,8 @@ def load_csv(uploaded_csv):
         # check and fix the uploaded csv 
     if uploaded_csv is not None:
         # Read the uploaded data
-        df = pd.read_csv(uploaded_csv)
+        # Read the uploaded data, explicitly preventing the first column from being used as the index
+        df = pd.read_csv(uploaded_csv, index_col=False)
         df, warning_msg, error_msg = check_and_fix_df(df)
 
         if error_msg != "":

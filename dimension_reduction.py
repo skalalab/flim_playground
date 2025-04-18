@@ -1,4 +1,6 @@
 from sklearn.preprocessing import StandardScaler
+import warnings
+warnings.filterwarnings(action='ignore', category=FutureWarning, module='sklearn.utils.deprecation')
 from sklearn.decomposition import PCA
 import pandas as pd
 import umap
