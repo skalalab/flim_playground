@@ -5,11 +5,12 @@ file_suffix_default = {
     'mask': '_mask.tiff',
     'nadh decay': 'n.sdt',
     'fad decay': 'f.sdt',
-    'irf': '.txt',
     'single cell features': '.csv',
     'nadh histogram': '_ch1.csv',
     'red histogram': '_ch2.csv',
-    "shift": "_shift.asc"
+    "nadh shift": "_n_shift.asc",
+    "fad shift": "_f_shift.asc",
+    'irf': '.txt',
 }
 
 spc_output_suffix = {
@@ -24,6 +25,11 @@ def list_files_with_suffix(folder_path, suffix):
     path = Path(folder_path)
     # rglob searches files recursively
     return [str(file) for file in path.rglob("*") if file.name.endswith(suffix)]
+
+def list_files_with_filename(folder_path, filename):
+    path = Path(folder_path)
+    # rglob searches files recursively
+    return [str(file) for file in path.rglob("*") if file.name == filename]
 
 
 # def sdts_in_dir(folder_path, mask=True)

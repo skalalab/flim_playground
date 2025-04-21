@@ -154,7 +154,7 @@ def check_and_fix_df(df):
         df["image_name"] = df["image_name"].fillna("missing image name")
 
     for col in df.columns:
-        matched_categorical_col =  match_col_name(col, categorical_cols)
+        matched_categorical_col = match_col_name(col, categorical_cols)
         if matched_categorical_col is not None:
             # rename the column to match the canonical categorical column name
             df.rename(columns={col: matched_categorical_col}, inplace=True)

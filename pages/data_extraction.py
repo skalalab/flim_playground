@@ -2,7 +2,7 @@ import streamlit as st
 import os
 from navigation import render_top_menu
 from feature_groups import feature_groups_features, get_feature_name
-from widgets.load_data_widgets import happy_emoji, sad_emoji, load_data_from_folder_widget, load_data_suffix_widget
+from widgets.load_data_widgets import happy_emoji, sad_emoji, load_list_data_from_folder_widget, load_data_suffix_widget
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
 render_top_menu()
@@ -26,7 +26,7 @@ with col1:
         suffix_correct = False
         with checkbox_col1:
             if selected_extraction_type == "ROI Summing Fit" or selected_extraction_type == "K-Flow":
-                fix_shift = st.checkbox("Fix Shift", value=True, help="If checked, the shift will be inferred one time and fixed for all the images/cells in the folder (i.e. they were imaged suring the same session). \
+                fix_shift = st.checkbox("Fix Shift", value=True, help="If checked, the shift will be inferred one time and fixed for all the images/cells in the folder (i.e. they should and assumed to be imaged suring the same session). \
                 If unchecked, the shift will be inferred for each image separately.")
             fit_free = st.checkbox("Fit Free Analysis", value=True, help="If checked, Fit free (e.g. Phasor) features will be extracted.")
         
@@ -53,7 +53,11 @@ with col2:
     # check if the folder exists
     if suffix_correct: 
         if os.path.isdir(folder_path): 
-            images, error_msg = load_data_from_folder_widget(folder_path, selected_extraction_type, fit_free=fit_free, has_nadh=has_nadh, has_fad=has_fad, file_suffix=actual_file_suffix)
+            images = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
+            if len(images) != 0:
+                st.success(f"Images with ✅ are loaded successfully {happy_emoji}. Images with ❌ (if any) are not loaded.")
 
+            else: 
+                st.warning("No data found in the folder. Please check the path and the file suffixes.")
         elif folder_path != "":
-            st.warning(f"Folder not found! Please check the path. {sad_emoji}")
+            st.error(f"Folder not found! Please check the path. {sad_emoji}")
