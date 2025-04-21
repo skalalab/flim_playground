@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 from features import get_features, check_and_fix_df
-from folder_util import list_files_with_suffix, file_suffix_default
+from folder_util import list_files_with_suffix, file_suffix_default, list_files_with_filename, spc_output_suffix
 import random
+import os 
 
 happy_celebratory_emojis = [
     "🥳",  # Partying Face
@@ -104,13 +105,14 @@ def load_data_suffix_widget(extraction_type, fit_free, has_nadh, has_fad):
     elif "SPCImage" in extraction_type:
         # required files: mask, SPC fitting outputs (a1, a2, t1, t2, and shift)
         actual_file_suffix["mask"] = ""
-        # only use the shift. The rest will be deduced from the suffix of the shift 
-        actual_file_suffix["shift"] = ""
         if fit_free:
             if has_nadh:
                 actual_file_suffix["nadh decay"] = ""
+                # only use the shift. The rest will be deduced from the suffix of the shift 
+                actual_file_suffix["nadh shift"] = ""
             if has_fad:
                 actual_file_suffix["fad decay"] = ""
+                actual_file_suffix["fad shift"] = ""
     elif extraction_type == "K-Flow":
         # required files: cell histograms and IRF
         actual_file_suffix["irf"] = ""
@@ -129,20 +131,104 @@ def load_data_suffix_widget(extraction_type, fit_free, has_nadh, has_fad):
             # create a text input for the suffix
             suffix = st.text_input(f"Suffix for {key}", file_suffix_default[key], key=f"{key}_suffix", help=f"The filenames are expected to have *exactly* two parts: \
             *image_name + suffix*. All files from the same image should share the **same** image_name, with the only difference being the suffix. This is the \
-                                   suffix for the {key} file.")
+                                   suffix for the {key} file")
             if suffix == "":
                 error_msg += f"Please provide a suffix for {key}! "
             else:
                 actual_file_suffix[key] = suffix
+    if error_msg == "" and "SPCImage" in extraction_type:
+        # load nadh and fad spc image output files suffixes
+        suffix_info = "For other SPCImage output files (a1, a2, t1, t2), the suffixes are automatically generated based on the shift suffix: \n"
+        for key, suffix in spc_output_suffix.items():
+            if key == "shift":
+                continue
+            if has_nadh: 
+                nadh_shift_suffix = actual_file_suffix["nadh shift"]
+                actual_file_suffix["nadh " + key] = nadh_shift_suffix.replace("_shift.asc", suffix)
+                # Use Markdown list syntax for line breaks in st.info
+                # Prepend "- " to make it a list item and add backticks for clarity
+                suffix_info += f"- nadh {key}: `{actual_file_suffix['nadh ' + key]}`\n"
+            if has_fad:
+                fad_shift_suffix = actual_file_suffix["fad shift"]
+                actual_file_suffix["fad " + key] = fad_shift_suffix.replace("_shift.asc", suffix)
+                suffix_info += f"fad {key}: `{actual_file_suffix['fad ' + key]}`\n"
+                
+        st.info(suffix_info)
+        
+    # check if the suffixes are valid
     return actual_file_suffix, error_msg
         
 
-def load_data_from_folder_widget(folder_path, extraction_type, fit_free, has_nadh, has_fad, file_suffix):    
+def load_list_data_from_folder_widget(folder_path, file_suffix):    
     """
-    Load data from a folder and check its validity. Display the file sets for each image group.
+    Load data from a folder and check its validity. Display the file sets for each image group. 
     file_names = image_name + suffix (exactly that, no more, no less)
+    image_group: keyed by image_name, and the value is a list of all the files that belong to that image
     """
-    error_msg = ""
-    image_groups = {}
+    
+    valid_image_groups = {}
 
-    return image_groups, error_msg
+    # use the first key to get the list of images (it does not matter which key to use, since they are all required, they should all be there)
+    image_search_suffix = list(file_suffix.values())[0]
+    image_files = list_files_with_suffix(folder_path, image_search_suffix) # returned file paths are absolute paths in string format
+    if len(image_files) == 0:
+        st.warning(f"No image files found with suffix: **{image_search_suffix}**.")
+        return {}
+    
+    # get the image names from the file names by removing the suffix
+    image_names = [os.path.basename(file).removesuffix(image_search_suffix) for file in image_files]
+    # for each image name, build a widget card with the image name and the files that belong to it
+    max_cols = 3
+    num_images = len(image_names)
+    num_cols = min(max_cols, num_images)
+    rows = (num_images + num_cols - 1) // num_cols
+
+    for row in range(rows):
+        cols = st.columns(num_cols)
+        for col_idx in range(num_cols):
+            img_idx = row * num_cols + col_idx
+            if img_idx >= num_images:
+                break
+            image_name = image_names[img_idx]
+            image_group = {}
+            missing_keys = []
+            duplicate_keys = []
+            # get the list of files that belong to this image
+            for key, suffix in file_suffix.items():
+                # find the file with the exact name: image_name + suffix recursively within the folder (except for IRF)
+                if key != "irf":
+                    matched_files = list_files_with_filename(folder_path, image_name + suffix)
+                else:
+                    matched_files = list_files_with_suffix(folder_path, suffix)
+                if len(matched_files) != 1:
+                    if len(matched_files) > 1:
+                        duplicate_keys.append(key) # more than one file found
+                    else:
+                        missing_keys.append(key) # no matching file found
+                else:
+                    image_group[key] = matched_files[0]
+            # create the card 
+            with cols[col_idx]:
+                with st.container(border=True):
+                    st.markdown(f"Image name: **{image_name}**")
+                    if missing_keys :
+                        st.write("❌ Missing or duplicate files:")
+                        for key in missing_keys:
+                            if key != "irf":
+                                st.write(f"- Missing {key}: {image_name + file_suffix[key]}")
+                            else:
+                                st.write(f"- Missing {key} with suffix: {file_suffix[key]}")
+                        for key in duplicate_keys:
+                            if key != "irf":
+                                st.write(f"- Duplicate {key}: {image_name + file_suffix[key]}")
+                            else:
+                                st.write(f"- Duplicate {key} with suffix: {file_suffix[key]}")
+
+                    else:
+                        st.write("✅ All files found:")
+                        for key, path in image_group.items():
+                            st.write(f"- {key}: {os.path.basename(path)}")
+            if missing_keys == []:
+                valid_image_groups[image_name] = image_group
+
+    return valid_image_groups
