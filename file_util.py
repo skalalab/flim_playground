@@ -1,6 +1,8 @@
 from pathlib import Path
 import streamlit as st   
 import os
+
+from feature_groups import subset_feature_group_features
 file_suffix_default = {
     'mask': '_mask.tiff',
     'nadh decay': 'n.sdt',
@@ -31,7 +33,74 @@ def list_files_with_filename(folder_path, filename):
     # rglob searches files recursively
     return [str(file) for file in path.rglob("*") if file.name == filename]
 
+def parse_metadata_file(metadata_df):
+    """
+    Parse the metadata file and return a dictionary of metadata.
+    metadata_df: pandas dataframe of metadata
+    returns: 
+    - feature_groups_features: dictionary of feature groups and their features that are a subset of the full feature groups features
+    """
+    error_msg = ""
+    available_feature_groups_features = {}
+    analysis_type = ""
+    # check if the metadata file has the required columns
+    if "image_name" not in metadata_df.columns:
+        error_msg += "The required column `image_name` not found in the metadata file! "
+        return error_msg, None, None
+    if "irf" not in metadata_df.columns:
+        error_msg += "The required column `irf` not found in the metadata file! "
+        return error_msg, None, None
+    # determine the avilable feature groups based on the metadata file
+    has_nadh = has_fad = fit_free = has_mask = feature_distribution = False
 
+    if "nadh histogram" in metadata_df.columns or "fad_histogram" in metadata_df.columns:
+        # k-flow
+        fit_free = True
+        if "nadh histogram" in metadata_df.columns:
+            has_nadh = True
+        if "fad histogram" in metadata_df.columns:
+            has_fad = True
+        analysis_type = "K-Flow"
+    elif "mask" in metadata_df.columns:
+        # for other analysis types requires mask
+        has_mask = True
+        if "nadh decay" in metadata_df.columns or "fad decay" in metadata_df.columns:
+            fit_free = True
+            if "nadh shift" in metadata_df.columns or "fad shift" in metadata_df.columns:
+                # spc image and fit free
+                feature_distribution = True
+                has_nadh = "nadh shift" in metadata_df.columns
+                has_fad = "fad shift" in metadata_df.columns
+                analysis_type = "SPCImage (former Regionprops)"
+            else:
+                # ROI summing fit
+                has_nadh = "nadh decay" in metadata_df.columns
+                has_fad = "fad decay" in metadata_df.columns
+                analysis_type = "ROI Summing Fit"
+        else: # SPCImage without fit free
+            if "nadh shift" in metadata_df.columns or "fad shift" in metadata_df.columns:
+                # spc image and fit free
+                feature_distribution = True
+                has_nadh = "nadh shift" in metadata_df.columns
+                has_fad = "fad shift" in metadata_df.columns
+                analysis_type = "SPCImage (former Regionprops)"
+            else:
+                error_msg += "Cannot determine the analysis type from the metadata file! "
+                return error_msg, None, None
+    else: 
+        error_msg += "Cannot determine the analysis type from the metadata file! "
+        return error_msg, None, None
+   
+    available_feature_groups_features = subset_feature_group_features(
+        has_nadh=has_nadh,
+        has_fad=has_fad,
+        fit_free=fit_free,
+        has_mask=has_mask,
+        feature_distribution=feature_distribution
+    )
+    
+    return error_msg, available_feature_groups_features, analysis_type
+   
 # def sdts_in_dir(folder_path, mask=True)
 #     """
 #     Handles single channel sdts. Mutli-channel sdts are not (yet) supported.

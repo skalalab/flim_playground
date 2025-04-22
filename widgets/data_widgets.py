@@ -1,10 +1,11 @@
 import streamlit as st
 import pandas as pd
-from features import get_features, check_and_fix_df
-from folder_util import list_files_with_suffix, file_suffix_default, list_files_with_filename, spc_output_suffix
 import random
 import os 
-
+from features import get_features, check_and_fix_df
+from feature_groups import get_full_feature_name, feature_groups_prefix
+from file_util import list_files_with_suffix, list_files_with_filename, parse_metadata_file, spc_output_suffix, file_suffix_default
+from widgets.selection_widgets import multi_feature_select_widget
 happy_celebratory_emojis = [
     "🥳",  # Partying Face
     "🎉",  # Party Popper
@@ -59,7 +60,6 @@ def load_csv(uploaded_csv):
     df = feature_cols_dict = None
         # check and fix the uploaded csv 
     if uploaded_csv is not None:
-        # Read the uploaded data
         # Read the uploaded data, explicitly preventing the first column from being used as the index
         df = pd.read_csv(uploaded_csv, index_col=False)
         df, warning_msg, error_msg = check_and_fix_df(df)
@@ -82,45 +82,46 @@ def load_csv(uploaded_csv):
                 upload_complete = True
     return df, feature_cols_dict, upload_complete
 
-def load_data_suffix_widget(extraction_type, fit_free, has_nadh, has_fad):
+def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
     """
     ROI summing fit: requires mask, IRF, and raw lifetime decay files for nadh and fad
-    SPCImage: requires mask and SPC fitting outputs (a1, a2, t1, t2, and shift) for nadh and fad, and raw lifetime decay files for nadh and fad (if fit_free)
+    SPCImage: requires mask and SPC fitting outputs (a1, a2, t1, t2, and shift) for nadh and fad, and raw lifetime decay files for nadh and fad and IRF (if fit_free)
     K-Flow: requires cell histograms and IRF 
     Categorical Features: requires single cell features csv files
     """
-    # based on the extraction type, display the default suffix for each require file type
+    # based on the analysis type, display the default suffix for each require file type
     actual_file_suffix = {}
     error_msg = ""
-    if extraction_type == "Categorical Features": 
-        pass
-    elif extraction_type == "ROI Summing Fit":
+
+    if analysis_type == "ROI Summing Fit":
         # required files: mask, IRF
         actual_file_suffix["mask"] = ""
-        actual_file_suffix["irf"] = ""
         if has_nadh:
             actual_file_suffix["nadh decay"] = ""
         if has_fad:
             actual_file_suffix["fad decay"] = ""
-    elif "SPCImage" in extraction_type:
+        actual_file_suffix["irf"] = ""
+    elif "SPCImage" in analysis_type:
         # required files: mask, SPC fitting outputs (a1, a2, t1, t2, and shift)
         actual_file_suffix["mask"] = ""
+        if has_nadh:
+            # only use the shift. The rest will be deduced from the suffix of the shift 
+            actual_file_suffix["nadh shift"] = ""
+        if has_fad:
+            actual_file_suffix["fad shift"] = ""
         if fit_free:
             if has_nadh:
                 actual_file_suffix["nadh decay"] = ""
-                # only use the shift. The rest will be deduced from the suffix of the shift 
-                actual_file_suffix["nadh shift"] = ""
             if has_fad:
                 actual_file_suffix["fad decay"] = ""
-                actual_file_suffix["fad shift"] = ""
-    elif extraction_type == "K-Flow":
+            actual_file_suffix["irf"] = ""
+    elif analysis_type == "K-Flow":
         # required files: cell histograms and IRF
-        actual_file_suffix["irf"] = ""
         if has_nadh:
             actual_file_suffix["nadh histogram"] = ""
         if has_fad:
             actual_file_suffix["red histogram"] = ""
-    
+        actual_file_suffix["irf"] = ""
     # create a text input widget for each suffix in the dictionary, maximum 2 per row
     # dynamically determine how many rows are needed
     num_rows = (len(actual_file_suffix) + 1) // 2
@@ -136,7 +137,7 @@ def load_data_suffix_widget(extraction_type, fit_free, has_nadh, has_fad):
                 error_msg += f"Please provide a suffix for {key}! "
             else:
                 actual_file_suffix[key] = suffix
-    if error_msg == "" and "SPCImage" in extraction_type:
+    if error_msg == "" and "SPCImage" in analysis_type:
         # load nadh and fad spc image output files suffixes
         suffix_info = "For other SPCImage output files (a1, a2, t1, t2), the suffixes are automatically generated based on the shift suffix: \n"
         for key, suffix in spc_output_suffix.items():
@@ -159,7 +160,7 @@ def load_data_suffix_widget(extraction_type, fit_free, has_nadh, has_fad):
     return actual_file_suffix, error_msg
         
 
-def load_list_data_from_folder_widget(folder_path, file_suffix):    
+def load_list_data_from_folder_widget(folder_path, file_suffix, show_files=True):    
     """
     Load data from a folder and check its validity. Display the file sets for each image group. 
     file_names = image_name + suffix (exactly that, no more, no less)
@@ -228,7 +229,40 @@ def load_list_data_from_folder_widget(folder_path, file_suffix):
                         st.write("✅ All files found:")
                         for key, path in image_group.items():
                             st.write(f"- {key}: {os.path.basename(path)}")
-            if missing_keys == []:
+            if missing_keys == [] and duplicate_keys == []:
                 valid_image_groups[image_name] = image_group
 
     return valid_image_groups
+
+def export_data_widget(images, folder_path):
+    # use a botton to export the images as one csv file (one image per row) to the folder_path 
+    confirm_export = st.button("Export Image Metadata as CSV", help=f"Export the image meta as one csv file (one image per row) to {folder_path}")
+    if confirm_export:
+        # convert the dictionary to a dataframe
+        images_df = pd.DataFrame.from_dict(images, orient="index")
+        images_df.index.name = "image_name"  # Set index name 
+        # save the dataframe to a csv file
+        csv_file_path = os.path.join(folder_path, "image_metadata.csv")
+        images_df.to_csv(csv_file_path) # Save the DataFrame
+        images_df.reset_index(inplace=True)  # Reset index to make it a column
+        st.success(f"Image metadata exported successfully to {csv_file_path} {happy_emoji}")
+        st.session_state["last_extracted_metadata"] = images_df
+        st.session_state["last_extracted_metadata_filepath"] = csv_file_path
+
+def parse_metadata_display_feature_widget(metadata_df): 
+    """
+    Parse the metadata and display the features available to be extracted later for user to choose. 
+    """
+    error_msg, available_feature_groups_features, analysis_type = parse_metadata_file(metadata_df)
+    if error_msg != "":
+        st.error(error_msg)
+        return None, None
+    # display the available features in a multi select widget, one group per widget
+    selected_features = multi_feature_select_widget(get_full_feature_name(available_feature_groups_features), n_per_row=2)
+    selected_feature_groups_features = {}
+    for feature_group in available_feature_groups_features:
+        feature_group_prefix = feature_groups_prefix[feature_group]
+        selected_feature_group = feature_group_features = [feature for feature in selected_features if feature.startswith(feature_group_prefix)]
+        if selected_feature_group:
+            selected_feature_groups_features[feature_group] = selected_feature_group
+    return selected_feature_groups_features, analysis_type
