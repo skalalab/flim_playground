@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from streamlit_plotly_events import plotly_events
 
-from widgets.load_data_widgets import load_csv, happy_emoji, sad_emoji
+from widgets.data_widgets import load_csv, happy_emoji, sad_emoji
 from widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget
 from widgets.custom_widgets import umap_hyperParams_widget
 from widgets.filter_widgets import filters_widget

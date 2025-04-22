@@ -55,7 +55,7 @@ for feature_distribution_var in feature_distribution_vars:
     feature_groups_features["Feature Distribution Fit Free"] = [ "nadh_" + feature + "_" + feature_distribution_var for feature in feature_groups_features["Fit Free Nadh"] ]
     feature_groups_features["Feature Distribution Fit Free"] += [ "fad_" + feature + "_" + feature_distribution_var for feature in feature_groups_features["Fit Free Fad"]]
 
-def get_feature_name(feature_groups):
+def get_full_feature_name(feature_groups):
     """
     takes the feature groups and returns the feature groups in human friendly names
     """
@@ -67,3 +67,40 @@ def get_feature_name(feature_groups):
         else:
             feature_groups_names[feature_group] = feature_groups_features[feature_group]
     return feature_groups_names
+
+def subset_feature_group_features(has_nadh=True, has_fad=True, fit_free=True, has_mask=True, feature_distribution=True):
+    """
+    Subset the feature groups based on the selected features
+    """
+    feature_groups_subset = {}
+    if has_mask:
+        feature_groups_subset["Mask Morphology"] = feature_groups_features["Mask Morphology"]
+    if has_nadh:
+        feature_groups_subset["Nadh Fit"] = feature_groups_features["Nadh Fit"]
+        if feature_distribution:
+            feature_groups_subset["Feature Distribution Fit"] = [
+                feat for feat in feature_groups_features["Feature Distribution Fit"]
+                if feat.startswith("nadh_")
+            ]
+        if fit_free:
+            feature_groups_subset["Fit Free Nadh"] = feature_groups_features["Fit Free Nadh"]
+            if feature_distribution:
+                feature_groups_subset["Feature Distribution Fit Free"] = [
+                    feat for feat in feature_groups_features["Feature Distribution Fit Free"]
+                    if feat.startswith("nadh_")
+                ]
+    if has_fad:
+        feature_groups_subset["Fad Fit"] = feature_groups_features["Fad Fit"]
+        if feature_distribution:
+            feature_groups_subset["Feature Distribution Fit"] = [
+                feat for feat in feature_groups_features["Feature Distribution Fit"]
+                if feat.startswith("fad_")
+            ]
+        if fit_free:
+            feature_groups_subset["Fit Free Fad"] = feature_groups_features["Fit Free Fad"]
+            if feature_distribution:
+                feature_groups_subset["Feature Distribution Fit Free"] = [
+                    feat for feat in feature_groups_features["Feature Distribution Fit Free"]
+                    if feat.startswith("fad_")
+                ]
+    return feature_groups_subset
