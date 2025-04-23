@@ -3,6 +3,9 @@ import os
 import pandas as pd
 from navigation import render_top_menu
 from widgets.data_widgets import happy_emoji, sad_emoji, load_list_data_from_folder_widget, load_data_suffix_widget, export_data_widget, parse_metadata_display_feature_widget
+from widgets.fit_widgets import fit_options
+from file_util import parse_metadata_file
+from fit import choose_shift
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
 render_top_menu()
@@ -11,18 +14,13 @@ if "last_extracted_metadata" not in st.session_state:
     st.session_state["last_extracted_metadata"] = None
 if "last_extracted_metadata_filepath" not in st.session_state:
     st.session_state["last_extracted_metadata_filepath"] = None
-if "feature_selection_locked" not in st.session_state:
-    st.session_state["feature_selection_locked"] = False
-if "locked_selected_features" not in st.session_state:
-    st.session_state["locked_selected_features"] = None
-if "locked_analysis_type" not in st.session_state:
-    st.session_state["locked_analysis_type"] = None
+
 
 st.title("Data Extraction")
 
 col1, col2 = st.columns([0.4, 1])
 steps = ["Image Metadata Extraction", "Numeric Feature Extraction", "Categorical Feature Extraction"]
-analysis_types =  ["ROI Summing Fit", "SPCImage (former Regionprops)", "K-Flow"]
+analysis_types =  ["ROI Summing Fit", "SPCImage", "K-Flow"]
 with col1:
     # first select the step to perform
     selected_step = st.selectbox("Select a step to perform", steps, index=0, help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: \
@@ -51,6 +49,7 @@ with col1:
                 , key="folder_path")
         else: st.error(f"Please check at least one of the channels {sad_emoji}")
     elif selected_step == "Numeric Feature Extraction":
+        analysis_ready = False
         metadata_df = None
         if st.session_state["last_extracted_metadata"] is not None:
             metadata_df = st.session_state["last_extracted_metadata"]
@@ -65,26 +64,20 @@ with col1:
                     st.error(f"Error reading the uploaded CSV file: {e}")
                     metadata_df = None # Ensure metadata_df is None if reading fail
 
-            if metadata_df is not None:
-                # only show the selector if we haven't locked it yet
-                if not st.session_state["feature_selection_locked"]:
-                    selected_feature_groups_features, analysis_type = (
-                        parse_metadata_display_feature_widget(metadata_df)
-                    )
-                    def _confirm_features():
-                        st.session_state["feature_selection_locked"] = True
-                        st.session_state["locked_selected_features"] = selected_feature_groups_features
-                        st.session_state["locked_analysis_type"] = analysis_type
+        if metadata_df is not None:
+            error_msg, selected_feature_groups_features, analysis_type, fit_free = parse_metadata_file(metadata_df)
 
-                    st.button(
-                        "Confirm Features",
-                        help="Click to confirm the selected features.",
-                        on_click=_confirm_features,
-                    )
-                else:
-                    st.success("✅ Features confirmed.")
-
-           
+            if error_msg == "":
+                st.success(f"✅ Features to be extracted confirmed. Analysis type: {analysis_type}. Fit free: {fit_free}.") 
+                                
+                if analysis_type == "ROI Summing Fit" or analysis_type == "K-flow":
+                    st.info("Please specify the following fitting options.")
+                 
+                    duration, time_bins, num_components, fitting_algo, fix_shift = fit_options(analysis_type)
+                    if st.button("Confirm and Start Fitting"):
+                        analysis_ready = True
+            else:
+                st.error(f"Error: {error_msg}")
 
     else:   
         # Categorical features extraction
@@ -96,11 +89,19 @@ with col2:
         if os.path.isdir(folder_path): 
             images = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
             if len(images) != 0:
-                st.success(f"Images with ✅ are loaded successfully {happy_emoji}. Images with ❌ (if any) are not loaded.")
-                export_data_widget(images=images, folder_path=folder_path)
+                st.success(f"Images with ✅ are loaded successfully {happy_emoji}. Images with ❌ (if any) are not loaded. The following features will be extracted: ")
+                images_df = pd.DataFrame.from_dict(images, orient="index")
+                images_df['fit_free'] = fit_free
+                images_df.index.name = "image_name"  # Set index name 
+                images_df.reset_index(inplace=True)  # Reset index to make it a column
+                parse_metadata_display_feature_widget(images_df)
+                export_data_widget(images_df=images_df, folder_path=folder_path)
             else: 
                 st.warning("No data found in the folder. Please check the path and the file suffixes.")
         elif folder_path != "":
             st.error(f"Folder not found! Please check the path. {sad_emoji}")
-    elif selected_step == "Numeric Feature Extraction":
-        pass
+    elif selected_step == "Numeric Feature Extraction" and analysis_ready:
+        st.info(f"Applying {analysis_type} on {len(metadata_df)} images.")
+        st.info("Preproceessing step: choose the shift for all images.")
+        shifts = choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, analysis_type)
+            

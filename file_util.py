@@ -46,16 +46,22 @@ def parse_metadata_file(metadata_df):
     # check if the metadata file has the required columns
     if "image_name" not in metadata_df.columns:
         error_msg += "The required column `image_name` not found in the metadata file! "
-        return error_msg, None, None
+        return error_msg, None, None, None
     if "irf" not in metadata_df.columns:
         error_msg += "The required column `irf` not found in the metadata file! "
-        return error_msg, None, None
+        return error_msg, None, None, None
+    if "fit_free" not in metadata_df.columns:
+        error_msg += "The required column `fit_free` not found in the metadata file! "
+        return error_msg, None, None, None
+    if len(metadata_df) == 0:
+        error_msg += "The metadata file is empty! "
+        return error_msg, None, None, None
+    fit_free = bool(metadata_df["fit_free"].iloc[0])
     # determine the avilable feature groups based on the metadata file
-    has_nadh = has_fad = fit_free = has_mask = feature_distribution = False
+    has_nadh = has_fad =  has_mask = feature_distribution = False
 
     if "nadh histogram" in metadata_df.columns or "fad_histogram" in metadata_df.columns:
         # k-flow
-        fit_free = True
         if "nadh histogram" in metadata_df.columns:
             has_nadh = True
         if "fad histogram" in metadata_df.columns:
@@ -65,13 +71,12 @@ def parse_metadata_file(metadata_df):
         # for other analysis types requires mask
         has_mask = True
         if "nadh decay" in metadata_df.columns or "fad decay" in metadata_df.columns:
-            fit_free = True
             if "nadh shift" in metadata_df.columns or "fad shift" in metadata_df.columns:
                 # spc image and fit free
                 feature_distribution = True
                 has_nadh = "nadh shift" in metadata_df.columns
                 has_fad = "fad shift" in metadata_df.columns
-                analysis_type = "SPCImage (former Regionprops)"
+                analysis_type = "SPCImage"
             else:
                 # ROI summing fit
                 has_nadh = "nadh decay" in metadata_df.columns
@@ -83,13 +88,13 @@ def parse_metadata_file(metadata_df):
                 feature_distribution = True
                 has_nadh = "nadh shift" in metadata_df.columns
                 has_fad = "fad shift" in metadata_df.columns
-                analysis_type = "SPCImage (former Regionprops)"
+                analysis_type = "SPCImage"
             else:
                 error_msg += "Cannot determine the analysis type from the metadata file! "
-                return error_msg, None, None
+                return error_msg, None, None, None
     else: 
         error_msg += "Cannot determine the analysis type from the metadata file! "
-        return error_msg, None, None
+        return error_msg, None, None, None
    
     available_feature_groups_features = subset_feature_group_features(
         has_nadh=has_nadh,
@@ -99,7 +104,7 @@ def parse_metadata_file(metadata_df):
         feature_distribution=feature_distribution
     )
     
-    return error_msg, available_feature_groups_features, analysis_type
+    return error_msg, available_feature_groups_features, analysis_type, fit_free
    
 # def sdts_in_dir(folder_path, mask=True)
 #     """
