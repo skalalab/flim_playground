@@ -234,35 +234,46 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, show_files=True)
 
     return valid_image_groups
 
-def export_data_widget(images, folder_path):
+def export_data_widget(images_df, folder_path):
     # use a botton to export the images as one csv file (one image per row) to the folder_path 
     confirm_export = st.button("Export Image Metadata as CSV", help=f"Export the image meta as one csv file (one image per row) to {folder_path}")
     if confirm_export:
-        # convert the dictionary to a dataframe
-        images_df = pd.DataFrame.from_dict(images, orient="index")
-        images_df.index.name = "image_name"  # Set index name 
+        # convert the dictionary to a dataframe     
         # save the dataframe to a csv file
         csv_file_path = os.path.join(folder_path, "image_metadata.csv")
         images_df.to_csv(csv_file_path) # Save the DataFrame
-        images_df.reset_index(inplace=True)  # Reset index to make it a column
         st.success(f"Image metadata exported successfully to {csv_file_path} {happy_emoji}")
         st.session_state["last_extracted_metadata"] = images_df
         st.session_state["last_extracted_metadata_filepath"] = csv_file_path
 
-def parse_metadata_display_feature_widget(metadata_df): 
+def parse_metadata_display_feature_widget(metadata_df, num_cols=3): 
     """
     Parse the metadata and display the features available to be extracted later for user to choose. 
     """
-    error_msg, available_feature_groups_features, analysis_type = parse_metadata_file(metadata_df)
+    error_msg, available_feature_groups_features, analysis_type, _ = parse_metadata_file(metadata_df)
     if error_msg != "":
         st.error(error_msg)
-        return None, None
+        return 
     # display the available features in a multi select widget, one group per widget
-    selected_features = multi_feature_select_widget(get_full_feature_name(available_feature_groups_features), n_per_row=2)
-    selected_feature_groups_features = {}
-    for feature_group in available_feature_groups_features:
-        feature_group_prefix = feature_groups_prefix[feature_group]
-        selected_feature_group = feature_group_features = [feature for feature in selected_features if feature.startswith(feature_group_prefix)]
-        if selected_feature_group:
-            selected_feature_groups_features[feature_group] = selected_feature_group
-    return selected_feature_groups_features, analysis_type
+    cols = st.columns(num_cols)
+    keys = list(available_feature_groups_features.keys())
+    chunk_size = (len(keys) + num_cols - 1) // num_cols  # split into 3 roughly equal parts
+
+    for i, col in enumerate(cols):
+        for key in keys[i * chunk_size : (i + 1) * chunk_size]:
+            values = available_feature_groups_features[key]
+            # Option 1: use a Markdown newline
+            col.markdown(
+                f"""
+                <div style="
+                    border:1px solid #ccc;
+                    padding:8px;
+                    border-radius:4px;
+                    margin-bottom:8px;
+                ">
+                    <strong style="color: orange;">{key}</strong><br>
+                    { ', '.join(values) }
+                </div>
+                """,
+                unsafe_allow_html=True
+            )

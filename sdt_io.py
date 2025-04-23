@@ -102,13 +102,19 @@ def read_sdt150(filename):
     # reshape XYTC to CXYT
     elif XYTC[3] > 1:
         # Check for empty channels and filter them out
-        non_empty_channels =  len(dataSDT) // (XYTC[0] * XYTC[1] * XYTC[2])
-        if non_empty_channels == 1:
+        actual_no_channels =  len(dataSDT) // (XYTC[0] * XYTC[1] * XYTC[2])
+        if actual_no_channels == 1:
             # If only one channel is present, reshape to 3D
             dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2]].reshape([XYTC[0], XYTC[1], XYTC[2]])
         else:
-            dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2] * XYTC[3]].reshape([XYTC[3], XYTC[0], XYTC[1], XYTC[2]])
-            
+            dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2] * actual_no_channels].reshape([actual_no_channels, XYTC[0], XYTC[1], XYTC[2]])
+            for i in range(actual_no_channels):
+                # get the first channel with non-zero data
+                if np.sum(dataSDT[i]) != 0:
+                    dataSDT = dataSDT[i]
+                    break
+            if dataSDT.ndim == 4:
+               return None
     return dataSDT
 
 
