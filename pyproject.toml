@@ -24,6 +24,7 @@ dependencies = [
     "jsonschema-specifications==2024.10.1",
     "kiwisolver==1.4.8",
     "llvmlite==0.44.0",
+    "lmfit>=1.3.3",
     "markupsafe==3.0.2",
     "matplotlib==3.10.1",
     "narwhals==1.34.1",

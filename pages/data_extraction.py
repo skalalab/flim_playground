@@ -65,10 +65,10 @@ with col1:
                     metadata_df = None # Ensure metadata_df is None if reading fail
 
         if metadata_df is not None:
-            error_msg, selected_feature_groups_features, analysis_type, fit_free = parse_metadata_file(metadata_df)
+            error_msg, selected_feature_groups_features, analysis_type, fit_free, has_nadh, has_fad = parse_metadata_file(metadata_df)
 
             if error_msg == "":
-                st.success(f"✅ Features to be extracted confirmed. Analysis type: {analysis_type}. Fit free: {fit_free}.") 
+                st.success(f"✅ Features to be extracted confirmed. Analysis type: {analysis_type}. Fit free: {fit_free}. Channels: NADH: {has_nadh}, FAD/red: {has_fad}.") 
                                 
                 if analysis_type == "ROI Summing Fit" or analysis_type == "K-flow":
                     st.info("Please specify the following fitting options.")
@@ -103,5 +103,7 @@ with col2:
     elif selected_step == "Numeric Feature Extraction" and analysis_ready:
         st.info(f"Applying {analysis_type} on {len(metadata_df)} images.")
         st.info("Preproceessing step: choose the shift for all images.")
-        shifts = choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, analysis_type)
+        # first NADH, then FAD/red
+        if has_nadh: 
+            error_msg, shifts = choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, analysis_type, channel="NADH")
             

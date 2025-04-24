@@ -12,7 +12,9 @@ file_suffix_default = {
     'red histogram': '_ch2.csv',
     "nadh shift": "_n_shift.asc",
     "fad shift": "_f_shift.asc",
-    'irf': '.txt',
+    'nadh irf': '.txt',
+    'fad irf': '.txt',
+    'red irf': '.txt', 
 }
 
 spc_output_suffix = {
@@ -47,9 +49,7 @@ def parse_metadata_file(metadata_df):
     if "image_name" not in metadata_df.columns:
         error_msg += "The required column `image_name` not found in the metadata file! "
         return error_msg, None, None, None
-    if "irf" not in metadata_df.columns:
-        error_msg += "The required column `irf` not found in the metadata file! "
-        return error_msg, None, None, None
+
     if "fit_free" not in metadata_df.columns:
         error_msg += "The required column `fit_free` not found in the metadata file! "
         return error_msg, None, None, None
@@ -60,11 +60,17 @@ def parse_metadata_file(metadata_df):
     # determine the avilable feature groups based on the metadata file
     has_nadh = has_fad =  has_mask = feature_distribution = False
 
-    if "nadh histogram" in metadata_df.columns or "fad_histogram" in metadata_df.columns:
+    if "nadh histogram" in metadata_df.columns or "red histogram" in metadata_df.columns:
         # k-flow
         if "nadh histogram" in metadata_df.columns:
+            if "nadh irf" not in metadata_df.columns:
+                error_msg += "The required column `nadh irf` not found in the metadata file! "
+                return error_msg, None, None, None
             has_nadh = True
-        if "fad histogram" in metadata_df.columns:
+        if "red histogram" in metadata_df.columns:
+            if "red irf" not in metadata_df.columns:
+                error_msg += "The required column `red irf` not found in the metadata file! "
+                return error_msg, None, None, None
             has_fad = True
         analysis_type = "K-Flow"
     elif "mask" in metadata_df.columns:
@@ -82,6 +88,14 @@ def parse_metadata_file(metadata_df):
                 has_nadh = "nadh decay" in metadata_df.columns
                 has_fad = "fad decay" in metadata_df.columns
                 analysis_type = "ROI Summing Fit"
+            if has_nadh:
+                if "nadh irf" not in metadata_df.columns:
+                    error_msg += "The required column `nadh irf` not found in the metadata file! "
+                    return error_msg, None, None, None
+            if has_fad:
+                if "fad irf" not in metadata_df.columns:
+                    error_msg += "The required column `fad irf` not found in the metadata file! "
+                    return error_msg, None, None, None
         else: # SPCImage without fit free
             if "nadh shift" in metadata_df.columns or "fad shift" in metadata_df.columns:
                 # spc image and fit free
@@ -104,7 +118,7 @@ def parse_metadata_file(metadata_df):
         feature_distribution=feature_distribution
     )
     
-    return error_msg, available_feature_groups_features, analysis_type, fit_free
+    return error_msg, available_feature_groups_features, analysis_type, fit_free, has_nadh, has_fad
    
 # def sdts_in_dir(folder_path, mask=True)
 #     """
