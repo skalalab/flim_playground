@@ -98,9 +98,11 @@ def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
         actual_file_suffix["mask"] = ""
         if has_nadh:
             actual_file_suffix["nadh decay"] = ""
+            actual_file_suffix["nadh irf"] = ""
         if has_fad:
             actual_file_suffix["fad decay"] = ""
-        actual_file_suffix["irf"] = ""
+            actual_file_suffix["fad irf"] = ""
+        
     elif "SPCImage" in analysis_type:
         # required files: mask, SPC fitting outputs (a1, a2, t1, t2, and shift)
         actual_file_suffix["mask"] = ""
@@ -112,16 +114,19 @@ def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
         if fit_free:
             if has_nadh:
                 actual_file_suffix["nadh decay"] = ""
+                actual_file_suffix["nadh irf"] = ""
             if has_fad:
                 actual_file_suffix["fad decay"] = ""
-            actual_file_suffix["irf"] = ""
+                actual_file_suffix["fad irf"] = ""
+            
     elif analysis_type == "K-Flow":
         # required files: cell histograms and IRF
         if has_nadh:
             actual_file_suffix["nadh histogram"] = ""
+            actual_file_suffix["nadh irf"] = ""
         if has_fad:
             actual_file_suffix["red histogram"] = ""
-        actual_file_suffix["irf"] = ""
+            actual_file_suffix["red irf"] = ""
     # create a text input widget for each suffix in the dictionary, maximum 2 per row
     # dynamically determine how many rows are needed
     num_rows = (len(actual_file_suffix) + 1) // 2
@@ -160,7 +165,7 @@ def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
     return actual_file_suffix, error_msg
         
 
-def load_list_data_from_folder_widget(folder_path, file_suffix, show_files=True):    
+def load_list_data_from_folder_widget(folder_path, file_suffix):    
     """
     Load data from a folder and check its validity. Display the file sets for each image group. 
     file_names = image_name + suffix (exactly that, no more, no less)
@@ -197,7 +202,7 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, show_files=True)
             # get the list of files that belong to this image
             for key, suffix in file_suffix.items():
                 # find the file with the exact name: image_name + suffix recursively within the folder (except for IRF)
-                if key != "irf":
+                if "irf" not in key:
                     matched_files = list_files_with_filename(folder_path, image_name + suffix)
                 else:
                     matched_files = list_files_with_suffix(folder_path, suffix)
@@ -215,12 +220,12 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, show_files=True)
                     if missing_keys :
                         st.write("❌ Missing or duplicate files:")
                         for key in missing_keys:
-                            if key != "irf":
+                            if "irf" not in key:
                                 st.write(f"- Missing {key}: {image_name + file_suffix[key]}")
                             else:
                                 st.write(f"- Missing {key} with suffix: {file_suffix[key]}")
                         for key in duplicate_keys:
-                            if key != "irf":
+                            if "irf" not in key:
                                 st.write(f"- Duplicate {key}: {image_name + file_suffix[key]}")
                             else:
                                 st.write(f"- Duplicate {key} with suffix: {file_suffix[key]}")
