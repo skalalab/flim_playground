@@ -255,7 +255,8 @@ def parse_metadata_display_feature_widget(metadata_df, num_cols=3):
     """
     Parse the metadata and display the features available to be extracted later for user to choose. 
     """
-    error_msg, available_feature_groups_features, analysis_type, _ = parse_metadata_file(metadata_df)
+    error_msg, available_feature_groups_features, analysis_type, fit_free, has_nadh, has_fad =  parse_metadata_file(metadata_df)
+    st.session_state["last_analysis_type"] = analysis_type
     if error_msg != "":
         st.error(error_msg)
         return 

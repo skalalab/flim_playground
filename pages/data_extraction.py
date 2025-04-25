@@ -3,7 +3,7 @@ import os
 import pandas as pd
 from navigation import render_top_menu
 from widgets.data_widgets import happy_emoji, sad_emoji, load_list_data_from_folder_widget, load_data_suffix_widget, export_data_widget, parse_metadata_display_feature_widget
-from widgets.fit_widgets import fit_options
+from widgets.fit_widgets import fit_options, choose_shift_widget
 from file_util import parse_metadata_file
 from fit import choose_shift
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -14,7 +14,10 @@ if "last_extracted_metadata" not in st.session_state:
     st.session_state["last_extracted_metadata"] = None
 if "last_extracted_metadata_filepath" not in st.session_state:
     st.session_state["last_extracted_metadata_filepath"] = None
-
+if "last_analysis_type" not in st.session_state:
+    st.session_state["last_analysis_type"] = None
+if "choosing_shift" not in st.session_state:
+    st.session_state["choosing_shift"] = False
 
 st.title("Data Extraction")
 
@@ -49,11 +52,11 @@ with col1:
                 , key="folder_path")
         else: st.error(f"Please check at least one of the channels {sad_emoji}")
     elif selected_step == "Numeric Feature Extraction":
-        analysis_ready = False
         metadata_df = None
         if st.session_state["last_extracted_metadata"] is not None:
             metadata_df = st.session_state["last_extracted_metadata"]
             file_path = st.session_state["last_extracted_metadata_filepath"]
+            andalysis_type = st.session_state["last_analysis_type"]
             st.info(f"Using the latest extracted metadata file: {file_path}. Refresh the page to use a different file.")
         else: 
             uploaded_metadata = st.file_uploader("Upload the image metadata csv", type=["csv"], help="The metadata file should be from the image metadata extraction step. ")
@@ -75,7 +78,8 @@ with col1:
                  
                     duration, time_bins, num_components, fitting_algo, fix_shift = fit_options(analysis_type)
                     if st.button("Confirm and Start Fitting"):
-                        analysis_ready = True
+                        st.session_state["choosing_shift"] = True
+                     
             else:
                 st.error(f"Error: {error_msg}")
 
@@ -100,10 +104,18 @@ with col2:
                 st.warning("No data found in the folder. Please check the path and the file suffixes.")
         elif folder_path != "":
             st.error(f"Folder not found! Please check the path. {sad_emoji}")
-    elif selected_step == "Numeric Feature Extraction" and analysis_ready:
+    elif selected_step == "Numeric Feature Extraction" and st.session_state["choosing_shift"]:
         st.info(f"Applying {analysis_type} on {len(metadata_df)} images.")
-        st.info("Preproceessing step: choose the shift for all images.")
         # first NADH, then FAD/red
         if has_nadh: 
-            error_msg, shifts = choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, analysis_type, channel="NADH")
-            
+            st.info("Preproceessing step: choose the shift for all images on channel NADH.")
+            error_msg = choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, analysis_type, channel="NADH")
+            if error_msg != "":
+                st.error(f"Error: {error_msg}")
+            else:
+                shift_finished = st.button("Confirm the Shift and Start the Analysis")
+                if shift_finished:
+                    st.session_state["choosing_shift"] = False
+                    st.rerun()
+                   
+
