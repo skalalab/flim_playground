@@ -5,7 +5,18 @@ import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
 from sklearn.mixture import GaussianMixture
+from scipy.stats import norm
+from scipy.optimize import brentq
 from widgets.custom_widgets import stats_comparison_pair_widget, histogram_bin_width_widget
+
+def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
+    """
+    Find the intersection point between two weighted Gaussian components where
+    pi1 * N(x; mu1, sigma1) = pi2 * N(x; mu2, sigma2).
+    """
+    f = lambda x: pi1 * norm.pdf(x, mu1, sigma1) - pi2 * norm.pdf(x, mu2, sigma2)
+    # The root must lie between the two means
+    return brentq(f, min(mu1, mu2), max(mu1, mu2))
 
 def glass_delta(group1, group2):
     mean_diff = np.mean(group1) - np.mean(group2)
@@ -28,6 +39,8 @@ def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"):
     fig = go.Figure()
     df['compare_group'] = df[compared_by].agg('_'.join, axis=1)
     compare_groups = df['compare_group'].unique()
+    # Sort compare_groups lexicographically based on the elements separated by '_'
+    compare_groups = np.array(sorted(compare_groups, key=lambda x: tuple(x.split('_'))))   
     compare_pairs = list(combinations(compare_groups, 2))
     color_map = create_color_map(compare_groups, overlap_point=False)
     jitter_amount = 1
@@ -197,7 +210,7 @@ def dimension_reduction_plot(df, method="UMAP", colored_by=[], exp_var=None):
     # colored by unique combinations of the selected categorical columns
     df['unique_color_group'] = df[colored_by].agg('_'.join, axis=1)
     unique_color_groups = df['unique_color_group'].unique()
-
+    unique_color_groups = np.array(sorted(unique_color_groups, key=lambda x: tuple(x.split('_'))))
     color_map = create_color_map(unique_color_groups, overlap_point=True)
 
     # plot scatter plot iteratively, once for each color group
@@ -265,7 +278,8 @@ def feature_histogram_plot(df, selected_var, color_by=[]):
     df['unique_color_group'] = df[color_by].agg('_'.join, axis=1)
     unique_color_groups = df['unique_color_group'].unique()
     # Using solid colors for lines
-   
+    # Sort unique_color_groups lexicographically based on the elements separated by '_'
+    unique_color_groups = np.array(sorted(unique_color_groups, key=lambda x: tuple(x.split('_'))))
     color_map = create_color_map(unique_color_groups, overlap_point=False)
     fig = go.Figure()
 
@@ -314,10 +328,15 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
     df['unique_color_group'] = df[color_by].agg('_'.join, axis=1)
     unique_color_groups = df['unique_color_group'].unique()
     # Using solid colors for lines
-   
+    # Sort unique_color_groups lexicographically based on the elements separated by '_'
+    unique_color_groups = np.array(sorted(unique_color_groups, key=lambda x: tuple(x.split('_'))))
+    # sort the second group that in the form of "cond{int}" in integer reverse order
+    # unique_color_groups = np.array(sorted(unique_color_groups, key=lambda x: (x.split('_')[0], int(x.split('_')[1]))))
     color_map = create_color_map(unique_color_groups, overlap_point=False)
+    # add the choice to do "hard thresholding" or "soft thresholding"
+    hard_thresholding = st.checkbox("Use hard thresholding", value=False, key="hard_thresholding", help="If checked, the point where the two Gaussian distributions intersect will be used as the threshold. If not checked, each data will be assigned to the component with the highest posterior probability.")
     fig = go.Figure()
-
+    export_available = False
     # fit a Gaussian Mixture Model (GMM) to each color group
     for color_group in unique_color_groups:
         group_df = df[df['unique_color_group'] == color_group]
@@ -364,12 +383,28 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
                 f"<b>Group:</b> {color_group}<br>"
             )
         ))
+        # # add histogram plot
+        # fig.add_trace(go.Histogram(
+        #     x=x_data,
+        #     histnorm='probability density',
+        #     name=f'{color_group} Histogram',
+        #     opacity=0.5,
+        #     marker_color="gray",
+        #     hovertemplate=(
+        #         f"<b>Group:</b> {color_group}<br>"
+        #         f"<b>Count:</b> %{{y}}<extra></extra>"
+        #     ),
+        #     # not showing the legend
+        #     showlegend=False,
+        # ))
         # Plot individual components if more than one
         if best_gmm.n_components > 1:
             # Plot individual components
             # pdf_individual is already calculated above
             # Plot each component with a different color
-            gmm_overall_mean = np.sum(best_gmm.weights_ * best_gmm.means_.flatten())
+            pi = best_gmm.weights_
+            mu = best_gmm.means_.flatten()
+            gmm_overall_mean = np.sum(pi * mu)
             h_index = 0
             dash_styles = ['dash', 'dot', 'dashdot']
             for i in range(best_gmm.n_components):
@@ -387,23 +422,57 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
                 h_index += -best_gmm.weights_[i] * np.log(best_gmm.weights_[i]) * np.abs(best_gmm.means_[i][0] - gmm_overall_mean)
             # Add H-index message
             h_index_msg += f"H-index for {color_group}: {h_index:.3f}. "
-        # predict the component membership for each point
-        data_indices = x_data.index
-            # Predict the component membership for each point
-        subpopulation_labels = best_gmm.predict(data_2d)
-            # Assign the predicted labels (0-based) to the new column in the original DataFrame
-            # Add 1 if you prefer 1-based component indexing (e.g., Subpopulation 1, 2, ...)
-        assigned_labels = [f"{color_group}_group{label + 1}" for label in subpopulation_labels]
-        df.loc[data_indices, "GMM_group"] = assigned_labels
+            data_indices = x_data.index
+            if hard_thresholding:
+                # predict the component membership for each point (hard thresholding)
+                # find the intersection point of the component distributions
+                sigma = np.sqrt(gmm.covariances_.ravel())
+                # Sort components by mean to ensure that the intersection is calculated between the correct pairs
+                sorted_idx = np.argsort(mu)
+                pi, mu, sigma = pi[sorted_idx], mu[sorted_idx], sigma[sorted_idx]
+                thresholds = []
+                for i in range(len(mu) - 1):
+                    t = find_intersection(pi[i], mu[i], sigma[i],
+                              pi[i+1], mu[i+1], sigma[i+1])
+                    thresholds.append(t)
+                # Ensure thresholds are in ascending order
+                thresholds = np.sort(thresholds)
+                # plot the thresholds
+                for threshold in thresholds:
+                     # Replace the alpha value with 0.5
+                    transparent_color = color_map[color_group].replace(color_map[color_group].split(',')[-1], ' 0.5)')
 
-        # have a button to export the GMM group augmented dataframe
-    st.download_button(
-        label="Download GMM Grouped Data",
-        data=df.to_csv(index=False),
-        file_name="gmm_grouped_data.csv",
-        mime="text/csv",
-        key="gmm_download"
-    )
+                    fig.add_shape(type="line",
+                        x0=threshold, y0=0, x1=threshold, y1=max(pdf),
+                        line=dict(color=transparent_color, width=2, dash="dash"),
+                        name=f"{color_group} Threshold", 
+                    )
+                    # Add annotation above the threshold line
+                    fig.add_annotation(
+                        x=threshold, y=max(pdf) * 1.05, text=f"Threshold ({threshold:.2f})", showarrow=False, align="center",
+                    )
+                   
+                subpopulation_labels = np.digitize(x_data, bins=thresholds)
+                # restore the original order of the labels
+                subpopulation_labels = sorted_idx[subpopulation_labels]
+            else:
+                # Predict the component membership for each point (soft thresholding)
+                subpopulation_labels = best_gmm.predict(data_2d)
+            # Assign the predicted labels (0-based) to the new column in the original DataFrame
+            # Add 1 to have 1-based component indexing (e.g., group1, 2, ...)
+            assigned_labels = [f"{color_group}_group{label + 1}" for label in subpopulation_labels]
+            df.loc[data_indices, "GMM_group"] = assigned_labels
+            export_available = True
+    # have a button to export the GMM group augmented dataframe
+    if export_available:
+        st.download_button(
+            label="Download GMM Grouped Data",
+            data=df.to_csv(index=False),
+            file_name="gmm_grouped_data.csv",
+            mime="text/csv",
+            key="gmm_download"
+        )
+        df.drop(columns=['GMM_group'], inplace=True)
 
     fig.update_layout(
         title=f'Gaussian Mixture Model of {selected_var} by {", ".join(color_by)}',
@@ -415,5 +484,4 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
     )
     # remove the column after plotting
     df.drop(columns=['unique_color_group'], inplace=True)
-    df.drop(columns=['GMM_group'], inplace=True)
     return fig, h_index_msg
