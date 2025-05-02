@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from plotly import graph_objects as go
 from fit import choose_shift
-from fit_helper import forward_pass, irf_shift
+from fit_helper import forward_pass, irf_shift, mle_likelihood, chi_square
 import pandas as pd
 from streamlit_plotly_events import plotly_events
 
@@ -97,11 +97,13 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
             shift_data = shift_data[idx]
             st.write(f"Shift for {img_name}: {shift_data}")
             st.write(f"Offset for {img_name}: {offset_data}")
-            st.write(f"Amplitude 1 for {img_name}: {amp1_data}")
-            st.write(f"t1 for {img_name}: {t1_data}")
+            #st.write(f"Amplitude 1 for {img_name}: {amp1_data}")
+            st.write(f"t1 for {img_name}: {t1_data * 1000:.2f} ns")
             if num_components > 1:
-                st.write(f"Amplitude 2 for {img_name}: {amp2_data}")
-                st.write(f"t2 for {img_name}: {t2_data}")
+                #st.write(f"Amplitude 2 for {img_name}: {amp2_data}")
+                a1 = amp1_data / (amp1_data + amp2_data) 
+                st.write(f"alpha 1 for {img_name}: {a1 * 100:.2f}%")
+                st.write(f"t2 for {img_name}: {t2_data * 1000:.2f} ns")
 
             # shift the irf
             shifted_irf = irf_shift(irf, shift_data)
@@ -116,6 +118,10 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
                 amp3=amp3_data,
                 t3=t3_data
             )
+            mle = mle_likelihood(fitted_curve, decay_curves[idx], start=0, end=-1)
+            chiq = chi_square(fitted_curve, decay_curves[idx], start=0, end=-1)
+            st.write(f"MLE for {img_name}: {mle:.2f}")
+            st.write(f"Chi-square for {img_name}: {chiq:.2f}")
             fig2.add_trace(go.Scatter(
                 x=time_axis,
                 y=fitted_curve,
@@ -142,7 +148,7 @@ def fit_options(analysis_type):
     """
     # 1) Define each field as a (name, factory) tuple
     fields = [
-        ("duration",   lambda: st.number_input("Pulse Duration (ns)", value=12.5, step=0.1, format="%.1f")),
+        ("duration",   lambda: st.number_input("Pulse Interval (ns)", value=12.5, step=0.1, format="%.1f")),
         ("num_components", lambda: st.number_input("Component No.", value=2, step=1, min_value=1, max_value=3)),
         ("fitting_algo",   lambda: st.selectbox("Algorithm", ["MLE", "WLS"], index=0)),
         ("time_bins",      lambda: st.number_input("Time Bins", value=256, step=256, min_value=256, max_value=512)),

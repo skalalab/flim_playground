@@ -5,7 +5,7 @@ from navigation import render_top_menu
 from widgets.data_widgets import happy_emoji, sad_emoji, load_list_data_from_folder_widget, load_data_suffix_widget, export_data_widget, parse_metadata_display_feature_widget
 from widgets.fit_widgets import fit_options, choose_shift_widget
 from file_util import parse_metadata_file
-from fit import choose_shift
+
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
 render_top_menu()

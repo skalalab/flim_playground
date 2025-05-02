@@ -26,13 +26,33 @@ def forward_pass(amp1, t1, offset, shifted_irf, time_axis, amp2=None, t2=None, a
     convolved_decay = convolve(decay, shifted_irf)[:len(time_axis)] + offset
     
     return convolved_decay
+def mle_likelihood(fitted, data, start, end):
+    fitted = np.maximum(fitted, 1e-10)  # Prevent log(0)
+    likelihood = -np.sum(data[start:end] * np.log(fitted[start:end]) - fitted[start:end])
+    return likelihood
+
+def chi_square(fitted, data, start=0, end=-1):
+    if end == -1 or end > len(data):
+        end = len(data) 
+    residuals = data - fitted
+    residuals[:start] = 0
+    residuals[end:] = 0
+    chi2 = np.sum((residuals / fitted[start:end])**2)
+    non_zero_indices = data > 0
     
-def mle_objective(params, data, irf, time_axis, start=0, end=-1):
+    # Use data values as denominator for chi-square calculation
+    denominator = data[non_zero_indices]
+    residuals = residuals[non_zero_indices]
+     # Poisson noise assumption where variance equals the count
+    tmp_chiq = residuals**2/denominator
+    chiq = tmp_chiq.sum() / len(non_zero_indices) 
+    return chiq
+
+def objective(params, data, irf, time_axis, start=0, end=-1, fitting_algo="MLE"):
     if 'shift' in params:
         shift = params['shift']
         irf = irf_shift(irf, shift)
     # otherwise, the irf should be already shifted
-
     if end == -1 or end > len(data):
         end = len(data) - 1
     amp1 = params['amp1']
@@ -45,9 +65,11 @@ def mle_objective(params, data, irf, time_axis, start=0, end=-1):
     # 
     fitted = forward_pass(amp1=amp1, t1=t1, offset=offset, shifted_irf=irf, time_axis=time_axis, amp2=amp2, t2=t2, amp3=amp3, t3=t3)
     # Poisson likelihood
-    fitted = np.maximum(fitted, 1e-10)  # Prevent log(0)
-    likelihood = -np.sum(data[start:end] * np.log(fitted[start:end]) - fitted[start:end])
-    return likelihood
+    if fitting_algo == "MLE": 
+        return mle_likelihood(fitted, data, start, end)
+    elif fitting_algo == "WLS":
+        residuals = data[start:end] - fitted[start:end]
+        return residuals
 
 def guess_shift(irf, curves):
     def align_irf(irf, curve):

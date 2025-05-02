@@ -3,7 +3,7 @@ import tifffile
 from lmfit import minimize as lmfit_minimize
 from lmfit import Parameters
 from sdt_io import read_sdt150
-from fit_helper import guess_shift, mle_objective
+from fit_helper import guess_shift, objective
 import streamlit as st
 
 @st.cache_data
@@ -26,7 +26,6 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         params.add('amp2', min=0)
         t2_data = np.zeros(num_curves)
         params.add('t2', value=2.5, min=1.0, max=5.0)
-        #params.add('t2', value=2.500, min=1000, max=5000)
         
     if num_components > 2:
         amp3_data = np.zeros(num_curves)
@@ -41,20 +40,44 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         params.add('shift', value=shift_guess, min=-100, max=100)
     period = duration / time_bins
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
-    fit_options = { 'maxfev': 100000,      # Maximum function evaluations
+    mle_fit_options = { 'maxfev': 100000,      # Maximum function evaluations
             'xatol': 1e-8,        # Absolute parameter tolerance
             'fatol': 1e-8,        # Absolute objective tolerance
             'disp': True, } 
+    mle_optimizer = "nelder"
+    wls_optimizer = "leastsq"
+    wls_fit_options = {
+        'max_nfev': 100000,      # Maximum function evaluations
+        'ftol':   1e-8,
+        'xtol':   1e-8,
+        'gtol':   1e-8,
+    }
+    global_optimizer = "differential_evolution"
+    global_fit_options = {
+        'popsize': 25,    # Population size
+        'tol': 1e-8,      # Convergence tolerance
+        'max_nfev': 10000   # Maximum iterations
+    }
     for i in range(num_curves):
         decay_curve = decay_curves[i]
 
         current_params = params.copy()
         current_params['amp1'].value = np.max(decay_curve) 
+        current_params['amp1'].max = np.max(decay_curve) * 10
         if num_components > 1:
             current_params['amp2'].value = np.max(decay_curve) / 2
+            current_params['amp2'].max = np.max(decay_curve) * 10
         if num_components > 2:
             current_params['amp3'].value = np.max(decay_curve) / 2
-        result = lmfit_minimize(mle_objective, current_params, args=(decay_curve, irf, time_axis, start, end), method="nelder", options=fit_options)
+            current_params['amp3'].max = np.max(decay_curve) * 10
+        result_global = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=global_optimizer, **global_fit_options)
+        if fitting_algo == "MLE": 
+            result = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=mle_optimizer, options=mle_fit_options)
+            #result = lmfit_minimize(objective, result_global.params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=mle_optimizer, options=mle_fit_options)
+            #result = result_global
+        elif fitting_algo == "WLS":
+            result = lmfit_minimize(objective, result_global.params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=wls_optimizer, **wls_fit_options)
+           # result = result_global
         amp1_data[i] = result.params['amp1'].value
         t1_data[i] = result.params['t1'].value
         offset_data[i] = result.params['offset'].value
@@ -79,7 +102,7 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         results["t3"] = t3_data
    
     return results
-@st.cache_data     
+
 def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, analysis_type, channel):
     error_msg = ""
     decay_curves = []
