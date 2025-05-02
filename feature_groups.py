@@ -5,7 +5,7 @@ The meta data for the Data Extraction outputted CSV file. Can be extended. If ne
 required_cols = ["cell_id", "image_name"]
 
 # customizable categorical columns
-categorical_cols = [ "experiment", "day", "cell_type", "media", "cell_line", "treatment", "dish", "patient_id", "replicate", "GMM_group"]
+categorical_cols = [ "experiment", "day", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "patient_id", "replicate", "GMM_group"]
 
 # customizable numeric column dicionary that store the default names of the features we want to extract (for backward compatibility)
 feature_groups_default = {
