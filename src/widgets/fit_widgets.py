@@ -5,8 +5,6 @@ import numpy as np
 from plotly import graph_objects as go
 from src.fit import choose_shift
 from src.fit_helper import forward_pass, irf_shift, mle_likelihood, chi_square
-import pandas as pd
-from streamlit_plotly_events import plotly_events
 
 
 def choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, analysis_type, channel):
