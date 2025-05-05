@@ -2,7 +2,7 @@ from pathlib import Path
 import streamlit as st   
 import os
 
-from feature_groups import subset_feature_group_features
+from src.feature_groups import subset_feature_group_features
 file_suffix_default = {
     'mask': '_mask.tiff',
     'nadh decay': 'n.sdt',

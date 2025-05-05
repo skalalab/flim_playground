@@ -2,14 +2,14 @@ import streamlit as st
 import pandas as pd
 from streamlit_plotly_events import plotly_events
 
-from widgets.data_widgets import load_csv, happy_emoji, sad_emoji
-from widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget
-from widgets.custom_widgets import umap_hyperParams_widget
-from widgets.filter_widgets import filters_widget
-from widgets.click_plot_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
-from navigation import render_top_menu
-from visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot, feature_histogram_plot, feature_gmm_plot
-from dimension_reduction import dimension_reduction
+from src.widgets.data_widgets import load_csv, happy_emoji, sad_emoji
+from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget
+from src.widgets.custom_widgets import umap_hyperParams_widget
+from src.widgets.filter_widgets import filters_widget
+from src.widgets.click_plot_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
+from src.navigation import render_top_menu
+from src.visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot, feature_histogram_plot, feature_gmm_plot
+from src.dimension_reduction import dimension_reduction
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()

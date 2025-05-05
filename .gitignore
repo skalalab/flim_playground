@@ -10,3 +10,4 @@ build_app.py
 test.py
 .venv/
 .python-version
+hooks/*

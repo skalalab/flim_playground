@@ -1,5 +1,5 @@
 import streamlit as st
-from widgets.filter_widgets import update_multiselect
+from src.widgets.filter_widgets import update_multiselect
 """
 This module contains functions to create single and multiple selection widgets. 
 """

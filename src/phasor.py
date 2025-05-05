@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 import pandas as pd
 from roi_sum import sum_sdts
-from features import fix_df
 import seaborn as sns
 
 def visualize_irf(irf, shifted_irf, image_timebin):
@@ -138,7 +137,7 @@ def calculate_phasor(images, selected_channel="NADH"):
         df["cell_labels"] = cell_labels
         df["base_name"] = df["image_name"] + "_" + df["cell_labels"].astype(str)
         df["color_category"] = categories
-        df = fix_df(df)
+    
     else: 
         df = None
         return None, error_message
