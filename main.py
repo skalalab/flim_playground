@@ -1,6 +1,6 @@
 import streamlit as st
-from navigation import render_top_menu, titles
-from docs import docs
+from src.navigation import render_top_menu, titles
+from src.docs import docs
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on the main page
 render_top_menu()

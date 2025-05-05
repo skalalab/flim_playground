@@ -1,6 +1,5 @@
 import streamlit as st
-import pandas as pd
-from feature_groups import categorical_cols
+from src.feature_groups import categorical_cols
 
 # Generic callback function to handle "All" logic
 def update_multiselect(key, options):

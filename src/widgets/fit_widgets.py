@@ -3,8 +3,8 @@ import math
 import pandas as pd
 import numpy as np
 from plotly import graph_objects as go
-from fit import choose_shift
-from fit_helper import forward_pass, irf_shift, mle_likelihood, chi_square
+from src.fit import choose_shift
+from src.fit_helper import forward_pass, irf_shift, mle_likelihood, chi_square
 import pandas as pd
 from streamlit_plotly_events import plotly_events
 

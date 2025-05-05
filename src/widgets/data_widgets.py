@@ -2,10 +2,10 @@ import streamlit as st
 import pandas as pd
 import random
 import os 
-from features import get_features, check_and_fix_df
-from feature_groups import get_full_feature_name, feature_groups_prefix
-from file_util import list_files_with_suffix, list_files_with_filename, parse_metadata_file, spc_output_suffix, file_suffix_default
-from widgets.selection_widgets import multi_feature_select_widget
+from src.features import get_features, check_and_fix_df
+from src.feature_groups import get_full_feature_name, feature_groups_prefix
+from src.file_util import list_files_with_suffix, list_files_with_filename, parse_metadata_file, spc_output_suffix, file_suffix_default
+from src.widgets.selection_widgets import multi_feature_select_widget
 happy_celebratory_emojis = [
     "🥳",  # Partying Face
     "🎉",  # Party Popper

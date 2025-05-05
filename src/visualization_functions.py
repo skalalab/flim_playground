@@ -7,7 +7,7 @@ import numpy as np
 from sklearn.mixture import GaussianMixture
 from scipy.stats import norm
 from scipy.optimize import brentq
-from widgets.custom_widgets import stats_comparison_pair_widget, histogram_bin_width_widget
+from src.widgets.custom_widgets import stats_comparison_pair_widget, histogram_bin_width_widget
 
 def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
     """
@@ -40,7 +40,17 @@ def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"):
     df['compare_group'] = df[compared_by].agg('_'.join, axis=1)
     compare_groups = df['compare_group'].unique()
     # Sort compare_groups lexicographically based on the elements separated by '_'
-    compare_groups = np.array(sorted(compare_groups, key=lambda x: tuple(x.split('_'))))   
+    compare_groups = sorted(compare_groups, key=lambda x: tuple(x.split('_')))
+    # # Sort compare_groups: primarily by the first part (lexicographically),
+    # # secondarily by the integer value found in the second part (in reverse order).
+    # # Assumes the second part contains digits representing the value to sort by.
+    # compare_groups = sorted(compare_groups, key=lambda x: (
+    #     x.split('_')[0], # Primary key: first part (e.g., 'groupA')
+    #     # Secondary key: negative integer extracted from second part (e.g., 'cond10' -> -10)
+    #     # Using negative value achieves reverse sorting for the secondary key.
+    #     # Filter digits and join them before converting to int to handle non-digit characters.
+    #     -int(''.join(filter(str.isdigit, x.split('_')[1])))
+    # ))
     compare_pairs = list(combinations(compare_groups, 2))
     color_map = create_color_map(compare_groups, overlap_point=False)
     jitter_amount = 1
@@ -128,7 +138,7 @@ def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"):
                 text_offset_from_bracket = 0.02 * (df[selected_var].max() - df[selected_var].min()) # Space between bracket and text
 
                 # Sort pairs based on the x-position to draw lower annotations first (optional but can help)
-                sorted_pairs = sorted(selected_pairs, key=lambda p: max(compare_groups.tolist().index(p[0]), compare_groups.tolist().index(p[1])))
+                sorted_pairs = sorted(selected_pairs, key=lambda p: max(compare_groups.index(p[0]), compare_groups.index(p[1])))
 
                 for pair in sorted_pairs:
                     group1 = df[df['compare_group'] == pair[0]][selected_var]
@@ -140,7 +150,7 @@ def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"):
                     delta = glass_delta(group1, group2)
                     # Add annotation to the figure
                     # Get indices for positioning
-                    x_indices = [compare_groups.tolist().index(pair[0]), compare_groups.tolist().index(pair[1])]
+                    x_indices = [compare_groups.index(pair[0]), compare_groups.index(pair[1])]
                     x_positions = sorted(x_indices)
                     
                     # Determine the highest data point under this annotation range
@@ -210,7 +220,7 @@ def dimension_reduction_plot(df, method="UMAP", colored_by=[], exp_var=None):
     # colored by unique combinations of the selected categorical columns
     df['unique_color_group'] = df[colored_by].agg('_'.join, axis=1)
     unique_color_groups = df['unique_color_group'].unique()
-    unique_color_groups = np.array(sorted(unique_color_groups, key=lambda x: tuple(x.split('_'))))
+    unique_color_groups = sorted(unique_color_groups, key=lambda x: tuple(x.split('_')))
     color_map = create_color_map(unique_color_groups, overlap_point=True)
 
     # plot scatter plot iteratively, once for each color group
@@ -279,7 +289,7 @@ def feature_histogram_plot(df, selected_var, color_by=[]):
     unique_color_groups = df['unique_color_group'].unique()
     # Using solid colors for lines
     # Sort unique_color_groups lexicographically based on the elements separated by '_'
-    unique_color_groups = np.array(sorted(unique_color_groups, key=lambda x: tuple(x.split('_'))))
+    unique_color_groups = sorted(unique_color_groups, key=lambda x: tuple(x.split('_')))
     color_map = create_color_map(unique_color_groups, overlap_point=False)
     fig = go.Figure()
 
@@ -329,9 +339,8 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
     unique_color_groups = df['unique_color_group'].unique()
     # Using solid colors for lines
     # Sort unique_color_groups lexicographically based on the elements separated by '_'
-    unique_color_groups = np.array(sorted(unique_color_groups, key=lambda x: tuple(x.split('_'))))
-    # sort the second group that in the form of "cond{int}" in integer reverse order
-    # unique_color_groups = np.array(sorted(unique_color_groups, key=lambda x: (x.split('_')[0], int(x.split('_')[1]))))
+    unique_color_groups = sorted(unique_color_groups, key=lambda x: tuple(x.split('_')))
+    
     color_map = create_color_map(unique_color_groups, overlap_point=False)
     # add the choice to do "hard thresholding" or "soft thresholding"
     hard_thresholding = st.checkbox("Use hard thresholding", value=False, key="hard_thresholding", help="If checked, the point where the two Gaussian distributions intersect will be used as the threshold. If not checked, each data will be assigned to the component with the highest posterior probability.")
@@ -383,20 +392,20 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
                 f"<b>Group:</b> {color_group}<br>"
             )
         ))
-        # # add histogram plot
-        # fig.add_trace(go.Histogram(
-        #     x=x_data,
-        #     histnorm='probability density',
-        #     name=f'{color_group} Histogram',
-        #     opacity=0.5,
-        #     marker_color="gray",
-        #     hovertemplate=(
-        #         f"<b>Group:</b> {color_group}<br>"
-        #         f"<b>Count:</b> %{{y}}<extra></extra>"
-        #     ),
-        #     # not showing the legend
-        #     showlegend=False,
-        # ))
+        # add histogram plot
+        fig.add_trace(go.Histogram(
+            x=x_data,
+            histnorm='probability density',
+            name=f'{color_group} Histogram',
+            opacity=0.5,
+            marker_color="gray",
+            hovertemplate=(
+                f"<b>Group:</b> {color_group}<br>"
+                f"<b>Count:</b> %{{y}}<extra></extra>"
+            ),
+            # not showing the legend
+            showlegend=False,
+        ))
         # Plot individual components if more than one
         if best_gmm.n_components > 1:
             # Plot individual components

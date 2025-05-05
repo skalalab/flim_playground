@@ -2,11 +2,11 @@ import streamlit as st
 import pandas as pd
 from itertools import combinations
 
-from classify import classify
-from navigation import render_top_menu
-from widgets.selection_widgets import multi_feature_select_widget
-from widgets.filter_widgets import filters_widget
-from widgets.data_widgets import load_csv, happy_emoji, sad_emoji
+from src.classify import classify
+from src.navigation import render_top_menu
+from src.widgets.selection_widgets import multi_feature_select_widget
+from src.widgets.filter_widgets import filters_widget
+from src.widgets.data_widgets import load_csv, happy_emoji, sad_emoji
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on this page as well
