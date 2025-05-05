@@ -6,9 +6,15 @@ st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
 left_column, center_column, right_column = st.columns([1.5, 1, 1.5])
 # Display the logo in the center column
-logo_file = "logo/FP_trans_320.png"
+from pathlib import Path
+import sys
+def resource_path(rel: str) -> Path:
+    """Return the absolute path to a bundled resource."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    return base / rel
+logo_file = resource_path("logo/FP_trans_320.png")
 with center_column:
-    st.image(logo_file)
+    st.image(str(logo_file))
 
 st.markdown("""
 <div style="font-size: 16px;">

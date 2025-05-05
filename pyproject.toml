@@ -52,6 +52,7 @@ dependencies = [
     "six==1.17.0",
     "smmap==5.0.2",
     "streamlit==1.44.1",
+    "streamlit-desktop-app>=0.3.4",
     "streamlit-plotly-events==0.0.6",
     "tenacity==9.1.2",
     "threadpoolctl==3.6.0",
