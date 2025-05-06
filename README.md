@@ -87,5 +87,8 @@ It is deployed on using streamlit's cummunity server at: [https://flim-playgroun
 - polpulation hetergenity 
 
 # build
-## Mac
+
 streamlit-desktop-app build main.py --name Flim-Playground  --icon logo/FP_trans_320.png --pyinstaller-options --add-data src:src --add-data pages:pages --add-data logo:logo --add-data sdt_headers:std_headers --hidden-import pages.classification --hidden-import pages.visualization --hidden-import pages.data_extraction --collect-all streamlit_plotly_events --onefile --noconfirm --clean
+
+## 
+Tested on Mac OS 15, Windows 11
