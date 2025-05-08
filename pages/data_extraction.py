@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import pandas as pd
+import time
 from src.navigation import render_top_menu
 from src.widgets.data_widgets import happy_emoji, sad_emoji, image_extraction_widget
 from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, parse_metadata_display_feature_widget
@@ -61,10 +62,10 @@ with col1:
             andalysis_type = st.session_state["last_analysis_type"]
             st.info(f"Using the latest extracted metadata file: {file_path}. Refresh the page to use a different file.")
         else: 
-            uploaded_metadata = st.file_uploader("Upload the image metadata csv", type=["csv"], help="The metadata file should be from the image metadata extraction step. ")
-            if uploaded_metadata is not None:
+            uploaded_file = st.file_uploader("Upload the image metadata csv", type=["csv"], help="The metadata file should be from the image metadata extraction step. ")
+            if uploaded_file is not None:
                 try:
-                    metadata_df = pd.read_csv(uploaded_metadata) 
+                    metadata_df = pd.read_csv(uploaded_file) 
                 except Exception as e:
                     st.error(f"Error reading the uploaded CSV file: {e}")
                     metadata_df = None # Ensure metadata_df is None if reading fail
@@ -130,4 +131,20 @@ with col2:
             if not single_cell_features.empty:
                 st.success(f"Image features with ✅ are extracted successfully {happy_emoji}! Images with ❌ (if any) are excluded. The first few rows of the features are shown below.")
                 st.write(single_cell_features.head())
-
+                # get the current timestamp 
+                timestamp = time.strftime("%Y%m%d_%H%M%S")
+                # get the folder path from the file path
+                if st.session_state["last_extracted_metadata_filepath"] is not None:
+                    folder_path = os.path.dirname(st.session_state["last_extracted_metadata_filepath"])
+                    csv_path = os.path.join(folder_path, f"single_cell_features_{timestamp}.csv")
+        
+                # save the features to a csv file
+                    confirm_export = st.button("Download single cell features as CSV")
+                    if confirm_export:
+                        try:
+                            single_cell_features.to_csv(csv_path) # Save the DataFrame
+                        except Exception as e:
+                            st.error(f"Error exporting the image metadata: {e}. Is the previous metadata file open in another program?")
+                        st.success(f"Image metadata exported successfully to {csv_path} {happy_emoji}")
+                else:
+                    st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name= f"single_cell_features_{timestamp}.csv")

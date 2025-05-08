@@ -12,7 +12,6 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad, mask):
             nadh_a1 = load_image(metadata['nadh a1'])
             # SPC image will output 0 for the thresholded pixels (background), so we need to mask them
             nadh_a1 = np.ma.masked_array(nadh_a1, mask=nadh_a1==0)
-
         except Exception as e:
             return f"Error reading the NADH a1 file: {metadata['nadh a1']}: {e}", None
         if mask.shape != nadh_a1.shape:
@@ -39,12 +38,20 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad, mask):
         if mask.shape != nadh_t2.shape:
             return f"Error: NADH t2 file has a different shape than the mask file: {nadh_t2.shape} != {mask.shape}", None
         nadh_tm= (nadh_a1 / 100 * nadh_t1) + (nadh_a2 / 100 * nadh_t2)
+
+        try: 
+            nadh_intensity = load_image(metadata['nadh intensity'])
+        except Exception as e:
+            return f"Error reading the NADH intensity file: {metadata['nadh intensity']}: {e}", None
+        if mask.shape != nadh_intensity.shape:
+            return f"Error: NADH intensity file has a different shape than the mask file: {nadh_intensity.shape} != {mask.shape}", None
         nadh_feature_prefix = feature_groups_prefix['Nadh Fit']
         image_props[f"{nadh_feature_prefix}a1"] = regionprops(label_image=mask, intensity_image=nadh_a1)
         image_props[f"{nadh_feature_prefix}a2"] = regionprops(label_image=mask, intensity_image=nadh_a2)
         image_props[f"{nadh_feature_prefix}t1"] = regionprops(label_image=mask, intensity_image=nadh_t1)
         image_props[f"{nadh_feature_prefix}t2"] = regionprops(label_image=mask, intensity_image=nadh_t2)
         image_props[f"{nadh_feature_prefix}tm"] = regionprops(label_image=mask, intensity_image=nadh_tm)
+        image_props[f"{nadh_feature_prefix}intensity"] = regionprops(label_image=mask, intensity_image=nadh_intensity)
 
     if has_fad:
         try:
@@ -76,13 +83,24 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad, mask):
         if mask.shape != fad_t2.shape:
             return f"Error: FAD t2 file has a different shape than the mask file: {fad_t2.shape} != {mask.shape}", None
         fad_tm = (fad_a1 / 100 * fad_t1) + (fad_a2 / 100 * fad_t2)
+        try: 
+            fad_intensity = load_image(metadata['fad intensity'])
+        except Exception as e:
+            return f"Error reading the FAD intensity file: {metadata['fad intensity']}: {e}", None
+        if mask.shape != fad_intensity.shape:
+            return f"Error: FAD intensity file has a different shape than the mask file: {fad_intensity.shape} != {mask.shape}", None
         fad_feature_prefix = feature_groups_prefix['Fad Fit']
         image_props[f"{fad_feature_prefix}a1"] = regionprops(label_image=mask, intensity_image=fad_a1)
         image_props[f"{fad_feature_prefix}a2"] = regionprops(label_image=mask, intensity_image=fad_a2)
         image_props[f"{fad_feature_prefix}t1"] = regionprops(label_image=mask, intensity_image=fad_t1)
         image_props[f"{fad_feature_prefix}t2"] = regionprops(label_image=mask, intensity_image=fad_t2)
         image_props[f"{fad_feature_prefix}tm"] = regionprops(label_image=mask, intensity_image=fad_tm)
-    
+        image_props[f"{fad_feature_prefix}intensity"] = regionprops(label_image=mask, intensity_image=fad_intensity)
+
+    # calculate redox
+    if has_nadh and has_fad:
+        norm_redox = nadh_intensity / (nadh_intensity + fad_intensity + 1e-10)
+        image_props[f"{nadh_feature_prefix}norm_redox"] = regionprops(label_image=mask, intensity_image=norm_redox)
     image_name = metadata['image_name']
     single_cell_features_img = {}
     fit_fd_prefix = feature_groups_prefix["Feature Distribution Fit"]
@@ -126,7 +144,7 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad, mask):
    
     return "", single_cell_features_img
 
-def image_fit_extraction(metadata, analysis_type, has_nadh, has_fad):
+def image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free):
     """
     Extract single cell fitting parameters from spc image output files
     """
@@ -138,6 +156,6 @@ def image_fit_extraction(metadata, analysis_type, has_nadh, has_fad):
         error_msg, single_cell_features_img = spcimage_fit_extraction(metadata, has_nadh, has_fad, mask)
         if error_msg != "":
             return error_msg, None
-        
+
         
     return "", single_cell_features_img

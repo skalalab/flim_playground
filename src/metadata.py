@@ -21,7 +21,7 @@ spc_output_suffix = {
     "t1": "_t1.asc",
     "t2": "_t2.asc",
     "shift": "_shift.asc",
-   # "intensity": "_photons.asc",
+    "intensity": "_photons.asc",
 }
 
 def list_files_with_suffix(folder_path, suffix):

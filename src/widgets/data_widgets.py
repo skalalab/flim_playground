@@ -80,7 +80,26 @@ def load_csv(uploaded_csv):
                 upload_complete = True
     return df, feature_cols_dict, upload_complete
 
+def check_img_features(single_cell_features):
+    """
+    Check if the single cell features have '--' or NaN values.
+    """
+    cleaned = single_cell_features.copy()
+    for index, row_data in single_cell_features.iterrows():
+        # check if the row has "--" in any column
+        has_dash = (row_data.astype(str).str.contains("--")).any()
+        has_nan = row_data.isna().any()
+        if has_dash or has_nan:
+            cleaned = cleaned.drop(index)
+            if has_dash:
+                st.warning(f"The cell {row_data.get('cell_id', index)} has '--' in some columns.")
+            elif has_nan:
+                st.warning(f"The cell {row_data.get('cell_id', index)} has NaN in some columns.")
+        
+    return cleaned
 
+
+@st.cache_data
 def image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_fad, num_cols=3):
 
     single_cell_features = pd.DataFrame()
@@ -102,11 +121,12 @@ def image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_
                     st.markdown(f"Image name: **{image_name}**")
                     if analysis_type == "SPCImage" or analysis_type == "ROI Summing Fit":
                         metadata = metadata_df[metadata_df['image_name'] == image_name].iloc[0]
-                        error_msg, single_cell_features_img = image_fit_extraction(metadata, analysis_type, has_nadh, has_fad)
+                        error_msg, single_cell_features_img = image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free)
                         if error_msg != "":
                             st.error(error_msg)
                         else:
                             st.success("✅ Success!")
+                            single_cell_features_img = check_img_features(single_cell_features_img)
                             single_cell_features = pd.concat([single_cell_features, single_cell_features_img])
 
     return single_cell_features
