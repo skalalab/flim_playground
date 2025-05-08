@@ -12,10 +12,10 @@ feature_groups_default = {
     "Nadh Fit": ["ntm", "na1", "na2", "nt1", "nt2", "nint", "normrr", "nadh_tau_mean_mean","nadh_a1_mean", "nadh_a2_mean", "nadh_t1_mean", "nadh_t2_mean"],
     "Fad Fit": ["ftm", "fa1", "fa2", "ft1", "ft2", "fint", "fad_tau_mean_mean", "fad_a1_mean", "fad_a2_mean", "fad_t1_mean", "fad_t2_mean"],
     "Mask Morphology": ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length"],
-    "Feature Distribution Fit": ["cell_mean", "cell_std", "cell_median"],
+    "Feature Distribution Fit": [],
     "Fit Free Nadh": ["phasor_x", "phasor_y"],
     "Fit Free Fad": ["phasor_x", "phasor_y"],
-    "Feature Distribution Fit Free": ["cell_mean", "cell_std", "cell_median"],
+    "Feature Distribution Fit Free": [],
     "Mitochrondria Feature": ["mito_area"],
 }
 
@@ -43,7 +43,7 @@ feature_groups = list(feature_groups_prefix.keys())
 feature_groups_features = {
     "Nadh Fit": ["a1", "a2", "t1", "t2", "tm", "intensity", "redox"], # put redox in nadh 
     "Fad Fit":["a1", "a2", "t1", "t2", "tm", "intensity"],
-    "Mask Morphology": ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length"],
+    "Mask Morphology": ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length", "circularity"],
     "Fit Free Nadh": ["G(1st)", "S(1st)", "G(2nd)", "S(2nd)"],
     "Fit Free Fad": ["G(1st)", "S(1st)", "G(2nd)", "S(2nd)"],
 }

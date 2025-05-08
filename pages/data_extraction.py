@@ -2,9 +2,10 @@ import streamlit as st
 import os
 import pandas as pd
 from src.navigation import render_top_menu
-from src.widgets.data_widgets import happy_emoji, sad_emoji, load_list_data_from_folder_widget, load_data_suffix_widget, export_data_widget, parse_metadata_display_feature_widget
+from src.widgets.data_widgets import happy_emoji, sad_emoji, image_extraction_widget
+from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, parse_metadata_display_feature_widget
 from src.widgets.fit_widgets import fit_options, choose_shift_widget
-from src.file_util import parse_metadata_file
+from src.metadata import parse_metadata_file
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -18,7 +19,8 @@ if "last_analysis_type" not in st.session_state:
     st.session_state["last_analysis_type"] = None
 if "choosing_shift" not in st.session_state:
     st.session_state["choosing_shift"] = False
-
+if "shift_ready" not in st.session_state:
+    st.session_state["shift_ready"] = False
 st.title("Data Extraction")
 
 col1, col2 = st.columns([0.4, 1])
@@ -79,7 +81,11 @@ with col1:
                     duration, time_bins, num_components, fitting_algo, fix_shift = fit_options(analysis_type)
                     if st.button("Confirm and Start Fitting"):
                         st.session_state["choosing_shift"] = True
-                     
+                        st.session_state["shift_ready"] = False
+                elif analysis_type == "SPCImage":
+                    st.session_state["choosing_shift"] = False
+                    st.session_state["shift_ready"] = True
+
             else:
                 st.error(f"Error: {error_msg}")
 
@@ -99,7 +105,7 @@ with col2:
                 images_df.index.name = "image_name"  # Set index name 
                 images_df.reset_index(inplace=True)  # Reset index to make it a column
                 parse_metadata_display_feature_widget(images_df)
-                export_data_widget(images_df=images_df, folder_path=folder_path)
+                export_metadata_widget(images_df=images_df, folder_path=folder_path)
             else: 
                 st.warning("No data found in the folder. Please check the path and the file suffixes.")
         elif folder_path != "":
@@ -116,6 +122,12 @@ with col2:
                 shift_finished = st.button("Confirm the Shift and Start the Analysis")
                 if shift_finished:
                     st.session_state["choosing_shift"] = False
+                    st.session_state["shift_ready"] = True
                     st.rerun()
-                   
+    elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"]:
+        if analysis_type == "ROI Summing Fit" or analysis_type == "SPCImage":
+            single_cell_features = image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_fad)
+            if not single_cell_features.empty:
+                st.success(f"Image features with ✅ are extracted successfully {happy_emoji}! Images with ❌ (if any) are excluded. The first few rows of the features are shown below.")
+                st.write(single_cell_features.head())
 
