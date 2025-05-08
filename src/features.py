@@ -60,6 +60,7 @@ def get_features(df):
     
     """
     warning_msg = error_msg = ""
+    # convert 
     numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
     feature_cols_dict = get_feature_cols(numeric_cols)
     all_features_cols = []
@@ -74,6 +75,7 @@ def get_features(df):
     avilable_categorical_cols = [col for col in categorical_cols if col in df.columns]
     columns_to_keep = required_cols + avilable_categorical_cols + all_features_cols
     df = df[columns_to_keep]  
+   
     # delete rows with NaN values in any column
     original_row_count = len(df)
     # Print columns that contain NaN values
@@ -88,6 +90,8 @@ def get_features(df):
         rows_removed = original_row_count - len(df)
         if rows_removed > 0:
             warning_msg += f"{rows_removed} rows containing NaN values were removed.\n"
+    # removes rows with that have "--" in any column
+
     if len(df) == 0:
         error_msg += "Error: No data available after removing NaN values.\n"
         return None, None, None, error_msg

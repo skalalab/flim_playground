@@ -41,7 +41,7 @@ feature_groups = list(feature_groups_prefix.keys())
 # host all features that are capable of being extracted from raw data
 # used only in data_extraction module to name the features that can be extracted 
 feature_groups_features = {
-    "Nadh Fit": ["a1", "a2", "t1", "t2", "tm", "intensity", "redox"], # put redox in nadh 
+    "Nadh Fit": ["a1", "a2", "t1", "t2", "tm", "intensity", "norm_redox"], # put redox in nadh 
     "Fad Fit":["a1", "a2", "t1", "t2", "tm", "intensity"],
     "Mask Morphology": ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length", "circularity"],
     "Fit Free Nadh": ["G(1st)", "S(1st)", "G(2nd)", "S(2nd)"],
