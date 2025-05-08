@@ -45,6 +45,7 @@ dependencies = [
     "referencing==0.36.2",
     "requests==2.32.3",
     "rpds-py==0.24.0",
+    "scikit-image>=0.25.2",
     "scikit-learn==1.6.1",
     "scipy==1.15.2",
     "sdtfile==2025.3.25",

@@ -107,6 +107,10 @@ def parse_metadata_file(metadata_df):
     else: 
         error_msg += "Cannot determine the analysis type from the metadata file! "
         return error_msg, None, None, None, None, None
+    
+    if not has_nadh and not has_fad:
+        error_msg += "Neither NADH nor FAD found in the metadata file! "
+        return error_msg, None, None, None, None, None
    
     available_feature_groups_features = subset_feature_group_features(
         has_nadh=has_nadh,

@@ -1,8 +1,9 @@
 import streamlit as st
 import os 
-
+import numpy as np
 from src.metadata import list_files_with_suffix, list_files_with_filename, parse_metadata_file, spc_output_suffix, file_suffix_default
 from src.widgets.data_widgets import happy_emoji
+from src.file_io import load_image
 
 def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
     """
@@ -73,7 +74,6 @@ def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
                 # skip a1, since it is already in the actual_file_suffix dictionary
                 continue
             if not fit_free and key == "shift":
-                # skip shift, since it is already in the actual_file_suffix dictionary
                 continue
             if has_nadh: 
                 nadh_a1_suffix = actual_file_suffix["nadh a1"]
@@ -90,7 +90,22 @@ def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
         
     # check if the suffixes are valid
     return actual_file_suffix, error_msg
-        
+
+def find_shift_value(shift_path):
+    """
+    Find the shift value in the shift image.
+    """
+    shift_image = load_image(shift_path)
+    # the shift image should at most contain 2 unique values, 0 and the true shift value
+    unique_values = np.unique(shift_image)
+    # remove 0 from the unique values
+    unique_values = [val for val in unique_values if val != 0]
+    if len(unique_values) == 1:
+        return unique_values[0]
+    else:
+        raise ValueError(f"Cannot find the shift value in the shift image {shift_path}.")
+    
+
 @st.cache_data
 def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):    
     """
@@ -140,11 +155,12 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
                         missing_keys.append(key) # no matching file found
                 else:
                     image_group[key] = matched_files[0]
+
             # create the card 
             with cols[col_idx]:
                 with st.container(border=True):
                     st.markdown(f"Image name: **{image_name}**")
-                    if missing_keys :
+                    if missing_keys or duplicate_keys:
                         st.write("❌ Missing or duplicate files:")
                         for key in missing_keys:
                             if "irf" not in key:
@@ -158,10 +174,22 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
                                 st.write(f"- Duplicate {key} with suffix: {file_suffix[key]}")
 
                     else:
+                        shift_found = True
                         st.write("✅ All files found.")
-                        # for key, path in image_group.items():
-                        #     st.write(f"- {key}: {os.path.basename(path)}")
-            if missing_keys == [] and duplicate_keys == []:
+                        if "nadh shift" in image_group:
+                            try: 
+                               image_group["nadh shift value"] = find_shift_value(image_group["nadh shift"])
+                            except Exception as e:
+                                st.write(f"Error loading the nadh shift: {image_group["nadh shift"]}")
+                                shift_found = False
+                        if "fad shift" in image_group:
+                            try: 
+                                image_group["fad shift value"] = find_shift_value(image_group["fad shift"])
+                            except Exception as e:
+                                st.write(f"Error loading the fad shift: {image_group["fad shift"]}")
+                                shift_found = False
+
+            if missing_keys == [] and duplicate_keys == [] and shift_found:
                 valid_image_groups[image_name] = image_group
 
     return valid_image_groups
@@ -173,7 +201,10 @@ def export_metadata_widget(images_df, folder_path):
         # convert the dictionary to a dataframe     
         # save the dataframe to a csv file
         csv_file_path = os.path.join(folder_path, "image_metadata.csv")
-        images_df.to_csv(csv_file_path) # Save the DataFrame
+        try:
+            images_df.to_csv(csv_file_path) # Save the DataFrame
+        except Exception as e:
+            st.error(f"Error exporting the image metadata: {e}. Is the previous metadata file open in another program?")
         st.success(f"Image metadata exported successfully to {csv_file_path} {happy_emoji}")
         st.session_state["last_extracted_metadata"] = images_df
         st.session_state["last_extracted_metadata_filepath"] = csv_file_path

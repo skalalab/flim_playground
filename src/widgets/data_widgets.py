@@ -80,6 +80,7 @@ def load_csv(uploaded_csv):
                 upload_complete = True
     return df, feature_cols_dict, upload_complete
 
+
 def image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_fad, num_cols=3):
 
     single_cell_features = pd.DataFrame()
@@ -108,5 +109,5 @@ def image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_
                             st.success("✅ Success!")
                             single_cell_features = pd.concat([single_cell_features, single_cell_features_img])
 
-
+    return single_cell_features
 
