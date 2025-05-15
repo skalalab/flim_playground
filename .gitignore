@@ -6,3 +6,4 @@ build/
 *.spec
 test.py
 .venv/
+*.csv
