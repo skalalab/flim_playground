@@ -3,12 +3,12 @@ import pandas as pd
 from streamlit_plotly_events import plotly_events
 
 from src.widgets.data_widgets import load_csv, happy_emoji, sad_emoji
-from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget
+from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget, twod_single_feature_select_widget
 from src.widgets.custom_widgets import umap_hyperParams_widget
 from src.widgets.filter_widgets import filters_widget
 from src.widgets.click_plot_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
 from src.navigation import render_top_menu
-from src.visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot, feature_histogram_plot, feature_gmm_plot
+from src.visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_2d_distribution_plot
 from src.dimension_reduction import dimension_reduction
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -28,7 +28,7 @@ if "last_processed_click_img" not in st.session_state:
 
 dimension_reduction_methods = ["UMAP", "Principal Component Analysis"]
 # methods to visualize based on a single feature
-feature_visualization_methods = ["Feature Comparison", "Image Comparison", "Feature Histogram (GMM optional)"]
+feature_visualization_methods = ["Feature Comparison", "Image Comparison", "Feature Histogram (GMM optional)", "2D Feature Distribution"]
 col1, col2 = st.columns([0.4, 1])
 with col1:
     st.title("Visualizations")
@@ -42,10 +42,12 @@ with col1:
 
     if upload_complete:
         if method in feature_visualization_methods:
-            # single feature selection widget 
-            selected_var = single_feature_select_widget(feature_cols_dict, n_per_row=2)
-            if method == "Feature Comparison":
-                selected_test = st.selectbox("Select a statistical test", ["None", "Glass's Delta"], index=0)
+            if "2D" in method:
+                selected_x, selected_y = twod_single_feature_select_widget(feature_cols_dict, n_per_row=2)
+            else:
+                selected_var = single_feature_select_widget(feature_cols_dict, n_per_row=2)
+                if method == "Feature Comparison":
+                    selected_effect_size_method = st.selectbox("Select an effect size method", ["None", "Glass's Delta", "Cohen's Distance"], index=0)
         elif method in dimension_reduction_methods:
             hyperParam_dict = {}
             # multiple features selection widget 
@@ -64,10 +66,13 @@ with col2:
         # check if the df is empty after filtering
         if not filtered_df.empty:
             if method in feature_visualization_methods:
-                if selected_var != "Select": 
+                if "2D" in method and selected_x != "Select" and selected_y != "Select":
+                    fig = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by_options)
+                    st.plotly_chart(fig, use_container_width=True)
+                elif "2D" not in method and selected_var != "Select": 
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        fig = feature_comparison_plot(filtered_df, selected_var, color_by_options, stats_test=selected_test)
+                        fig = feature_comparison_plot(filtered_df, selected_var, color_by_options, effect_size_method=selected_effect_size_method)
                         click_ready = True
                     elif method == "Image Comparison":
                         fig = image_comparison_plot(filtered_df, selected_var)
@@ -78,12 +83,12 @@ with col2:
                         for each color group on the selected feature with 1, 2, and 3 components (fit on raw distribution, not on the histograms). \
                         Choose the one in which all the components are at least of 10% weight and has the lowest BIC score.")
                         if apply_gmm:
-                            fig, h_index_msg = feature_gmm_plot(filtered_df, selected_var, color_by_options)
-                            if h_index_msg != "": 
-                                st.info(h_index_msg)
+                            feature_gmm_plot(filtered_df, selected_var, color_by_options)
                         else: 
                             fig = feature_histogram_plot(filtered_df, selected_var, color_by_options)
-                        st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, use_container_width=True)
+                 
+                        
             
             elif method in dimension_reduction_methods:
                 if len(selected_features) < 2:

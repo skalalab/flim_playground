@@ -13,13 +13,13 @@ def reset_other_menus(selected_menu, menus):
         st.session_state.selected_menu = selected_menu
 
 # create selectboxs for variables
-def single_feature_select_widget(feature_cols_dict, n_per_row=2):
+def single_feature_select_widget(feature_cols_dict, n_per_row=2, key_prefix=""):
     """
     n_per_row: number of selectboxs in a row"""
     
     menus = []       
     for feature_group in feature_cols_dict.keys():
-        menus.append("menu_" + feature_group)
+        menus.append(f"{key_prefix}_menu_{feature_group}")
     
     selected_var = "Select"
     feature_groups = list(feature_cols_dict.keys())
@@ -39,7 +39,7 @@ def single_feature_select_widget(feature_cols_dict, n_per_row=2):
         # Add menus to this row
         for i, col_idx in enumerate(range(start_idx, end_idx)):
             feature_group = feature_groups[col_idx]
-            menu_key = f"menu_{feature_group}"
+            menu_key = f"{key_prefix}_menu_{feature_group}"
             feature_list = feature_cols_dict[feature_group]
             
             with cols[i]:
@@ -58,6 +58,22 @@ def single_feature_select_widget(feature_cols_dict, n_per_row=2):
     
     return selected_var
 
+def twod_single_feature_select_widget(feature_cols_dict, n_per_row=2):
+    st.write("**Select the x-axis feature:** ")
+    selected_x = single_feature_select_widget(feature_cols_dict, n_per_row=n_per_row, key_prefix="2d_x")
+    # remove the selected_x from the feature_cols_dict
+    # selected_x is not a feature group, it is a feature
+    for feature_group in feature_cols_dict.keys():
+        if selected_x in feature_cols_dict[feature_group]:
+            feature_cols_dict[feature_group].remove(selected_x)
+    if selected_x != "Select":
+        st.write("**Select the y-axis feature:** ")
+        selected_y = single_feature_select_widget(feature_cols_dict, n_per_row=n_per_row, key_prefix="2d_y")
+    else:
+        selected_y = "Select"
+    if selected_x != "Select" and selected_y != "Select":
+        st.info(f"Selected features: **{selected_x}** and **{selected_y}**")
+    return selected_x, selected_y
 
 def multi_feature_select_widget(feature_cols_dict, n_per_row=2):
    

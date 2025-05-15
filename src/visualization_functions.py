@@ -5,9 +5,10 @@ import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
 from sklearn.mixture import GaussianMixture
-from scipy.stats import norm
+from scipy.stats import norm, gaussian_kde
 from scipy.optimize import brentq
 from src.widgets.custom_widgets import stats_comparison_pair_widget, histogram_bin_width_widget
+import pandas as pd
 
 def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
     """
@@ -23,6 +24,18 @@ def glass_delta(group1, group2):
     group2_sd = np.std(group2, ddof=1)  # Using Bessel's correction with ddof=1
     return mean_diff / group2_sd
 
+def cohens_d(group1, group2):
+    """Compute Cohen's d for two independent samples."""
+    # sample sizes
+    n1, n2 = len(group1), len(group2)
+    # unbiased sample variances
+    s1, s2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
+    # pooled standard deviation
+    pooled_sd = np.sqrt(((n1 - 1)*s1 + (n2 - 1)*s2) / (n1 + n2 - 2))
+    # mean difference
+    mean_diff = np.mean(group1) - np.mean(group2)
+    return mean_diff / pooled_sd
+
 def create_color_map(groups, overlap_point):
     # if points in the visulization is going to overlap, use a transparent color
     if overlap_point: 
@@ -34,32 +47,238 @@ def create_color_map(groups, overlap_point):
     color_map = {t: color_sequence[i] for i, t in enumerate(groups)}
     return color_map
 
+def _prepare_group_data(df, group_by_cols, new_group_col_name, overlap_point=True):
+    """
+    Prepares group data by creating a new group column, sorting unique groups,
+    and generating a color map.
+    Modifies the DataFrame in place by adding the new group column.
+    """
+    # Ensure group_by_cols is a list, even if a single string is passed
+    if isinstance(group_by_cols, str):
+        group_by_cols = [group_by_cols]
 
-def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"):
+    if not group_by_cols: # Handle empty list for group_by_cols
+        # Create a dummy group if no columns are provided for grouping
+        df[new_group_col_name] = "all_data"
+    else:
+        df[new_group_col_name] = df[group_by_cols].astype(str).agg('_'.join, axis=1)
+    
+    unique_groups = df[new_group_col_name].unique()
+    unique_groups = sorted(unique_groups, key=lambda x: tuple(x.split('_')))
+    color_map = create_color_map(unique_groups, overlap_point=overlap_point)
+    return unique_groups, color_map
+
+def _calculate_effect_size(group1_data, group2_data, method: str):
+    """
+    Calculates the effect size between two groups using the specified method.
+    """
+    if group1_data.empty or group2_data.empty:
+        return None
+
+    if method == "Glass's Delta":
+        return glass_delta(group1_data, group2_data)
+    elif method == "Cohen's Distance":
+        # Ensure cohens_d function is available and handles data appropriately
+        return cohens_d(group1_data, group2_data)
+    else:
+        st.warning(f"Unsupported effect size method: {method}")
+        return None
+
+def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_groups_list, 
+                                 drawn_annotations_list, positioning_metrics, 
+                                 original_df, data_column_name, group_column_name_in_df, 
+                                 overall_min_y_val, data_range_y):
+    """
+    Adds a single effect size annotation (bracket and text) to the figure,
+    handling y-positioning and collision detection.
+    """
+    x_indices = [compare_groups_list.index(pair_strings[0]), compare_groups_list.index(pair_strings[1])]
+    x_start_new = min(x_indices)
+    x_end_new = max(x_indices)
+
+    spanned_group_names = compare_groups_list[x_start_new : x_end_new + 1]
+    df_in_span = original_df[original_df[group_column_name_in_df].isin(spanned_group_names)]
+    current_region_max_y = df_in_span[data_column_name].max(skipna=True)
+
+    if pd.isna(current_region_max_y):
+        current_region_max_y = overall_min_y_val
+        if pd.isna(current_region_max_y): # Fallback if overall_min_y is also NaN
+            current_region_max_y = 0
+
+
+    # Use pre-calculated absolute positioning metrics
+    offset_from_data_abs = positioning_metrics['offset_from_data_abs']
+    vertical_spacing_abs = positioning_metrics['vertical_spacing_abs']
+    bracket_vertical_length_abs = positioning_metrics['bracket_vertical_length_abs']
+    text_offset_from_bracket_abs = positioning_metrics['text_offset_from_bracket_abs']
+    text_height_allowance_for_collision_abs = positioning_metrics['text_height_allowance_for_collision_abs']
+
+    y_candidate_bracket_top = current_region_max_y + offset_from_data_abs
+    final_y_bracket_top = None
+    final_y_text_annotation_center = None
+    max_iterations = 50 # Max attempts to find a clear spot
+
+    for iteration in range(max_iterations):
+        proposed_y_bracket_top = y_candidate_bracket_top
+        proposed_y_text_center = proposed_y_bracket_top + text_offset_from_bracket_abs + (text_height_allowance_for_collision_abs / 2)
+        
+        # Calculate the bounding box of the new annotation
+        new_ann_y_bottom = proposed_y_bracket_top - bracket_vertical_length_abs
+        new_ann_y_top = proposed_y_text_center + (text_height_allowance_for_collision_abs / 2)
+
+        collision_found = False
+        for existing_ann in drawn_annotations_list:
+            # Check for x-overlap: True if the horizontal spans of annotations overlap
+            x_overlap = max(x_start_new, existing_ann['x_start']) < min(x_end_new, existing_ann['x_end'])
+            if x_overlap:
+                # Check for y-overlap: True if the vertical spans of annotations overlap
+                y_overlap = max(new_ann_y_bottom, existing_ann['y_bottom']) < min(new_ann_y_top, existing_ann['y_top'])
+                if y_overlap:
+                    # Collision detected, propose a new y_candidate_bracket_top above the existing annotation
+                    y_candidate_bracket_top = existing_ann['y_top'] + vertical_spacing_abs
+                    collision_found = True
+                    break 
+        
+        if not collision_found:
+            final_y_bracket_top = proposed_y_bracket_top
+            final_y_text_annotation_center = proposed_y_text_center
+            drawn_annotations_list.append({
+                'x_start': x_start_new, 'x_end': x_end_new,
+                'y_bottom': new_ann_y_bottom, 'y_top': new_ann_y_top,
+                'y_bracket_draw': final_y_bracket_top, 
+                'y_text_draw': final_y_text_annotation_center
+            })
+            break # Found a spot
+        
+        if iteration == max_iterations - 1:
+            # Fallback if no optimal position is found after max_iterations
+            st.warning(f"Could not find optimal position for annotation {pair_strings}, using fallback.")
+            # Use the last proposed y_candidate_bracket_top, which might overlap
+            final_y_bracket_top = y_candidate_bracket_top 
+            final_y_text_annotation_center = y_candidate_bracket_top + text_offset_from_bracket_abs + (text_height_allowance_for_collision_abs / 2)
+            # Recalculate y_bottom and y_top for the fallback annotation
+            new_ann_y_bottom_fb = final_y_bracket_top - bracket_vertical_length_abs
+            new_ann_y_top_fb = final_y_text_annotation_center + (text_height_allowance_for_collision_abs / 2)
+            drawn_annotations_list.append({
+                'x_start': x_start_new, 'x_end': x_end_new,
+                'y_bottom': new_ann_y_bottom_fb, 'y_top': new_ann_y_top_fb,
+                'y_bracket_draw': final_y_bracket_top, 
+                'y_text_draw': final_y_text_annotation_center
+            })
+
+    if final_y_bracket_top is None: # Should not happen if fallback is implemented
+        return
+
+    # Add bracket lines
+    fig.add_shape(
+        type="line", x0=x_start_new, y0=final_y_bracket_top,
+        x1=x_end_new, y1=final_y_bracket_top,
+        line=dict(color="black", width=1.5)
+    )
+    for x_pos_single in [x_start_new, x_end_new]:
+        fig.add_shape(
+            type="line", x0=x_pos_single, y0=final_y_bracket_top,
+            x1=x_pos_single, y1=final_y_bracket_top - bracket_vertical_length_abs,
+            line=dict(color="black", width=1.5)
+        )
+    # Add effect size text
+    fig.add_annotation(
+        x=(x_start_new + x_end_new) / 2, y=final_y_text_annotation_center,
+        text=f"Δ={effect_size_value:.2f}", showarrow=False, font=dict(size=12),
+        align="center"
+    )
+
+def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, effect_size_method="None"):
+    """
+    Adds effect size annotations to the figure.
+    Manages selection of pairs, calculation of effect sizes, and calls annotation plotting.
+    """
+    if not all_possible_pairs:
+        return
+
+    selected_pairs = stats_comparison_pair_widget(all_possible_pairs)
+
+    if selected_pairs and effect_size_method != "None":
+        drawn_annotations = []  # List to store details of drawn annotations for collision detection
+
+        # --- Define vertical spacing parameters (relative to data range) ---
+        global_max_y = df[selected_var].max(skipna=True)
+        global_min_y = df[selected_var].min(skipna=True)
+
+        if pd.isna(global_max_y) or pd.isna(global_min_y) or len(df[selected_var].dropna()) < 2:
+            data_range_y = 1  # Default if overall data is all NaN or not enough points
+        else:
+            data_range_y = global_max_y - global_min_y
+        
+        if data_range_y == 0:  # Avoid division by zero or if all values are the same
+            data_range_y = 1 # Use a nominal range to prevent zero spacing
+
+        # Calculate absolute positioning metrics once
+        positioning_metrics = {
+            'offset_from_data_abs': 0.05 * data_range_y,
+            'vertical_spacing_abs': 0.08 * data_range_y,
+            'bracket_vertical_length_abs': 0.03 * data_range_y,
+            'text_offset_from_bracket_abs': 0.02 * data_range_y,
+            'text_height_allowance_for_collision_abs': 0.04 * data_range_y
+        }
+
+        # Sort pairs for consistent annotation order and simpler collision logic
+        # Sorting key ensures that pairs are processed from left-to-right, and shorter spans before longer ones if they start at the same point.
+        sorted_pairs = sorted(selected_pairs,
+                              key=lambda p: (min(compare_groups.index(p[0]), compare_groups.index(p[1])),
+                                             max(compare_groups.index(p[0]), compare_groups.index(p[1]))))
+        
+        # --- Threshold input based on selected method ---
+        threshold = 0.0
+        threshold_key_suffix = selected_var
+        if effect_size_method == "Glass's Delta":
+            threshold = st.number_input("Glass's Delta Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05, 
+                                        key=f"glass_delta_thresh_{threshold_key_suffix}")
+        elif effect_size_method == "Cohen's Distance":
+            threshold = st.number_input("Cohen's Distance Threshold", value=0.5, min_value=0.0, max_value=3.0, step=0.05,
+                                        key=f"cohens_d_thresh_{threshold_key_suffix}")
+
+        for pair in sorted_pairs:
+            group1_data = df[df[group_col_name] == pair[0]][selected_var].dropna()
+            group2_data = df[df[group_col_name] == pair[1]][selected_var].dropna()
+
+            if group1_data.empty or group2_data.empty:
+                st.debug(f"Skipping pair {pair} due to empty data for one or both groups.")
+                continue
+
+            effect_size_value = _calculate_effect_size(group1_data, group2_data, effect_size_method)
+
+            if effect_size_value is not None and abs(effect_size_value) >= threshold:
+                _annotate_single_effect_size(
+                    fig=fig,
+                    pair_strings=pair,
+                    effect_size_value=effect_size_value,
+                    compare_groups_list=compare_groups,
+                    drawn_annotations_list=drawn_annotations, # This list is modified in-place
+                    positioning_metrics=positioning_metrics,
+                    original_df=df,
+                    data_column_name=selected_var,
+                    group_column_name_in_df=group_col_name,
+                    overall_min_y_val=global_min_y, # Pass global_min_y for fallback
+                    data_range_y=data_range_y # Pass data_range_y for context if needed inside, though metrics are now absolute
+                )
+          
+
+        # No explicit "else" for unsupported methods here as _calculate_effect_size handles the warning,
+        # and effect_size_value would be None, thus skipping annotation.
+
+def feature_comparison_plot(df, selected_var, compared_by, effect_size_method="None"):
     fig = go.Figure()
-    df['compare_group'] = df[compared_by].agg('_'.join, axis=1)
-    compare_groups = df['compare_group'].unique()
-    # Sort compare_groups lexicographically based on the elements separated by '_'
-    compare_groups = sorted(compare_groups, key=lambda x: tuple(x.split('_')))
-    # # Sort compare_groups: primarily by the first part (lexicographically),
-    # # secondarily by the integer value found in the second part (in reverse order).
-    # # Assumes the second part contains digits representing the value to sort by.
-    # compare_groups = sorted(compare_groups, key=lambda x: (
-    #     x.split('_')[0], # Primary key: first part (e.g., 'groupA')
-    #     # Secondary key: negative integer extracted from second part (e.g., 'cond10' -> -10)
-    #     # Using negative value achieves reverse sorting for the secondary key.
-    #     # Filter digits and join them before converting to int to handle non-digit characters.
-    #     -int(''.join(filter(str.isdigit, x.split('_')[1])))
-    # ))
+    GROUP_COL_NAME = 'compare_group'
+    compare_groups, color_map = _prepare_group_data(df, compared_by, GROUP_COL_NAME, overlap_point=False)
     compare_pairs = list(combinations(compare_groups, 2))
-    color_map = create_color_map(compare_groups, overlap_point=False)
     jitter_amount = 1
     point_size = 5
 
     # --- 1. Plotting Traces using go.Box (with hidden box) ---
     for group in compare_groups:
         # Filter data for the current group
-        g_df = df[df['compare_group'] == group].copy()
+        g_df = df[df[GROUP_COL_NAME] == group].copy()
         # Drop rows where the variable to plot is NaN, as they cannot be plotted
         g_df = g_df.dropna(subset=[selected_var])
         # Skip this group if no data remains after filtering/dropping NaNs
@@ -100,8 +319,8 @@ def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"):
             ),
 
             # Make the actual box plot elements invisible
-            fillcolor='rgba(0,0,0,0)',  # Transparent fill
-            line_color='rgba(0,0,0,0)', # Transparent box outline
+           # fillcolor='rgba(0,0,0,0)',  # Transparent fill
+           # line_color='rgba(0,0,0,0)', # Transparent box outline
             # --- Hover Info for Points ---
             # Assign the prepared data arrays/series
             text=point_text_data,       # Data referenced by %{text} in template
@@ -109,6 +328,7 @@ def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"):
             # Assign the dynamically built hovertemplate string
             hovertemplate=final_hovertemplate
         ))
+    
     fig.update_layout(
         title=f'Distribution of {selected_var} by {", ".join(compared_by)}',
         xaxis_title=', '.join(compared_by),
@@ -123,87 +343,18 @@ def feature_comparison_plot(df, selected_var, compared_by, stats_test="None"):
     )
 
     # --- 2. Add statistical annotations ---
-    if compare_pairs != [] and stats_test != "None":
-        selected_pairs = stats_comparison_pair_widget(compare_pairs)
-        if selected_pairs != []:
-            if stats_test == "Glass's Delta":
-                # Calculate glasser's delta for each pair
-                
-                # Keep track of the highest y-position used for annotations so far
-                max_annotation_y = -np.inf 
-                # Define vertical spacing parameters
-                offset_from_data = 0.05 * (df[selected_var].max() - df[selected_var].min()) # Initial offset based on data range
-                vertical_spacing = 0.08 * (df[selected_var].max() - df[selected_var].min()) # Space between annotations
-                bracket_vertical_length = 0.03 * (df[selected_var].max() - df[selected_var].min()) # Length of bracket arms
-                text_offset_from_bracket = 0.02 * (df[selected_var].max() - df[selected_var].min()) # Space between bracket and text
+    if compare_pairs != [] and effect_size_method != "None":
+        _add_effect_size_annotations(
+            fig=fig,
+            df=df,
+            selected_var=selected_var,
+            compare_groups=compare_groups,
+            group_col_name=GROUP_COL_NAME,
+            all_possible_pairs=compare_pairs,
+            effect_size_method=effect_size_method
+        )
 
-                # Sort pairs based on the x-position to draw lower annotations first (optional but can help)
-                sorted_pairs = sorted(selected_pairs, key=lambda p: max(compare_groups.index(p[0]), compare_groups.index(p[1])))
-
-                for pair in sorted_pairs:
-                    group1 = df[df['compare_group'] == pair[0]][selected_var]
-                    group2 = df[df['compare_group'] == pair[1]][selected_var]
-                    # Skip if either group is empty
-                    if group1.empty or group2.empty:
-                        continue
-                        
-                    delta = glass_delta(group1, group2)
-                    # Add annotation to the figure
-                    # Get indices for positioning
-                    x_indices = [compare_groups.index(pair[0]), compare_groups.index(pair[1])]
-                    x_positions = sorted(x_indices)
-                    
-                    # Determine the highest data point under this annotation range
-                    current_pair_max_y = max(group1.max(), group2.max())
-                    
-                    # Calculate initial desired position for the bracket top
-                    y_bracket_top_initial = current_pair_max_y + offset_from_data
-                    
-                    # Check if this position is below the highest annotation drawn so far
-                    # If so, place it above the highest one with spacing
-                    y_bracket_top = max(y_bracket_top_initial, max_annotation_y + vertical_spacing)
-                    
-                    # Calculate the final text position
-                    y_text_annotation = y_bracket_top + text_offset_from_bracket
-
-                    # Update the highest y position used
-                    max_annotation_y = y_text_annotation 
-
-                    # Add horizontal line for the top of the square bracket
-                    fig.add_shape(
-                        type="line",
-                        x0=x_positions[0],
-                        y0=y_bracket_top,
-                        x1=x_positions[1],
-                        y1=y_bracket_top,
-                        line=dict(color="black", width=1.5),
-                    )
-                    
-                    # Add vertical lines for the sides of square brackets
-                    for x_pos in x_positions:
-                        fig.add_shape(
-                            type="line",
-                            x0=x_pos,
-                            y0=y_bracket_top,
-                            x1=x_pos,
-                            y1=y_bracket_top - bracket_vertical_length, 
-                            line=dict(color="black", width=1.5),
-                        )
-                    
-                    # Add text annotation above the bracket
-                    fig.add_annotation(
-                        x=(x_positions[0] + x_positions[1])/2,
-                        y=y_text_annotation, 
-                        text=f"Δ={delta:.2f}",
-                        showarrow=False,
-                        font=dict(size=12),
-                        bgcolor="rgba(255, 255, 255, 0.8)",
-                        bordercolor="black",
-                        borderwidth=1,
-                        align="center"
-                    )
-
-    df.drop(columns=['compare_group'], inplace=True)
+    df.drop(columns=[GROUP_COL_NAME], inplace=True)
     return fig
 
 def dimension_reduction_plot(df, method="UMAP", colored_by=[], exp_var=None):
@@ -218,14 +369,12 @@ def dimension_reduction_plot(df, method="UMAP", colored_by=[], exp_var=None):
         axis_labels = ["dim1", "dim2"]
 
     # colored by unique combinations of the selected categorical columns
-    df['unique_color_group'] = df[colored_by].agg('_'.join, axis=1)
-    unique_color_groups = df['unique_color_group'].unique()
-    unique_color_groups = sorted(unique_color_groups, key=lambda x: tuple(x.split('_')))
-    color_map = create_color_map(unique_color_groups, overlap_point=True)
+    GROUP_COL_NAME = 'unique_color_group'
+    unique_color_groups, color_map = _prepare_group_data(df, colored_by, GROUP_COL_NAME, overlap_point=True)
 
     # plot scatter plot iteratively, once for each color group
     for g in unique_color_groups:
-        g_df =  df[df['unique_color_group'] == g]
+        g_df =  df[df[GROUP_COL_NAME] == g]
         fig.add_trace(
             go.Scatter(
                 x=g_df[axis_labels[0]],
@@ -251,7 +400,7 @@ def dimension_reduction_plot(df, method="UMAP", colored_by=[], exp_var=None):
         fig.update_xaxes(title_text=f"{axis_labels[0]}")
         fig.update_yaxes(title_text=f"{axis_labels[1]}")
     # remove the column after plotting
-    df.drop(columns=['unique_color_group'], inplace=True)
+    df.drop(columns=[GROUP_COL_NAME], inplace=True)
     return fig
 
 def image_comparison_plot(df, selected_var):
@@ -285,18 +434,15 @@ def image_comparison_plot(df, selected_var):
     return fig
 
 def feature_histogram_plot(df, selected_var, color_by=[]):
-    df['unique_color_group'] = df[color_by].agg('_'.join, axis=1)
-    unique_color_groups = df['unique_color_group'].unique()
-    # Using solid colors for lines
-    # Sort unique_color_groups lexicographically based on the elements separated by '_'
-    unique_color_groups = sorted(unique_color_groups, key=lambda x: tuple(x.split('_')))
-    color_map = create_color_map(unique_color_groups, overlap_point=False)
+    GROUP_COL_NAME = 'unique_color_group'
+    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False)
+   
     fig = go.Figure()
 
     bin_edges = histogram_bin_width_widget(df[selected_var])
 
     for color_group in unique_color_groups:
-        group_df = df[df['unique_color_group'] == color_group]
+        group_df = df[df[GROUP_COL_NAME] == color_group]
         x_data = group_df[selected_var].dropna()
 
         if x_data.empty:
@@ -330,25 +476,21 @@ def feature_histogram_plot(df, selected_var, color_by=[]):
         # Removed barmode='overlay'
     )
     # remove the column after plotting
-    df.drop(columns=['unique_color_group'], inplace=True)
+    df.drop(columns=[GROUP_COL_NAME], inplace=True)
     return fig
 
 def feature_gmm_plot(df, selected_var, color_by=[]):
     h_index_msg = ""    
-    df['unique_color_group'] = df[color_by].agg('_'.join, axis=1)
-    unique_color_groups = df['unique_color_group'].unique()
-    # Using solid colors for lines
-    # Sort unique_color_groups lexicographically based on the elements separated by '_'
-    unique_color_groups = sorted(unique_color_groups, key=lambda x: tuple(x.split('_')))
-    
-    color_map = create_color_map(unique_color_groups, overlap_point=False)
+    GROUP_COL_NAME = 'unique_color_group'
+    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False)
+   
     # add the choice to do "hard thresholding" or "soft thresholding"
     hard_thresholding = st.checkbox("Use hard thresholding", value=False, key="hard_thresholding", help="If checked, the point where the two Gaussian distributions intersect will be used as the threshold. If not checked, each data will be assigned to the component with the highest posterior probability.")
     fig = go.Figure()
     export_available = False
     # fit a Gaussian Mixture Model (GMM) to each color group
     for color_group in unique_color_groups:
-        group_df = df[df['unique_color_group'] == color_group]
+        group_df = df[df[GROUP_COL_NAME] == color_group]
         x_data = group_df[selected_var].dropna()
 
         if x_data.empty:
@@ -368,7 +510,7 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
 
             # Check the constraint: all weights must be >= 0.10
             min_weight = gmm.weights_.min() 
-            if min_weight >= 0.10:
+            if min_weight >= 0.2:
                 valid_models[k] = gmm
                 # Keep track of the best model among valid ones based on BIC
                 if bic < lowest_bic:
@@ -408,12 +550,22 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
         ))
         # Plot individual components if more than one
         if best_gmm.n_components > 1:
+            
             # Plot individual components
             # pdf_individual is already calculated above
             # Plot each component with a different color
             pi = best_gmm.weights_
             mu = best_gmm.means_.flatten()
+            sigma = np.sqrt(best_gmm.covariances_.ravel())
             gmm_overall_mean = np.sum(pi * mu)
+            # iteratively print out the mean and standard deviation of each component in a table
+            table_md = [f"**GMM Components for {color_group}:**"]
+            table_md.append("| Component | Mean  | Std. Dev. | Weight |")
+            table_md.append("|-----------|-------|-----------|--------|")
+            for i in range(best_gmm.n_components):
+                table_md.append(f"| {i+1}       | {mu[i]:.2f} | {sigma[i]:.2f}    | {pi[i]:.2f}  |")
+            st.markdown("\n".join(table_md))
+
             h_index = 0
             dash_styles = ['dash', 'dot', 'dashdot']
             for i in range(best_gmm.n_components):
@@ -435,15 +587,19 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
             if hard_thresholding:
                 # predict the component membership for each point (hard thresholding)
                 # find the intersection point of the component distributions
-                sigma = np.sqrt(gmm.covariances_.ravel())
+                
                 # Sort components by mean to ensure that the intersection is calculated between the correct pairs
                 sorted_idx = np.argsort(mu)
                 pi, mu, sigma = pi[sorted_idx], mu[sorted_idx], sigma[sorted_idx]
                 thresholds = []
                 for i in range(len(mu) - 1):
-                    t = find_intersection(pi[i], mu[i], sigma[i],
+                    try: 
+                        t = find_intersection(pi[i], mu[i], sigma[i],
                               pi[i+1], mu[i+1], sigma[i+1])
-                    thresholds.append(t)
+                        thresholds.append(t)
+                    except Exception as e:
+                        st.error(f"Error finding intersection between {color_group} component {sorted_idx[i]+1} and {sorted_idx[i+1]+1}: either there is no intersection or there are more than one intersection.")
+                        #thresholds.append(None)
                 # Ensure thresholds are in ascending order
                 thresholds = np.sort(thresholds)
                 # plot the thresholds
@@ -472,6 +628,11 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
             assigned_labels = [f"{color_group}_group{label + 1}" for label in subpopulation_labels]
             df.loc[data_indices, "GMM_group"] = assigned_labels
             export_available = True
+    if h_index_msg != "": 
+        st.info(h_index_msg)
+   
+
+    st.plotly_chart(fig, use_container_width=True, key=f"gmm_plot_{selected_var}_{', '.join(color_by)}")
     # have a button to export the GMM group augmented dataframe
     if export_available:
         st.download_button(
@@ -483,14 +644,84 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
         )
         df.drop(columns=['GMM_group'], inplace=True)
 
+    
+    # remove the column after plotting
+    df.drop(columns=[GROUP_COL_NAME], inplace=True)
+
+    return fig, h_index_msg
+
+
+def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[]):
+    GROUP_COL_NAME = 'unique_color_group'
+    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False)
+   
+    fig = go.Figure()
+    for color_group in unique_color_groups:
+        group_df = df[df[GROUP_COL_NAME] == color_group]
+        if group_df.empty or group_df[selected_x].nunique() < 2 or group_df[selected_y].nunique() < 2:
+            # Skip if group is empty or has insufficient data for KDE
+            continue
+        # Main scatter plot
+        fig.add_trace(go.Scatter(
+            x=group_df[selected_x],
+            y=group_df[selected_y],
+            mode='markers',
+            name=color_group,
+            marker=dict(color=color_map[color_group], size=5, opacity=0.7),
+            hovertemplate=(
+                f"<b>Group:</b> {color_group}<br>"
+                f"<b>{selected_x}:</b> %{{x}}<br>"
+                f"<b>{selected_y}:</b> %{{y}}<extra></extra>"
+            )
+        ))
+
+        # Marginal density for X-axis
+        x_data = group_df[selected_x].dropna()
+        if not x_data.empty and x_data.nunique() > 1:
+            kde_x = gaussian_kde(x_data)
+            x_range = np.linspace(x_data.min(), x_data.max(), 200)
+            fig.add_trace(go.Scatter(
+                x=x_range,
+                y=kde_x(x_range),
+                mode='lines',
+                name=f'{color_group}_x_density',
+                line=dict(color=color_map[color_group]),
+                yaxis='y2',
+                showlegend=False,
+                opacity=0.7
+            ))
+
+        # Marginal density for Y-axis
+        y_data = group_df[selected_y].dropna()
+        if not y_data.empty and y_data.nunique() > 1:
+            kde_y = gaussian_kde(y_data)
+            y_range = np.linspace(y_data.min(), y_data.max(), 200)
+            fig.add_trace(go.Scatter(
+                x=kde_y(y_range), # X values for the density curve on y-axis marginal
+                y=y_range,        # Y values for the density curve
+                mode='lines',
+                name=f'{color_group}_y_density',
+                line=dict(color=color_map[color_group]),
+                xaxis='x2',
+                showlegend=False,
+                opacity=0.7,
+                #fill='tozerox', # Fill area to the x-axis (which is x2)
+            ))
+
     fig.update_layout(
-        title=f'Gaussian Mixture Model of {selected_var} by {", ".join(color_by)}',
-        xaxis_title=selected_var,
-        yaxis_title='Density',
-        legend_title_text='Groups',
-        hovermode='x unified', # Good for comparing counts at specific x-values
-        margin=dict(l=50, r=20, t=50, b=80)
+        title=f'2D Distribution of {selected_x} and {selected_y} by {", ".join(color_by)}',
+        xaxis_title=selected_x,
+        yaxis_title=selected_y,
+        hovermode='closest',
+        # Configure axes for marginal plots
+        xaxis=dict(domain=[0, 0.83], showgrid=False, zeroline=False), # Main x-axis, reduced slightly
+        yaxis=dict(domain=[0, 0.83], showgrid=False, zeroline=False), # Main y-axis, reduced slightly
+        xaxis2=dict(domain=[0.85, 1], showgrid=False, zeroline=False, showticklabels=False), # Marginal y-density's x-axis
+        yaxis2=dict(domain=[0.85, 1], showgrid=False, zeroline=False, showticklabels=False), # Marginal x-density's y-axis
+        # Removed bargap and barmode as they are for histograms
     )
     # remove the column after plotting
-    df.drop(columns=['unique_color_group'], inplace=True)
-    return fig, h_index_msg
+    df.drop(columns=[GROUP_COL_NAME], inplace=True)
+
+    return fig
+
