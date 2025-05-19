@@ -80,24 +80,29 @@ def load_csv(uploaded_csv):
                 upload_complete = True
     return df, feature_cols_dict, upload_complete
 
-def check_img_features(single_cell_features):
+def check_img_features(single_img_cell_features, image_name):
     """
     Drop the cells that have '--' or NaN values.
     """
-    image_groups = single_cell_features.groupby('image_name')
-    for image_name, group in image_groups:
-        total_cells = len(group)
-        # count and remove the subset of the df that contains cells with '--' or NaN values
-        cells_with_dash = group[group.astype(str).str.contains("--")]
-        cells_with_nan = group[group.isna()]
-        invalid_cells = len(cells_with_dash) + len(cells_with_nan)
-        if invalid_cells > 0:
-            st.warning(f"The image {image_name} has {invalid_cells} cells with '--' or NaN values out of {total_cells} cells. \ 
-                       They are removed from the data because **all** of the pixels of those cells are masked by SPC image output files.")
-            single_cell_features.drop(cells_with_dash.index, inplace=True)
-            single_cell_features.drop(cells_with_nan.index, inplace=True)
+    total_cells = len(single_img_cell_features)
     
-    return single_cell_features
+    # Create boolean masks for invalid cells
+    dash_mask = single_img_cell_features.astype(str).apply(lambda x: x.str.contains("--").any(), axis=1)
+    nan_mask = single_img_cell_features.isna().any(axis=1)
+    
+    # Combine masks
+    invalid_mask = dash_mask | nan_mask
+    invalid_cells = invalid_mask.sum()
+    
+    if invalid_cells > 0:
+        st.warning(
+            f"The image {image_name} has **{invalid_cells}** cell(s) with '--' or NaN values out of {total_cells} cell(s). "
+            "They are removed from the data because **all** of the pixels of those cells are masked by SPC image output files."
+        )
+        # Filter out invalid cells using the combined mask
+        single_img_cell_features = single_img_cell_features[~invalid_mask]
+    
+    return single_img_cell_features
             
 
 
@@ -128,7 +133,7 @@ def image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_
                             st.error(error_msg)
                         else:
                             st.success("✅ Success!")
-                            single_cell_features_img = check_img_features(single_cell_features_img)
+                            single_cell_features_img = check_img_features(single_cell_features_img, image_name)
                             single_cell_features = pd.concat([single_cell_features, single_cell_features_img])
 
     return single_cell_features
