@@ -59,7 +59,7 @@ dependencies = [
     "threadpoolctl==3.6.0",
     "tifffile==2025.3.30",
     "toml==0.10.2",
-    "tornado==6.4.2",
+    "tornado==6.5",
     "tqdm==4.67.1",
     "typing-extensions==4.13.2",
     "tzdata==2025.2",
