@@ -82,21 +82,23 @@ def load_csv(uploaded_csv):
 
 def check_img_features(single_cell_features):
     """
-    Check if the single cell features have '--' or NaN values.
+    Drop the cells that have '--' or NaN values.
     """
-    cleaned = single_cell_features.copy()
-    for index, row_data in single_cell_features.iterrows():
-        # check if the row has "--" in any column
-        has_dash = (row_data.astype(str).str.contains("--")).any()
-        has_nan = row_data.isna().any()
-        if has_dash or has_nan:
-            cleaned = cleaned.drop(index)
-            if has_dash:
-                st.warning(f"The cell {row_data.get('cell_id', index)} has '--' in some columns.")
-            elif has_nan:
-                st.warning(f"The cell {row_data.get('cell_id', index)} has NaN in some columns.")
-        
-    return cleaned
+    image_groups = single_cell_features.groupby('image_name')
+    for image_name, group in image_groups:
+        total_cells = len(group)
+        # count and remove the subset of the df that contains cells with '--' or NaN values
+        cells_with_dash = group[group.astype(str).str.contains("--")]
+        cells_with_nan = group[group.isna()]
+        invalid_cells = len(cells_with_dash) + len(cells_with_nan)
+        if invalid_cells > 0:
+            st.warning(f"The image {image_name} has {invalid_cells} cells with '--' or NaN values out of {total_cells} cells. \ 
+                       They are removed from the data because **all** of the pixels of those cells are masked by SPC image output files.")
+            single_cell_features.drop(cells_with_dash.index, inplace=True)
+            single_cell_features.drop(cells_with_nan.index, inplace=True)
+    
+    return single_cell_features
+            
 
 
 @st.cache_data

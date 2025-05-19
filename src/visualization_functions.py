@@ -8,6 +8,7 @@ from sklearn.mixture import GaussianMixture
 from scipy.stats import norm, gaussian_kde
 from scipy.optimize import brentq
 from src.widgets.custom_widgets import stats_comparison_pair_widget, histogram_bin_width_widget
+from src.dimension_reduction import dimension_reduction
 import pandas as pd
 
 def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
@@ -357,9 +358,20 @@ def feature_comparison_plot(df, selected_var, compared_by, effect_size_method="N
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
     return fig
 
-def dimension_reduction_plot(df, method="UMAP", colored_by=[], exp_var=None):
+def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_dict={}, colored_by=[], exp_var=None):
     """create a plotly plot to visualize the dimension-reduced data
     """
+    X = df[selected_features]
+                    # perform dimension reduction
+    df_reduced, exp_var = dimension_reduction(X, n_components=2, method=method, hyperParam_dict=hyperParam_dict)
+    # augment df_reduced with required columns and categorical columns used for coloring
+    df_reduced["cell_id"] = df["cell_id"].values
+    df_reduced["image_name"] = df["image_name"].values
+    # Add all color columns at once if there are any
+    if not colored_by.empty:
+        df_reduced[colored_by] = df[colored_by].values
+    # plot the reduced data
+                       
     fig = go.Figure()
     if method == "Principal Component Analysis":
         axis_labels = ["PC1", "PC2"]
@@ -370,23 +382,23 @@ def dimension_reduction_plot(df, method="UMAP", colored_by=[], exp_var=None):
 
     # colored by unique combinations of the selected categorical columns
     GROUP_COL_NAME = 'unique_color_group'
-    unique_color_groups, color_map = _prepare_group_data(df, colored_by, GROUP_COL_NAME, overlap_point=True)
+    unique_color_groups, color_map = _prepare_group_data(df_reduced, colored_by, GROUP_COL_NAME, overlap_point=True)
 
     # plot scatter plot iteratively, once for each color group
     for g in unique_color_groups:
-        g_df =  df[df[GROUP_COL_NAME] == g]
+        g_df =  df_reduced[df_reduced[GROUP_COL_NAME] == g]
         fig.add_trace(
             go.Scatter(
                 x=g_df[axis_labels[0]],
                 y=g_df[axis_labels[1]],
                 mode='markers',
                 name=f'{g}',
-                text=g_df["cell_id"],
+                text=g_df["cell_id"],   
                 customdata=g_df["image_name"],
                 hovertemplate="<b>%{text}</b>",
                 marker=dict(color=color_map[g])
             ),
-    )
+    )               
         
     fig.update_layout(
         hovermode='closest'
@@ -399,8 +411,7 @@ def dimension_reduction_plot(df, method="UMAP", colored_by=[], exp_var=None):
     else:
         fig.update_xaxes(title_text=f"{axis_labels[0]}")
         fig.update_yaxes(title_text=f"{axis_labels[1]}")
-    # remove the column after plotting
-    df.drop(columns=[GROUP_COL_NAME], inplace=True)
+
     return fig
 
 def image_comparison_plot(df, selected_var):
