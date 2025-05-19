@@ -9,7 +9,6 @@ from src.widgets.filter_widgets import filters_widget
 from src.widgets.click_plot_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
 from src.navigation import render_top_menu
 from src.visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_2d_distribution_plot
-from src.dimension_reduction import dimension_reduction
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
@@ -67,26 +66,36 @@ with col2:
         if not filtered_df.empty:
             if method in feature_visualization_methods:
                 if "2D" in method and selected_x != "Select" and selected_y != "Select":
-                    fig = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by_options)
-                    st.plotly_chart(fig, use_container_width=True)
+                    # drop rows with NaN values in the selected_x and selected_y columns
+                    filtered_df = filtered_df[filtered_df[selected_x].notna() & filtered_df[selected_y].notna()]
+                    if len(filtered_df) > 0:
+                        fig = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by_options)
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.write("No data available after removing rows with missing values {sad_emoji}")
                 elif "2D" not in method and selected_var != "Select": 
-                    # Plot the filtered dataframe
-                    if method == "Feature Comparison":
-                        fig = feature_comparison_plot(filtered_df, selected_var, color_by_options, effect_size_method=selected_effect_size_method)
-                        click_ready = True
-                    elif method == "Image Comparison":
-                        fig = image_comparison_plot(filtered_df, selected_var)
-                        click_ready = True
-                    elif method == "Feature Histogram (GMM optional)":
-                        # create a switch to select between GMM and histogram
-                        apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, help="Fit Gaussian Mixture Models\
-                        for each color group on the selected feature with 1, 2, and 3 components (fit on raw distribution, not on the histograms). \
-                        Choose the one in which all the components are at least of 10% weight and has the lowest BIC score.")
-                        if apply_gmm:
-                            feature_gmm_plot(filtered_df, selected_var, color_by_options)
-                        else: 
-                            fig = feature_histogram_plot(filtered_df, selected_var, color_by_options)
-                            st.plotly_chart(fig, use_container_width=True)
+                    # drop rows with NaN values in the selected_var column
+                    filtered_df = filtered_df[filtered_df[selected_var].notna()]
+                    if len(filtered_df) > 0:
+                        # Plot the filtered dataframe
+                        if method == "Feature Comparison":
+                            fig = feature_comparison_plot(filtered_df, selected_var, color_by_options, effect_size_method=selected_effect_size_method)
+                            click_ready = True
+                        elif method == "Image Comparison":
+                            fig = image_comparison_plot(filtered_df, selected_var)
+                            click_ready = True
+                        elif method == "Feature Histogram (GMM optional)":
+                            # create a switch to select between GMM and histogram
+                            apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, help="Fit Gaussian Mixture Models\
+                            for each color group on the selected feature with 1, 2, and 3 components (fit on raw distribution, not on the histograms). \
+                            Choose the one in which all the components are at least of 10% weight and has the lowest BIC score.")
+                            if apply_gmm:
+                                feature_gmm_plot(filtered_df, selected_var, color_by_options)
+                            else: 
+                                fig = feature_histogram_plot(filtered_df, selected_var, color_by_options)
+                                st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.write("No data available after removing rows with missing values {sad_emoji}")
                  
                         
             
@@ -94,18 +103,14 @@ with col2:
                 if len(selected_features) < 2:
                     st.write("Please select at least two features for dimension reduction methods like PCA or UMAP.")
                 else: 
-                    X = filtered_df[selected_features]
-                    # perform dimension reduction
-                    df_reduced, exp_var = dimension_reduction(X, n_components=2, method=method, hyperParam_dict=hyperParam_dict)
-                    # augment df_reduced with required columns and categorical columns used for coloring
-                    df_reduced["cell_id"] = filtered_df["cell_id"].values
-                    df_reduced["image_name"] = filtered_df["image_name"].values
-                    # Add all color columns at once if there are any
-                    if color_by_options:
-                        df_reduced[color_by_options] = filtered_df[color_by_options].values
-                    # plot the reduced data
-                    fig = dimension_reduction_plot(df_reduced, method=method, colored_by=color_by_options, exp_var=exp_var)
-                    click_ready = True
+                    # drop rows with NaN values in the selected_features columns
+                    filtered_df = filtered_df[filtered_df[selected_features].notna()]
+                    if len(filtered_df) > 0:
+                        # plot the reduced data
+                        fig = dimension_reduction_plot(filtered_df, selected_features, method=method, hyperParam_dict=hyperParam_dict, colored_by=color_by_options)
+                        click_ready = True
+                    else:
+                        st.write(f"No data available after removing rows with missing values {sad_emoji}")
             elif method == "Phasor Plot":
                 st.write("Will be available once the Data Extraction Playground is ready.")
                                       

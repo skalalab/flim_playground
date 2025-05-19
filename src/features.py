@@ -86,10 +86,10 @@ def get_features(df):
             warning_msg += f"Warning: {', '.join(columns_with_na)} column{'s' if num_na_columns > 1 else ''} contain{'s' if num_na_columns == 1 else ''} NaN values. "
         else:
             warning_msg += f"Warning: {', '.join(columns_with_na[:5])} and {num_na_columns - 5} more columns contain NaN values. "
-        df = df.dropna()
-        rows_removed = original_row_count - len(df)
-        if rows_removed > 0:
-            warning_msg += f"{rows_removed} rows containing NaN values were removed.\n"
+        # df = df.dropna()
+        # rows_removed = original_row_count - len(df)
+        # if rows_removed > 0:
+        #     warning_msg += f"{rows_removed} rows containing NaN values were removed.\n"
     # removes rows with that have "--" in any column
 
     if len(df) == 0:
@@ -166,4 +166,12 @@ def check_and_fix_df(df):
             df[matched_categorical_col] = df[matched_categorical_col].fillna("N/A")
             df[matched_categorical_col] = df[matched_categorical_col].astype(str) # make sure all the values are not numbers
 
+    # remove rows with "--" in any column
+    original_row_count = len(df)
+    df = df[df.apply(lambda row: all(cell != "--" for cell in row), axis=1)]
+    # print out the number of rows removed
+    rows_removed = original_row_count - len(df)
+    if rows_removed > 0:
+        warning_msg += f"Warning: {rows_removed} rows containing '--' were removed."
+   
     return df, warning_msg, error_msg
