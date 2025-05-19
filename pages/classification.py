@@ -63,11 +63,16 @@ with col2:
                 the_rest = [cls for cls in classes if cls != selected_option[0]]
                 selected_option_text = f"{selected_option[0]} VS {', '.join(the_rest)}"
             st.write(f"Running {classification_method} to classify between: {selected_option_text}, trained on {int(splits*100)}% of the data {happy_emoji}.")
-            fig1, accuracy, fig2 = classify(df_classify, classification_method, splits)
-            st.pyplot(fig1)
+            fig1, fig2, fig3, accuracy = classify(df_classify, classification_method, splits)
+            cols = st.columns(2)
+            with cols[0]:
+                st.pyplot(fig1)
+            with cols[1]:
+                if fig2 is not None:
+                    st.pyplot(fig2)
             st.write(f"Accuracy: {accuracy:.2f}")
-            if fig2 is not None:
-                st.pyplot(fig2)
+            if fig3 is not None:
+                st.pyplot(fig3)
 
     else:
         st.write("Waiting for file/folder path upload")

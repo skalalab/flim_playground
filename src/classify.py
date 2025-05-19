@@ -17,46 +17,55 @@ def prepare_data(df, splits):
     X_train, X_test, y_train, y_test =  train_test_split(X, y, test_size=1-splits, random_state=42, stratify=y)
     return X_train, X_test, y_train, y_test
 
-
-def plot_confusion_matrix_roc(y_test, y_score, y_pred):
-    classes = np.unique(y_test)
-    num_classes = len(classes)
-    cm = confusion_matrix(y_test, y_pred)
-    y_test = label_binarize(y_test, classes=classes)
-
-    # calculate roc curve
+def calculate_roc_curve(num_classes, y_test, y_score):
+    y_test = label_binarize(y_test, classes=np.unique(y_test))
     if num_classes == 2:
         fpr, tpr, _ = roc_curve(y_test, y_score[:,1])  # Probabilities for the positive class
         roc_auc = auc(fpr, tpr)
     else:
-        
         fpr = dict()
         tpr = dict()
         roc_auc = dict()
         for i in range(num_classes):
             fpr[i], tpr[i], _ = roc_curve(y_test[:, i], y_score[:, i])
             roc_auc[i] = auc(fpr[i], tpr[i])
+    return fpr, tpr, roc_auc
 
-    # plot 
-    fig, ax = plt.subplots(1, 2,figsize=(12, 6))
+def plot_confusion_matrix(y_test, y_pred):
+    classes = np.unique(y_test)
+    cm = confusion_matrix(y_test, y_pred)
+    
+    # plot the confusion matrix
+    fig, ax = plt.subplots(figsize=(6, 6))
     # Create the confusion matrix display
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes).plot(cmap='Blues', ax=ax[0],colorbar=False)
-    ax[0].set_title("Confusion Matrix")
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes).plot(cmap='Blues', ax=ax,colorbar=False)
+    ax.set_title("Confusion Matrix")
+    ax.set_xlabel("Predicted Label")
+    ax.set_ylabel("True Label")
+    return fig
 
+def plot_roc_curve(y_test, y_score):
+    classes = np.unique(y_test)
+    num_classes = len( classes)
 
+    # calculate roc curve
+    fpr, tpr, roc_auc = calculate_roc_curve(num_classes, y_test, y_score)
+
+    # plot the ROC curve
+    fig, ax = plt.subplots(figsize=(6, 6))
     if num_classes == 2:  # Binary classification
-        ax[1].plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
+        ax.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
     else:  # Multiclass classification
         for i in range(num_classes):
-            ax[1].plot(fpr[i], tpr[i], label=f"{classes[i]} (AUC = {roc_auc[i]:.2f})")
+            ax.plot(fpr[i], tpr[i], label=f"{classes[i]} (AUC = {roc_auc[i]:.2f})")
         
-    ax[1].plot([0, 1], [0, 1], 'k--', label="Random Chance")  # Diagonal line
-    ax[1].set_xlabel("False Positive Rate")
-    ax[1].set_ylabel("True Positive Rate")
-    ax[1].set_title("ROC Curve")
-    ax[1].legend(loc="lower right")
+    ax.plot([0, 1], [0, 1], 'k--', label="Random Chance")  # Diagonal line
+    ax.set_xlabel("False Positive Rate")
+    ax.set_ylabel("True Positive Rate")
+    ax.set_title("ROC Curve")
+    ax.legend(loc="lower right")
     plt.tight_layout()
-    # Return the figure
+
     return fig
 
 def plot_feature_importance(classifier, feature_names):
@@ -79,7 +88,6 @@ def plot_feature_importance(classifier, feature_names):
 
     return fig
 
-
 def classify(df, method, splits):
     X_train, X_test, y_train, y_test = prepare_data(df, splits)
     if method == "Random Forest":
@@ -94,10 +102,14 @@ def classify(df, method, splits):
     y_score = classifier.fit(X_train, y_train).predict_proba(X_test)
     y_pred = classifier.fit(X_train, y_train).predict(X_test)
 
-    fig1 = plot_confusion_matrix_roc(y_test, y_score,y_pred)
+    fig1 = plot_confusion_matrix(y_test, y_pred)
+    fig2 = plot_roc_curve(y_test, y_score)
 
     if method == "Random Forest":
-        fig2 = plot_feature_importance(classifier, X_train.columns)
-        return fig1, accuracy_score(y_test, y_pred), fig2
+        fig3 = plot_feature_importance(classifier, X_train.columns)
+        return fig1, fig2, fig3, accuracy_score(y_test, y_pred)
     else:
-        return fig1, accuracy_score(y_test, y_pred), None
+        return fig1, fig2, None, accuracy_score(y_test, y_pred)
+        
+
+
