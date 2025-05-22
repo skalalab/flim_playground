@@ -10,7 +10,7 @@ import tifffile as tiff
 import numpy as np
 from sdt_io import read_sdt150
 from pathlib import Path
-from dimension_reduction import dimension_reduction
+from src.vis.multivar import dimension_reduction
 from features import fix_df
 
 #%%

@@ -4,11 +4,13 @@ from streamlit_plotly_events import plotly_events
 
 from src.widgets.data_widgets import load_csv, happy_emoji, sad_emoji
 from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget, twod_single_feature_select_widget
-from src.widgets.custom_widgets import umap_hyperParams_widget
+from src.widgets.visualization_widgets import umap_hyperParams_widget
 from src.widgets.filter_widgets import filters_widget
 from src.widgets.click_plot_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
 from src.navigation import render_top_menu
-from src.visualization_functions import feature_comparison_plot, dimension_reduction_plot, image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_2d_distribution_plot
+from src.vis.multivar import dimension_reduction_plot
+from src.vis.bivar import feature_2d_distribution_plot
+from src.vis.univar import image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
@@ -97,8 +99,6 @@ with col2:
                     else:
                         st.write("No data available after removing rows with missing values {sad_emoji}")
                  
-                        
-            
             elif method in dimension_reduction_methods:
                 if len(selected_features) < 2:
                     st.write("Please select at least two features for dimension reduction methods like PCA or UMAP.")
