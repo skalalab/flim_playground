@@ -11,7 +11,7 @@ from src.navigation import render_top_menu
 from src.vis.multivar import dimension_reduction_plot
 from src.vis.bivar import feature_2d_distribution_plot
 from src.vis.univar import image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
-
+from src.vis.helpers import _ensure_aspect_ratio
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
 
@@ -106,6 +106,7 @@ with col2:
                     # drop rows with NaN values in the selected_x and selected_y columns
                     filtered_df = filtered_df[filtered_df[selected_x].notna() & filtered_df[selected_y].notna()]
                     if len(filtered_df) > 0:
+                        _ensure_aspect_ratio(aspect_ratio="1 / 1")
                         fig, table_md = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by_options)
                         col2_1, col2_2 = st.columns([2, 1])
                         with col2_1:
@@ -123,7 +124,8 @@ with col2:
                     st.write("Please select at least two features for dimension reduction methods like PCA or UMAP.")
                 else: 
                     # drop rows with NaN values in the selected_features columns
-                    filtered_df = filtered_df[filtered_df[selected_features].notna()]
+                    filtered_df = filtered_df[filtered_df[selected_features].notna().all(axis=1)]
+                    
                     if len(filtered_df) > 0:
                         # plot the reduced data
                         fig = dimension_reduction_plot(filtered_df, selected_features, method=method, hyperParam_dict=hyperParam_dict, colored_by=color_by_options)

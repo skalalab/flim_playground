@@ -188,7 +188,7 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
         y_data = group_df[selected_y].dropna()
         _plot_marginal_density(fig, y_data, 'y', color_map[color_group], color_group, selected_marginal_plot_type, plotly_axis_params={'xaxis': 'x2'})
 
-    _ensure_aspect_ratio(aspect_ratio="1 / 1")
+   # _ensure_aspect_ratio(aspect_ratio="1 / 1")
    
     fig.update_layout(
         title=f'2D Distribution of {selected_x} and {selected_y} by {", ".join(color_by)} with {selected_marginal_plot_type} marginals',

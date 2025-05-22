@@ -40,10 +40,9 @@ def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_di
     df_reduced["cell_id"] = df["cell_id"].values
     df_reduced["image_name"] = df["image_name"].values
     # Add all color columns at once if there are any
-    if not colored_by.empty:
+    if len(colored_by) > 0:
         df_reduced[colored_by] = df[colored_by].values
     # plot the reduced data
-                       
     fig = go.Figure()
     if method == "Principal Component Analysis":
         axis_labels = ["PC1", "PC2"]
