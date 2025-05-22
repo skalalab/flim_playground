@@ -27,29 +27,41 @@ if "last_processed_click" not in st.session_state:
 if "last_processed_click_img" not in st.session_state:
     st.session_state.last_processed_click_img = None
 
-dimension_reduction_methods = ["UMAP", "Principal Component Analysis"]
+multivar_methods = ["UMAP", "Principal Component Analysis"]
 # methods to visualize based on a single feature
-feature_visualization_methods = ["Feature Comparison", "Image Comparison", "Feature Histogram (GMM optional)", "2D Feature Distribution"]
+univar_methods = ["Feature Comparison", "Feature Histogram (GMM optional)", "Image Comparison"]
+bivar_methods = ["2D Feature Distribution", "Phasor Plot"]
 col1, col2 = st.columns([0.4, 1])
 with col1:
     st.title("Visualizations")
-    method = st.selectbox(
-        "Select a visualization method",
-        dimension_reduction_methods + feature_visualization_methods + ["Phasor Plot"],
-    )  
+    col1_1, col1_2 = st.columns([1, 1])
+    with col1_1:
+        visualization_type = st.selectbox(
+            "Select a visualization type",
+            ["Univariate", "Bivariate", "Multivariate"],
+            help="Univariate: Visualize the distribution of a single feature. \
+            Bivariate: Visualize the relationship between two features. \
+            Multivariate: Visualize the relationship between multiple features."
+        )
+    available_methods = univar_methods if visualization_type == "Univariate" else bivar_methods if visualization_type == "Bivariate" else multivar_methods
+    with col1_2:
+        method = st.selectbox(
+            "Select a visualization method",
+            available_methods,
+        )
     uploaded_csv = st.file_uploader("Upload the CSV file obtained from [Data Extraction](/data_extraction)", type=["csv"])
     df, feature_cols_dict, upload_complete = load_csv(uploaded_csv)
     st.session_state.vis_df = df
 
     if upload_complete:
-        if method in feature_visualization_methods:
+        if method in univar_methods:
+            selected_var = single_feature_select_widget(feature_cols_dict, n_per_row=2)
+            if method == "Feature Comparison":
+                selected_effect_size_method = st.selectbox("Select an effect size method", ["None", "Glass's Delta", "Cohen's Distance"], index=0)
+        elif method in bivar_methods:
             if "2D" in method:
                 selected_x, selected_y = twod_single_feature_select_widget(feature_cols_dict, n_per_row=2)
-            else:
-                selected_var = single_feature_select_widget(feature_cols_dict, n_per_row=2)
-                if method == "Feature Comparison":
-                    selected_effect_size_method = st.selectbox("Select an effect size method", ["None", "Glass's Delta", "Cohen's Distance"], index=0)
-        elif method in dimension_reduction_methods:
+        elif method in multivar_methods:
             hyperParam_dict = {}
             # multiple features selection widget 
             selected_features = multi_feature_select_widget(feature_cols_dict, n_per_row=2)
@@ -66,40 +78,47 @@ with col2:
 
         # check if the df is empty after filtering
         if not filtered_df.empty:
-            if method in feature_visualization_methods:
+            if method in univar_methods and selected_var != "Select":
+                # drop rows with NaN values in the selected_var column
+                filtered_df = filtered_df[filtered_df[selected_var].notna()]
+                if len(filtered_df) > 0:
+                    # Plot the filtered dataframe
+                    if method == "Feature Comparison":
+                        fig = feature_comparison_plot(filtered_df, selected_var, color_by_options, effect_size_method=selected_effect_size_method)
+                        click_ready = True
+                    elif method == "Image Comparison":
+                        fig = image_comparison_plot(filtered_df, selected_var)
+                        click_ready = True
+                    elif method == "Feature Histogram (GMM optional)":
+                        # create a switch to select between GMM and histogram
+                        apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, help="Fit Gaussian Mixture Models\
+                        for each color group on the selected feature with 1, 2, and 3 components (fit on raw distribution, not on the histograms). \
+                        Choose the one in which all the components are at least of 10% weight and has the lowest BIC score.")
+                        if apply_gmm:
+                            feature_gmm_plot(filtered_df, selected_var, color_by_options)
+                        else: 
+                            fig = feature_histogram_plot(filtered_df, selected_var, color_by_options)
+                            st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.write("No data available after removing rows with missing values {sad_emoji}")
+            elif method in bivar_methods:
                 if "2D" in method and selected_x != "Select" and selected_y != "Select":
                     # drop rows with NaN values in the selected_x and selected_y columns
                     filtered_df = filtered_df[filtered_df[selected_x].notna() & filtered_df[selected_y].notna()]
                     if len(filtered_df) > 0:
-                        fig = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by_options)
-                        st.plotly_chart(fig, use_container_width=True)
+                        fig, table_md = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by_options)
+                        col2_1, col2_2 = st.columns([2, 1])
+                        with col2_1:
+                            st.plotly_chart(fig, use_container_width=True)
+                            if table_md != []:
+                                st.markdown(table_md)
+                            
                     else:
                         st.write("No data available after removing rows with missing values {sad_emoji}")
-                elif "2D" not in method and selected_var != "Select": 
-                    # drop rows with NaN values in the selected_var column
-                    filtered_df = filtered_df[filtered_df[selected_var].notna()]
-                    if len(filtered_df) > 0:
-                        # Plot the filtered dataframe
-                        if method == "Feature Comparison":
-                            fig = feature_comparison_plot(filtered_df, selected_var, color_by_options, effect_size_method=selected_effect_size_method)
-                            click_ready = True
-                        elif method == "Image Comparison":
-                            fig = image_comparison_plot(filtered_df, selected_var)
-                            click_ready = True
-                        elif method == "Feature Histogram (GMM optional)":
-                            # create a switch to select between GMM and histogram
-                            apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, help="Fit Gaussian Mixture Models\
-                            for each color group on the selected feature with 1, 2, and 3 components (fit on raw distribution, not on the histograms). \
-                            Choose the one in which all the components are at least of 10% weight and has the lowest BIC score.")
-                            if apply_gmm:
-                                feature_gmm_plot(filtered_df, selected_var, color_by_options)
-                            else: 
-                                fig = feature_histogram_plot(filtered_df, selected_var, color_by_options)
-                                st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.write("No data available after removing rows with missing values {sad_emoji}")
-                 
-            elif method in dimension_reduction_methods:
+                elif method == "Phasor Plot":
+                    st.write("Will be available once the Data Extraction Playground is ready.")
+                                   
+            elif method in multivar_methods:
                 if len(selected_features) < 2:
                     st.write("Please select at least two features for dimension reduction methods like PCA or UMAP.")
                 else: 
@@ -111,9 +130,7 @@ with col2:
                         click_ready = True
                     else:
                         st.write(f"No data available after removing rows with missing values {sad_emoji}")
-            elif method == "Phasor Plot":
-                st.write("Will be available once the Data Extraction Playground is ready.")
-                                      
+             
             if click_ready: 
                 if method == "Image Comparison":
                     current_clicked_points_img = plotly_events(
