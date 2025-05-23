@@ -1,7 +1,9 @@
-from .helpers import _prepare_group_data, _ensure_aspect_ratio, _find_best_gmm
+from .helpers import _prepare_group_data, _find_best_gmm
 import plotly.graph_objects as go
 import numpy as np
 from scipy.stats import gaussian_kde
+from scipy.stats import pearsonr
+from src.widgets.visualization_widgets import gmm_hyperParams_widget
 import streamlit as st
 def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, plotly_axis_params):
     """Helper function to plot marginal densities."""
@@ -122,6 +124,8 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
         st.write("")
         fit_gmm = st.checkbox("Fit a 2D Gaussian Mixture Model", value=True)
 
+    fit_gmm_max_components, fit_gmm_min_weight_threshold = gmm_hyperParams_widget()
+
     table_md = []
     for color_group in unique_color_groups:
         group_df = df[df[GROUP_COL_NAME] == color_group]
@@ -142,39 +146,40 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
             )
         ))
 
-        if fit_gmm: 
+        # annotate the correlation coefficient and p-value of the current group
+        corr_coef, p_value = pearsonr(group_df[selected_x], group_df[selected_y])
+        table_md += [f"\n**{color_group}:**"]
+        table_md.append(f"Correlation Coefficient b/w {selected_x} and {selected_y}: **{corr_coef:.2f}** (p-value: {p_value:.2f})")
 
+        if fit_gmm: 
             # Fit GMM for the current group
-            group_data_2d = group_df[[selected_x, selected_y]].dropna().values
+            group_data_2d = group_df[[selected_x, selected_y]]
             if len(group_data_2d) > 1: # Need at least 2 points for GMM, ideally more
            
-                best_gmm_model = _find_best_gmm(group_data_2d, max_components=3) # Example: try up to 2 components
-                if best_gmm_model:
-                    x_min, x_max = group_data_2d[:, 0].min() - 1, group_data_2d[:, 0].max() + 1
-                    y_min, y_max = group_data_2d[:, 1].min() - 1, group_data_2d[:, 1].max() + 1
-                    
-                    x_grid = np.linspace(x_min, x_max, 100)
-                    y_grid = np.linspace(y_min, y_max, 100)
-                    X, Y = np.meshgrid(x_grid, y_grid)
-                    pos = np.dstack((X, Y))
-    
-                    table_md += [f"\n**GMM Components for {color_group}:**"]
+                best_gmm = _find_best_gmm(group_data_2d, max_components=fit_gmm_max_components, min_weight_threshold=fit_gmm_min_weight_threshold) # Example: try up to 2 components
+                if best_gmm:
+                    table_md += ["\n**GMM Components:**"]
                     table_md.append("")
                     table_md.append(f"| Component | **{selected_x}** | | **{selected_y}** | | Weight |")
                     table_md.append(f"|------|-----|-----|-----|-----|------|")
                     table_md.append(f"| | **Mean** | Std.Dev | **Mean** | Std.Dev | |")
 
-                    for i in range(best_gmm_model.n_components):
-                        mean = best_gmm_model.means_[i]
-                        cov = best_gmm_model.covariances_[i]
+                    for i in range(best_gmm.n_components):
+                        mean = best_gmm.means_[i]
+                        cov = best_gmm.covariances_[i]
                         mean_x, mean_y = mean
                         std_x = np.sqrt(cov[0][0])
-                        std_y = np.sqrt(best_gmm_model.covariances_[i][1][1])
-                        weight = best_gmm_model.weights_[i]
+                        std_y = np.sqrt(cov[1][1])
+                        weight = best_gmm.weights_[i]
     
                         table_md.append(f"| {i+1} | {mean_x:.2f} | {std_x:.2f} | {mean_y:.2f} | {std_y:.2f} | {weight:.2f} |")
                         # plot the gmm component using Ellipse
                         _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color_map[color_group], color_group, i+1)
+                    # use the best gmm model to predict the component membership of the current group
+                    data_indices = group_data_2d.index
+                    subpopulation_labels = best_gmm.predict(group_data_2d)
+                    assigned_labels = [f"{color_group}_group{label + 1}" for label in subpopulation_labels]
+                    df.loc[data_indices, "2D_GMM_group"] = assigned_labels
                 else:
                     print(f"No suitable GMM found for {color_group} with current constraints.")
             else:
@@ -188,8 +193,6 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
         y_data = group_df[selected_y].dropna()
         _plot_marginal_density(fig, y_data, 'y', color_map[color_group], color_group, selected_marginal_plot_type, plotly_axis_params={'xaxis': 'x2'})
 
-   # _ensure_aspect_ratio(aspect_ratio="1 / 1")
-   
     fig.update_layout(
         title=f'2D Distribution of {selected_x} and {selected_y} by {", ".join(color_by)} with {selected_marginal_plot_type} marginals',
         xaxis_title=selected_x,
@@ -205,5 +208,6 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
 
     # remove the column after plotting
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
+
     table_md = "\n".join(table_md)
-    return fig, table_md
+    return fig, table_md, df

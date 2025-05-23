@@ -107,12 +107,16 @@ with col2:
                     filtered_df = filtered_df[filtered_df[selected_x].notna() & filtered_df[selected_y].notna()]
                     if len(filtered_df) > 0:
                         _ensure_aspect_ratio(aspect_ratio="1 / 1")
-                        fig, table_md = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by_options)
-                        col2_1, col2_2 = st.columns([2, 1])
+                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by_options)
+                        col2_1, col2_2 = st.columns([1, 1])
                         with col2_1:
                             st.plotly_chart(fig, use_container_width=True)
+                        with col2_2:
                             if table_md != []:
                                 st.markdown(table_md)
+                        if "2D_GMM_group" in gmm_df.columns:
+                            # available for download
+                            st.download_button(label="Download 2D GMM data", data=gmm_df.to_csv(index=False), file_name="2D_gmm_data.csv")
                             
                     else:
                         st.write("No data available after removing rows with missing values {sad_emoji}")

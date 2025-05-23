@@ -54,3 +54,11 @@ def histogram_bin_width_widget(x_data):
         common_bin_edges = np.arange(min_val, max_val + bin_width + epsilon, bin_width)
     
     return common_bin_edges
+
+def gmm_hyperParams_widget():
+    col3, col4 = st.columns(2)
+    with col3:
+        fit_gmm_max_components = st.slider("Max Components", min_value=2, max_value=5, value=3, step=1) 
+    with col4:
+        fit_gmm_min_weight_threshold = st.slider("Min Weight Threshold", min_value=0.0, max_value=0.3, value=0.1, step=0.1)
+    return fit_gmm_max_components, fit_gmm_min_weight_threshold

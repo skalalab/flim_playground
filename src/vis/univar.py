@@ -4,6 +4,7 @@ from itertools import combinations
 import numpy as np
 
 from src.widgets.visualization_widgets import histogram_bin_width_widget
+from src.widgets.visualization_widgets import gmm_hyperParams_widget
 from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm
 
 def image_comparison_plot(df, selected_var):
@@ -86,7 +87,7 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
     h_index_msg = ""    
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False)
-   
+    fit_gmm_max_components, fit_gmm_min_weight_threshold = gmm_hyperParams_widget()
     # add the choice to do "hard thresholding" or "soft thresholding"
     hard_thresholding = st.checkbox("Use hard thresholding", value=False, key="hard_thresholding", help="If checked, the point where the two Gaussian distributions intersect will be used as the threshold. If not checked, each data will be assigned to the component with the highest posterior probability.")
     fig = go.Figure()
@@ -100,7 +101,7 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
 
         # Fit GMM to the data
         # --- Fit GMMs with 1 to 3 components ---
-        best_gmm = _find_best_gmm(x_data.values, max_components=3, min_weight_threshold=0.2) # Use x_data.values for 1D
+        best_gmm = _find_best_gmm(x_data.values, max_components=fit_gmm_max_components, min_weight_threshold=fit_gmm_min_weight_threshold) # Use x_data.values for 1D
         
         if best_gmm is None: # if no valid model is found, skip this group
             st.warning(f"No valid GMM found for group {color_group} with current constraints.")

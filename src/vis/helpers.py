@@ -267,7 +267,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
         # and effect_size_value would be None, thus skipping annotation.
 
 
-def _find_best_gmm(data, max_components=3, min_weight_threshold=0.2, random_state=42):
+def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_state=42):
     """
     Finds the best Gaussian Mixture Model (GMM) based on BIC, subject to constraints.
 
