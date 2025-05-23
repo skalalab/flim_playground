@@ -174,6 +174,7 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
             # Add H-index message
             h_index_msg += f"H-index for {color_group}: {h_index:.3f}. "
             data_indices = x_data.index
+            hard_thresholding_possible = hard_thresholding
             if hard_thresholding:
                 # predict the component membership for each point (hard thresholding)
                 # find the intersection point of the component distributions
@@ -187,29 +188,31 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
                               pi[i+1], mu[i+1], sigma[i+1])
                         thresholds.append(t)
                     except Exception as e:
-                        st.error(f"Error finding intersection between {color_group} component {sorted_idx[i]+1} and {sorted_idx[i+1]+1}: either there is no intersection or there are more than one intersection.")
-                        thresholds.append(None)
-                        continue
-             
-                thresholds = np.sort(thresholds)
-                # plot the thresholds
-                for threshold in thresholds:
+                        st.error(f"Error finding intersection between {color_group} component {sorted_idx[i]+1} and component {sorted_idx[i+1]+1}: either there is no intersection or there are more than one intersection.")
+                        st.warning("Hard thresholding is not possible, so we resort to soft thresholding in this group.")
+                        hard_thresholding_possible = False
+                        break
+
+                if hard_thresholding_possible:
+                    thresholds = np.sort(thresholds)
+                    # plot the thresholds
+                    for threshold in thresholds:
                      # Replace the alpha value with 0.5
-                    transparent_color = color_map[color_group].replace(color_map[color_group].split(',')[-1], ' 0.5)')
-                    fig.add_shape(type="line",
-                        x0=threshold, y0=0, x1=threshold, y1=max(pdf),
-                        line=dict(color=transparent_color, width=2, dash="dash"),
-                        name=f"{color_group} Threshold", 
-                    )
-                    # Add annotation above the threshold line
-                    fig.add_annotation(
-                        x=threshold, y=max(pdf) * 1.05, text=f"Threshold ({threshold:.2f})", showarrow=False, align="center",
-                    )
+                        transparent_color = color_map[color_group].replace(color_map[color_group].split(',')[-1], ' 0.5)')
+                        fig.add_shape(type="line",
+                            x0=threshold, y0=0, x1=threshold, y1=max(pdf),
+                            line=dict(color=transparent_color, width=2, dash="dash"),
+                            name=f"{color_group} Threshold", 
+                        )
+                        # Add annotation above the threshold line
+                        fig.add_annotation(
+                            x=threshold, y=max(pdf) * 1.05, text=f"Threshold ({threshold:.2f})", showarrow=False, align="center",
+                        )
                    
-                subpopulation_labels = np.digitize(x_data, bins=thresholds)
-                # restore the original order of the labels
-                subpopulation_labels = sorted_idx[subpopulation_labels]
-            else:
+                    subpopulation_labels = np.digitize(x_data, bins=thresholds)
+                    # restore the original order of the labels
+                    subpopulation_labels = sorted_idx[subpopulation_labels]
+            if not hard_thresholding_possible:
                 # Predict the component membership for each point (soft thresholding)
                 data_2d = x_data.values.reshape(-1, 1)
                 subpopulation_labels = best_gmm.predict(data_2d)
