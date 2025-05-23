@@ -123,8 +123,8 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
         st.write("")
         st.write("")
         fit_gmm = st.checkbox("Fit a 2D Gaussian Mixture Model", value=True)
-
-    fit_gmm_max_components, fit_gmm_min_weight_threshold = gmm_hyperParams_widget()
+    if fit_gmm:
+        fit_gmm_max_components, fit_gmm_min_weight_threshold = gmm_hyperParams_widget()
 
     table_md = []
     for color_group in unique_color_groups:

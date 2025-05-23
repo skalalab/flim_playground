@@ -226,7 +226,8 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
     # have a button to export the GMM group augmented dataframe
     downloaded = st.download_button(label="Download GMM Grouped Data", data=df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
     if downloaded:
-        df.drop(columns=['GMM_group'], inplace=True)
+        if "GMM_group" in df.columns:
+            df.drop(columns=['GMM_group'], inplace=True)
 
     # remove the column after plotting
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
