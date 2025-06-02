@@ -208,8 +208,7 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
                         fig.add_annotation(
                             x=threshold, y=max(pdf) * 1.05, text=f"Threshold ({threshold:.2f})", showarrow=False, align="center",
                         )
-                        # write out the thresholds
-                        st.write(f"Threshold for {color_group} between component {sorted_idx[i]+1} and component {sorted_idx[i+1]+1}: **{threshold:.2f}**")
+                        st.markdown(f"Threshold for <span style='color:{color_map[color_group]}'>{color_group}</span> between component {sorted_idx[i]+1} and component {sorted_idx[i+1]+1}: **{threshold:.2f}**", unsafe_allow_html=True)
 
                     subpopulation_labels = np.digitize(x_data, bins=thresholds)
                     # restore the original order of the labels
