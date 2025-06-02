@@ -196,7 +196,7 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
                 if hard_thresholding_possible:
                     thresholds = np.sort(thresholds)
                     # plot the thresholds
-                    for threshold in thresholds:
+                    for i, threshold in enumerate(thresholds):
                      # Replace the alpha value with 0.5
                         transparent_color = color_map[color_group].replace(color_map[color_group].split(',')[-1], ' 0.5)')
                         fig.add_shape(type="line",
@@ -208,7 +208,9 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
                         fig.add_annotation(
                             x=threshold, y=max(pdf) * 1.05, text=f"Threshold ({threshold:.2f})", showarrow=False, align="center",
                         )
-                   
+                        # write out the thresholds
+                        st.write(f"Threshold for {color_group} between component {sorted_idx[i]+1} and component {sorted_idx[i+1]+1}: **{threshold:.2f}**")
+
                     subpopulation_labels = np.digitize(x_data, bins=thresholds)
                     # restore the original order of the labels
                     subpopulation_labels = sorted_idx[subpopulation_labels]
