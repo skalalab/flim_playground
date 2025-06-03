@@ -6,7 +6,7 @@ import time
 from src.navigation import render_top_menu
 from src.widgets.data_widgets import happy_emoji, sad_emoji, image_extraction_widget
 from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, parse_metadata_display_feature_widget
-from src.widgets.fit_widgets import fit_options_widget, choose_shift_widget
+from src.widgets.fit_widgets import fit_options_widget, choose_shift_widget, start_end_widget
 from src.metadata import parse_metadata_file
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -73,18 +73,24 @@ with col1:
 
         if metadata_df is not None:
             error_msg, selected_feature_groups_features, analysis_type, fit_free, has_nadh, has_fad = parse_metadata_file(metadata_df)
-
+            fitting = True if analysis_type == "ROI Summing Fit" or analysis_type == "K-flow" or (analysis_type == "SPCImage" and fit_free) else False
             if error_msg == "":
                 st.success(f"✅ Features to be extracted confirmed. Analysis type: {analysis_type}. Fit free: {fit_free}. Channels: NADH: {has_nadh}, FAD/red: {has_fad}.") 
                                 
-                if analysis_type == "ROI Summing Fit" or analysis_type == "K-flow":
+                if fitting:
                     st.info("Please specify the following fitting options.")
                  
                     duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift= fit_options_widget(analysis_type)
+                    # based pm the time_bins, add the start and end for NADH and FAD widget 
+                    if has_nadh:
+                        nadh_start, nadh_end = start_end_widget(time_bins, "NADH")
+                    if has_fad:
+                        fad_start, fad_end = start_end_widget(time_bins, "FAD")
                     if st.button("Confirm and Start Fitting"):
                         st.session_state["choosing_shift"] = True
                         st.session_state["shift_ready"] = False
-                elif analysis_type == "SPCImage":
+                
+                if analysis_type == "SPCImage": # spc image and fit free needs fitting but does not need to choose shift
                     st.session_state["choosing_shift"] = False
                     st.session_state["shift_ready"] = True
 
@@ -129,13 +135,13 @@ with col2:
         if error_msg == "":
             if fix_shift:
                 # let user choose the shift
-                shift_col1, shift_col2 = st.columns(2)
-                with shift_col1:
+                col1, col2 = st.columns(2)
+                with col1:
                     if has_nadh:
-                        nadh_shift = st.number_input("NADH Shift", value=np.median(nadh_shifts), step=0.1, help="The shift for NADH channel. If not specified, the median of the shifts will be used.")
-                with shift_col2:
+                        nadh_shift = st.number_input("NADH Shift", value=np.median(nadh_shifts), step=0.1, help="The shift for NADH channel. The provided default value is the median of the shifts. You can change it to a specific value.")
+                with col2:
                     if has_fad:
-                        fad_shift = st.number_input("FAD Shift", value=np.median(fad_shifts), step=0.1, help="The shift for FAD/red channel. If not specified, the median of the shifts will be used.")
+                        fad_shift = st.number_input("FAD Shift", value=np.median(fad_shifts), step=0.1, help="The shift for FAD/red channel. The provided default value is the median of the shifts. You can change it to a specific value.")
 
             shift_finished = st.button("Confirm the Shift and Start the Analysis")
             if shift_finished:
@@ -150,12 +156,25 @@ with col2:
                         metadata_df["fad_shift"] = fad_shift
                     else:
                         metadata_df["fad_shift"] = fad_shifts
-                
+               
                 st.session_state["choosing_shift"] = False
                 st.session_state["shift_ready"] = True
                 #st.rerun()
                 
     elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"]:
+        if fitting:
+         # adding the fitting config to the metadata
+            metadata_df["fitting_algo"] = fitting_algo
+            metadata_df["fitting_mode"] = fitting_mode
+            metadata_df["duration"] = duration
+            metadata_df["time_bins"] = time_bins
+            metadata_df["num_components"] = num_components
+            if has_nadh:
+                metadata_df["nadh_start"] = nadh_start
+                metadata_df["nadh_end"] = nadh_end
+            if has_fad:
+                metadata_df["fad_start"] = fad_start
+                metadata_df["fad_end"] = fad_end
         if analysis_type == "ROI Summing Fit" or analysis_type == "SPCImage":
             single_cell_features = image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_fad)
             if not single_cell_features.empty:

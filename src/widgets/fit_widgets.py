@@ -73,6 +73,8 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
             st.session_state["clicked_image_shift_plot"] = img_name
             # plot the decay curve with the fitted line
             fig2 = go.Figure()
+            # Calculate bin numbers for hover display
+            bin_numbers = time_axis / period
             fig2.add_trace(go.Scatter(
                 x=time_axis,
                 y=decay_curves[idx],
@@ -80,7 +82,8 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
                 name='Decay Curve',
                 line=dict(color='lightblue'),
                 marker=dict(size=4),
-                hovertemplate=f"Decay Curve: {decay_curves[idx]}<extra></extra>"
+                customdata=bin_numbers,
+                hovertemplate="bin #: %{customdata:.0f}<br>y: %{y:.0f}<extra></extra>"
             ))
 
             amp1_data, t1_data, offset_data = amp1[idx], t1[idx], offset[idx]
@@ -116,7 +119,7 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
                 mode='lines',
                 name='Fitted Curve',
                 line=dict(color='red'),
-                hovertemplate="Fitted Curve: %{y}<extra></extra>"
+                hoverinfo='skip'
             ))
         
             # Add annotations with fitting parameters and statistics
@@ -165,7 +168,7 @@ def fit_options_widget(analysis_type):
         ("num_components", lambda: st.number_input("Component No.", value=2, step=1, min_value=1, max_value=3)),
         ("fitting_algo",   lambda: st.selectbox("Algorithm", ["MLE", "WLS"], index=0, help="MLE: Maximum Likelihood Estimation. WLS: Weighted Least Squares.")),
         ("time_bins",      lambda: st.number_input("Time Bins", value=256, step=256, min_value=256, max_value=512)),
-        ("fitting_mode",      lambda: st.selectbox("Fitting Mode", ["Hybrid", "Global", "Local"], index=0, help="Hybrid: use global fit to get a good initial guess, then use local fit to refine the fit. Global: use global fit to get the best fit. Local: use local fit to get the best fit.")),
+        ("fitting_mode",   lambda: st.selectbox("Fitting Mode", ["Hybrid", "Global", "Local"], index=0, help="Hybrid: use global fit to get a good initial guess, then use local fit to refine the fit. Global: use global fit to get the best fit. Local: use local fit to get the best fit.")),
     ]
 
     # add fix_shift for ROI Summing Fit
@@ -197,3 +200,12 @@ def fit_options_widget(analysis_type):
     fitting_mode   = results["fitting_mode"]
 
     return duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift
+
+def start_end_widget(time_bins, channel):
+    col1, col2 = st.columns(2)
+    with col1:
+        start = st.number_input(f"{channel} Start (T1)", value=0, step=1, min_value=0, max_value=time_bins-1)
+    with col2:
+        end = st.number_input(f"{channel} End (T2)", value=time_bins, step=1, min_value=1, max_value=time_bins)
+
+    return start, end

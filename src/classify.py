@@ -99,8 +99,9 @@ def classify(df, method, splits):
         classifier = make_pipeline(StandardScaler(), LogisticRegression(random_state=42, max_iter=1000))
     
     # y_score is the probability of the sample for each class in the model
-    y_score = classifier.fit(X_train, y_train).predict_proba(X_test)
-    y_pred = classifier.fit(X_train, y_train).predict(X_test)
+    classifier.fit(X_train, y_train)
+    y_score = classifier.predict_proba(X_test)
+    y_pred = classifier.predict(X_test)
 
     fig1 = plot_confusion_matrix(y_test, y_pred)
     fig2 = plot_roc_curve(y_test, y_score)

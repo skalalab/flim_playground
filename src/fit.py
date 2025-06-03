@@ -1,9 +1,9 @@
 import numpy as np
-import tifffile
 from lmfit import minimize as lmfit_minimize
 from lmfit import Parameters
 from src.sdt_io import read_sdt150
 from src.fit_helper import guess_shift, objective
+from src.file_io import load_image
 import streamlit as st
 
 @st.cache_data
@@ -131,7 +131,7 @@ def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo,
                 error_msg = f"Error reading the IRF file for image {image_name} at {irf_path}: {e}"
                 return error_msg, None
             try:
-                mask = tifffile.imread(mask_path)
+                mask = load_image(mask_path)
             except Exception as e:
                 error_msg = f"Error reading the mask file for image {image_name} at {mask_path}: {e}"
                 return error_msg, None
