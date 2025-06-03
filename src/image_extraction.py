@@ -3,6 +3,24 @@ import numpy as np
 from skimage.measure import regionprops
 from src.feature_groups import feature_groups_prefix, feature_groups_features, feature_distribution_vars
 from src.file_io import load_image
+from src.sdt_io import read_sdt150
+from src.fit import fit_curves
+
+def get_mask_morphology_features(mask, image_name, cell_dict):
+        # get mask morphology features
+    mask_morphology_features = feature_groups_features["Mask Morphology"]
+    mask_props = regionprops(label_image=mask)
+    for region in mask_props:
+        cell_id = f"{image_name}_{region.label}"
+        if cell_id not in cell_dict:
+            cell_dict[cell_id] = {}
+        for feature in mask_morphology_features:
+            feature_name = f"{feature_groups_prefix['Mask Morphology']}{feature}"
+            if feature in region:
+                cell_dict[cell_id][feature_name] = region[feature]
+            elif feature == "circularity":
+                cell_dict[cell_id][feature_name] = 4 * np.pi * region.area / region.perimeter**2 if region.perimeter > 0 else 0
+    return cell_dict
 
 def spcimage_fit_extraction(metadata, has_nadh, has_fad, mask):
 
@@ -122,27 +140,61 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad, mask):
                     single_cell_features_img[cell_id][feature_name] = np.sqrt(
                         (geometric_centroid[0] - weighted_centroid[0]) ** 2 +
                         (geometric_centroid[1] - weighted_centroid[1]) ** 2)
-
-
-    # get mask morphology features
-    mask_morphology_features = feature_groups_features["Mask Morphology"]
-    mask_props = regionprops(label_image=mask)
-    for region in mask_props:
-        cell_id = f"{image_name}_{region.label}"
-        for feature in mask_morphology_features:
-            feature_name = f"{feature_groups_prefix['Mask Morphology']}{feature}"
-            if feature in region:
-                single_cell_features_img[cell_id][feature_name] = region[feature]
-            elif feature == "circularity":
-                single_cell_features_img[cell_id][feature_name] = 4 * np.pi * region.area / region.perimeter**2 if region.perimeter > 0 else 0
+                    
+    single_cell_features_img = get_mask_morphology_features(mask, image_name, single_cell_features_img)
     
     # convert single_cell_features_img to a dataframe
     single_cell_features_img = pd.DataFrame(single_cell_features_img).T
     # name the index as cell_id
     single_cell_features_img.index.name = "cell_id"
-
    
     return "", single_cell_features_img
+
+def roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask):
+
+    # checks
+    image_name = metadata['image_name']
+    if has_nadh:
+        try:
+             # check if the shift is provided
+            nadh_shift = metadata['nadh_shift']
+        except Exception as e:
+            return "Error: NADH shift is not provided", None
+
+        try:
+            nadh_irf_path = metadata['nadh irf']
+            nadh_irf = np.loadtxt(nadh_irf_path)
+        except Exception as e:
+            error_msg = f"Error reading the IRF file for image {image_name} at {nadh_irf_path}: {e}"
+            return error_msg, None
+
+        try:
+            nadh_decay_path = metadata['nadh decay']
+            nadh_decay = read_sdt150(nadh_decay_path)
+        except Exception as e:
+            error_msg = f"Error reading the decay file for image {image_name} at {nadh_decay_path}: {e}"
+            return error_msg, None
+        
+    if has_fad:
+        try:
+            fad_shift = metadata['fad_shift']
+        except Exception as e:
+            return "Error: FAD shift is not provided", None
+        try:
+            fad_irf_path = metadata['fad irf']
+            fad_irf = np.loadtxt(fad_irf_path)
+        except Exception as e:
+            error_msg = f"Error reading the IRF file for image {image_name} at {fad_irf_path}: {e}"
+            return error_msg, None
+        try:
+            fad_decay_path = metadata['fad decay']
+            fad_decay = read_sdt150(fad_decay_path)
+        except Exception as e:
+            error_msg = f"Error reading the decay file for image {image_name} at {fad_decay_path}: {e}"
+            return error_msg, None
+    
+    single_cell_features_img = {}
+
 
 def image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free):
     """
@@ -156,6 +208,8 @@ def image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free):
         error_msg, single_cell_features_img = spcimage_fit_extraction(metadata, has_nadh, has_fad, mask)
         if error_msg != "":
             return error_msg, None
-
-        
+    elif analysis_type == "ROI Summing Fit":
+        error_msg, single_cell_features_img = roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask)
+        if error_msg != "":
+            return error_msg, None
     return "", single_cell_features_img
