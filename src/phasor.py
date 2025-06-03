@@ -4,7 +4,6 @@ from scipy import signal
 import matplotlib.pyplot as plt
 from pathlib import Path
 import pandas as pd
-from roi_sum import sum_sdts
 import seaborn as sns
 
 def visualize_irf(irf, shifted_irf, image_timebin):
@@ -65,13 +64,16 @@ def irf_shift(images, selected_channel="NADH", scale_factor = 10):
     
     return images, ""
 
-def get_gs_coords(timebin, irf, f=0.08, duration=10):
+def get_gs_coords(timebin, irf, f=0.08, duration=10, offset=0):
 
     """
     Calculate the g and s coordinates for a given timebin
     f = 0.08 # laser repetition rate in [GHz]
     duration = 10 # duration of the timebin in [ns]
     """
+    timebin = timebin - offset
+    # clip the timebin to above or equal to 0
+    timebin = np.clip(timebin, 0, None)
     w = 2*np.pi*f
     time_axis = np.arange(0, duration, duration/len(timebin))
     G_IRF = np.dot(np.transpose(irf) , np.cos(w*time_axis)) / np.sum(irf)

@@ -1,11 +1,12 @@
 import streamlit as st
 import os
 import pandas as pd
+import numpy as np
 import time
 from src.navigation import render_top_menu
 from src.widgets.data_widgets import happy_emoji, sad_emoji, image_extraction_widget
 from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, parse_metadata_display_feature_widget
-from src.widgets.fit_widgets import fit_options, choose_shift_widget
+from src.widgets.fit_widgets import fit_options_widget, choose_shift_widget
 from src.metadata import parse_metadata_file
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -79,7 +80,7 @@ with col1:
                 if analysis_type == "ROI Summing Fit" or analysis_type == "K-flow":
                     st.info("Please specify the following fitting options.")
                  
-                    duration, time_bins, num_components, fitting_algo, fix_shift = fit_options(analysis_type)
+                    duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift= fit_options_widget(analysis_type)
                     if st.button("Confirm and Start Fitting"):
                         st.session_state["choosing_shift"] = True
                         st.session_state["shift_ready"] = False
@@ -116,15 +117,44 @@ with col2:
         # first NADH, then FAD/red
         if has_nadh: 
             st.info("Preproceessing step: choose the shift for all images on channel NADH.")
-            error_msg = choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, analysis_type, channel="NADH")
+            error_msg, nadh_shifts = choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel="NADH")
             if error_msg != "":
                 st.error(f"Error: {error_msg}")
-            else:
-                shift_finished = st.button("Confirm the Shift and Start the Analysis")
-                if shift_finished:
-                    st.session_state["choosing_shift"] = False
-                    st.session_state["shift_ready"] = True
-                    st.rerun()
+        if has_fad:
+            st.info("Preproceessing step: choose the shift for all images on channel FAD/red.")
+            error_msg, fad_shifts = choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel="FAD")
+            if error_msg != "":
+                st.error(f"Error: {error_msg}")
+        
+        if error_msg == "":
+            if fix_shift:
+                # let user choose the shift
+                shift_col1, shift_col2 = st.columns(2)
+                with shift_col1:
+                    if has_nadh:
+                        nadh_shift = st.number_input("NADH Shift", value=np.median(nadh_shifts), step=0.1, help="The shift for NADH channel. If not specified, the median of the shifts will be used.")
+                with shift_col2:
+                    if has_fad:
+                        fad_shift = st.number_input("FAD Shift", value=np.median(fad_shifts), step=0.1, help="The shift for FAD/red channel. If not specified, the median of the shifts will be used.")
+
+            shift_finished = st.button("Confirm the Shift and Start the Analysis")
+            if shift_finished:
+                # write the shift to the metadata file
+                if has_nadh:
+                    if fix_shift:
+                        metadata_df["nadh_shift"] = nadh_shift
+                    else:
+                        metadata_df["nadh_shift"] = nadh_shifts
+                if has_fad:
+                    if fix_shift:
+                        metadata_df["fad_shift"] = fad_shift
+                    else:
+                        metadata_df["fad_shift"] = fad_shifts
+                
+                st.session_state["choosing_shift"] = False
+                st.session_state["shift_ready"] = True
+                #st.rerun()
+                
     elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"]:
         if analysis_type == "ROI Summing Fit" or analysis_type == "SPCImage":
             single_cell_features = image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_fad)

@@ -77,7 +77,7 @@ def read_sdt_info_brukerSDT(filename):
         return (header.data_block_offs[0], times, [mi.scan_x[0], mi.scan_y[0], mi.adc_re[0], routing_channels_x])
     
     
-def read_sdt150(filename):
+def read_sdt150(filename, channel=-1):
     """ sdt bruker uses data_block001 instead of data_block"""
     import warnings
     warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -99,24 +99,38 @@ def read_sdt150(filename):
     if XYTC[3] == 1:
         # reduce the 4D data to 3d (CXYT to XYT)
         dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2]].reshape([XYTC[0], XYTC[1], XYTC[2]])
-    # reshape XYTC to CXYT
+   
     elif XYTC[3] > 1:
         # Check for empty channels and filter them out
         actual_no_channels =  len(dataSDT) // (XYTC[0] * XYTC[1] * XYTC[2])
         if actual_no_channels == 1:
             # If only one channel is present, reshape to 3D
             dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2]].reshape([XYTC[0], XYTC[1], XYTC[2]])
-        else:
+        else:  # reshape XYTC to CXYT
             dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2] * actual_no_channels].reshape([actual_no_channels, XYTC[0], XYTC[1], XYTC[2]])
-            for i in range(actual_no_channels):
-                # get the first channel with non-zero data
-                if np.sum(dataSDT[i]) != 0:
-                    dataSDT = dataSDT[i]
-                    break
-            if dataSDT.ndim == 4:
-               return None
+    dataSDT = read_sdt_channel(dataSDT, channel)
     return dataSDT
 
+def read_sdt_channel(sdt_data, channel=-1):
+    """
+    Read a specific channel from the sdt data
+    """
+    if sdt_data.ndim == 3:
+        return sdt_data
+    elif sdt_data.ndim == 4:
+        if channel == -1: # return the first channel that is not all zeros
+            for i in range(sdt_data.shape[0]):
+                # get the first channel with non-zero data
+                if np.any(sdt_data[i]):
+                    sdt_data = sdt_data[i]
+                    break
+            if sdt_data.ndim == 4:
+               raise ValueError("All channels are empty")
+            return sdt_data
+        else: # return the specified channel
+            return sdt_data[channel]
+    else:
+        raise ValueError("Invalid sdt data dimension")
 
 def write_sdt(path_output, sdt_data, manufacturer="BH", resolution=256):
     

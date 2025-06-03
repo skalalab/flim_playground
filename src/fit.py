@@ -7,7 +7,7 @@ from src.fit_helper import guess_shift, objective
 import streamlit as st
 
 @st.cache_data
-def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fit_shift=False, shift_guess=None, start=0, end=-1):
+def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode="hybrid", fit_shift=False, shift_guess=None, start=0, end=-1):
     
     # to make sure the irf is normalized
     irf = irf / np.sum(irf)
@@ -17,7 +17,6 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
     amp1_data = np.zeros(num_curves)
     params.add('amp1', min=0)
     t1_data = np.zeros(num_curves)
-    # params.add('t1', value=400, min=100, max=1000)
     params.add('t1', value=0.400, min=0.100, max=1.0)
     offset_data = np.zeros(num_curves)
     params.add('offset', min=0, max=1000000)
@@ -70,14 +69,22 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         if num_components > 2:
             current_params['amp3'].value = np.max(decay_curve) / 2
             current_params['amp3'].max = np.max(decay_curve) * 10
-        result_global = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=global_optimizer, **global_fit_options)
+        if fitting_mode != "Local":
+            result_global = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=global_optimizer, **global_fit_options)
         if fitting_algo == "MLE": 
-            result = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=mle_optimizer, options=mle_fit_options)
-            #result = lmfit_minimize(objective, result_global.params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=mle_optimizer, options=mle_fit_options)
-            #result = result_global
+            if fitting_mode == "Local":
+                result = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=mle_optimizer, options=mle_fit_options)
+            elif fitting_mode == "Hybrid":
+                result = lmfit_minimize(objective, result_global.params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=mle_optimizer, options=mle_fit_options)
+            else: # global
+                result = result_global
         elif fitting_algo == "WLS":
-            result = lmfit_minimize(objective, result_global.params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=wls_optimizer, **wls_fit_options)
-           # result = result_global
+            if fitting_mode == "Local":
+                result = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=wls_optimizer, **wls_fit_options)
+            elif fitting_mode == "Hybrid":
+                result = lmfit_minimize(objective, result_global.params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=wls_optimizer, **wls_fit_options)
+            else: # global
+                result = result_global
         amp1_data[i] = result.params['amp1'].value
         t1_data[i] = result.params['t1'].value
         offset_data[i] = result.params['offset'].value
@@ -103,7 +110,7 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
    
     return results
 
-def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, analysis_type, channel):
+def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel):
     error_msg = ""
     decay_curves = []
     
@@ -120,11 +127,20 @@ def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo,
                 decay_path = row.get('fad decay', None)
             try:
                 irf = np.loadtxt(irf_path)
+            except Exception as e:
+                error_msg = f"Error reading the IRF file for image {image_name} at {irf_path}: {e}"
+                return error_msg, None
+            try:
                 mask = tifffile.imread(mask_path)
+            except Exception as e:
+                error_msg = f"Error reading the mask file for image {image_name} at {mask_path}: {e}"
+                return error_msg, None
+            try:
                 decay = read_sdt150(decay_path)
             except Exception as e:
-                error_msg = f"Error reading the IRF file for image {image_name}: {e}"
+                error_msg = f"Error reading the decay file for image {image_name} at {decay_path}: {e}"
                 return error_msg, None
+            
             if len(irf) != time_bins:
                 error_msg = f"IRF length mismatch with specified time bins. IRF length: {len(irf)}, time bins: {time_bins}."
                 return error_msg, None
@@ -148,7 +164,7 @@ def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo,
             decay_curves.append(summed_decay_curve)
 
         shift_guess = guess_shift(irf, decay_curves)
-        results = fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fit_shift=True, shift_guess=shift_guess)
+        results = fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess)
         results["decay_curves"] = decay_curves
         results["fitted_images"] = metadata_df['image_name'].values
         results["irf"] = irf
