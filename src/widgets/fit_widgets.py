@@ -7,14 +7,14 @@ from src.fit import choose_shift
 from src.fit_helper import forward_pass, irf_shift, mle_likelihood, chi_square
 
 
-def choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, analysis_type, channel):
+def choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel):
     period = duration / time_bins
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
-    error_msg, results = choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, analysis_type, channel)
+    error_msg, results = choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel)
     if error_msg != "":
         # Display error and stop
         st.error(error_msg)
-        return error_msg # Return only the error message
+        return error_msg, None
 
     # display the shift in an interactive plot scatter plot, the y-axis is the shift. When click on the point, it will show the curve with the fitted line
     # prepare the data
@@ -38,7 +38,7 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
         fig = go.Figure()
         fig.add_trace(go.Box(
             y=plot_df['shift'],
-            name="Shift",
+            name="shift",
             boxpoints='all',
             jitter=0.3,
             pointpos=0,
@@ -52,15 +52,15 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
             line_color='rgba(0,0,0,0)',
             hovertext=plot_df['image_name'],
             customdata=plot_df['image_name'], # Assign image_name to customdata
+            hovertemplate="<b>Shift</b>: %{y}<br>Image: %{hovertext}<extra></extra>",
         ))
         fig.update_layout(
             title=f"Shifts for {channel} channel",
             yaxis_title="Shift (bins)",
-            xaxis_title="Image", # Add x-axis title
             showlegend=False, # Hide legend for single trace
             hovermode='closest', # Enable hover mode
         )
-        event = st.plotly_chart(fig, on_select="rerun", key="shift_image_plot")
+        event = st.plotly_chart(fig, on_select="rerun", key=f"shift_image_plot_{channel}")
         
     with cols[1]:
         if event and event.selection and event.selection.points:
@@ -93,15 +93,6 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
             else:
                 amp3_data, t3_data = None, None
             shift_data = shift_data[idx]
-            st.write(f"Shift for {img_name}: {shift_data}")
-            st.write(f"Offset for {img_name}: {offset_data}")
-            #st.write(f"Amplitude 1 for {img_name}: {amp1_data}")
-            st.write(f"t1 for {img_name}: {t1_data * 1000:.2f} ns")
-            if num_components > 1:
-                #st.write(f"Amplitude 2 for {img_name}: {amp2_data}")
-                a1 = amp1_data / (amp1_data + amp2_data) 
-                st.write(f"alpha 1 for {img_name}: {a1 * 100:.2f}%")
-                st.write(f"t2 for {img_name}: {t2_data * 1000:.2f} ns")
 
             # shift the irf
             shifted_irf = irf_shift(irf, shift_data)
@@ -118,8 +109,7 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
             )
             mle = mle_likelihood(fitted_curve, decay_curves[idx], start=0, end=-1)
             chiq = chi_square(fitted_curve, decay_curves[idx], start=0, end=-1)
-            st.write(f"MLE for {img_name}: {mle:.2f}")
-            st.write(f"Chi-square for {img_name}: {chiq:.2f}")
+
             fig2.add_trace(go.Scatter(
                 x=time_axis,
                 y=fitted_curve,
@@ -129,6 +119,32 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
                 hovertemplate="Fitted Curve: %{y}<extra></extra>"
             ))
         
+            # Add annotations with fitting parameters and statistics
+            annotation_text = f"<b>Shift: {shift_data:.2f}</b><br>"
+            annotation_text += f"<b>t1: {t1_data * 1000:.2f} ns</b><br>"
+            if num_components > 1:
+                a1 = amp1_data / (amp1_data + amp2_data)
+                annotation_text += f"<b>α1: {a1 * 100:.2f}%</b><br>"
+                annotation_text += f"<b>t2: {t2_data * 1000:.2f} ns</b><br>"
+            if num_components > 2:
+                a2 = amp2_data / (amp1_data + amp2_data + amp3_data)
+                annotation_text += f"<b>α2: {a2 * 100:.2f}%</b><br>"
+                annotation_text += f"<b>t3: {t3_data * 1000:.2f} ns</b><br>"
+            annotation_text += f"<b>MLE: {mle:.2f}</b><br>"
+            annotation_text += f"<b>χ²: {chiq:.2f}</b>"
+            
+            fig2.add_annotation(
+                text=annotation_text,
+                xref="paper", yref="paper",
+                x=0.98, y=0.98,
+                xanchor="right", yanchor="top",
+                showarrow=False,
+                bgcolor="rgba(255, 255, 255, 0.8)",
+                bordercolor="black",
+                borderwidth=1,
+                font=dict(size=12)
+            )
+
             fig2.update_layout(
                 title=f"Decay Curve and Fitted Line for {img_name}",
                 xaxis_title="Time (ns)",
@@ -137,10 +153,9 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
             )
             st.plotly_chart(fig2, use_container_width=True)
 
-   
-    return error_msg
+    return error_msg, shift_data
 
-def fit_options(analysis_type):
+def fit_options_widget(analysis_type):
     """
     Fit options widget for Streamlit app.
     """
@@ -148,13 +163,14 @@ def fit_options(analysis_type):
     fields = [
         ("duration",   lambda: st.number_input("Pulse Interval (ns)", value=12.5, step=0.1, format="%.1f")),
         ("num_components", lambda: st.number_input("Component No.", value=2, step=1, min_value=1, max_value=3)),
-        ("fitting_algo",   lambda: st.selectbox("Algorithm", ["MLE", "WLS"], index=0)),
+        ("fitting_algo",   lambda: st.selectbox("Algorithm", ["MLE", "WLS"], index=0, help="MLE: Maximum Likelihood Estimation. WLS: Weighted Least Squares.")),
         ("time_bins",      lambda: st.number_input("Time Bins", value=256, step=256, min_value=256, max_value=512)),
+        ("fitting_mode",      lambda: st.selectbox("Fitting Mode", ["Hybrid", "Global", "Local"], index=0, help="Hybrid: use global fit to get a good initial guess, then use local fit to refine the fit. Global: use global fit to get the best fit. Local: use local fit to get the best fit.")),
     ]
 
     # add fix_shift for ROI Summing Fit
     if analysis_type == "ROI Summing Fit":
-        fields.append(("fix_shift", lambda: st.checkbox("Fix the Shift", value=True)))
+        fields.append(("fix_shift", lambda: st.checkbox("Fix the Shift", value=True, help="If True, the shift will be fixed for all images. If False, the shift will be estimated for each image.")))
 
     # 2) figure out how many rows of up to 4 cols
     cols_per_row = 3
@@ -178,5 +194,6 @@ def fit_options(analysis_type):
     fitting_algo   = results["fitting_algo"]
     time_bins      = results["time_bins"]
     fix_shift      = results.get("fix_shift", True)
+    fitting_mode   = results["fitting_mode"]
 
-    return duration, time_bins, num_components, fitting_algo, fix_shift
+    return duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift
