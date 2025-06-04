@@ -5,6 +5,8 @@ from src.feature_groups import feature_groups_prefix, feature_groups_features, f
 from src.file_io import load_image
 from src.sdt_io import read_sdt150
 from src.fit import fit_curves
+from src.fit_helper import irf_shift
+import streamlit as st
 
 def get_mask_morphology_features(mask, image_name, cell_dict):
         # get mask morphology features
@@ -150,6 +152,7 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad, mask):
    
     return "", single_cell_features_img
 
+@st.cache_data
 def roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask):
 
     # checks
@@ -174,6 +177,12 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask):
         except Exception as e:
             error_msg = f"Error reading the decay file for image {image_name} at {nadh_decay_path}: {e}"
             return error_msg, None
+        shifted_nadh_irf = irf_shift(nadh_irf, nadh_shift)
+        try:
+            nadh_start = metadata['nadh_start']
+            nadh_end = metadata['nadh_end']
+        except Exception as e:
+            return "Error: NADH start and end are not provided", None
         
     if has_fad:
         try:
@@ -192,9 +201,127 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask):
         except Exception as e:
             error_msg = f"Error reading the decay file for image {image_name} at {fad_decay_path}: {e}"
             return error_msg, None
-    
+        shifted_fad_irf = irf_shift(fad_irf, fad_shift)
+        try:
+            fad_start = metadata['fad_start']
+            fad_end = metadata['fad_end']
+        except Exception as e:
+            return "Error: FAD start and end are not provided", None
+        
+    # get fitting config from metadata
+    fitting_mode = metadata['fitting_mode']
+    fitting_algo = metadata['fitting_algo']
+    time_bins = metadata['time_bins']
+    duration = metadata['duration']
+    num_components = metadata['num_components']
+    period = duration / time_bins
+    time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
     single_cell_features_img = {}
+    unique_cells = np.sort(np.unique(mask))
+    # Remove background (0)
+    unique_cells = unique_cells[unique_cells != 0]
+    # Collect all decay curves first, ordered by cell_id
+    nadh_decay_curves = []
+    fad_decay_curves = []
+    cell_ids = []
+    
+    for cell in unique_cells:
+        cell_mask = mask == cell
+        cell_id = f"{image_name}_{cell}"
+        cell_ids.append(cell_id)
+        
+        if has_nadh:
+            nadh_decay_cell = nadh_decay[cell_mask, :].sum(axis=0)
+            nadh_decay_curves.append(nadh_decay_cell)
+            
+        if has_fad:
+            fad_decay_cell = fad_decay[cell_mask, :].sum(axis=0)
+            fad_decay_curves.append(fad_decay_cell)
+    
+    # Fit all curves at once
+    if has_nadh and nadh_decay_curves:
+        st.write(f"Fitting NADH curves for {len(nadh_decay_curves)} cells...")
+        nadh_progress = st.progress(0)
+        
+        def nadh_progress_callback(current, total):
+            progress = (current + 1) / total
+            nadh_progress.progress(progress)
+            
+        nadh_results = fit_curves(duration, time_bins, nadh_decay_curves, shifted_nadh_irf, num_components, fitting_algo, fitting_mode, start=nadh_start, end=nadh_end, _progress_callback=nadh_progress_callback)
+        nadh_progress.empty()  # Remove progress bar when done
+        single_cell_features_img = extract_fit_results("nadh", cell_ids, single_cell_features_img, nadh_results, num_components)
+       
+        
+    if has_fad and fad_decay_curves:
+        st.write(f"Fitting FAD curves for {len(fad_decay_curves)} cells...")
+        fad_progress = st.progress(0)
+        
+        def fad_progress_callback(current, total):
+            progress = (current + 1) / total
+            fad_progress.progress(progress)
+            
+        fad_results = fit_curves(duration, time_bins, fad_decay_curves, shifted_fad_irf, num_components, fitting_algo, fitting_mode, start=fad_start, end=fad_end, _progress_callback=fad_progress_callback)
+        single_cell_features_img = extract_fit_results("fad", cell_ids, single_cell_features_img, fad_results, num_components)    
+        fad_progress.empty()  # Remove progress bar when done
 
+    # Add morphology features and convert to DataFrame
+    single_cell_features_img = get_mask_morphology_features(mask, image_name, single_cell_features_img)
+    single_cell_features_img = pd.DataFrame(single_cell_features_img).T
+    single_cell_features_img.index.name = "cell_id"
+    
+    return "", single_cell_features_img
+
+def extract_fit_results(channel, cell_ids, single_cell_features_img, results, num_components):
+    """
+    Extract fitting results for a specific channel and store them in single_cell_features_img
+    
+    Args:
+        channel: channel name ("nadh" or "fad")
+        cell_ids: list of cell ids
+        single_cell_features_img: dictionary of single cell features
+        results: fitting result dictionary for one cell   
+        num_components: number of fitting components
+    """
+    # Basic parameters (always present)
+    if channel == "nadh":
+        feature_prefix = feature_groups_prefix['Nadh Fit']
+    else:
+        feature_prefix = feature_groups_prefix['Fad Fit']
+
+    for i, cell_id in enumerate(cell_ids):
+        if cell_id not in single_cell_features_img:
+            single_cell_features_img[cell_id] = {}
+        
+        single_cell_features_img[cell_id][f"{feature_prefix}amp1"] = results["amp1"][i]
+        single_cell_features_img[cell_id][f"{feature_prefix}t1"] = results["t1"][i] * 1000  # Convert to ps
+        single_cell_features_img[cell_id][f"{feature_prefix}offset"] = results["offset"][i]
+        
+        if num_components == 2:
+            single_cell_features_img[cell_id][f"{feature_prefix}amp2"] = results["amp2"][i]
+            single_cell_features_img[cell_id][f"{feature_prefix}t2"] = results["t2"][i] * 1000  # Convert to ps
+            # Calculate alpha values
+            amp1, amp2 = results["amp1"][i], results["amp2"][i]
+            total_amp = amp1 + amp2
+            single_cell_features_img[cell_id][f"{feature_prefix}a1"] = (amp1 / total_amp) * 100
+            single_cell_features_img[cell_id][f"{feature_prefix}a2"] = (amp2 / total_amp) * 100
+            # Calculate mean lifetime (in original units, not converted)
+            single_cell_features_img[cell_id][f"{feature_prefix}tm"] = (amp1 / total_amp) * results["t1"][i] + (amp2 / total_amp) * results["t2"][i]
+            
+        elif num_components == 3:
+            single_cell_features_img[cell_id][f"{feature_prefix}amp2"] = results["amp2"][i]
+            single_cell_features_img[cell_id][f"{feature_prefix}t2"] = results["t2"][i] * 1000  # Convert to ps
+            single_cell_features_img[cell_id][f"{feature_prefix}amp3"] = results["amp3"][i]
+            single_cell_features_img[cell_id][f"{feature_prefix}t3"] = results["t3"][i] * 1000  # Convert to ps
+            # Calculate alpha values for 3 components
+            amp1, amp2, amp3 = results["amp1"][i], results["amp2"][i], results["amp3"][i]
+            total_amp = amp1 + amp2 + amp3
+            single_cell_features_img[cell_id][f"{feature_prefix}a1"] = (amp1 / total_amp) * 100
+            single_cell_features_img[cell_id][f"{feature_prefix}a2"] = (amp2 / total_amp) * 100
+            single_cell_features_img[cell_id][f"{feature_prefix}a3"] = (amp3 / total_amp) * 100
+            # Calculate mean lifetime for 3 components (in original units, not converted)
+            single_cell_features_img[cell_id][f"{feature_prefix}tm"] = (amp1 / total_amp) * results["t1"][i] + (amp2 / total_amp) * results["t2"][i] + (amp3 / total_amp) * results["t3"][i]
+
+    return single_cell_features_img
 
 def image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free):
     """
