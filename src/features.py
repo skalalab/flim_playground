@@ -97,7 +97,7 @@ def check_and_fix_df(df):
     """
     warning_msg = error_msg = ""
     df = df.reset_index(drop=True)
-
+   
     # drop off the all empty columns
     empty_cols = df.columns[df.isnull().all()]
     if len(empty_cols) > 0:
@@ -134,6 +134,7 @@ def check_and_fix_df(df):
         return None, warning_msg, error_msg
     
     if df["cell_id"].duplicated().any():
+        original_row_count = len(df)
         first_duplicate = df["cell_id"].duplicated()
         first_duplicate_value = df["cell_id"][first_duplicate].iloc[0]
         first_duplicate_index = df.loc[first_duplicate].index[0]
@@ -141,6 +142,11 @@ def check_and_fix_df(df):
             The duplicate rows will be dropped, only the first one will be kept.\n"
         # drop the duplicate rows, only keep the first one
         df = df.drop_duplicates(subset=["cell_id"], keep="first")
+    
+    # after fixing the df, print out the number of rows removed
+        rows_removed = original_row_count - len(df)
+        if rows_removed > 0:
+            warning_msg += f"{rows_removed} rows were removed."
     if "image_name" not in df.columns:
         df['image_name'] = df["cell_id"].apply(safe_split_with_logging)
     else: 
@@ -155,12 +161,4 @@ def check_and_fix_df(df):
             df[matched_categorical_col] = df[matched_categorical_col].fillna("N/A")
             df[matched_categorical_col] = df[matched_categorical_col].astype(str) # make sure all the values are not numbers
 
-    # remove rows with "--" in any column
-    original_row_count = len(df)
-    df = df[df.apply(lambda row: all(cell != "--" for cell in row), axis=1)]
-    # print out the number of rows removed
-    rows_removed = original_row_count - len(df)
-    if rows_removed > 0:
-        warning_msg += f"Warning: {rows_removed} rows containing '--' were removed."
-   
     return df, warning_msg, error_msg
