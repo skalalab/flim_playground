@@ -86,6 +86,7 @@ with col1:
                         nadh_start, nadh_end = start_end_widget(time_bins, "NADH")
                     if has_fad:
                         fad_start, fad_end = start_end_widget(time_bins, "FAD")
+                        
                     if st.button("Confirm and Start Fitting"):
                         st.session_state["choosing_shift"] = True
                         st.session_state["shift_ready"] = False
@@ -122,12 +123,12 @@ with col2:
         st.info(f"Applying {analysis_type} on {len(metadata_df)} images.")
         # first NADH, then FAD/red
         if has_nadh: 
-            st.info("Preproceessing step: choose the shift for all images on channel NADH.")
+            #st.info("Preproceessing step: choose the shift for all images on channel NADH.")
             error_msg, nadh_shifts = choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel="NADH")
             if error_msg != "":
                 st.error(f"Error: {error_msg}")
         if has_fad:
-            st.info("Preproceessing step: choose the shift for all images on channel FAD/red.")
+            #st.info("Preproceessing step: choose the shift for all images on channel FAD/red.")
             error_msg, fad_shifts = choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel="FAD")
             if error_msg != "":
                 st.error(f"Error: {error_msg}")
@@ -156,10 +157,13 @@ with col2:
                         metadata_df["fad_shift"] = fad_shift
                     else:
                         metadata_df["fad_shift"] = fad_shifts
-               
+                
+                # Store the updated metadata_df in session state so it persists across rerun
+                st.session_state["last_extracted_metadata"] = metadata_df
+                
                 st.session_state["choosing_shift"] = False
                 st.session_state["shift_ready"] = True
-                #st.rerun()
+                st.rerun()
                 
     elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"]:
         if fitting:

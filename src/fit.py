@@ -6,8 +6,8 @@ from src.fit_helper import guess_shift, objective
 from src.file_io import load_image
 import streamlit as st
 
-@st.cache_data
-def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode="hybrid", fit_shift=False, shift_guess=None, start=0, end=-1):
+
+def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode="hybrid", fit_shift=False, shift_guess=None, start=0, end=-1, _progress_callback=None):
     
     # to make sure the irf is normalized
     irf = irf / np.sum(irf)
@@ -55,10 +55,14 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
     global_fit_options = {
         'popsize': 25,    # Population size
         'tol': 1e-8,      # Convergence tolerance
-        'max_nfev': 10000   # Maximum iterations
+        'max_nfev': 10000   # Maximum function evaluations
     }
     for i in range(num_curves):
         decay_curve = decay_curves[i]
+        
+        # Update progress if callback is provided
+        if _progress_callback:
+            _progress_callback(i, num_curves)
 
         current_params = params.copy()
         current_params['amp1'].value = np.max(decay_curve) 
@@ -109,7 +113,7 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         results["t3"] = t3_data
    
     return results
-
+@st.cache_data
 def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel):
     error_msg = ""
     decay_curves = []
@@ -164,7 +168,18 @@ def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo,
             decay_curves.append(summed_decay_curve)
 
         shift_guess = guess_shift(irf, decay_curves)
-        results = fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess)
+        
+        # Create progress callback for shift estimation
+        st.info(f"Estimating shifts for {channel} channel across {len(decay_curves)} images...")
+        shift_progress = st.progress(0)
+        
+        def shift_progress_callback(current, total):
+            progress = (current + 1) / total
+            shift_progress.progress(progress)
+        
+        results = fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, _progress_callback=shift_progress_callback)
+        shift_progress.empty()  # Remove progress bar when done
+        
         results["decay_curves"] = decay_curves
         results["fitted_images"] = metadata_df['image_name'].values
         results["irf"] = irf
