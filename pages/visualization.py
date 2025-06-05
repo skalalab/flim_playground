@@ -1,17 +1,17 @@
 import streamlit as st
-import pandas as pd
 from streamlit_plotly_events import plotly_events
 
 from src.widgets.data_widgets import load_csv, happy_emoji, sad_emoji
 from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget, twod_single_feature_select_widget
-from src.widgets.visualization_widgets import umap_hyperParams_widget
+from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget
 from src.widgets.filter_widgets import filters_widget
 from src.widgets.click_plot_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
 from src.navigation import render_top_menu
 from src.vis.multivar import dimension_reduction_plot
-from src.vis.bivar import feature_2d_distribution_plot
+from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
 from src.vis.univar import image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
 from src.vis.helpers import _ensure_aspect_ratio
+
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
 
@@ -61,6 +61,8 @@ with col1:
         elif method in bivar_methods:
             if "2D" in method:
                 selected_x, selected_y = twod_single_feature_select_widget(feature_cols_dict, n_per_row=2)
+            elif method == "Phasor Plot":
+                selected_channel, selected_harmonic, f = phasor_params_widget(feature_cols_dict)
         elif method in multivar_methods:
             hyperParam_dict = {}
             # multiple features selection widget 
@@ -121,7 +123,11 @@ with col2:
                     else:
                         st.write("No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Phasor Plot":
-                    st.write("Will be available once the Data Extraction Playground is ready.")
+                    if selected_channel is not None and selected_harmonic is not None and f is not None:
+                        fig = phasor_plot(filtered_df, selected_channel, color_by=color_by_options, f=f, harmonic=selected_harmonic)
+                        click_ready = True
+                    else:
+                        st.write("Your data does not contain the required features for phasor plot.")
                                    
             elif method in multivar_methods:
                 if len(selected_features) < 2:

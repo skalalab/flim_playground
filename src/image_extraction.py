@@ -6,7 +6,7 @@ from src.file_io import load_image
 from src.sdt_io import read_sdt150
 from src.fit import fit_curves
 from src.fit_helper import irf_shift
-from src.phasor import get_phasor_features
+from src.fit_free import get_phasor_features
 import streamlit as st
 
 def get_mask_morphology_features(mask, image_name, cell_dict):
@@ -362,11 +362,18 @@ def extract_fit_free_results(channel, cell_ids, single_cell_features_img, decay_
     for i, cell_id in enumerate(cell_ids):
         if cell_id not in single_cell_features_img:
             single_cell_features_img[cell_id] = {}
-        g, s, tau_phase, tau_m = get_phasor_features(decay_curves[i], shifted_irf, time_axis, f=laser_rate, offset=offsets[i])
-        single_cell_features_img[cell_id][f"{feature_prefix}G(1st)"] = g
-        single_cell_features_img[cell_id][f"{feature_prefix}S(1st)"] = s
+            
+        # 1st harmonic
+        g1, s1, g2, s2, tau_phase, tau_m = get_phasor_features(decay_curves[i], shifted_irf, time_axis, f=laser_rate, offset=offsets[i], harmonic=1)
+        single_cell_features_img[cell_id][f"{feature_prefix}G(1st)"] = g1
+        single_cell_features_img[cell_id][f"{feature_prefix}S(1st)"] = s1
         single_cell_features_img[cell_id][f"{feature_prefix}Tau_phase"] = tau_phase
         single_cell_features_img[cell_id][f"{feature_prefix}Tau_m"] = tau_m
+        # 2nd harmonic
+        single_cell_features_img[cell_id][f"{feature_prefix}G(2nd)"] = g2
+        single_cell_features_img[cell_id][f"{feature_prefix}S(2nd)"] = s2
+
+        
     return single_cell_features_img
 
 def image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free):

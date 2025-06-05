@@ -1,5 +1,6 @@
 import streamlit as st
 import numpy as np
+from src.feature_groups import feature_groups_prefix
 """
 This file contains widgets that are specific to certain visualization or classification methods."""
 
@@ -62,3 +63,48 @@ def gmm_hyperParams_widget():
     with col4:
         fit_gmm_min_weight_threshold = st.slider("Min Weight Threshold", min_value=0.0, max_value=0.3, value=0.1, step=0.1)
     return fit_gmm_max_components, fit_gmm_min_weight_threshold
+
+def phasor_params_widget(feature_cols_dict):
+
+    available_harmonics = {}
+    if len(feature_cols_dict["Fit Free Nadh"]) > 0:
+        nadh_fit_free_features_prefix = feature_groups_prefix["Fit Free Nadh"]
+        nadh_fit_free_features = feature_cols_dict["Fit Free Nadh"]
+        available_harmonics["Nadh"] = []
+        if f"{nadh_fit_free_features_prefix}G(1st)" in nadh_fit_free_features and f"{nadh_fit_free_features_prefix}S(1st)" in nadh_fit_free_features:
+            available_harmonics["Nadh"].append(1)
+        if f"{nadh_fit_free_features_prefix}G(2nd)" in nadh_fit_free_features and f"{nadh_fit_free_features_prefix}S(2nd)" in nadh_fit_free_features:
+            available_harmonics["Nadh"].append(2)
+    if len(feature_cols_dict["Fit Free Fad"]) > 0:
+
+        fad_fit_free_features_prefix = feature_groups_prefix["Fit Free Fad"]
+        fad_fit_free_features = feature_cols_dict["Fit Free Fad"]
+        available_harmonics["Fad"] = []
+        if f"{fad_fit_free_features_prefix}G(1st)" in fad_fit_free_features and f"{fad_fit_free_features_prefix}S(1st)" in fad_fit_free_features:
+            available_harmonics["Fad"].append(1)    
+        if f"{fad_fit_free_features_prefix}G(2nd)" in fad_fit_free_features and f"{fad_fit_free_features_prefix}S(2nd)" in fad_fit_free_features:
+            available_harmonics["Fad"].append(2)
+    
+    if len(available_harmonics.keys()) > 1:
+        selected_channel = st.selectbox("Select a channel", available_harmonics.keys())
+    elif len(available_harmonics.keys()) == 1:
+        selected_channel = list(available_harmonics.keys())[0]
+    else:
+        selected_channel = None
+        st.warning("No available channels found for phasor plot")
+    selected_harmonic = None
+    for channel in available_harmonics.keys():
+        if available_harmonics[channel] == []:
+            st.warning(f"No available harmonics found for {channel}")     
+        elif len(available_harmonics[channel]) == 1:
+            selected_harmonic = available_harmonics[channel][0]
+        else:
+            selected_harmonic = st.selectbox(f"Select a harmonic for {channel}", available_harmonics[channel])
+    f = None
+    if selected_channel is not None and selected_harmonic is not None:
+        if selected_harmonic == 1:
+            harmonic_str = "1st"    
+        elif selected_harmonic == 2:
+            harmonic_str = "2nd"
+        f = st.number_input(f"Enter the laser repetition rate in GHz for {selected_channel} {harmonic_str} harmonic", value=0.08, min_value=0.0, step=0.01)
+    return selected_channel, selected_harmonic, f
