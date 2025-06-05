@@ -87,20 +87,23 @@ with col1:
                     if has_fad:
                         fad_start, fad_end = start_end_widget(time_bins, "FAD")
                         
-                    if st.button("Confirm and Start Fitting"):
-                        st.session_state["choosing_shift"] = True
-                        st.session_state["shift_ready"] = False
-                
-                if analysis_type == "SPCImage": # spc image and fit free needs fitting but does not need to choose shift
-                    st.session_state["choosing_shift"] = False
-                    st.session_state["shift_ready"] = True
+                    if analysis_type == "ROI Summing Fit" or analysis_type == "K-flow":
+                        if st.button("Start Finding Shifts"):
+                            st.session_state["choosing_shift"] = True
+                            st.session_state["shift_ready"] = False
+                            
+                    elif analysis_type == "SPCImage" and fit_free:
+                        if st.button("Confirm and Start Fit Free Analysis"):
+                            st.session_state["choosing_shift"] = False
+                            st.session_state["shift_ready"] = True
 
             else:
                 st.error(f"Error: {error_msg}")
 
     else:   
         # Categorical features extraction
-        pass
+        st.info("Coming soon...")
+
 
 with col2: 
     # check if the folder exists
@@ -160,7 +163,6 @@ with col2:
                 
                 # Store the updated metadata_df in session state so it persists across rerun
                 st.session_state["last_extracted_metadata"] = metadata_df
-                
                 st.session_state["choosing_shift"] = False
                 st.session_state["shift_ready"] = True
                 st.rerun()
