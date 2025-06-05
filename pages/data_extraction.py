@@ -80,7 +80,7 @@ with col1:
                 if fitting:
                     st.info("Please specify the following fitting options.")
                  
-                    duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift= fit_options_widget(analysis_type)
+                    duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift, laser_rate = fit_options_widget(analysis_type, fit_free)
                     # based pm the time_bins, add the start and end for NADH and FAD widget 
                     if has_nadh:
                         nadh_start, nadh_end = start_end_widget(time_bins, "NADH")
@@ -173,6 +173,8 @@ with col2:
             metadata_df["duration"] = duration
             metadata_df["time_bins"] = time_bins
             metadata_df["num_components"] = num_components
+            if fit_free:
+                metadata_df["laser_rate"] = laser_rate
             if has_nadh:
                 metadata_df["nadh_start"] = nadh_start
                 metadata_df["nadh_end"] = nadh_end

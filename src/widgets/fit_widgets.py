@@ -158,18 +158,21 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
 
     return error_msg, shift_data
 
-def fit_options_widget(analysis_type):
+def fit_options_widget(analysis_type, fit_free, default_duration=10.0, default_time_bins=256):
     """
     Fit options widget for Streamlit app.
     """
     # 1) Define each field as a (name, factory) tuple
     fields = [
-        ("duration",   lambda: st.number_input("Pulse Interval (ns)", value=12.5, step=0.1, format="%.1f")),
+        ("duration",   lambda: st.number_input("Time Window (ns)", value=default_duration, step=0.1, format="%.1f")),
         ("num_components", lambda: st.number_input("Component No.", value=2, step=1, min_value=1, max_value=3)),
         ("fitting_algo",   lambda: st.selectbox("Algorithm", ["MLE", "WLS"], index=0, help="MLE: Maximum Likelihood Estimation. WLS: Weighted Least Squares.")),
-        ("time_bins",      lambda: st.number_input("Time Bins", value=256, step=256, min_value=256, max_value=512)),
+        ("time_bins",      lambda: st.number_input("Time Bins", value=default_time_bins, step=256, min_value=256, max_value=512)),
         ("fitting_mode",   lambda: st.selectbox("Fitting Mode", ["Hybrid", "Global", "Local"], index=0, help="Hybrid: use global fit to get a good initial guess, then use local fit to refine the fit. Global: use global fit to get the best fit. Local: use local fit to get the best fit.")),
     ]
+
+    if fit_free:
+        fields.append(("laser_rate", lambda: st.number_input("Laser Rep Rate (GHz)", value=0.08, step=0.01, format="%.2f", min_value=0.0)))
 
     # add fix_shift for ROI Summing Fit
     if analysis_type == "ROI Summing Fit":
@@ -198,8 +201,9 @@ def fit_options_widget(analysis_type):
     time_bins      = results["time_bins"]
     fix_shift      = results.get("fix_shift", True)
     fitting_mode   = results["fitting_mode"]
+    laser_rate     = results.get("laser_rate", 0.08)
 
-    return duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift
+    return duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift, laser_rate
 
 def start_end_widget(time_bins, channel):
     col1, col2 = st.columns(2)
