@@ -6,6 +6,7 @@ from src.file_io import load_image
 from src.sdt_io import read_sdt150
 from src.fit import fit_curves
 from src.fit_helper import irf_shift
+from src.phasor import get_phasor_features
 import streamlit as st
 
 def get_mask_morphology_features(mask, image_name, cell_dict):
@@ -153,7 +154,7 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad, mask):
     return "", single_cell_features_img
 
 @st.cache_data
-def roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask):
+def roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask, fit_free):
 
     # checks
     image_name = metadata['image_name']
@@ -214,6 +215,8 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask):
     time_bins = metadata['time_bins']
     duration = metadata['duration']
     num_components = metadata['num_components']
+    if fit_free:
+        laser_rate = metadata['laser_rate']
     period = duration / time_bins
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
     single_cell_features_img = {}
@@ -252,6 +255,8 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask):
         nadh_results = fit_curves(duration, time_bins, nadh_decay_curves, shifted_nadh_irf, num_components, fitting_algo, fitting_mode, start=nadh_start, end=nadh_end, _progress_callback=nadh_progress_callback)
         single_cell_features_img = extract_fit_results("nadh", cell_ids, single_cell_features_img, nadh_results, nadh_decay_curves, num_components)
         nadh_container.empty()  # Remove both text and progress bar when done
+        if fit_free:
+            single_cell_features_img = extract_fit_free_results("nadh", cell_ids, single_cell_features_img, nadh_decay_curves, shifted_nadh_irf, nadh_results["offset"], time_axis, laser_rate)
         
     if has_fad and fad_decay_curves:
         fad_container = st.empty()
@@ -267,6 +272,9 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask):
         single_cell_features_img = extract_fit_results("fad", cell_ids, single_cell_features_img, fad_results, fad_decay_curves, num_components)    
         fad_container.empty()  # Remove both text and progress bar when done
 
+        if fit_free:
+            single_cell_features_img = extract_fit_free_results("fad", cell_ids, single_cell_features_img, fad_decay_curves, shifted_fad_irf, fad_results["offset"], time_axis, laser_rate)
+            
     # calculate redox
     if has_nadh and has_fad:
         # get the intensity of NADH and FAD
@@ -333,6 +341,33 @@ def extract_fit_results(channel, cell_ids, single_cell_features_img, results, de
             single_cell_features_img[cell_id][f"{feature_prefix}tm"] = ((amp1 / total_amp) * results["t1"][i] + (amp2 / total_amp) * results["t2"][i] + (amp3 / total_amp) * results["t3"][i]) * 1000
 
     return single_cell_features_img
+def extract_fit_free_results(channel, cell_ids, single_cell_features_img, decay_curves, shifted_irf, offsets, time_axis, laser_rate):
+    """
+    Extract fit free results for a specific channel and store them in single_cell_features_img (for now, only phasor is implemented)
+    Args:
+        channel: channel name ("nadh" or "fad")
+        cell_ids: list of cell ids
+        single_cell_features_img: dictionary of single cell features
+        decay_curves: list of decay curves
+        irf: IRF
+        offsets: list of offsets
+        time_axis: time axis
+        laser_rate: laser repetition rate
+    """
+    if channel == "nadh":
+        feature_prefix = feature_groups_prefix["Fit Free Nadh"]
+    else:
+        feature_prefix = feature_groups_prefix["Fit Free Fad"]
+
+    for i, cell_id in enumerate(cell_ids):
+        if cell_id not in single_cell_features_img:
+            single_cell_features_img[cell_id] = {}
+        g, s, tau_phase, tau_m = get_phasor_features(decay_curves[i], shifted_irf, time_axis, f=laser_rate, offset=offsets[i])
+        single_cell_features_img[cell_id][f"{feature_prefix}G(1st)"] = g
+        single_cell_features_img[cell_id][f"{feature_prefix}S(1st)"] = s
+        single_cell_features_img[cell_id][f"{feature_prefix}Tau_phase"] = tau_phase
+        single_cell_features_img[cell_id][f"{feature_prefix}Tau_m"] = tau_m
+    return single_cell_features_img
 
 def image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free):
     """
@@ -347,7 +382,7 @@ def image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free):
         if error_msg != "":
             return error_msg, None
     elif analysis_type == "ROI Summing Fit":
-        error_msg, single_cell_features_img = roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask)
+        error_msg, single_cell_features_img = roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask, fit_free)
         if error_msg != "":
             return error_msg, None
     return "", single_cell_features_img
