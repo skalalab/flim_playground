@@ -5,6 +5,8 @@ from scipy.stats import gaussian_kde
 from scipy.stats import pearsonr
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 import streamlit as st
+from src.feature_groups import feature_groups_prefix
+
 def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, plotly_axis_params):
     """Helper function to plot marginal densities."""
     if data.empty or data.nunique() < 2:
@@ -211,3 +213,123 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
 
     table_md = "\n".join(table_md)
     return fig, table_md, df
+
+
+def phasor_plot(df, channel,color_by=[], f=0.08, harmonic=1):
+
+    # Create the figure
+    fig = go.Figure()
+
+    # Consolidate all layout settings into one call
+    if harmonic == 1:
+        harmonic_str = "1st"
+    elif harmonic == 2:
+        harmonic_str = "2nd"
+    fig.update_layout(
+        title=f'{channel.capitalize()} {harmonic_str} Harmonic Phasor',
+        xaxis=dict(
+            range=[-0.05, 1.05],
+            title='g',
+            showgrid=False,
+            zeroline=False,
+            showline=False,
+            showticklabels=False,
+            scaleanchor="y"
+        ),
+        yaxis=dict(
+            range=[0.15, 0.55],
+            title='s',
+            showgrid=False,
+            zeroline=False,
+            showline=False,
+            showticklabels=False
+        ),
+        font=dict(size=15),
+        title_font=dict(size=20, family='Arial', color='black'),
+        autosize=True,
+        margin=dict(l=0, r=10, t=50, b=60),  # Increased bottom margin for x-axis title
+        hovermode='closest'
+    )
+
+    # Plot the curve
+    u = np.arange(0, 100, 0.01)
+    x_curve = 1 / (1 + u**2)
+    y_curve = u / (1 + u**2)
+
+    fig.add_trace(go.Scatter(
+        x=x_curve,
+        y=y_curve,
+        mode='lines',
+        line=dict(color='black'),
+        name='Curve', 
+        hoverinfo='skip',# Hide the hover info for this trace
+        showlegend=False 
+    ))
+
+    # Calculate and plot specific points
+    wt = 2 * np.pi * f * np.array([0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=float)
+    x_points = 1 / (1 + wt**2)
+    y_points = wt / (1 + wt**2)
+
+    fig.add_trace(go.Scatter(
+        x=x_points,
+        y=y_points,
+        mode='markers',
+        marker=dict(size=8, color='black'),
+        name='Lifetime Markers', 
+        hoverinfo='skip', # Hide the hover info for this trace,
+        showlegend=False
+    ))
+
+    # Annotate the points
+    lifetime_labels = ['0.5 ns', '1 ns', '2 ns', '3 ns', '4 ns', '5 ns']
+    labels = len(lifetime_labels)
+    label_coords = list(zip(x_points - 0.02, y_points + 0.03))[:labels]
+
+    for i in range(labels):
+        fig.add_annotation(
+            x=label_coords[i][0],
+            y=label_coords[i][1],
+            text=lifetime_labels[i],
+            showarrow=False,
+            font=dict(size=12),
+            xanchor='left'
+        )
+    
+    # Add text inside the plot
+    fig.add_annotation(
+        x=0.8,
+        y=0.5,
+        text=f"f = {f * 1000} MHz",
+        showarrow=False,
+        font=dict(size=15, color='black'),
+        xanchor='left'
+    )
+    
+    # plot the phasor coordinates
+    
+    GROUP_COL_NAME = 'unique_color_group'
+    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=True)
+
+    feature_prefix = feature_groups_prefix[f"Fit Free {channel.capitalize()}"]
+    if harmonic == 1:
+        g_feature = f"{feature_prefix}G(1st)"
+        s_feature = f"{feature_prefix}S(1st)"
+    elif harmonic == 2:
+        g_feature = f"{feature_prefix}G(2nd)"
+        s_feature = f"{feature_prefix}S(2nd)"
+    for g in unique_color_groups:
+        g_df =  df[df[GROUP_COL_NAME] == g]   
+        fig.add_trace(
+            go.Scatter(
+                x=g_df[g_feature],
+                y=g_df[s_feature],
+                mode='markers',
+                name=f'{g}',
+                text=g_df["cell_id"],
+                customdata=g_df["image_name"],
+                hovertemplate="<b>%{text}</b>",
+                marker=dict(color=color_map[g],size=5)
+            ),
+        )
+    return fig
