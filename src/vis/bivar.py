@@ -183,9 +183,9 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
                     assigned_labels = [f"{color_group}_group{label + 1}" for label in subpopulation_labels]
                     df.loc[data_indices, "2D_GMM_group"] = assigned_labels
                 else:
-                    print(f"No suitable GMM found for {color_group} with current constraints.")
+                    st.write(f"No suitable GMM found for {color_group} with current constraints.")
             else:
-                print(f"\nSkipping GMM for group: {color_group} due to insufficient data (points: {len(group_data_2d)})")
+                st.write(f"\nSkipping GMM for group: {color_group} due to insufficient data (points: {len(group_data_2d)})")
 
         # Marginal density for X-axis
         x_data = group_df[selected_x].dropna()

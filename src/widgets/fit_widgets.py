@@ -167,7 +167,7 @@ def fit_options_widget(analysis_type, fit_free, default_duration=10.0, default_t
         ("duration",   lambda: st.number_input("Time Window (ns)", value=default_duration, step=0.1, format="%.1f")),
         ("num_components", lambda: st.number_input("Component No.", value=2, step=1, min_value=1, max_value=3)),
         ("fitting_algo",   lambda: st.selectbox("Algorithm", ["MLE", "WLS"], index=0, help="MLE: Maximum Likelihood Estimation. WLS: Weighted Least Squares.")),
-        ("time_bins",      lambda: st.number_input("Time Bins", value=default_time_bins, step=256, min_value=256, max_value=512)),
+        ("time_bins",      lambda: st.number_input("Time Bins", value=default_time_bins, step=256, min_value=256, max_value=1024)),
         ("fitting_mode",   lambda: st.selectbox("Fitting Mode", ["Hybrid", "Global", "Local"], index=0, help="Hybrid: use global fit to get a good initial guess, then use local fit to refine the fit. Global: use global fit to get the best fit. Local: use local fit to get the best fit.")),
     ]
 

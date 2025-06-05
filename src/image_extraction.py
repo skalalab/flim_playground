@@ -184,7 +184,7 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask, fit_free):
             nadh_end = metadata['nadh_end']
         except Exception as e:
             return "Error: NADH start and end are not provided", None
-        
+        # st.write(f"NADH start: {nadh_start}, NADH end: {nadh_end}", "Shift: ", nadh_shift)
     if has_fad:
         try:
             fad_shift = metadata['fad_shift']
@@ -364,7 +364,7 @@ def extract_fit_free_results(channel, cell_ids, single_cell_features_img, decay_
             single_cell_features_img[cell_id] = {}
             
         # 1st harmonic
-        g1, s1, g2, s2, tau_phase, tau_m = get_phasor_features(decay_curves[i], shifted_irf, time_axis, f=laser_rate, offset=offsets[i], harmonic=1)
+        g1, s1, g2, s2, tau_phase, tau_m = get_phasor_features(decay_curves[i], shifted_irf, time_axis, f=laser_rate, offset=offsets[i])
         single_cell_features_img[cell_id][f"{feature_prefix}G(1st)"] = g1
         single_cell_features_img[cell_id][f"{feature_prefix}S(1st)"] = s1
         single_cell_features_img[cell_id][f"{feature_prefix}Tau_phase"] = tau_phase
