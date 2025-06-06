@@ -20,7 +20,6 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
     # prepare the data
     decay_curves = results["decay_curves"]
     shift_data = results["shift"]
-    fitted_images = results["fitted_images"]
     amp1 = results["amp1"]
     t1 = results["t1"]
     offset = results["offset"]
@@ -32,7 +31,12 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
         t3 = results["t3"]
     irf = results["irf"]
     # combines image_name and shift from results into a df
-    plot_df =  pd.DataFrame({'image_name': metadata_df['image_name'], 'shift': shift_data})
+    if analysis_type == "K-Flow":
+        image_name = metadata_df['kflow_exp_name'].iloc[0]
+        image_names = [image_name] * len(shift_data)
+        plot_df =  pd.DataFrame({'image_name': image_names, 'shift': shift_data})
+    else:
+        plot_df =  pd.DataFrame({'image_name': metadata_df['image_name'], 'shift': shift_data})
     cols = st.columns(2)
     with cols[0]:
         fig = go.Figure()
@@ -158,7 +162,7 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
 
     return error_msg, shift_data
 
-def fit_options_widget(analysis_type, fit_free, default_duration=10.0, default_time_bins=256):
+def fit_options_widget(analysis_type, fit_free, default_duration=10.0, default_time_bins=256, default_laser_rate=0.08):
     """
     Fit options widget for Streamlit app.
     """
@@ -172,7 +176,7 @@ def fit_options_widget(analysis_type, fit_free, default_duration=10.0, default_t
     ]
 
     if fit_free:
-        fields.append(("laser_rate", lambda: st.number_input("Laser Rep Rate (GHz)", value=0.08, step=0.01, format="%.2f", min_value=0.0)))
+        fields.append(("laser_rate", lambda: st.number_input("Laser Rep Rate (GHz)", value=default_laser_rate, step=0.01, format="%.2f", min_value=0.0)))
 
     # add fix_shift for ROI Summing Fit
     if analysis_type == "ROI Summing Fit":

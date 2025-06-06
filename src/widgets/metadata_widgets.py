@@ -205,6 +205,7 @@ def export_metadata_widget(images_df, folder_path):
             images_df.to_csv(csv_file_path) # Save the DataFrame
         except Exception as e:
             st.error(f"Error exporting the image metadata: {e}. Is the previous metadata file open in another program?")
+            return
         st.success(f"Image metadata exported successfully to {csv_file_path} {happy_emoji}")
         st.session_state["last_extracted_metadata"] = images_df
         st.session_state["last_extracted_metadata_filepath"] = csv_file_path

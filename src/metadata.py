@@ -45,8 +45,8 @@ def parse_metadata_file(metadata_df):
     available_feature_groups_features = {}
     analysis_type = ""
     # check if the metadata file has the required columns
-    if "image_name" not in metadata_df.columns:
-        error_msg += "The required column `image_name` not found in the metadata file! "
+    if "image_name" not in metadata_df.columns and "kflow_exp_name" not in metadata_df.columns:
+        error_msg += "The required column `image_name` or `kflow_exp_name` not found in the metadata file! "
         return error_msg, None, None, None, None, None
 
     if "fit_free" not in metadata_df.columns:
