@@ -398,7 +398,12 @@ def k_flow_fit_extraction(metadata, has_nadh, has_fad):
     if has_nadh and has_fad:
         if nadh_decays.shape[0] != fad_decay.shape[0]:
             return "Error: NADH and FAD decay curves have different number of cells", None
+    if has_nadh:
         cell_ids = [f"{image_name}_{i}" for i in nadh_decays.index]
+    elif has_fad:
+        cell_ids = [f"{image_name}_{i}" for i in fad_decay.index]
+    else:
+        return "Error: No NADH or FAD decay curves provided", None
     # get fitting config from metadata
     fitting_mode = metadata['fitting_mode']
     fitting_algo = metadata['fitting_algo']
