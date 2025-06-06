@@ -73,21 +73,28 @@ with col1:
 
         if metadata_df is not None:
             error_msg, selected_feature_groups_features, analysis_type, fit_free, has_nadh, has_fad = parse_metadata_file(metadata_df)
-            fitting = True if analysis_type == "ROI Summing Fit" or analysis_type == "K-flow" or (analysis_type == "SPCImage" and fit_free) else False
+            fitting = True if (analysis_type == "ROI Summing Fit" or analysis_type == "K-Flow" or (analysis_type == "SPCImage" and fit_free)) else False
             if error_msg == "":
                 st.success(f"✅ Features to be extracted confirmed. Analysis type: {analysis_type}. Fit free: {fit_free}. Channels: NADH: {has_nadh}, FAD/red: {has_fad}.") 
                                 
                 if fitting:
                     st.info("Please specify the following fitting options.")
-                 
-                    duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift, laser_rate = fit_options_widget(analysis_type, fit_free)
+                    if analysis_type == "K-Flow":
+                        default_duration = 20.0
+                        default_time_bins = 1024
+                        default_laser_rate = 0.05
+                    else:
+                        default_duration = 10.0
+                        default_time_bins = 256
+                        default_laser_rate = 0.08
+                    duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift, laser_rate = fit_options_widget(analysis_type, fit_free, default_duration, default_time_bins, default_laser_rate)
                     # based pm the time_bins, add the start and end for NADH and FAD widget 
                     if has_nadh:
                         nadh_start, nadh_end = start_end_widget(time_bins, "NADH")
                     if has_fad:
                         fad_start, fad_end = start_end_widget(time_bins, "FAD")
                         
-                    if analysis_type == "ROI Summing Fit" or analysis_type == "K-flow":
+                    if analysis_type == "ROI Summing Fit" or analysis_type == "K-Flow":
                         if st.button("Start Finding Shifts"):
                             st.session_state["choosing_shift"] = True
                             st.session_state["shift_ready"] = False
@@ -116,6 +123,9 @@ with col2:
                 images_df['fit_free'] = fit_free
                 images_df.index.name = "image_name"  # Set index name 
                 images_df.reset_index(inplace=True)  # Reset index to make it a column
+                if selected_analysis_type == "K-Flow":
+                    # copy the image_name column to kflow_exp_name
+                    images_df["kflow_exp_name"] = images_df["image_name"]
                 parse_metadata_display_feature_widget(images_df)
                 export_metadata_widget(images_df=images_df, folder_path=folder_path)
             else: 
@@ -183,25 +193,25 @@ with col2:
             if has_fad:
                 metadata_df["fad_start"] = fad_start
                 metadata_df["fad_end"] = fad_end
-        if analysis_type == "ROI Summing Fit" or analysis_type == "SPCImage":
-            single_cell_features = image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_fad)
-            if not single_cell_features.empty:
-                st.success(f"Image features with ✅ are extracted successfully {happy_emoji}! Images with ❌ (if any) are excluded. The first few rows of the features are shown below.")
-                st.write(single_cell_features.head())
-                # get the current timestamp 
-                timestamp = time.strftime("%Y%m%d_%H%M%S")
-                # get the folder path from the file path
-                if st.session_state["last_extracted_metadata_filepath"] is not None:
-                    folder_path = os.path.dirname(st.session_state["last_extracted_metadata_filepath"])
-                    csv_path = os.path.join(folder_path, f"single_cell_features_{timestamp}.csv")
         
-                # save the features to a csv file
-                    confirm_export = st.button("Download single cell features as CSV")
-                    if confirm_export:
-                        try:
-                            single_cell_features.to_csv(csv_path) # Save the DataFrame
-                        except Exception as e:
-                            st.error(f"Error exporting the image metadata: {e}. Is the previous metadata file open in another program?")
-                        st.success(f"Image metadata exported successfully to {csv_path} {happy_emoji}")
-                else:
-                    st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name= f"single_cell_features_{timestamp}.csv")
+        single_cell_features = image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_fad)
+        if not single_cell_features.empty:
+            st.success(f"Image features with ✅ are extracted successfully {happy_emoji}! Images with ❌ (if any) are excluded. The first few rows of the features are shown below.")
+            st.write(single_cell_features.head())
+            # get the current timestamp 
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            # get the folder path from the file path
+            if st.session_state["last_extracted_metadata_filepath"] is not None:
+                folder_path = os.path.dirname(st.session_state["last_extracted_metadata_filepath"])
+                csv_path = os.path.join(folder_path, f"single_cell_features_{timestamp}.csv")
+    
+            # save the features to a csv file
+                confirm_export = st.button("Download single cell features as CSV")
+                if confirm_export:
+                    try:
+                        single_cell_features.to_csv(csv_path) # Save the DataFrame
+                    except Exception as e:
+                        st.error(f"Error exporting the image metadata: {e}. Is the previous metadata file open in another program?")
+                    st.success(f"Image metadata exported successfully to {csv_path} {happy_emoji}")
+            else:
+                st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name= f"single_cell_features_{timestamp}.csv")

@@ -236,45 +236,13 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask, fit_free):
         if has_nadh:
             nadh_decay_cell = nadh_decay[cell_mask, :].sum(axis=0)
             nadh_decay_curves.append(nadh_decay_cell)
-            
         if has_fad:
             fad_decay_cell = fad_decay[cell_mask, :].sum(axis=0)
             fad_decay_curves.append(fad_decay_cell)
-    
-    # Fit all curves at once
-    if has_nadh and nadh_decay_curves:
-        nadh_container = st.empty()
-        with nadh_container.container():
-            st.info(f"Fitting NADH curves for {len(nadh_decay_curves)} cells...")
-            nadh_progress = st.progress(0)
-        
-        def nadh_progress_callback(current, total):
-            progress = (current + 1) / total
-            nadh_progress.progress(progress)
-            
-        nadh_results = fit_curves(duration, time_bins, nadh_decay_curves, shifted_nadh_irf, num_components, fitting_algo, fitting_mode, start=nadh_start, end=nadh_end, _progress_callback=nadh_progress_callback)
-        single_cell_features_img = extract_fit_results("nadh", cell_ids, single_cell_features_img, nadh_results, nadh_decay_curves, num_components)
-        nadh_container.empty()  # Remove both text and progress bar when done
-        if fit_free:
-            single_cell_features_img = extract_fit_free_results("nadh", cell_ids, single_cell_features_img, nadh_decay_curves, shifted_nadh_irf, nadh_results["offset"], time_axis, laser_rate)
-        
-    if has_fad and fad_decay_curves:
-        fad_container = st.empty()
-        with fad_container.container():
-            st.info(f"Fitting FAD curves for {len(fad_decay_curves)} cells...")
-            fad_progress = st.progress(0)
-        
-        def fad_progress_callback(current, total):
-            progress = (current + 1) / total
-            fad_progress.progress(progress)
-            
-        fad_results = fit_curves(duration, time_bins, fad_decay_curves, shifted_fad_irf, num_components, fitting_algo, fitting_mode, start=fad_start, end=fad_end, _progress_callback=fad_progress_callback)
-        single_cell_features_img = extract_fit_results("fad", cell_ids, single_cell_features_img, fad_results, fad_decay_curves, num_components)    
-        fad_container.empty()  # Remove both text and progress bar when done
-
-        if fit_free:
-            single_cell_features_img = extract_fit_free_results("fad", cell_ids, single_cell_features_img, fad_decay_curves, shifted_fad_irf, fad_results["offset"], time_axis, laser_rate)
-            
+    if has_nadh and nadh_decay_curves is not None and shifted_nadh_irf is not None and nadh_start is not None and nadh_end is not None: 
+        single_cell_features_img = fit_and_extract_results("NADH", duration, time_bins, num_components, fitting_algo, fitting_mode, fit_free, laser_rate, time_axis, cell_ids, single_cell_features_img, nadh_start, nadh_end, nadh_decay_curves, shifted_nadh_irf)
+    if has_fad and fad_decay_curves is not None and shifted_fad_irf is not None and fad_start is not None and fad_end is not None:
+        single_cell_features_img = fit_and_extract_results("FAD", duration, time_bins, num_components, fitting_algo, fitting_mode, fit_free, laser_rate, time_axis, cell_ids, single_cell_features_img, fad_start, fad_end, fad_decay_curves, shifted_fad_irf)
     # calculate redox
     if has_nadh and has_fad:
         # get the intensity of NADH and FAD
@@ -302,7 +270,7 @@ def extract_fit_results(channel, cell_ids, single_cell_features_img, results, de
         num_components: number of fitting components
     """
     # Basic parameters (always present)
-    if channel == "nadh":
+    if channel == "NADH":
         feature_prefix = feature_groups_prefix['Nadh Fit']
     else:
         feature_prefix = feature_groups_prefix['Fad Fit']
@@ -354,7 +322,7 @@ def extract_fit_free_results(channel, cell_ids, single_cell_features_img, decay_
         time_axis: time axis
         laser_rate: laser repetition rate
     """
-    if channel == "nadh":
+    if channel == "NADH":
         feature_prefix = feature_groups_prefix["Fit Free Nadh"]
     else:
         feature_prefix = feature_groups_prefix["Fit Free Fad"]
@@ -376,14 +344,89 @@ def extract_fit_free_results(channel, cell_ids, single_cell_features_img, decay_
         
     return single_cell_features_img
 
+def k_flow_fit_extraction(metadata, has_nadh, has_fad):
+    error_msg = ""
+    image_name = metadata['image_name']
+    if has_nadh:
+        nadh_decay_path = metadata.get('nadh histogram', None)
+        nadh_irf_path = metadata.get('nadh irf', None)
+  
+        try: 
+            nadh_decays = pd.read_csv(nadh_decay_path)
+        except Exception as e:
+            error_msg = f"Error reading the decay histogram for experiment {image_name} at {nadh_decay_path}: {e}"
+            return error_msg, None
+        try:
+            nadh_irf = np.loadtxt(nadh_irf_path)
+        except Exception as e:              
+            error_msg = f"Error reading the IRF file for image {image_name} at {nadh_irf_path}: {e}"
+            return error_msg, None
+        try:
+             # check if the shift is provided
+            nadh_shift = metadata['nadh_shift']
+        except Exception as e:
+            return "Error: NADH shift is not provided", None
+        try:
+            nadh_start = metadata['nadh_start']
+            nadh_end = metadata['nadh_end']
+        except Exception as e:
+            return "Error: NADH start and end are not provided", None
+        nadh_shifted_irf = irf_shift(nadh_irf, nadh_shift)
+    if has_fad:
+        try:
+            fad_shift = metadata['fad_shift']
+        except Exception as e:
+            return "Error: FAD shift is not provided", None
+        try:
+            fad_irf_path = metadata['red irf']
+            fad_irf = np.loadtxt(fad_irf_path)
+        except Exception as e:
+            error_msg = f"Error reading the IRF file for image {image_name} at {fad_irf_path}: {e}"
+            return error_msg, None
+        try:
+            fad_decay_path = metadata['red histogram']
+            fad_decay = pd.read_csv(fad_decay_path)
+        except Exception as e:
+            error_msg = f"Error reading the decay file for image {image_name} at {fad_decay_path}: {e}"
+            return error_msg, None
+        shifted_fad_irf = irf_shift(fad_irf, fad_shift)
+        try:
+            fad_start = metadata['fad_start']
+            fad_end = metadata['fad_end']
+        except Exception as e:
+            return "Error: FAD start and end are not provided", None
+    if has_nadh and has_fad:
+        if nadh_decays.shape[0] != fad_decay.shape[0]:
+            return "Error: NADH and FAD decay curves have different number of cells", None
+        cell_ids = [f"{image_name}_{i}" for i in nadh_decays.index]
+    # get fitting config from metadata
+    fitting_mode = metadata['fitting_mode']
+    fitting_algo = metadata['fitting_algo']
+    time_bins = metadata['time_bins']
+    duration = metadata['duration']
+    num_components = metadata['num_components']
+
+    laser_rate = metadata['laser_rate']
+    period = duration / time_bins
+    time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
+    single_cell_features_img = {}
+    if has_nadh:
+        single_cell_features_img = fit_and_extract_results("NADH", duration, time_bins, num_components, fitting_algo, fitting_mode, True, laser_rate, time_axis, cell_ids, single_cell_features_img, nadh_start, nadh_end, nadh_decays.values, nadh_shifted_irf)
+    if has_fad:
+        single_cell_features_img = fit_and_extract_results("FAD", duration, time_bins, num_components, fitting_algo, fitting_mode, True, laser_rate, time_axis, cell_ids, single_cell_features_img, fad_start, fad_end, fad_decay.values, shifted_fad_irf)
+    single_cell_features_img = pd.DataFrame(single_cell_features_img).T
+    single_cell_features_img.index.name = "cell_id" 
+    return "", single_cell_features_img
+
 def image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free):
     """
     Extract single cell fitting parameters from spc image output files
     """
-    try: 
-        mask = load_image(metadata['mask'])
-    except Exception as e:
-        return f"Error reading the mask file: {metadata['mask']}: {e}", None
+    if analysis_type != "K-Flow":
+        try: 
+            mask = load_image(metadata['mask'])
+        except Exception as e:
+            return f"Error reading the mask file: {metadata['mask']}: {e}", None
     if analysis_type == "SPCImage":
         error_msg, single_cell_features_img = spcimage_fit_extraction(metadata, has_nadh, has_fad, mask)
         if error_msg != "":
@@ -392,4 +435,27 @@ def image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free):
         error_msg, single_cell_features_img = roi_summing_fit_extraction(metadata, has_nadh, has_fad, mask, fit_free)
         if error_msg != "":
             return error_msg, None
+    elif analysis_type == "K-Flow":
+        error_msg, single_cell_features_img = k_flow_fit_extraction(metadata, has_nadh, has_fad)
+        if error_msg != "":
+            return error_msg, None
     return "", single_cell_features_img
+
+
+def fit_and_extract_results(channel, duration, time_bins, num_components, fitting_algo, fitting_mode, fit_free, laser_rate, time_axis, cell_ids, single_cell_features_img, start, end, decay_curves, shifted_irf):
+    channel_container = st.empty()
+    with channel_container.container():
+        st.info(f"Fitting {channel} curves for {len(decay_curves)} cells...")
+        channel_progress = st.progress(0)
+    
+    def channel_progress_callback(current, total):
+        progress = (current + 1) / total
+        channel_progress.progress(progress)
+        
+    results = fit_curves(duration, time_bins, decay_curves, shifted_irf, num_components, fitting_algo, fitting_mode, start=start, end=end, _progress_callback=channel_progress_callback)
+    single_cell_features_img = extract_fit_results(channel, cell_ids, single_cell_features_img, results, decay_curves, num_components)
+    channel_container.empty()  # Remove both text and progress bar when done
+    if fit_free:
+        single_cell_features_img = extract_fit_free_results(channel, cell_ids, single_cell_features_img, decay_curves, shifted_irf, results["offset"], time_axis, laser_rate)
+
+    return single_cell_features_img

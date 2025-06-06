@@ -126,15 +126,14 @@ def image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_
             with cols[col_idx]:
                 with st.container(border=True):
                     st.markdown(f"Image name: **{image_name}**")
-                    if analysis_type == "SPCImage" or analysis_type == "ROI Summing Fit":
-                        metadata = metadata_df[metadata_df['image_name'] == image_name].iloc[0]
-                        error_msg, single_cell_features_img = image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free)
-                        if error_msg != "":
-                            st.error(error_msg)
-                        else:
-                            st.success("✅ Success!")
-                            single_cell_features_img = check_img_features(single_cell_features_img, image_name)
-                            single_cell_features = pd.concat([single_cell_features, single_cell_features_img])
+                    metadata = metadata_df[metadata_df['image_name'] == image_name].iloc[0]
+                    error_msg, single_cell_features_img = image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free)
+                    if error_msg != "":
+                        st.error(error_msg)
+                    else:
+                        st.success("✅ Success!")
+                        single_cell_features_img = check_img_features(single_cell_features_img, image_name)
+                        single_cell_features = pd.concat([single_cell_features, single_cell_features_img])
 
     return single_cell_features
 

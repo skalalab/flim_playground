@@ -5,7 +5,7 @@ from src.sdt_io import read_sdt150
 from src.fit_helper import guess_shift, objective
 from src.file_io import load_image
 import streamlit as st
-
+import pandas as pd 
 
 def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode="hybrid", fit_shift=False, shift_guess=None, start=0, end=-1, _progress_callback=None):
     
@@ -183,4 +183,59 @@ def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo,
         results["decay_curves"] = decay_curves
         results["fitted_images"] = metadata_df['image_name'].values
         results["irf"] = irf
+    elif analysis_type == "K-Flow":
+        error_msg, results = k_flow_choose_shift(metadata_df.iloc[0], duration, time_bins, num_components, fitting_algo, fitting_mode, channel)
     return error_msg, results 
+
+def k_flow_choose_shift(metadata, duration, time_bins, num_components, fitting_algo, fitting_mode, channel):
+    error_msg = ""
+    kflow_exp_name = metadata['kflow_exp_name']
+    if channel == "NADH":
+        decay_path = metadata.get('nadh histogram', None)
+        irf_path = metadata.get('nadh irf', None)
+    elif channel == "FAD":
+        decay_path = metadata.get('red histogram', None)
+        irf_path = metadata.get('red irf', None)
+    try: 
+        decays = pd.read_csv(decay_path)
+    except Exception as e:
+        error_msg = f"Error reading the decay histogram for image {kflow_exp_name} at {decay_path}: {e}"
+        return error_msg, None
+    try:
+        irf = np.loadtxt(irf_path)
+    except Exception as e:
+        error_msg = f"Error reading the IRF file for image {kflow_exp_name} at {irf_path}: {e}"
+        return error_msg, None
+    # check the dimension
+    if decays.ndim != 2 or decays.shape[1] != time_bins:
+        return f"The dimension of the decay histogram for {kflow_exp_name} at {decay_path} is not correct. Expected 2D data (XYT), and T = {time_bins}, got {decays.shape}."
+    if len(irf) != time_bins:
+        return f"The dimension of the IRF for {kflow_exp_name} at {irf_path} is not correct. Expected 1D data (T), and T = {time_bins}, got {len(irf)}."
+    # get sample decay curves
+    sample_decays = _get_sample_decay_curves(decays, 30, 100000)
+    
+    # get the shift guess
+    shift_guess = guess_shift(irf, sample_decays)
+    # get the shift progress bar
+    shift_progress = st.progress(0)
+    def shift_progress_callback(current, total):
+        progress = (current + 1) / total
+        shift_progress.progress(progress)
+    results = fit_curves(duration, time_bins, sample_decays, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, _progress_callback=shift_progress_callback)
+    shift_progress.empty()  # Remove progress bar when done
+    results["decay_curves"] = sample_decays
+    results["irf"] = irf
+    return error_msg, results 
+
+def _get_sample_decay_curves(decays, n_samples, max_intensity):
+    # use the top n_samples that have the highest intensity less than max_intensity
+    # return the decay curves
+    decay_intensity = np.sum(decays, axis=1)
+    sorted_indices = np.argsort(decay_intensity)[::-1]
+    filtered_indices = [idx for idx in sorted_indices if decay_intensity[idx] < max_intensity]
+
+    if len(filtered_indices) < n_samples:
+        top_indices = filtered_indices
+    else:
+        top_indices = filtered_indices[:n_samples]
+    return decays.iloc[top_indices].values
