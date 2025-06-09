@@ -7,7 +7,7 @@ from src.fit import choose_shift
 from src.fit_helper import forward_pass, irf_shift, mle_likelihood, chi_square
 
 
-def choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel):
+def choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel, log_y=True):
     period = duration / time_bins
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
     error_msg, results = choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel)
@@ -19,6 +19,7 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
     # display the shift in an interactive plot scatter plot, the y-axis is the shift. When click on the point, it will show the curve with the fitted line
     # prepare the data
     decay_curves = results["decay_curves"]
+    original_decay_curves = results["original_decay_curves"]
     shift_data = results["shift"]
     amp1 = results["amp1"]
     t1 = results["t1"]
@@ -81,13 +82,25 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
             bin_numbers = time_axis / period
             fig2.add_trace(go.Scatter(
                 x=time_axis,
-                y=decay_curves[idx],
+                y=original_decay_curves[idx],
                 mode='markers',
-                name='Decay Curve',
+                name='Original Decay Curve',
                 line=dict(color='lightblue'),
                 marker=dict(size=4),
                 customdata=bin_numbers,
-                hovertemplate="bin #: %{customdata:.0f}<br>y: %{y:.0f}<extra></extra>"
+                hovertemplate="bin #: %{customdata:.0f}<br>Intensity: %{y:.0f}<extra></extra>"
+            ))
+
+            # plot the original decay curve
+            fig2.add_trace(go.Scatter(
+                x=time_axis,
+                y=decay_curves[idx],
+                mode='markers',
+                name='Decay Curve',
+                line=dict(color='orange'),
+                marker=dict(size=4),
+                customdata=bin_numbers,
+                hoverinfo='skip'
             ))
 
             amp1_data, t1_data, offset_data = amp1[idx], t1[idx], offset[idx]
@@ -139,23 +152,24 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
                 annotation_text += f"<b>t3: {t3_data * 1000:.2f} ns</b><br>"
             annotation_text += f"<b>MLE: {mle:.2f}</b><br>"
             annotation_text += f"<b>χ²: {chiq:.2f}</b>"
-            
+
             fig2.add_annotation(
-                text=annotation_text,
-                xref="paper", yref="paper",
-                x=0.98, y=0.98,
-                xanchor="right", yanchor="top",
-                showarrow=False,
-                bgcolor="rgba(255, 255, 255, 0.8)",
-                bordercolor="black",
-                borderwidth=1,
-                font=dict(size=12)
+                    text=annotation_text,
+                    xref="paper", yref="paper",
+                    x=0.5 if log_y else 0.98, y=0.02 if log_y else 0.98,
+                    xanchor="center" if log_y else "right", yanchor="bottom" if log_y else "top",
+                    showarrow=False,
+                    bgcolor="rgba(255, 255, 255, 0.8)",
+                    bordercolor="black",
+                    borderwidth=1,
+                    font=dict(size=12)
             )
 
             fig2.update_layout(
                 title=f"Decay Curve and Fitted Line for {img_name}",
                 xaxis_title="Time (ns)",
-                yaxis_title="Intensity",
+                yaxis_title="Intensity (log)",
+                yaxis_type="log" if log_y else "linear",
                 showlegend=True,
             )
             st.plotly_chart(fig2, use_container_width=True)

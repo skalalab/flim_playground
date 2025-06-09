@@ -166,7 +166,8 @@ def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo,
             # image_level ROI summing: sum the time axis of all non-zero pixels in the decay
             summed_decay_curve = np.sum(decay * binary_mask[:, :, np.newaxis], axis=(0, 1))
             decay_curves.append(summed_decay_curve)
-
+        original_decay_curves = decay_curves.copy()
+        decay_curves = _floor_decay_curves(decay_curves)
         shift_guess = guess_shift(irf, decay_curves)
         
         # Create progress callback for shift estimation
@@ -177,17 +178,18 @@ def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo,
             progress = (current + 1) / total
             shift_progress.progress(progress)
         
-        results = fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, _progress_callback=shift_progress_callback)
+        results = fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, start=0, end=-1, _progress_callback=shift_progress_callback)
         shift_progress.empty()  # Remove progress bar when done
         
         results["decay_curves"] = decay_curves
+        results["original_decay_curves"] = original_decay_curves
         results["fitted_images"] = metadata_df['image_name'].values
         results["irf"] = irf
     elif analysis_type == "K-Flow":
         error_msg, results = k_flow_choose_shift(metadata_df.iloc[0], duration, time_bins, num_components, fitting_algo, fitting_mode, channel)
     return error_msg, results 
 
-def k_flow_choose_shift(metadata, duration, time_bins, num_components, fitting_algo, fitting_mode, channel):
+def k_flow_choose_shift(metadata, duration, time_bins, num_components, fitting_algo, fitting_mode, channel, num_samples=20, max_intensity=100000):
     error_msg = ""
     kflow_exp_name = metadata['kflow_exp_name']
     if channel == "NADH":
@@ -212,8 +214,8 @@ def k_flow_choose_shift(metadata, duration, time_bins, num_components, fitting_a
     if len(irf) != time_bins:
         return f"The dimension of the IRF for {kflow_exp_name} at {irf_path} is not correct. Expected 1D data (T), and T = {time_bins}, got {len(irf)}."
     # get sample decay curves
-    sample_decays = _get_sample_decay_curves(decays, 30, 100000)
-    
+    sample_decays = _get_sample_decay_curves(decays, num_samples, max_intensity)
+    sample_decays = _floor_decay_curves(sample_decays)
     # get the shift guess
     shift_guess = guess_shift(irf, sample_decays)
     # get the shift progress bar
@@ -226,6 +228,15 @@ def k_flow_choose_shift(metadata, duration, time_bins, num_components, fitting_a
     results["decay_curves"] = sample_decays
     results["irf"] = irf
     return error_msg, results 
+
+def _floor_decay_curves(decay_curves):
+    for i, decay_curve in enumerate(decay_curves):
+        # find the minimum value non-zero value from the start of the decay curve
+        min_value = np.min(decay_curve[decay_curve > 0])
+        decay_curves[i] = decay_curve - min_value
+        # clip the decay curve to be non-negative
+        decay_curves[i] = np.clip(decay_curves[i], 0, None)
+    return decay_curves
 
 def _get_sample_decay_curves(decays, n_samples, max_intensity):
     # use the top n_samples that have the highest intensity less than max_intensity
