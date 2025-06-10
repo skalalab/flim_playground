@@ -218,7 +218,7 @@ def parse_metadata_display_feature_widget(metadata_df, num_cols=3):
     if error_msg != "":
         st.error(error_msg)
         return 
-    st.session_state["last_analysis_type"] = analysis_type
+
     # display the available features in a multi select widget, one group per widget
     cols = st.columns(num_cols)
     keys = list(available_feature_groups_features.keys())

@@ -67,7 +67,7 @@ def gmm_hyperParams_widget():
 def phasor_params_widget(feature_cols_dict):
 
     available_harmonics = {}
-    if len(feature_cols_dict["Fit Free Nadh"]) > 0:
+    if "Fit Free Nadh" in feature_cols_dict and len(feature_cols_dict["Fit Free Nadh"]) > 0:
         nadh_fit_free_features_prefix = feature_groups_prefix["Fit Free Nadh"]
         nadh_fit_free_features = feature_cols_dict["Fit Free Nadh"]
         available_harmonics["Nadh"] = []
@@ -75,7 +75,7 @@ def phasor_params_widget(feature_cols_dict):
             available_harmonics["Nadh"].append(1)
         if f"{nadh_fit_free_features_prefix}G(2nd)" in nadh_fit_free_features and f"{nadh_fit_free_features_prefix}S(2nd)" in nadh_fit_free_features:
             available_harmonics["Nadh"].append(2)
-    if len(feature_cols_dict["Fit Free Fad"]) > 0:
+    if "Fit Free Fad" in feature_cols_dict and len(feature_cols_dict["Fit Free Fad"]) > 0:
 
         fad_fit_free_features_prefix = feature_groups_prefix["Fit Free Fad"]
         fad_fit_free_features = feature_cols_dict["Fit Free Fad"]
