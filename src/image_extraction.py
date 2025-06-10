@@ -188,7 +188,8 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, fit_free):
 
         try:
             nadh_decay_path = metadata['nadh decay']
-            nadh_decay = read_sdt150(nadh_decay_path)
+            nadh_channel = metadata['nadh_channel']
+            nadh_decay = read_sdt150(nadh_decay_path, nadh_channel)
         except Exception as e:
             error_msg = f"Error reading the decay file for image {image_name} at {nadh_decay_path}: {e}"
             return error_msg, None
@@ -212,7 +213,8 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, fit_free):
             return error_msg, None
         try:
             fad_decay_path = metadata['fad decay']
-            fad_decay = read_sdt150(fad_decay_path)
+            fad_channel = metadata['fad_channel']
+            fad_decay = read_sdt150(fad_decay_path, fad_channel)
         except Exception as e:
             error_msg = f"Error reading the decay file for image {image_name} at {fad_decay_path}: {e}"
             return error_msg, None

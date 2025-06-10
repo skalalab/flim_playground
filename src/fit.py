@@ -135,9 +135,11 @@ def roi_summing_choose_shift(metadata_df, duration, time_bins, num_components, f
         if channel == "NADH":
             irf_path = row.get('nadh irf', None)
             decay_path = row.get('nadh decay', None)
+            channel_no = row.get('nadh_channel', None)
         else:
             irf_path = row.get('fad irf', None)
             decay_path = row.get('fad decay', None)
+            channel_no = row.get('fad_channel', None)
         try:
             irf = np.loadtxt(irf_path)
         except Exception as e:
@@ -149,7 +151,7 @@ def roi_summing_choose_shift(metadata_df, duration, time_bins, num_components, f
             error_msg = f"Error reading the mask file for image {image_name} at {mask_path}: {e}"
             return error_msg, None
         try:
-            decay = read_sdt150(decay_path)
+            decay = read_sdt150(decay_path, channel=channel_no)
         except Exception as e:
             error_msg = f"Error reading the decay file for image {image_name} at {decay_path}: {e}"
             return error_msg, None

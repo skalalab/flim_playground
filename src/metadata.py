@@ -110,9 +110,15 @@ def parse_metadata_file(metadata_df):
                 if "nadh irf" not in metadata_df.columns:
                     error_msg += "The required column `nadh irf` not found in the metadata file! "
                     return error_msg, None, None, None, None, None
+                if "nadh_channel" not in metadata_df.columns:
+                    error_msg += "The required column `nadh_channel` not found in the metadata file! "
+                    return error_msg, None, None, None, None, None
             if has_fad:
                 if "fad irf" not in metadata_df.columns:
                     error_msg += "The required column `fad irf` not found in the metadata file! "
+                    return error_msg, None, None, None, None, None
+                if "fad_channel" not in metadata_df.columns:
+                    error_msg += "The required column `fad_channel` not found in the metadata file! "
                     return error_msg, None, None, None, None, None
     else: 
         error_msg += "Cannot determine the analysis type from the metadata file! "
