@@ -5,7 +5,7 @@ import numpy as np
 import time
 from src.navigation import render_top_menu
 from src.widgets.data_widgets import happy_emoji, sad_emoji, image_extraction_widget
-from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, parse_metadata_display_feature_widget
+from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, parse_metadata_display_feature_widget, check_sdt_channel_widget
 from src.widgets.fit_widgets import fit_options_widget, choose_shift_widget, start_end_widget
 from src.metadata import parse_metadata_file
 
@@ -123,6 +123,9 @@ with col2:
                 if selected_analysis_type == "K-Flow":
                     # copy the image_name column to kflow_exp_name
                     images_df["kflow_exp_name"] = images_df["image_name"]
+              
+                # before exporting, check for the sdt channel (dimension)
+                images_df = check_sdt_channel_widget(images_df)
                 parse_metadata_display_feature_widget(images_df)
                 export_metadata_widget(images_df=images_df, folder_path=folder_path)
             else: 

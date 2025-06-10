@@ -3,8 +3,7 @@ import os
 import numpy as np
 from src.metadata import list_files_with_suffix, list_files_with_filename, parse_metadata_file, spc_output_suffix, file_suffix_default
 from src.widgets.data_widgets import happy_emoji
-from src.file_io import load_image
-
+from src.sdt_io import read_sdt150
 def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
     """
     ROI summing fit: requires mask, IRF, and raw lifetime decay files for nadh and fad
@@ -215,3 +214,68 @@ def parse_metadata_display_feature_widget(metadata_df, num_cols=3):
                 """,
                 unsafe_allow_html=True
             )
+
+@st.cache_data
+def check_sdt_data(images_df, channel):
+    """
+    Check if the sdt data is available.
+    """
+    if channel == "nadh":
+        column_name = "nadh decay"
+    elif channel == "fad":
+        column_name = "fad decay"
+    else:
+        return "Error: Invalid channel", []
+    if column_name not in images_df.columns:
+        return "Error: No sdt data found. Please check the data.", []
+
+    shape_list = []
+    for i, row in images_df.iterrows():
+        sdt_data = read_sdt150(row[column_name], channel=-1) # read all channels to check
+        shape_list.append(sdt_data.shape)
+    
+    # check for the consistency of the shape, a tuple
+    if len(set(shape_list)) > 1:
+        from collections import Counter
+        shape_counts = Counter(shape_list)
+        error_msg = f"Inconsistent sdt data shapes found for {channel} decay: \n"
+        for shape, count in shape_counts.items():
+            error_msg += f"- Shape {shape} appears {count} times.\n"
+        return error_msg, []
+    else:
+        # get the first shape
+        shape = shape_list[0]
+        if len(shape) == 3:
+            return "", [-1]
+        elif len(shape) == 4:
+            # get all non-zero channels
+            non_zero_channels = []
+            for i in range(shape[0]):
+                if np.any(sdt_data[i]):
+                    non_zero_channels.append(i)
+            return "", non_zero_channels
+    
+def check_sdt_channel_widget(images_df):   
+    col1, col2 = st.columns(2)
+    with col1:
+        if "nadh decay" in images_df.columns:
+            error_msg, available_nadh_sdt_channels = check_sdt_data(images_df, "nadh")
+            if error_msg == "":
+                if len(available_nadh_sdt_channels) == 1:
+                    images_df["nadh_channel"] = available_nadh_sdt_channels[0]
+                else:
+                    images_df["nadh_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_nadh_sdt_channels)
+            else:
+                st.error(error_msg)
+    with col2:
+        if "fad decay" in images_df.columns:
+            error_msg, available_fad_sdt_channels = check_sdt_data(images_df, "fad")
+            if error_msg == "":
+                if len(available_fad_sdt_channels) == 1:
+                    images_df["fad_channel"] = available_fad_sdt_channels[0]
+                else:   
+                    images_df["fad_channel"] = st.selectbox("Select the sdt channel for fad decay", available_fad_sdt_channels)
+            else:
+                st.error(error_msg)
+    return images_df
+

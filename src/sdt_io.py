@@ -108,29 +108,14 @@ def read_sdt150(filename, channel=-1):
             dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2]].reshape([XYTC[0], XYTC[1], XYTC[2]])
         else:  # reshape XYTC to CXYT
             dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2] * actual_no_channels].reshape([actual_no_channels, XYTC[0], XYTC[1], XYTC[2]])
-    dataSDT = read_sdt_channel(dataSDT, channel)
+            if channel == -1: # return all channels
+                return dataSDT
+            try: 
+                dataSDT = dataSDT[channel]
+            except Exception as e:
+                return None, f"Error reading sdt data: {e}"
     return dataSDT
 
-def read_sdt_channel(sdt_data, channel=-1):
-    """
-    Read a specific channel from the sdt data
-    """
-    if sdt_data.ndim == 3:
-        return sdt_data
-    elif sdt_data.ndim == 4:
-        if channel == -1: # return the first channel that is not all zeros
-            for i in range(sdt_data.shape[0]):
-                # get the first channel with non-zero data
-                if np.any(sdt_data[i]):
-                    sdt_data = sdt_data[i]
-                    break
-            if sdt_data.ndim == 4:
-               raise ValueError("All channels are empty")
-            return sdt_data
-        else: # return the specified channel
-            return sdt_data[channel]
-    else:
-        raise ValueError("Invalid sdt data dimension")
 
 def write_sdt(path_output, sdt_data, manufacturer="BH", resolution=256):
     
