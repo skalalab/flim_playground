@@ -89,16 +89,16 @@ with col1:
                         nadh_start, nadh_end = start_end_widget(time_bins, "NADH")
                     if has_fad:
                         fad_start, fad_end = start_end_widget(time_bins, "FAD")
-                        
-                    if analysis_type == "ROI Summing Fit" or analysis_type == "K-Flow":
-                        if st.button("Start Finding Shifts"):
-                            st.session_state["choosing_shift"] = True
-                            st.session_state["shift_ready"] = False
+                
+                    if st.button("Start Finding Shifts"):
+                        st.session_state["choosing_shift"] = True
+                        st.session_state["shift_ready"] = False
                             
-                    elif analysis_type == "SPCImage" and fit_free:
-                        if st.button("Confirm and Start Fit Free Analysis"):
-                            st.session_state["choosing_shift"] = False
-                            st.session_state["shift_ready"] = True
+
+                if analysis_type == "SPCImage" and not fit_free:
+                    if st.button("Confirm and Start Analysis"):
+                        st.session_state["choosing_shift"] = False
+                        st.session_state["shift_ready"] = True
 
             else:
                 st.error(f"Error: {error_msg}")
@@ -117,6 +117,7 @@ with col2:
                 st.success(f"Images with ✅ are loaded successfully {happy_emoji}. Images with ❌ (if any) are not loaded. The following features will be extracted: ")
                 images_df = pd.DataFrame.from_dict(images, orient="index")
                 images_df['fit_free'] = fit_free
+                images_df['analysis_type'] = selected_analysis_type
                 images_df.index.name = "image_name"  # Set index name 
                 images_df.reset_index(inplace=True)  # Reset index to make it a column
                 if selected_analysis_type == "K-Flow":
@@ -129,7 +130,7 @@ with col2:
         elif folder_path != "":
             st.error(f"Folder not found! Please check the path. {sad_emoji}")
     elif selected_step == "Numeric Feature Extraction" and st.session_state["choosing_shift"] and metadata_df is not None:
-        st.info(f"Applying {analysis_type} on {len(metadata_df)} images.")
+        st.info(f"Fitting for shift on {len(metadata_df)} image(s).")
         # first NADH, then FAD/red
         if has_nadh: 
             #st.info("Preproceessing step: choose the shift for all images on channel NADH.")
@@ -189,7 +190,7 @@ with col2:
             if has_fad:
                 metadata_df["fad_start"] = fad_start
                 metadata_df["fad_end"] = fad_end
-        
+
         single_cell_features = image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_fad)
         if not single_cell_features.empty:
             st.success(f"Image features with ✅ are extracted successfully {happy_emoji}! Images with ❌ (if any) are excluded. The first few rows of the features are shown below.")
