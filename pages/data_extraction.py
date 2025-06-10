@@ -17,8 +17,6 @@ if "last_extracted_metadata" not in st.session_state:
     st.session_state["last_extracted_metadata"] = None
 if "last_extracted_metadata_filepath" not in st.session_state:
     st.session_state["last_extracted_metadata_filepath"] = None
-if "last_analysis_type" not in st.session_state:
-    st.session_state["last_analysis_type"] = None
 if "choosing_shift" not in st.session_state:
     st.session_state["choosing_shift"] = False
 if "shift_ready" not in st.session_state:
@@ -60,7 +58,6 @@ with col1:
         if st.session_state["last_extracted_metadata"] is not None:
             metadata_df = st.session_state["last_extracted_metadata"]
             file_path = st.session_state["last_extracted_metadata_filepath"]
-            andalysis_type = st.session_state["last_analysis_type"]
             st.info(f"Using the latest extracted metadata file: {file_path}. Refresh the page to use a different file.")
         else: 
             uploaded_file = st.file_uploader("Upload the image metadata csv", type=["csv"], help="The metadata file should be from the image metadata extraction step. ")
@@ -76,7 +73,6 @@ with col1:
             fitting = True if (analysis_type == "ROI Summing Fit" or analysis_type == "K-Flow" or (analysis_type == "SPCImage" and fit_free)) else False
             if error_msg == "":
                 st.success(f"✅ Features to be extracted confirmed. Analysis type: {analysis_type}. Fit free: {fit_free}. Channels: NADH: {has_nadh}, FAD/red: {has_fad}.") 
-                                
                 if fitting:
                     st.info("Please specify the following fitting options.")
                     if analysis_type == "K-Flow":
@@ -132,7 +128,7 @@ with col2:
                 st.warning("No data found in the folder. Please check the path and the file suffixes.")
         elif folder_path != "":
             st.error(f"Folder not found! Please check the path. {sad_emoji}")
-    elif selected_step == "Numeric Feature Extraction" and st.session_state["choosing_shift"]:
+    elif selected_step == "Numeric Feature Extraction" and st.session_state["choosing_shift"] and metadata_df is not None:
         st.info(f"Applying {analysis_type} on {len(metadata_df)} images.")
         # first NADH, then FAD/red
         if has_nadh: 
@@ -177,7 +173,7 @@ with col2:
                 st.session_state["shift_ready"] = True
                 st.rerun()
                 
-    elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"]:
+    elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"] and metadata_df is not None:
         if fitting:
          # adding the fitting config to the metadata
             metadata_df["fitting_algo"] = fitting_algo

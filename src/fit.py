@@ -7,6 +7,12 @@ from src.file_io import load_image
 import streamlit as st
 import pandas as pd 
 
+def create_progress_callback(progress_bar):
+    def progress_callback(current, total):
+        progress = (current + 1) / total
+        progress_bar.progress(progress)
+    return progress_callback
+
 def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode="hybrid", fit_shift=False, shift_guess=None, start=0, end=-1, _progress_callback=None):
     
     # to make sure the irf is normalized
@@ -113,81 +119,84 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         results["t3"] = t3_data
    
     return results
-@st.cache_data
-def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel):
+
+
+def roi_summing_choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, channel):
     error_msg = ""
     decay_curves = []
+    for i, row in metadata_df.iterrows():
+        image_name = row['image_name']
+        mask_path = row.get('mask', None)
+        if channel == "NADH":
+            irf_path = row.get('nadh irf', None)
+            decay_path = row.get('nadh decay', None)
+        else:
+            irf_path = row.get('fad irf', None)
+            decay_path = row.get('fad decay', None)
+        try:
+            irf = np.loadtxt(irf_path)
+        except Exception as e:
+            error_msg = f"Error reading the IRF file for image {image_name} at {irf_path}: {e}"
+            return error_msg, None
+        try:
+            mask = load_image(mask_path)
+        except Exception as e:
+            error_msg = f"Error reading the mask file for image {image_name} at {mask_path}: {e}"
+            return error_msg, None
+        try:
+            decay = read_sdt150(decay_path)
+        except Exception as e:
+            error_msg = f"Error reading the decay file for image {image_name} at {decay_path}: {e}"
+            return error_msg, None
+        
+        if len(irf) != time_bins:
+            error_msg = f"IRF length mismatch with specified time bins. IRF length: {len(irf)}, time bins: {time_bins}."
+            return error_msg, None
+        if len(decay.shape) != 3:
+            error_msg = f"Decay data mismatch. Expected 3D data (XYT), got {decay.shape}."
+            return error_msg, None
+        if decay.shape[2] != time_bins:
+            error_msg = f"Decay time bins mismatch. Decay time bins: {decay.shape[2]}, time bins: {time_bins}."
+            return error_msg, None
+        if len(mask.shape) != 2:
+            error_msg = f"Mask data mismatch. Expected 2D data, got {mask.shape}."
+            return error_msg, None
+        if decay.shape[0] != mask.shape[0] or decay.shape[1] != mask.shape[1]:
+            error_msg = f"Dimension mismatch: Decay data {decay.shape[:2]} vs mask {mask.shape}"
+            return error_msg, None
+        
+        # binarize the mask
+        binary_mask = np.where(mask > 0, 1, 0)
+        # image_level ROI summing: sum the time axis of all non-zero pixels in the decay
+        summed_decay_curve = np.sum(decay * binary_mask[:, :, np.newaxis], axis=(0, 1))
+        decay_curves.append(summed_decay_curve)
+    original_decay_curves = decay_curves.copy()
+    decay_curves = _floor_decay_curves(decay_curves)
+    shift_guess = guess_shift(irf, decay_curves)
     
-    if analysis_type == "ROI Summing Fit":
+    # Create progress callback for shift estimation
+    st.info(f"Estimating shifts for {channel} channel across {len(decay_curves)} images...")
+    shift_progress = st.progress(0)
+    
+    shift_progress_callback = create_progress_callback(shift_progress)
+    
+    results = fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, start=0, end=-1, _progress_callback=shift_progress_callback)
+    shift_progress.empty()  # Remove progress bar when done
+    
+    results["decay_curves"] = decay_curves
+    results["original_decay_curves"] = original_decay_curves
+    results["fitted_images"] = metadata_df['image_name'].values
+    results["irf"] = irf
+    return error_msg, results
 
-        for i, row in metadata_df.iterrows():
-            image_name = row['image_name']
-            mask_path = row.get('mask', None)
-            if channel == "NADH":
-                irf_path = row.get('nadh irf', None)
-                decay_path = row.get('nadh decay', None)
-            else:
-                irf_path = row.get('fad irf', None)
-                decay_path = row.get('fad decay', None)
-            try:
-                irf = np.loadtxt(irf_path)
-            except Exception as e:
-                error_msg = f"Error reading the IRF file for image {image_name} at {irf_path}: {e}"
-                return error_msg, None
-            try:
-                mask = load_image(mask_path)
-            except Exception as e:
-                error_msg = f"Error reading the mask file for image {image_name} at {mask_path}: {e}"
-                return error_msg, None
-            try:
-                decay = read_sdt150(decay_path)
-            except Exception as e:
-                error_msg = f"Error reading the decay file for image {image_name} at {decay_path}: {e}"
-                return error_msg, None
-            
-            if len(irf) != time_bins:
-                error_msg = f"IRF length mismatch with specified time bins. IRF length: {len(irf)}, time bins: {time_bins}."
-                return error_msg, None
-            if len(decay.shape) != 3:
-                error_msg = f"Decay data mismatch. Expected 3D data (XYT), got {decay.shape}."
-                return error_msg, None
-            if decay.shape[2] != time_bins:
-                error_msg = f"Decay time bins mismatch. Decay time bins: {decay.shape[2]}, time bins: {time_bins}."
-                return error_msg, None
-            if len(mask.shape) != 2:
-                error_msg = f"Mask data mismatch. Expected 2D data, got {mask.shape}."
-                return error_msg, None
-            if decay.shape[0] != mask.shape[0] or decay.shape[1] != mask.shape[1]:
-                error_msg = f"Dimension mismatch: Decay data {decay.shape[:2]} vs mask {mask.shape}"
-                return error_msg, None
-            
-            # binarize the mask
-            binary_mask = np.where(mask > 0, 1, 0)
-            # image_level ROI summing: sum the time axis of all non-zero pixels in the decay
-            summed_decay_curve = np.sum(decay * binary_mask[:, :, np.newaxis], axis=(0, 1))
-            decay_curves.append(summed_decay_curve)
-        original_decay_curves = decay_curves.copy()
-        decay_curves = _floor_decay_curves(decay_curves)
-        shift_guess = guess_shift(irf, decay_curves)
-        
-        # Create progress callback for shift estimation
-        st.info(f"Estimating shifts for {channel} channel across {len(decay_curves)} images...")
-        shift_progress = st.progress(0)
-        
-        def shift_progress_callback(current, total):
-            progress = (current + 1) / total
-            shift_progress.progress(progress)
-        
-        results = fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, start=0, end=-1, _progress_callback=shift_progress_callback)
-        shift_progress.empty()  # Remove progress bar when done
-        
-        results["decay_curves"] = decay_curves
-        results["original_decay_curves"] = original_decay_curves
-        results["fitted_images"] = metadata_df['image_name'].values
-        results["irf"] = irf
+@st.cache_data
+def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel):
+    if analysis_type == "ROI Summing Fit":
+        error_msg, results = roi_summing_choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, channel)
     elif analysis_type == "K-Flow":
         error_msg, results = k_flow_choose_shift(metadata_df.iloc[0], duration, time_bins, num_components, fitting_algo, fitting_mode, channel)
     return error_msg, results 
+
 
 def k_flow_choose_shift(metadata, duration, time_bins, num_components, fitting_algo, fitting_mode, channel, num_samples=20, max_intensity=100000):
     error_msg = ""
@@ -215,17 +224,18 @@ def k_flow_choose_shift(metadata, duration, time_bins, num_components, fitting_a
         return f"The dimension of the IRF for {kflow_exp_name} at {irf_path} is not correct. Expected 1D data (T), and T = {time_bins}, got {len(irf)}."
     # get sample decay curves
     sample_decays = _get_sample_decay_curves(decays, num_samples, max_intensity)
+    original_sample_decays = sample_decays.copy()
     sample_decays = _floor_decay_curves(sample_decays)
     # get the shift guess
     shift_guess = guess_shift(irf, sample_decays)
     # get the shift progress bar
+    st.info(f"Estimating shifts for {channel} channel for {kflow_exp_name} using {len(sample_decays)} sample curves...")
     shift_progress = st.progress(0)
-    def shift_progress_callback(current, total):
-        progress = (current + 1) / total
-        shift_progress.progress(progress)
+    shift_progress_callback = create_progress_callback(shift_progress)
     results = fit_curves(duration, time_bins, sample_decays, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, _progress_callback=shift_progress_callback)
     shift_progress.empty()  # Remove progress bar when done
     results["decay_curves"] = sample_decays
+    results["original_decay_curves"] = original_sample_decays
     results["irf"] = irf
     return error_msg, results 
 

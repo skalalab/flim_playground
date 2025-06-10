@@ -4,7 +4,7 @@ from skimage.measure import regionprops
 from src.feature_groups import feature_groups_prefix, feature_groups_features, feature_distribution_vars
 from src.file_io import load_image
 from src.sdt_io import read_sdt150
-from src.fit import fit_curves
+from src.fit import fit_curves, create_progress_callback
 from src.fit_helper import irf_shift
 from src.fit_free import get_phasor_features
 import streamlit as st
@@ -453,9 +453,7 @@ def fit_and_extract_results(channel, duration, time_bins, num_components, fittin
         st.info(f"Fitting {channel} curves for {len(decay_curves)} cells...")
         channel_progress = st.progress(0)
     
-    def channel_progress_callback(current, total):
-        progress = (current + 1) / total
-        channel_progress.progress(progress)
+    channel_progress_callback = create_progress_callback(channel_progress)
         
     results = fit_curves(duration, time_bins, decay_curves, shifted_irf, num_components, fitting_algo, fitting_mode, start=start, end=end, _progress_callback=channel_progress_callback)
     single_cell_features_img = extract_fit_results(channel, cell_ids, single_cell_features_img, results, decay_curves, num_components)
