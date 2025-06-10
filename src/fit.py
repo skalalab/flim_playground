@@ -79,22 +79,27 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         if num_components > 2:
             current_params['amp3'].value = np.max(decay_curve) / 2
             current_params['amp3'].max = np.max(decay_curve) * 10
-        if fitting_mode != "Local":
-            result_global = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=global_optimizer, **global_fit_options)
-        if fitting_algo == "MLE": 
-            if fitting_mode == "Local":
-                result = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=mle_optimizer, options=mle_fit_options)
-            elif fitting_mode == "Hybrid":
-                result = lmfit_minimize(objective, result_global.params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=mle_optimizer, options=mle_fit_options)
-            else: # global
-                result = result_global
-        elif fitting_algo == "WLS":
-            if fitting_mode == "Local":
-                result = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=wls_optimizer, **wls_fit_options)
-            elif fitting_mode == "Hybrid":
-                result = lmfit_minimize(objective, result_global.params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=wls_optimizer, **wls_fit_options)
-            else: # global
-                result = result_global
+        try: 
+            if fitting_mode != "Local":
+                result_global = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=global_optimizer, **global_fit_options)
+            if fitting_algo == "MLE": 
+                if fitting_mode == "Local":
+                    result = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=mle_optimizer, options=mle_fit_options)
+                elif fitting_mode == "Hybrid":
+                    result = lmfit_minimize(objective, result_global.params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=mle_optimizer, options=mle_fit_options)
+                else: # global
+                    result = result_global
+            elif fitting_algo == "WLS":
+                if fitting_mode == "Local":
+                    result = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=wls_optimizer, **wls_fit_options)
+                elif fitting_mode == "Hybrid":
+                    result = lmfit_minimize(objective, result_global.params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=wls_optimizer, **wls_fit_options)
+                else: # global
+                    result = result_global
+        except Exception as e:
+            print(f"Error fitting curve {i}: {e}")
+            result = None
+            continue
         amp1_data[i] = result.params['amp1'].value
         t1_data[i] = result.params['t1'].value
         offset_data[i] = result.params['offset'].value
@@ -191,7 +196,7 @@ def roi_summing_choose_shift(metadata_df, duration, time_bins, num_components, f
 
 @st.cache_data
 def choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel):
-    if analysis_type == "ROI Summing Fit":
+    if analysis_type == "ROI Summing Fit" or analysis_type == "SPCImage":
         error_msg, results = roi_summing_choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, channel)
     elif analysis_type == "K-Flow":
         error_msg, results = k_flow_choose_shift(metadata_df.iloc[0], duration, time_bins, num_components, fitting_algo, fitting_mode, channel)
@@ -242,7 +247,10 @@ def k_flow_choose_shift(metadata, duration, time_bins, num_components, fitting_a
 def _floor_decay_curves(decay_curves):
     for i, decay_curve in enumerate(decay_curves):
         # find the minimum value non-zero value from the start of the decay curve
-        min_value = np.min(decay_curve[decay_curve > 0])
+        try:
+            min_value = np.min(decay_curve[decay_curve > 0])
+        except Exception as e:
+            min_value = 0
         decay_curves[i] = decay_curve - min_value
         # clip the decay curve to be non-negative
         decay_curves[i] = np.clip(decay_curves[i], 0, None)

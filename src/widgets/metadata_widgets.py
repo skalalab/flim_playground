@@ -67,7 +67,7 @@ def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
                 actual_file_suffix[key] = suffix
     if error_msg == "" and "SPCImage" in analysis_type:
         # load nadh and fad spc image output files suffixes
-        suffix_info = f"For other SPCImage output files (a2, t1, t2, shift), the suffixes are automatically generated based on the provided a1 suffix \
+        suffix_info = f"For other SPCImage output files (a2, t1, t2), the suffixes are automatically generated based on the provided a1 suffix \
             by replacing {spc_output_suffix['a1']} to get the followings: \n"
         for key, suffix in spc_output_suffix.items():
             if key == "a1": 
@@ -90,21 +90,6 @@ def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
         
     # check if the suffixes are valid
     return actual_file_suffix, error_msg
-
-def find_shift_value(shift_path):
-    """
-    Find the shift value in the shift image.
-    """
-    shift_image = load_image(shift_path)
-    # the shift image should at most contain 2 unique values, 0 and the true shift value
-    unique_values = np.unique(shift_image)
-    # remove 0 from the unique values
-    unique_values = [val for val in unique_values if val != 0]
-    if len(unique_values) == 1:
-        return unique_values[0]
-    else:
-        raise ValueError(f"Cannot find the shift value in the shift image {shift_path}.")
-    
 
 @st.cache_data
 def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):    
@@ -174,22 +159,10 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
                                 st.write(f"- Duplicate {key} with suffix: {file_suffix[key]}")
 
                     else:
-                        shift_found = True
                         st.write("✅ All files found.")
-                        if "nadh shift" in image_group:
-                            try: 
-                               image_group["nadh shift value"] = find_shift_value(image_group["nadh shift"])
-                            except Exception as e:
-                                st.write(f"Error loading the nadh shift: {image_group["nadh shift"]}")
-                                shift_found = False
-                        if "fad shift" in image_group:
-                            try: 
-                                image_group["fad shift value"] = find_shift_value(image_group["fad shift"])
-                            except Exception as e:
-                                st.write(f"Error loading the fad shift: {image_group["fad shift"]}")
-                                shift_found = False
+                   
 
-            if missing_keys == [] and duplicate_keys == [] and shift_found:
+            if missing_keys == [] and duplicate_keys == []:
                 valid_image_groups[image_name] = image_group
 
     return valid_image_groups

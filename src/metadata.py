@@ -20,7 +20,6 @@ spc_output_suffix = {
     "a2": "_a2[%].asc",
     "t1": "_t1.asc",
     "t2": "_t2.asc",
-    "shift": "_shift.asc",
     "intensity": "_photons.asc",
 }
 
@@ -52,6 +51,15 @@ def parse_metadata_file(metadata_df):
     if "fit_free" not in metadata_df.columns:
         error_msg += "The required column `fit_free` not found in the metadata file! "
         return error_msg, None, None, None, None, None
+    
+    if "analysis_type" not in metadata_df.columns:
+        error_msg += "The required column `analysis_type` not found in the metadata file! "
+        return error_msg, None, None, None, None, None
+    # check if analysis_type consistent for all rows
+    if not metadata_df["analysis_type"].nunique() == 1:
+        error_msg += "The analysis type is not consistent for all rows! "
+        return error_msg, None, None, None, None, None
+    analysis_type = metadata_df["analysis_type"].iloc[0]
     if len(metadata_df) == 0:
         error_msg += "The metadata file is empty! "
         return error_msg, None, None, None, None, None
@@ -61,6 +69,9 @@ def parse_metadata_file(metadata_df):
 
     if "nadh histogram" in metadata_df.columns or "red histogram" in metadata_df.columns:
         # k-flow
+        if analysis_type != "K-Flow":
+            error_msg += f"The analysis type should be K-Flow but got {analysis_type}."
+            return error_msg, None, None, None, None, None
         if "nadh histogram" in metadata_df.columns:
             if "nadh irf" not in metadata_df.columns:
                 error_msg += "The required column `nadh irf` not found in the metadata file! "
@@ -71,22 +82,30 @@ def parse_metadata_file(metadata_df):
                 error_msg += "The required column `red irf` not found in the metadata file! "
                 return error_msg, None, None, None, None, None
             has_fad = True
-        analysis_type = "K-Flow"
+
     elif "mask" in metadata_df.columns:
         # for other analysis types requires mask
         has_mask = True
-        if "nadh decay" in metadata_df.columns or "fad decay" in metadata_df.columns:
-            if "nadh shift" in metadata_df.columns or "fad shift" in metadata_df.columns:
-                # spc image and fit free
-                feature_distribution = True
-                has_nadh = "nadh shift" in metadata_df.columns
-                has_fad = "fad shift" in metadata_df.columns
-                analysis_type = "SPCImage"
-            else:
-                # ROI summing fit
-                has_nadh = "nadh decay" in metadata_df.columns
-                has_fad = "fad decay" in metadata_df.columns
-                analysis_type = "ROI Summing Fit"
+        if "nadh a1" in metadata_df.columns or "fad a1" in metadata_df.columns:
+            # spc image and fit free
+            feature_distribution = True
+            has_nadh = "nadh a1" in metadata_df.columns
+            has_fad = "fad a1" in metadata_df.columns
+            if analysis_type != "SPCImage":
+                error_msg += f"The analysis type should be SPCImage but got {analysis_type}."
+                return error_msg, None, None, None, None, None
+            if fit_free:
+                if "nadh decay" not in metadata_df.columns and "fad decay" not in metadata_df.columns:
+                    error_msg += "The required columns `nadh decay` and `fad decay` not found in the metadata file! "
+                    return error_msg, None, None, None, None, None
+        else:
+            # ROI summing fit
+            has_nadh = "nadh decay" in metadata_df.columns
+            has_fad = "fad decay" in metadata_df.columns
+            if analysis_type != "ROI Summing Fit":
+                error_msg += f"The analysis type should be ROI Summing Fit but got {analysis_type}."
+                return error_msg, None, None, None, None, None
+        if fit_free or analysis_type == "ROI Summing Fit":
             if has_nadh:
                 if "nadh irf" not in metadata_df.columns:
                     error_msg += "The required column `nadh irf` not found in the metadata file! "
@@ -95,15 +114,6 @@ def parse_metadata_file(metadata_df):
                 if "fad irf" not in metadata_df.columns:
                     error_msg += "The required column `fad irf` not found in the metadata file! "
                     return error_msg, None, None, None, None, None
-        else: # SPCImage without fit free
-            if "nadh a1" in metadata_df.columns or "fad a1" in metadata_df.columns:
-                feature_distribution = True
-                has_nadh = "nadh a1" in metadata_df.columns
-                has_fad = "fad a1" in metadata_df.columns
-                analysis_type = "SPCImage"
-            else:
-                error_msg += "Cannot determine the analysis type from the metadata file! "
-                return error_msg, None, None, None, None, None
     else: 
         error_msg += "Cannot determine the analysis type from the metadata file! "
         return error_msg, None, None, None, None, None
