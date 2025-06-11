@@ -75,16 +75,11 @@ with col1:
                 st.success(f"✅ Features to be extracted confirmed. Analysis type: {analysis_type}. Fit free: {fit_free}. Channels: NADH: {has_nadh}, FAD/red: {has_fad}.") 
                 if fitting:
                     st.info("Please specify the following fitting options.")
-                    if analysis_type == "K-Flow":
-                        default_duration = 20.0
-                        default_time_bins = 1024
-                        default_laser_rate = 0.05
-                    else:
-                        default_duration = 10.0
-                        default_time_bins = 256
-                        default_laser_rate = 0.08
-                    duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift, laser_rate = fit_options_widget(analysis_type, fit_free, default_duration, default_time_bins, default_laser_rate)
+                    default_laser_rate = 0.05 if analysis_type == "K-Flow" else 0.08
+                    duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift, laser_rate = fit_options_widget(analysis_type, fit_free, default_laser_rate)
                     # based pm the time_bins, add the start and end for NADH and FAD widget 
+                    if analysis_type != "K-Flow":
+                        time_bins = metadata_df["time_bins"].iloc[0]
                     if has_nadh:
                         nadh_start, nadh_end = start_end_widget(time_bins, "NADH")
                     if has_fad:
@@ -125,9 +120,12 @@ with col2:
                     images_df["kflow_exp_name"] = images_df["image_name"]
               
                 # before exporting, check for the sdt channel (dimension)
-                images_df = check_sdt_channel_widget(images_df)
-                parse_metadata_display_feature_widget(images_df)
-                export_metadata_widget(images_df=images_df, folder_path=folder_path)
+                error_msg, images_df = check_sdt_channel_widget(images_df)
+                if error_msg != "":
+                    st.error(f"Error: {error_msg}")
+                else:   
+                    parse_metadata_display_feature_widget(images_df)
+                    export_metadata_widget(images_df=images_df, folder_path=folder_path)
             else: 
                 st.warning("No data found in the folder. Please check the path and the file suffixes.")
         elif folder_path != "":
@@ -137,56 +135,41 @@ with col2:
         # first NADH, then FAD/red
         if has_nadh: 
             #st.info("Preproceessing step: choose the shift for all images on channel NADH.")
-            error_msg, nadh_shifts = choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel="NADH")
+            error_msg, nadh_shifts = choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, fix_shift, channel="NADH")
             if error_msg != "":
                 st.error(f"Error: {error_msg}")
         if has_fad:
             #st.info("Preproceessing step: choose the shift for all images on channel FAD/red.")
-            error_msg, fad_shifts = choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel="FAD")
+            error_msg, fad_shifts = choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, fix_shift, channel="FAD")
             if error_msg != "":
                 st.error(f"Error: {error_msg}")
         
-        if error_msg == "":
-            if fix_shift:
-                # let user choose the shift
-                col1, col2 = st.columns(2)
-                with col1:
-                    if has_nadh:
-                        nadh_shift = st.number_input("NADH Shift", value=np.median(nadh_shifts), step=0.1, help="The shift for NADH channel. The provided default value is the median of the shifts. You can change it to a specific value.")
-                with col2:
-                    if has_fad:
-                        fad_shift = st.number_input("FAD Shift", value=np.median(fad_shifts), step=0.1, help="The shift for FAD/red channel. The provided default value is the median of the shifts. You can change it to a specific value.")
-
-            shift_finished = st.button("Confirm the Shift and Start the Analysis")
-            if shift_finished:
-                # write the shift to the metadata file
-                if has_nadh:
-                    if fix_shift:
-                        metadata_df["nadh_shift"] = nadh_shift
-                    else:
-                        metadata_df["nadh_shift"] = nadh_shifts
-                if has_fad:
-                    if fix_shift:
-                        metadata_df["fad_shift"] = fad_shift
-                    else:
-                        metadata_df["fad_shift"] = fad_shifts
+        shift_finished = st.button("Confirm the Shift and Start the Analysis")
+        if shift_finished:
+            # write the shift to the metadata file
+            if has_nadh:
+                metadata_df["nadh_shift"] = nadh_shifts
                 
-                # Store the updated metadata_df in session state so it persists across rerun
-                st.session_state["last_extracted_metadata"] = metadata_df
-                st.session_state["choosing_shift"] = False
-                st.session_state["shift_ready"] = True
-                st.rerun()
+            if has_fad:
+                metadata_df["fad_shift"] = fad_shifts
+            
+            # Store the updated metadata_df in session state so it persists across rerun
+            st.session_state["last_extracted_metadata"] = metadata_df
+            st.session_state["choosing_shift"] = False
+            st.session_state["shift_ready"] = True
+            st.rerun()
                 
     elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"] and metadata_df is not None:
         if fitting:
          # adding the fitting config to the metadata
             metadata_df["fitting_algo"] = fitting_algo
             metadata_df["fitting_mode"] = fitting_mode
-            metadata_df["duration"] = duration
-            metadata_df["time_bins"] = time_bins
+            if analysis_type == "K-Flow": # other types get the duration and time bins from the sdt file automatically
+                metadata_df["duration"] = duration
+                metadata_df["time_bins"] = time_bins
             metadata_df["num_components"] = num_components
-            if fit_free:
-                metadata_df["laser_rate"] = laser_rate
+            metadata_df["laser_rate"] = laser_rate
+
             if has_nadh:
                 metadata_df["nadh_start"] = nadh_start
                 metadata_df["nadh_end"] = nadh_end
