@@ -1,9 +1,10 @@
 import streamlit as st
 import os 
 import numpy as np
+from collections import Counter
 from src.metadata import list_files_with_suffix, list_files_with_filename, parse_metadata_file, spc_output_suffix, file_suffix_default
 from src.widgets.data_widgets import happy_emoji
-from src.sdt_io import read_sdt150
+from src.sdt_io import read_sdt150, read_sdt_metadata
 def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
     """
     ROI summing fit: requires mask, IRF, and raw lifetime decay files for nadh and fad
@@ -225,57 +226,79 @@ def check_sdt_data(images_df, channel):
     elif channel == "fad":
         column_name = "fad decay"
     else:
-        return "Error: Invalid channel", []
+        return "Error: Invalid channel", [], None, None
     if column_name not in images_df.columns:
-        return "Error: No sdt data found. Please check the data.", []
+        return "Error: No sdt data found. Please check the data.", [], None, None
 
     shape_list = []
+    laser_rep_time_list = []
     for i, row in images_df.iterrows():
-        sdt_data = read_sdt150(row[column_name], channel=-1) # read all channels to check
+        sdt_data = read_sdt150(row[column_name], channel=-1) # read all channels to check        
+        laser_rep_time = read_sdt_metadata(row[column_name])
+        laser_rep_time_list.append(laser_rep_time)
         shape_list.append(sdt_data.shape)
     
     # check for the consistency of the shape, a tuple
     if len(set(shape_list)) > 1:
-        from collections import Counter
+        
         shape_counts = Counter(shape_list)
         error_msg = f"Inconsistent sdt data shapes found for {channel} decay: \n"
         for shape, count in shape_counts.items():
             error_msg += f"- Shape {shape} appears {count} times.\n"
-        return error_msg, []
+        return error_msg, [], None, None
+    if len(set(laser_rep_time_list)) > 1:
+        error_msg = f"Inconsistent laser rep time found for {channel} decay: \n"
+        for laser_rep_time, count in laser_rep_time_list.items():
+            error_msg += f"- Laser rep time {laser_rep_time} appears {count} times.\n"
+        return error_msg, [], None, None
     else:
         # get the first shape
         shape = shape_list[0]
+        time_bins = shape[2]
+        laser_rep_time = laser_rep_time_list[0]
         if len(shape) == 3:
-            return "", [-1]
+            return "", [-1], time_bins, laser_rep_time
         elif len(shape) == 4:
             # get all non-zero channels
             non_zero_channels = []
             for i in range(shape[0]):
                 if np.any(sdt_data[i]):
                     non_zero_channels.append(i)
-            return "", non_zero_channels
-    
+            return "", non_zero_channels, time_bins, laser_rep_time
+
 def check_sdt_channel_widget(images_df):   
     col1, col2 = st.columns(2)
     with col1:
         if "nadh decay" in images_df.columns:
-            error_msg, available_nadh_sdt_channels = check_sdt_data(images_df, "nadh")
+            error_msg, available_nadh_sdt_channels, nadh_time_bins, nadh_laser_rep_time = check_sdt_data(images_df, "nadh")
             if error_msg == "":
                 if len(available_nadh_sdt_channels) == 1:
                     images_df["nadh_channel"] = available_nadh_sdt_channels[0]
                 else:
                     images_df["nadh_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_nadh_sdt_channels)
+                images_df["time_bins"] = nadh_time_bins
+                images_df["duration"] = nadh_laser_rep_time
             else:
-                st.error(error_msg)
+                return error_msg, None
     with col2:
         if "fad decay" in images_df.columns:
-            error_msg, available_fad_sdt_channels = check_sdt_data(images_df, "fad")
+            error_msg, available_fad_sdt_channels, fad_time_bins, fad_laser_rep_time = check_sdt_data(images_df, "fad")
             if error_msg == "":
                 if len(available_fad_sdt_channels) == 1:
                     images_df["fad_channel"] = available_fad_sdt_channels[0]
                 else:   
                     images_df["fad_channel"] = st.selectbox("Select the sdt channel for fad decay", available_fad_sdt_channels)
+                images_df["time_bins"] = fad_time_bins
+                images_df["duration"] = fad_laser_rep_time
             else:
-                st.error(error_msg)
-    return images_df
+                return error_msg, None
+
+    if "nadh_decay" in images_df.columns and "fad_decay" in images_df.columns:
+        if nadh_time_bins != fad_time_bins:
+            return "Inconsistent time bins found for nadh and fad decay. Please check the data.", None
+        if nadh_laser_rep_time != fad_laser_rep_time:
+            return "Inconsistent laser rep time found for nadh and fad decay. Please check the data.", None
+      
+
+    return error_msg, images_df
 
