@@ -17,6 +17,9 @@ def get_mask_morphology_features(mask, image_name, cell_dict):
         cell_id = f"{image_name}_{region.label}"
         if cell_id not in cell_dict:
             cell_dict[cell_id] = {}
+        # Add centroid x and y: image data is indexed in NumPy and most image processing libraries in "reverse"
+        cell_dict[cell_id]['centroid_x'] = region.centroid[1]
+        cell_dict[cell_id]['centroid_y'] = region.centroid[0]
         for feature in mask_morphology_features:
             feature_name = f"{feature_groups_prefix['Mask Morphology']}{feature}"
             if feature in region:
