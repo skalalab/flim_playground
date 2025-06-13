@@ -3,7 +3,6 @@
 read data from sdt file
 """
 import sdtfile
-from sdtfile import SdtFile
 import numpy as np
 import zipfile
 from pathlib import Path
@@ -67,6 +66,7 @@ def read_sdt_info_brukerSDT(filename):
             block_headers.append(bh)
             # read data block
             mi = measure_info[bh.meas_desc_block_no]
+            
             dtype = sdtfile.sdtfile.BlockType(bh.block_type).dtype
             dsize = bh.block_length // dtype.itemsize
             
@@ -116,11 +116,6 @@ def read_sdt150(filename, channel=-1):
                 return None, f"Error reading sdt data: {e}"
     return dataSDT
 
-def read_sdt_metadata(filename):
-    
-    with SdtFile(filename) as sdt:
-        laser_rep_time = sdt.measure_info[0].rep_t
-    return laser_rep_time   
 
 def write_sdt(path_output, sdt_data, manufacturer="BH", resolution=256):
     
