@@ -85,7 +85,6 @@ def check_img_features(single_img_cell_features, image_name):
     Drop the cells that have '--' or NaN values.
     """
     total_cells = len(single_img_cell_features)
-    
     # Create boolean masks for invalid cells
     dash_mask = single_img_cell_features.astype(str).apply(lambda x: x.str.contains("--").any(), axis=1)
     nan_mask = single_img_cell_features.isna().any(axis=1)

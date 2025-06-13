@@ -76,10 +76,11 @@ with col1:
                 if fitting:
                     st.info("Please specify the following fitting options.")
                     default_laser_rate = 0.05 if analysis_type == "K-Flow" else 0.08
-                    duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift, laser_rate = fit_options_widget(analysis_type, fit_free, default_laser_rate)
+                    duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift, laser_rate = fit_options_widget(analysis_type, fit_free, default_laser_rate=default_laser_rate)
                     # based pm the time_bins, add the start and end for NADH and FAD widget 
                     if analysis_type != "K-Flow":
                         time_bins = metadata_df["time_bins"].iloc[0]
+                        duration = metadata_df["duration"].iloc[0]
                     if has_nadh:
                         nadh_start, nadh_end = start_end_widget(time_bins, "NADH")
                     if has_fad:

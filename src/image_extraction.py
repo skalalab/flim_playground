@@ -155,6 +155,8 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad):
     
     # convert single_cell_features_img to a dataframe
     single_cell_features_img = pd.DataFrame(single_cell_features_img).T
+    if single_cell_features_img.empty:
+        return "Error: No cells found in the mask", None
     # name the index as cell_id
     single_cell_features_img.index.name = "cell_id"
    
