@@ -257,6 +257,7 @@ def check_sdt_data(images_df, channel):
     
 def check_sdt_channel_widget(images_df):   
     col1, col2 = st.columns(2)
+    error_msg = ""
     with col1:
         if "nadh decay" in images_df.columns:
             error_msg, available_nadh_sdt_channels = check_sdt_data(images_df, "nadh")
@@ -266,7 +267,7 @@ def check_sdt_channel_widget(images_df):
                 else:
                     images_df["nadh_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_nadh_sdt_channels)
             else:
-                st.error(error_msg)
+                return error_msg, images_df
     with col2:
         if "fad decay" in images_df.columns:
             error_msg, available_fad_sdt_channels = check_sdt_data(images_df, "fad")
@@ -276,6 +277,6 @@ def check_sdt_channel_widget(images_df):
                 else:   
                     images_df["fad_channel"] = st.selectbox("Select the sdt channel for fad decay", available_fad_sdt_channels)
             else:
-                st.error(error_msg)
-    return images_df
+                return error_msg, images_df
+    return error_msg, images_df
 
