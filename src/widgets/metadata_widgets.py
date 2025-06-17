@@ -90,7 +90,6 @@ def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
     # check if the suffixes are valid
     return actual_file_suffix, error_msg
 
-@st.cache_data
 def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):    
     """
     Load data from a folder and check its validity. Display the file sets for each image group. 
