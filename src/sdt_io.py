@@ -3,6 +3,7 @@
 read data from sdt file
 """
 import sdtfile
+from sdtfile import SdtFile
 import numpy as np
 import zipfile
 from pathlib import Path
@@ -29,6 +30,12 @@ def visualize_timebin(timeBin):
     plt.plot(timeBin)
     plt.show()
     st.pyplot(fig)  
+
+def read_sdt_metadata(filename):
+    
+    with SdtFile(filename) as sdt:
+        laser_rep_time = sdt.measure_info[0].rep_t
+    return laser_rep_time   
 
 def read_sdt_info_brukerSDT(filename):
     """ 
