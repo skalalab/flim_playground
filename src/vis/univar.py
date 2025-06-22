@@ -92,6 +92,9 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
     hard_thresholding = st.checkbox("Use hard thresholding", value=False, key="hard_thresholding", help="If checked, the point where the two Gaussian distributions intersect will be used as the threshold. If not checked, each data will be assigned to the component with the highest posterior probability.")
     fig = go.Figure()
     # fit a Gaussian Mixture Model (GMM) to each color group
+    
+    # Collect tables for two-column display
+    gmm_tables = []
     for color_group in unique_color_groups:
         group_df = df[df[GROUP_COL_NAME] == color_group]
         x_data = group_df[selected_var].dropna()
@@ -124,20 +127,20 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
                 f"<b>Group:</b> {color_group}<br>"
             )
         ))
-        # add histogram plot
-        fig.add_trace(go.Histogram(
-            x=x_data,
-            histnorm='probability density',
-            name=f'{color_group} Histogram',
-            opacity=0.5,
-            marker_color="gray",
-            hovertemplate=(
-                f"<b>Group:</b> {color_group}<br>"
-                f"<b>Count:</b> %{{y}}<extra></extra>"
-            ),
-            # not showing the legend
-            showlegend=False,
-        ))
+        # # add histogram plot
+        # fig.add_trace(go.Histogram(
+        #     x=x_data,
+        #     histnorm='probability density',
+        #     name=f'{color_group} Histogram',
+        #     opacity=0.5,
+        #     marker_color="gray",
+        #     hovertemplate=(
+        #         f"<b>Group:</b> {color_group}<br>"
+        #         f"<b>Count:</b> %{{y}}<extra></extra>"
+        #     ),
+        #     # not showing the legend
+        #     showlegend=False,
+        # ))
         # Plot individual components if more than one
         if best_gmm.n_components > 1:
             
@@ -149,22 +152,26 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
             sigma = np.sqrt(best_gmm.covariances_.ravel())
             gmm_overall_mean = np.sum(pi * mu)
             # iteratively print out the mean and standard deviation of each component in a table
+            # Sort components by ascending mu (mean) values
+            sorted_indices = np.argsort(mu)
             table_md = [f"**GMM Components for {color_group}:**"]
             table_md.append("| Component | Mean  | Std. Dev. | Weight |")
             table_md.append("|-----------|-------|-----------|--------|")
-            for i in range(best_gmm.n_components):
-                table_md.append(f"| {i+1}       | {mu[i]:.2f} | {sigma[i]:.2f}    | {pi[i]:.2f}  |")
-            st.markdown("\n".join(table_md))
+            for rank, i in enumerate(sorted_indices):
+                table_md.append(f"| {rank+1}       | {mu[i]:.2f} | {sigma[i]:.2f}    | {pi[i]:.2f}  |")
+            
+            # Store table for later display
+            gmm_tables.append("\n".join(table_md))
 
             h_index = 0
             dash_styles = ['dash', 'dot', 'dashdot']
-            for i in range(best_gmm.n_components):
+            for rank, i in enumerate(sorted_indices):
                 fig.add_trace(go.Scatter(
                     x=x.flatten(),
                     y=pdf_individual[:, i],
                     mode='lines',
-                    name=f'{color_group} Component {i+1}',
-                    line=dict(color=color_map[color_group], width=1, dash=dash_styles[i % len(dash_styles)]),
+                    name=f'{color_group} Component {rank+1}',
+                    line=dict(color=color_map[color_group], width=1, dash=dash_styles[rank % len(dash_styles)]),
                     hovertemplate=(
                         f"<b>Group:</b> {color_group}<br>"
                     )
@@ -179,8 +186,7 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
                 # predict the component membership for each point (hard thresholding)
                 # find the intersection point of the component distributions
                 # Sort components by mean to ensure that the intersection is calculated between the correct pairs
-                sorted_idx = np.argsort(mu)
-                pi, mu, sigma = pi[sorted_idx], mu[sorted_idx], sigma[sorted_idx]
+                pi, mu, sigma = pi[sorted_indices], mu[sorted_indices], sigma[sorted_indices]
                 thresholds = []
                 for i in range(len(mu) - 1):
                     try: 
@@ -188,7 +194,7 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
                               pi[i+1], mu[i+1], sigma[i+1])
                         thresholds.append(t)
                     except Exception as e:
-                        st.error(f"Error finding intersection between {color_group} component {sorted_idx[i]+1} and component {sorted_idx[i+1]+1}: either there is no intersection or there are more than one intersection.")
+                        st.error(f"Error finding intersection between {color_group} component {sorted_indices[i]+1} and component {sorted_indices[i+1]+1}: either there is no intersection or there are more than one intersection.")
                         st.warning("Hard thresholding is not possible, so we resort to soft thresholding in this group.")
                         hard_thresholding_possible = False
                         break
@@ -208,11 +214,11 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
                         fig.add_annotation(
                             x=threshold, y=max(pdf) * 1.05, text=f"Threshold ({threshold:.2f})", showarrow=False, align="center",
                         )
-                        st.markdown(f"Threshold for <span style='color:{color_map[color_group]}'>{color_group}</span> between component {sorted_idx[i]+1} and component {sorted_idx[i+1]+1}: **{threshold:.2f}**", unsafe_allow_html=True)
+                        st.markdown(f"Threshold for <span style='color:{color_map[color_group]}'>{color_group}</span> between component {sorted_indices[i]+1} and component {sorted_indices[i+1]+1}: **{threshold:.2f}**", unsafe_allow_html=True)
 
                     subpopulation_labels = np.digitize(x_data, bins=thresholds)
                     # restore the original order of the labels
-                    subpopulation_labels = sorted_idx[subpopulation_labels]
+                    subpopulation_labels = sorted_indices[subpopulation_labels]
             if not hard_thresholding_possible:
                 # Predict the component membership for each point (soft thresholding)
                 data_2d = x_data.values.reshape(-1, 1)
@@ -221,6 +227,17 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
             # Add 1 to have 1-based component indexing (e.g., group1, 2, ...)
             assigned_labels = [f"{color_group}_group{label + 1}" for label in subpopulation_labels]
             df.loc[data_indices, "GMM_group"] = assigned_labels
+    
+    # Display tables in two columns using modular arithmetic
+    if gmm_tables:
+        col1, col2 = st.columns(2)
+        for i, table in enumerate(gmm_tables):
+            if i % 2 == 0:  # Even indices (0, 2, 4, ...) go to column 1
+                with col1:
+                    st.markdown(table)
+            else:  # Odd indices (1, 3, 5, ...) go to column 2
+                with col2:
+                    st.markdown(table)
             
     if h_index_msg != "": 
         st.info(h_index_msg)
