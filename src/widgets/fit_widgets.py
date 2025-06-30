@@ -40,8 +40,8 @@ def display_shift_data_widget(results, analysis_type, metadata_df, time_axis, pe
             jitter=0.3,
             pointpos=0,
             marker=dict(
-                color='lightgrey',
-                size=6,
+                color='black',
+                size=10,
                 opacity=1,
                 line=dict(width=0.5, color='DarkSlateGrey')
             ),
@@ -52,7 +52,11 @@ def display_shift_data_widget(results, analysis_type, metadata_df, time_axis, pe
             hovertemplate="<b>Shift</b>: %{y}<br>Image: %{hovertext}<extra></extra>",
         ))
         fig.update_layout(
-            title=f"Shifts for {channel} channel",
+            title=dict(
+                text=f"Shifts for {channel} channel",
+                x=0.5,  # Center the title horizontally
+                xanchor='center'  # Anchor the title to its center point
+            ),
             yaxis_title="Shift (bins)",
             showlegend=False, # Hide legend for single trace
             hovermode='closest', # Enable hover mode
