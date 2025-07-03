@@ -1,6 +1,7 @@
 import streamlit as st
 import os 
 import numpy as np
+from pathlib import Path
 from src.metadata import list_files_with_suffix, list_files_with_filename, parse_metadata_file, spc_output_suffix, file_suffix_default
 from src.widgets.data_widgets import happy_emoji
 from src.sdt_io import read_sdt150, read_sdt_metadata
@@ -101,9 +102,38 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
     
     valid_image_groups = {}
 
+    # Single recursive scan to get all files
+
+    path = Path(folder_path)
+    all_files = [str(file) for file in path.rglob("*") if file.is_file()]
+    
+    if len(all_files) == 0:
+        st.warning(f"No files found in folder: **{folder_path}**.")
+        return {}
+    
+    # Build lookup dictionaries for fast access
+    files_by_name = {}  # exact filename -> list of file paths
+    files_by_suffix = {}  # suffix -> list of file paths
+    
+    for file_path in all_files:
+        filename = os.path.basename(file_path)
+        
+        # Index by exact filename
+        if filename not in files_by_name:
+            files_by_name[filename] = []
+        files_by_name[filename].append(file_path)
+        
+        # Index by suffix for each suffix we care about
+        for suffix in file_suffix.values():
+            if filename.endswith(suffix):
+                if suffix not in files_by_suffix:
+                    files_by_suffix[suffix] = []
+                files_by_suffix[suffix].append(file_path)
+
     # use the first key to get the list of images (it does not matter which key to use, since they are all required, they should all be there)
     image_search_suffix = list(file_suffix.values())[0]
-    image_files = list_files_with_suffix(folder_path, image_search_suffix) # returned file paths are absolute paths in string format
+    image_files = files_by_suffix.get(image_search_suffix, [])
+    
     if len(image_files) == 0:
         st.warning(f"No image files found with suffix: **{image_search_suffix}**.")
         return {}
@@ -130,9 +160,11 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
             for key, suffix in file_suffix.items():
                 # find the file with the exact name: image_name + suffix recursively within the folder (except for IRF)
                 if "irf" not in key:
-                    matched_files = list_files_with_filename(folder_path, image_name + suffix)
+                    filename = image_name + suffix
+                    matched_files = files_by_name.get(filename, [])
                 else:
-                    matched_files = list_files_with_suffix(folder_path, suffix)
+                    matched_files = files_by_suffix.get(suffix, [])
+                    
                 if len(matched_files) != 1:
                     if len(matched_files) > 1:
                         duplicate_keys.append(key) # more than one file found
