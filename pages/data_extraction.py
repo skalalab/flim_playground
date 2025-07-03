@@ -1,11 +1,11 @@
 import streamlit as st
 import os
 import pandas as pd
-import numpy as np
 import time
 from src.navigation import render_top_menu
 from src.widgets.data_widgets import happy_emoji, sad_emoji, image_extraction_widget
 from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, parse_metadata_display_feature_widget, check_sdt_channel_widget
+from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.fit_widgets import fit_options_widget, choose_shift_widget, start_end_widget
 from src.metadata import parse_metadata_file
 
@@ -101,7 +101,15 @@ with col1:
 
     else:   
         # Categorical features extraction
-        st.info("Coming soon...")
+        df_folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the csv files that you want to assign categories to.")
+        delimiter = st.text_input("Cell ID Delimiter", "_", max_chars=2, help="The delimiter used to split the cell ID/base_name column.")
+        if df_folder_path != "":
+            available_dfs = find_available_dfs_widget(df_folder_path, delimiter)
+            if len(available_dfs) > 0:
+                st.write(f"Found {len(available_dfs)} available csv files ready to be assigned categories {happy_emoji}:")
+                st.write(available_dfs)
+            else:
+                st.error(f"No available csv files found at {df_folder_path} {sad_emoji}")
 
 
 with col2: 
@@ -199,3 +207,6 @@ with col2:
                     st.success(f"Image metadata exported successfully to {csv_path} {happy_emoji}")
             else:
                 st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name= f"single_cell_features_{timestamp}.csv")
+    elif selected_step == "Categorical Feature Extraction" and df_folder_path != "" and len(available_dfs) > 0:
+        combined_df, available_categories = check_and_merge_df_widget(available_dfs)
+        map_categories_to_labels_widget(available_categories, combined_df, delimiter, df_folder_path)

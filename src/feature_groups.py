@@ -3,6 +3,7 @@ The meta data for the Data Extraction outputted CSV file. Can be extended. If ne
 """
 # required column: unique cell identifier
 required_cols = ["cell_id", "image_name"]
+unique_cell_id_col = "cell_id"
 
 # customizable categorical columns
 categorical_cols = [ "experiment", "day", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "patient_id", "replicate", "GMM_group", "2D_GMM_group"]
