@@ -129,9 +129,10 @@ with col2:
                     images_df["kflow_exp_name"] = images_df["image_name"]
               
                 # before exporting, check for the sdt channel (dimension)
-                error_msg, images_df = check_sdt_channel_widget(images_df)
-                if error_msg != "":
-                    st.error(f"Error: {error_msg}")
+                if fit_free or selected_analysis_type == "ROI Summing Fit":
+                    error_msg, images_df = check_sdt_channel_widget(images_df)
+                    if error_msg != "":
+                        st.error(f"Error: {error_msg}")
                 else:   
                     parse_metadata_display_feature_widget(images_df)
                     export_metadata_widget(images_df=images_df, folder_path=folder_path)

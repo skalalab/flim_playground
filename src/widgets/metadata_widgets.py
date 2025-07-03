@@ -270,7 +270,7 @@ def check_sdt_data(images_df, channel):
 
 
 def check_sdt_channel_widget(images_df):   
-    
+    error_msg = ""
     col1, col2 = st.columns(2)
     with col1:
         if "nadh decay" in images_df.columns:
