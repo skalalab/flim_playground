@@ -1,0 +1,19 @@
+[channel_name]
+blue = "nadh"
+green = "fad"
+red = "red"
+
+[file_suffix]
+mask = "_photons_cellpose.tiff"
+blue_irf = "nad_irf.txt"
+blue_decay = "n.sdt"
+blue_histogram = "_ch1.csv"
+blue_a1 = "n_a1[%].asc"
+green_irf = "fad_irf.txt"
+green_decay = "f.sdt"
+green_histogram = "_ch2.csv"
+green_a1 = "f_a1[%].asc"
+red_irf = "red_irf.txt"
+red_decay = "r.sdt"
+red_histogram = "_ch3.csv"
+red_a1 = "r_a1[%].asc"

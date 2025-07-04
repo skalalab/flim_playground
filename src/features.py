@@ -1,5 +1,6 @@
 import pandas as pd
-from src.feature_groups import required_cols, categorical_cols, feature_groups_default, feature_groups_prefix, feature_groups
+from src.feature_groups import categorical_cols, feature_groups_default, feature_groups_prefix, feature_groups
+from src.metadata import required_cols, unique_cell_id_col
 def match_col_name(col, col_list):
     """
     match_col_name: a function that takes a column name and a list of canonical column names and returns the first canonical column name that matches the column name
@@ -90,9 +91,8 @@ def get_features(df):
 def check_and_fix_df(df):
     """
     check for df's metadata: 
-    - single-cell unique_identifier: `cell_id` (required)
+    - single-cell unique_identifier
     - the image the cell comes from: `image_name`: base_name = {image_name}_{cell_label}
-   
     - fill in na values for categorical columns
     """
     warning_msg = error_msg = ""
@@ -121,34 +121,28 @@ def check_and_fix_df(df):
         # drop the duplicate columns, only keep the first one
         df = df.loc[:, ~df.columns.duplicated(keep='first')]
         
-    # handle the required column: cell_id 
-    # for backward compatibility, we also check for base_name and base
-    if "base" in df.columns or "base_name" in df.columns:
-        if "cell_id" in df.columns:
-            # drop the cell_id column if it is not the same as base_name
-            df.drop(columns=["cell_id"], inplace=True)
-        df.rename(columns={"base": "base_name"}, inplace=True)
-        df.rename(columns={"base_name": "cell_id"}, inplace=True)
-    if "cell_id" not in df.columns:
-        error_msg += "Error: cell_id/base_name column is missing in the uploaded file. It is required. \n"
+    # handle the required unique cell identifier column
+
+    if unique_cell_id_col not in df.columns:
+        error_msg += f"Error: {unique_cell_id_col} column is missing in the uploaded file. It is required. \n"
         return None, warning_msg, error_msg
     
-    if df["cell_id"].duplicated().any():
+    if df[unique_cell_id_col].duplicated().any():
         original_row_count = len(df)
-        first_duplicate = df["cell_id"].duplicated()
-        first_duplicate_value = df["cell_id"][first_duplicate].iloc[0]
+        first_duplicate = df[unique_cell_id_col].duplicated()
+        first_duplicate_value = df[unique_cell_id_col][first_duplicate].iloc[0]
         first_duplicate_index = df.loc[first_duplicate].index[0]
-        warning_msg += f"Warning: Duplicate values found in `cell_id` column. First duplicate found with cell_id: '{first_duplicate_value}' at row {first_duplicate_index}.\
+        warning_msg += f"Warning: Duplicate values found in `{unique_cell_id_col}` column. First duplicate found with {unique_cell_id_col}: '{first_duplicate_value}' at row {first_duplicate_index}.\
             The duplicate rows will be dropped, only the first one will be kept.\n"
         # drop the duplicate rows, only keep the first one
-        df = df.drop_duplicates(subset=["cell_id"], keep="first")
+        df = df.drop_duplicates(subset=[unique_cell_id_col], keep="first")
     
     # after fixing the df, print out the number of rows removed
         rows_removed = original_row_count - len(df)
         if rows_removed > 0:
             warning_msg += f"{rows_removed} rows were removed."
     if "image_name" not in df.columns:
-        df['image_name'] = df["cell_id"].apply(safe_split_with_logging)
+        df['image_name'] = df[unique_cell_id_col].apply(safe_split_with_logging)
     else: 
         df["image_name"] = df["image_name"].fillna("missing image name")
 

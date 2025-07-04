@@ -2,7 +2,8 @@ import streamlit as st
 import os 
 import numpy as np
 from pathlib import Path
-from src.metadata import list_files_with_suffix, list_files_with_filename, parse_metadata_file, spc_output_suffix, file_suffix_default
+from src.metadata import parse_metadata_file, spc_output_suffix
+from src.config import get_file_suffix_default  
 from src.widgets.data_widgets import happy_emoji
 from src.sdt_io import read_sdt150, read_sdt_metadata
 from collections import Counter
@@ -55,6 +56,7 @@ def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
     # dynamically determine how many rows are needed
     num_rows = (len(actual_file_suffix) + 1) // 2
     cols = st.columns(2)
+    file_suffix_default = get_file_suffix_default()
     for i, (key, value) in enumerate(actual_file_suffix.items()):
         col = cols[i % 2]
         with col:

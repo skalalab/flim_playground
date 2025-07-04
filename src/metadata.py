@@ -1,19 +1,8 @@
 from pathlib import Path
-
 from src.feature_groups import subset_feature_group_features
-file_suffix_default = {
-    'mask': '_mask.tiff',
-    'nadh decay': 'n.sdt',
-    'fad decay': 'f.sdt',
-    'single cell features': '.csv',
-    'nadh histogram': '_ch1.csv',
-    'red histogram': '_ch2.csv',
-    "nadh a1": "n_a1[%].asc",
-    "fad a1": "f_a1[%].asc",
-    'nadh irf': '.txt',
-    'fad irf': '.txt',
-    'red irf': '.txt', 
-}
+
+unique_cell_id_col = "cell_id"
+required_cols = [unique_cell_id_col, "image_name"]
 
 spc_output_suffix = {
     "a1": "_a1[%].asc",
@@ -22,7 +11,6 @@ spc_output_suffix = {
     "t2": "_t2.asc",
     "intensity": "_photons.asc",
 }
-
 def list_files_with_suffix(folder_path, suffix):
     path = Path(folder_path)
     # rglob searches files recursively
