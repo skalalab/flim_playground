@@ -15,22 +15,14 @@ def update_multiselect(key, options):
             st.session_state[key] = [option for option in current_selection if option != "All"]
 
 
-def filters_widget(df, wildcard=True, wildCardSelectText="Color by"): 
-    """
-    wildcard: True if we want to add a wildcard multi-selection. It can be one of the following: 
-        color by: True if we want to color the plot by a categorical variable or a combination of categorical variables
-        compare by: True if we want to compare a feature by a categorical variable or a combination of categorical variables
-        classify by: True if we want to classify by a categorical variable or a combination of categorical variables
-    """
+def filters_widget(df): 
+
     # Initially, filtered_df is the original df
     filtered_df = df.copy()
     # Keep track of which categories need filter: has more than 1 unique value
     categories_to_filter = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1]
     if len(categories_to_filter) > 0:
-        if wildcard:
-            cols = st.columns(len(categories_to_filter) + 1) # +1 for color_by
-        else:
-            cols = st.columns(len(categories_to_filter))
+        cols = st.columns(len(categories_to_filter))
 
     for i, category in enumerate(categories_to_filter):
         with cols[i]:
@@ -66,11 +58,4 @@ def filters_widget(df, wildcard=True, wildCardSelectText="Color by"):
             else:
                 # Otherwise, filter the dataframe
                 filtered_df = filtered_df[filtered_df[category].isin(selected_values)] 
-            
-    if wildcard and len(categories_to_filter) > 0:
-        with cols[-1]:
-            wildcard_options = st.multiselect(wildCardSelectText, categories_to_filter, default=categories_to_filter[-1])                   
-    else:
-        wildcard_options = []
-
-    return filtered_df, wildcard_options
+    return filtered_df

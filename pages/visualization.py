@@ -3,7 +3,7 @@ from streamlit_plotly_events import plotly_events
 
 from src.widgets.data_widgets import load_csv, happy_emoji, sad_emoji
 from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget, twod_single_feature_select_widget
-from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget
+from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget, visual_encoding_channels_widget
 from src.widgets.filter_widgets import filters_widget
 from src.widgets.click_plot_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
 from src.navigation import render_top_menu
@@ -76,7 +76,12 @@ with col2:
     if upload_complete:
         # click_ready: boolean to check if the plot is ready for click events
         click_ready = False
-        filtered_df, color_by_options = filters_widget(st.session_state.vis_df, wildcard=True)
+        filtered_df = filters_widget(st.session_state.vis_df)
+        # for visualization that are point-based, provides the options for other visual encoding channels: opacity, shape, and separate by
+        point_based = method not in ["Image Comparison", "Feature Histogram (GMM optional)"]
+        color_based = method not in ["Image Comparison"]
+
+        color_by, opacity_by, shape_by, separate_by = visual_encoding_channels_widget(filtered_df, color_based=color_based, point_based=point_based)
 
         # check if the df is empty after filtering
         if not filtered_df.empty:
@@ -86,7 +91,7 @@ with col2:
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        fig = feature_comparison_plot(filtered_df, selected_var, color_by_options, effect_size_method=selected_effect_size_method)
+                        fig = feature_comparison_plot(filtered_df, selected_var, color_by, effect_size_method=selected_effect_size_method)
                         click_ready = True
                     elif method == "Image Comparison":
                         fig = image_comparison_plot(filtered_df, selected_var)
@@ -97,9 +102,9 @@ with col2:
                         for each color group on the selected feature with 1, 2, and 3 components (fit on raw distribution, not on the histograms). \
                         Choose the one in which all the components are at least of 10% weight and has the lowest BIC score.")
                         if apply_gmm:
-                            feature_gmm_plot(filtered_df, selected_var, color_by_options)
+                            feature_gmm_plot(filtered_df, selected_var, color_by)
                         else: 
-                            fig = feature_histogram_plot(filtered_df, selected_var, color_by_options)
+                            fig = feature_histogram_plot(filtered_df, selected_var, color_by)
                             st.plotly_chart(fig, use_container_width=True)
                 else:
                     st.write("No data available after removing rows with missing values {sad_emoji}")
@@ -109,7 +114,7 @@ with col2:
                     filtered_df = filtered_df[filtered_df[selected_x].notna() & filtered_df[selected_y].notna()]
                     if len(filtered_df) > 0:
                         _ensure_aspect_ratio(aspect_ratio="1 / 1")
-                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by_options)
+                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by)
                         col2_1, col2_2 = st.columns([1, 1])
                         with col2_1:
                             st.plotly_chart(fig, use_container_width=True)
@@ -124,7 +129,7 @@ with col2:
                         st.write("No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Phasor Plot":
                     if selected_channel is not None and selected_harmonic is not None and f is not None:
-                        fig = phasor_plot(filtered_df, selected_channel, color_by=color_by_options, f=f, harmonic=selected_harmonic)
+                        fig = phasor_plot(filtered_df, selected_channel, color_by=color_by, f=f, harmonic=selected_harmonic)
                         click_ready = True
                     else:
                         st.write("Your data does not contain the required features for phasor plot.")
@@ -138,7 +143,7 @@ with col2:
                     
                     if len(filtered_df) > 0:
                         # plot the reduced data
-                        fig = dimension_reduction_plot(filtered_df, selected_features, method=method, hyperParam_dict=hyperParam_dict, colored_by=color_by_options)
+                        fig = dimension_reduction_plot(filtered_df, selected_features, method=method, hyperParam_dict=hyperParam_dict, colored_by=color_by)
                         click_ready = True
                     else:
                         st.write(f"No data available after removing rows with missing values {sad_emoji}")

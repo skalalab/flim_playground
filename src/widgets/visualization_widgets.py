@@ -1,8 +1,34 @@
 import streamlit as st
 import numpy as np
-from src.feature_groups import feature_groups_prefix
-"""
-This file contains widgets that are specific to certain visualization or classification methods."""
+from src.feature_groups import feature_groups_prefix, categorical_cols
+
+def visual_encoding_channels_widget(filtered_df, color_based=True, point_based=True):
+    # color is now a multi-select inside the filter widget, maybe move it here later
+    available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
+    color_by = []
+    opacity_channel = shape_channel = separate_by_category = None
+    if len(available_categories) > 0:
+        if color_based and point_based:
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                color_by = st.multiselect("Color by", available_categories, default=available_categories[-1])  
+            with col2:
+                opacity_by = st.selectbox("Opacity by", available_categories, index=None, placeholder="Choose an option...")
+            with col3:
+                shape_by = st.selectbox("Shape by", available_categories, index=None, placeholder="Choose an option...")
+            with col4:
+                separate_by = st.selectbox("Separate by", available_categories, index=None, placeholder="Choose an option...")
+        elif color_based:
+            color_by = st.multiselect("Color by", available_categories, default=available_categories[-1])  
+        elif point_based:
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                opacity_by = st.selectbox("Opacity by", available_categories, index=None, placeholder="Choose an option...")
+            with col2:
+                shape_by = st.selectbox("Shape by", available_categories, index=None, placeholder="Choose an option...")
+            with col3:
+                separate_by = st.selectbox("Separate by", available_categories, index=None, placeholder="Choose an option...")
+    return color_by, opacity_by, shape_by, separate_by
 
 def umap_hyperParams_widget():
     col1, col2 = st.columns(2)

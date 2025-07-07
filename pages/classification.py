@@ -7,6 +7,7 @@ from src.navigation import render_top_menu
 from src.widgets.selection_widgets import multi_feature_select_widget
 from src.widgets.filter_widgets import filters_widget
 from src.widgets.data_widgets import load_csv, happy_emoji, sad_emoji
+from src.feature_groups import categorical_cols
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on this page as well
@@ -29,7 +30,12 @@ with col1:
 
 with col2:
     if upload_complete:   
-        filtered_df, classify_by_options = filters_widget(df, wildcard=True, wildCardSelectText="Classify by")
+        filtered_df = filters_widget(df)
+        classify_by_options = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
+        if len(classify_by_options) > 0:
+            classify_by_options = st.multiselect("Classify by", classify_by_options, default=classify_by_options[-1])
+        else:
+            classify_by_options = []
         filtered_df['classes'] = filtered_df[classify_by_options].agg('_'.join, axis=1)
         classes = filtered_df['classes'].unique()
         if len(classes) <= 1 or len(selected_features) == 0:
