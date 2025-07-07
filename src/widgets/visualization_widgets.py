@@ -6,7 +6,7 @@ def visual_encoding_channels_widget(filtered_df, color_based=True, point_based=T
     # color is now a multi-select inside the filter widget, maybe move it here later
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
     color_by = []
-    opacity_channel = shape_channel = separate_by_category = None
+    opacity_by = shape_by = separate_by = None
     if len(available_categories) > 0:
         if color_based and point_based:
             col1, col2, col3, col4 = st.columns(4)
@@ -19,15 +19,11 @@ def visual_encoding_channels_widget(filtered_df, color_based=True, point_based=T
             with col4:
                 separate_by = st.selectbox("Separate by", available_categories, index=None, placeholder="Choose an option...")
         elif color_based:
-            color_by = st.multiselect("Color by", available_categories, default=available_categories[-1])  
-        elif point_based:
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                opacity_by = st.selectbox("Opacity by", available_categories, index=None, placeholder="Choose an option...")
-            with col2:
-                shape_by = st.selectbox("Shape by", available_categories, index=None, placeholder="Choose an option...")
-            with col3:
-                separate_by = st.selectbox("Separate by", available_categories, index=None, placeholder="Choose an option...")
+            color_by = st.multiselect("Color by", available_categories, default=available_categories[-1]) 
+        else: 
+            # if point based, it must also be color based. So we do not need to have any widget for the case where only point based and not color based
+            pass
+      
     return color_by, opacity_by, shape_by, separate_by
 
 def umap_hyperParams_widget():

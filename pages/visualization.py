@@ -91,7 +91,7 @@ with col2:
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        fig = feature_comparison_plot(filtered_df, selected_var, color_by, effect_size_method=selected_effect_size_method)
+                        fig = feature_comparison_plot(filtered_df, selected_var, color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method)
                         click_ready = True
                     elif method == "Image Comparison":
                         fig = image_comparison_plot(filtered_df, selected_var)

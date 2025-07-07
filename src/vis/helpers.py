@@ -35,6 +35,22 @@ def cohens_d(group1, group2):
     mean_diff = np.mean(group1) - np.mean(group2)
     return mean_diff / pooled_sd
 
+def create_opacity_mapping(groups, min_opacity=0.3, max_opacity=1.0):
+    """Create opacity mapping for groups with evenly spaced values"""
+    if len(groups) == 1:
+        return {groups[0]: max_opacity}
+    
+    opacity_values = np.linspace(min_opacity, max_opacity, len(groups))
+    return {group: opacity_values[i] for i, group in enumerate(sorted(groups))}
+
+def create_shape_mapping(groups):
+    """Create shape mapping for groups using different plotly symbols"""
+    # Available plotly marker symbols
+    symbols = ['circle', 'square', 'diamond', 'cross', 'x', 'triangle-up', 
+               'triangle-down', 'pentagon', 'hexagon', 'octagon', 'star', 'diamond-tall']
+    
+    return {group: symbols[i % len(symbols)] for i, group in enumerate(sorted(groups))}
+
 def create_color_map(groups, overlap_point):
     # if points in the visulization is going to overlap, use a transparent color
     if overlap_point: 
@@ -86,16 +102,25 @@ def _calculate_effect_size(group1_data, group2_data, method: str):
 def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_groups_list, 
                                  drawn_annotations_list, positioning_metrics, 
                                  original_df, data_column_name, group_column_name_in_df, 
-                                 overall_min_y_val, data_range_y):
+                                 overall_min_y_val, data_range_y, position_map=None):
     """
     Adds a single effect size annotation (bracket and text) to the figure,
     handling y-positioning and collision detection.
     """
-    x_indices = [compare_groups_list.index(pair_strings[0]), compare_groups_list.index(pair_strings[1])]
-    x_start_new = min(x_indices)
-    x_end_new = max(x_indices)
-
-    spanned_group_names = compare_groups_list[x_start_new : x_end_new + 1]
+    if position_map is not None:
+        # Use actual positions from position_map for separate sections
+        x_positions = [position_map[pair_strings[0]], position_map[pair_strings[1]]]
+        x_start_new = min(x_positions)
+        x_end_new = max(x_positions)
+        # For position_map, we need to find which groups are in the spanned region
+        spanned_group_names = [group for group, pos in position_map.items() 
+                             if pos >= x_start_new and pos <= x_end_new]
+    else:
+        # Use group indices for regular plots
+        x_indices = [compare_groups_list.index(pair_strings[0]), compare_groups_list.index(pair_strings[1])]
+        x_start_new = min(x_indices)
+        x_end_new = max(x_indices)
+        spanned_group_names = compare_groups_list[x_start_new : x_end_new + 1]
     df_in_span = original_df[original_df[group_column_name_in_df].isin(spanned_group_names)]
     current_region_max_y = df_in_span[data_column_name].max(skipna=True)
 
@@ -187,15 +212,22 @@ def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_g
         align="center"
     )
 
-def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, effect_size_method="None"):
+def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, effect_size_method="None", position_map=None, selected_pairs=None, threshold=None):
     """
     Adds effect size annotations to the figure.
     Manages selection of pairs, calculation of effect sizes, and calls annotation plotting.
+    
+    Args:
+        position_map: Optional dict mapping group names to actual x-positions for separate sections
+        selected_pairs: Optional pre-selected pairs to avoid showing the widget again
+        threshold: Optional pre-set threshold to avoid showing the widget again
     """
     if not all_possible_pairs:
         return
 
-    selected_pairs = stats_comparison_pair_widget(all_possible_pairs)
+    # Only show widget if pairs aren't pre-selected
+    if selected_pairs is None:
+        selected_pairs = stats_comparison_pair_widget(all_possible_pairs)
 
     if selected_pairs and effect_size_method != "None":
         drawn_annotations = []  # List to store details of drawn annotations for collision detection
@@ -223,19 +255,27 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
 
         # Sort pairs for consistent annotation order and simpler collision logic
         # Sorting key ensures that pairs are processed from left-to-right, and shorter spans before longer ones if they start at the same point.
-        sorted_pairs = sorted(selected_pairs,
-                              key=lambda p: (min(compare_groups.index(p[0]), compare_groups.index(p[1])),
-                                             max(compare_groups.index(p[0]), compare_groups.index(p[1]))))
+        if position_map is not None:
+            # Use actual positions for sorting when position_map is provided
+            sorted_pairs = sorted(selected_pairs,
+                                  key=lambda p: (min(position_map[p[0]], position_map[p[1]]),
+                                                 max(position_map[p[0]], position_map[p[1]])))
+        else:
+            # Use group indices for sorting in regular plots
+            sorted_pairs = sorted(selected_pairs,
+                                  key=lambda p: (min(compare_groups.index(p[0]), compare_groups.index(p[1])),
+                                                 max(compare_groups.index(p[0]), compare_groups.index(p[1]))))
         
         # --- Threshold input based on selected method ---
-        threshold = 0.0
-        threshold_key_suffix = selected_var
-        if effect_size_method == "Glass's Delta":
-            threshold = st.number_input("Glass's Delta Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05, 
-                                        key=f"glass_delta_thresh_{threshold_key_suffix}")
-        elif effect_size_method == "Cohen's Distance":
-            threshold = st.number_input("Cohen's Distance Threshold", value=0.5, min_value=0.0, max_value=3.0, step=0.05,
-                                        key=f"cohens_d_thresh_{threshold_key_suffix}")
+        if threshold is None:
+            threshold = 0.0
+            threshold_key_suffix = selected_var
+            if effect_size_method == "Glass's Delta":
+                threshold = st.number_input("Glass's Delta Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05, 
+                                            key=f"glass_delta_thresh_{threshold_key_suffix}")
+            elif effect_size_method == "Cohen's Distance":
+                threshold = st.number_input("Cohen's Distance Threshold", value=0.5, min_value=0.0, max_value=3.0, step=0.05,
+                                            key=f"cohens_d_thresh_{threshold_key_suffix}")
 
         for pair in sorted_pairs:
             group1_data = df[df[group_col_name] == pair[0]][selected_var].dropna()
@@ -259,7 +299,8 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
                     data_column_name=selected_var,
                     group_column_name_in_df=group_col_name,
                     overall_min_y_val=global_min_y, # Pass global_min_y for fallback
-                    data_range_y=data_range_y # Pass data_range_y for context if needed inside, though metrics are now absolute
+                    data_range_y=data_range_y, # Pass data_range_y for context if needed inside, though metrics are now absolute
+                    position_map=position_map
                 )
           
 
