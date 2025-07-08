@@ -356,3 +356,30 @@ def _ensure_aspect_ratio(aspect_ratio: str):  # Parameter is named 'aspect_ratio
         """,
         unsafe_allow_html=True,
     )
+
+# Function to apply plot styling to any figure
+def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
+    """Apply consistent styling to plotly figures"""
+    # Update marker sizes for all scatter and box traces
+    for trace in fig.data:
+        if hasattr(trace, 'marker') and trace.marker:
+            if trace.type == 'scatter':
+                trace.marker.size = point_size
+            elif trace.type == 'box' and trace.marker:
+                trace.marker.size = point_size
+    
+    # Update layout with axis and legend font sizes
+    fig.update_layout(
+        xaxis=dict(
+            titlefont=dict(size=axis_label_size),
+            tickfont=dict(size=axis_label_size-2)
+        ),
+        yaxis=dict(
+            titlefont=dict(size=axis_label_size),
+            tickfont=dict(size=axis_label_size-2)
+        ),
+        legend=dict(
+            font=dict(size=legend_size)
+        )
+    )
+    return fig

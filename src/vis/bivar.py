@@ -140,9 +140,13 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
             y=group_df[selected_y],
             mode='markers',
             name=color_group,
+            text=group_df["cell_id"],
+            customdata=group_df["image_name"],
             marker=dict(color=color_map[color_group], size=5, opacity=0.7),
             hovertemplate=(
                 f"<b>Group:</b> {color_group}<br>"
+                f"<b>Cell ID:</b> %{{text}}<br>"
+                f"<b>Image:</b> %{{customdata}}<br>"
                 f"<b>{selected_x}:</b> %{{x}}<br>"
                 f"<b>{selected_y}:</b> %{{y}}<extra></extra>"
             )
@@ -159,22 +163,22 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
             if len(group_data_2d) > 1: # Need at least 2 points for GMM, ideally more
            
                 best_gmm = _find_best_gmm(group_data_2d, max_components=fit_gmm_max_components, min_weight_threshold=fit_gmm_min_weight_threshold) # Example: try up to 2 components
-                if best_gmm:
+                if best_gmm and best_gmm.n_components > 1:
                     table_md += ["\n**GMM Components:**"]
                     table_md.append("")
-                    table_md.append(f"| Component | **{selected_x}** | | **{selected_y}** | | Weight |")
-                    table_md.append(f"|------|-----|-----|-----|-----|------|")
-                    table_md.append(f"| | **Mean** | Std.Dev | **Mean** | Std.Dev | |")
+                    table_md.append(f"| Component | **{selected_x}** | **{selected_y}** | Weight |")
+                    table_md.append(f"|------|-----|-----|------|")
+                    table_md.append(f"| | **Mean** | **Mean** | |")
 
                     for i in range(best_gmm.n_components):
                         mean = best_gmm.means_[i]
                         cov = best_gmm.covariances_[i]
                         mean_x, mean_y = mean
-                        std_x = np.sqrt(cov[0][0])
-                        std_y = np.sqrt(cov[1][1])
+                        # std_x = np.sqrt(cov[0][0])
+                        # std_y = np.sqrt(cov[1][1])
                         weight = best_gmm.weights_[i]
-    
-                        table_md.append(f"| {i+1} | {mean_x:.2f} | {std_x:.2f} | {mean_y:.2f} | {std_y:.2f} | {weight:.2f} |")
+
+                        table_md.append(f"| {i+1} | {mean_x:.2f} | {mean_y:.2f} | {weight:.2f} |")
                         # plot the gmm component using Ellipse
                         _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color_map[color_group], color_group, i+1)
                     # use the best gmm model to predict the component membership of the current group
@@ -182,6 +186,8 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
                     subpopulation_labels = best_gmm.predict(group_data_2d)
                     assigned_labels = [f"{color_group}_group{label + 1}" for label in subpopulation_labels]
                     df.loc[data_indices, "2D_GMM_group"] = assigned_labels
+                elif best_gmm and best_gmm.n_components == 1:
+                    st.write(f"Only one GMM component found for {color_group} with current constraints.")
                 else:
                     st.write(f"No suitable GMM found for {color_group} with current constraints.")
             else:
@@ -196,7 +202,7 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
         _plot_marginal_density(fig, y_data, 'y', color_map[color_group], color_group, selected_marginal_plot_type, plotly_axis_params={'xaxis': 'x2'})
 
     fig.update_layout(
-        title=f'2D Distribution of {selected_x} and {selected_y} by {", ".join(color_by)} with {selected_marginal_plot_type} marginals',
+        title=f'2D Distribution of {selected_x} and {selected_y} by {", ".join(color_by)}',
         xaxis_title=selected_x,
         yaxis_title=selected_y,
         hovermode='closest',

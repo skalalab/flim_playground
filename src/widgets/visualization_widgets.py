@@ -130,3 +130,27 @@ def phasor_params_widget(feature_cols_dict):
             harmonic_str = "2nd"
         f = st.number_input(f"Enter the laser repetition rate in GHz for {selected_channel} {harmonic_str} harmonic", value=0.08, min_value=0.0, step=0.01)
     return selected_channel, selected_harmonic, f
+
+def plot_config_widget(point_based=True):
+    """
+    widgets to change point, axis label font, legend font size
+    """
+    # Get current values from session state or use defaults
+    current_point_size = st.session_state.get("plot_point_size", 5)
+    current_axis_label_size = st.session_state.get("plot_axis_label_size", 14)
+    current_legend_size = st.session_state.get("plot_legend_size", 12)
+    
+    if point_based:
+        num_cols = 3
+    else: # not rendering the point size widget for non-point based plots
+        num_cols = 2
+    cols = st.columns(num_cols)
+    point_size = current_point_size
+    if point_based:
+        with cols[0]:
+            point_size = st.number_input("Point Size", value=current_point_size, min_value=1, step=1)
+    with cols[1 if point_based else 0]:
+        axis_label_size = st.number_input("Axis Label Font Size", value=current_axis_label_size, min_value=8, step=1)
+    with cols[2 if point_based else 1]:
+        legend_size = st.number_input("Legend Font Size", value=current_legend_size, min_value=8, step=1)
+    return point_size, axis_label_size, legend_size

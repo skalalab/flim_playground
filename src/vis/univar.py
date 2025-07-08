@@ -240,20 +240,12 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
                     st.markdown(table)
             
     if h_index_msg != "": 
-        st.info(h_index_msg)
-   
-    st.plotly_chart(fig, use_container_width=True, key=f"gmm_plot_{selected_var}_{', '.join(color_by)}")
+        st.info(h_index_msg)    
     
-    # have a button to export the GMM group augmented dataframe
-    downloaded = st.download_button(label="Download GMM Grouped Data", data=df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
-    if downloaded:
-        if "GMM_group" in df.columns:
-            df.drop(columns=['GMM_group'], inplace=True)
-
     # remove the column after plotting
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
 
-    return fig, h_index_msg
+    return fig, df
 
 
 
