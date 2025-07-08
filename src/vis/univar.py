@@ -248,7 +248,6 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
     return fig, df
 
 
-
 def feature_comparison_plot(df, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None"):
     fig = go.Figure()
     GROUP_COL_NAME = 'compare_group'
@@ -397,7 +396,7 @@ def feature_comparison_plot(df, selected_var, color_by, opacity_by=None, shape_b
                 continue  # Skip if x_position not found
         
         marker_color = color_map[color_group]
-        marker_opacity = opacity_map.get(opacity_group, 0.8) if opacity_map and opacity_group is not None else 0.8
+        marker_opacity = opacity_map.get(opacity_group, 0.8) if opacity_map and opacity_group is not None else 0.7
         marker_symbol = shape_map.get(shape_group, 'circle') if shape_map and shape_group is not None else 'circle'
         
         # --- Determine trace name and legend visibility ---

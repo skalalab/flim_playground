@@ -353,6 +353,14 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
             elif trace.type == 'box' and trace.marker:
                 trace.marker.size = point_size
     
+    # Update annotation font sizes to match axis label size
+    if fig.layout.annotations:
+        for annotation in fig.layout.annotations:
+            if annotation.font:
+                annotation.font.size = axis_label_size
+            else:
+                annotation.font = dict(size=axis_label_size)
+    
     # Update layout with axis and legend font sizes
     fig.update_layout(
         xaxis=dict(
