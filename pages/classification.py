@@ -2,11 +2,12 @@ import streamlit as st
 import pandas as pd
 from itertools import combinations
 
-from src.classify import classify
+from src.classify import classify, run_classification, plot_confusion_matrix, plot_roc_curve, plot_feature_importance
 from src.navigation import render_top_menu
 from src.widgets.selection_widgets import multi_feature_select_widget
 from src.widgets.filter_widgets import filters_widget
 from src.widgets.data_widgets import load_csv, happy_emoji, sad_emoji
+from src.widgets.visualization_widgets import plot_config_widget
 from src.feature_groups import categorical_cols
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -22,9 +23,9 @@ with col1:
     if upload_complete:
         cols = st.columns(2)
         with cols[0]:
-            classification_method = st.selectbox("Select a classification method", ["Random Forest", "SVM", "Logistic Regression"])
+            classification_method = st.selectbox("Classifier", ["Random Forest", "SVM", "Logistic Regression"])
         with cols[1]:
-            splits = st.slider("Select the train size (percentage of training data)", 0.5, 0.9, 0.7, 0.1)
+            splits = st.slider("Train size (percentage of training data)", 0.5, 0.9, 0.7, 0.1)
         selected_features = multi_feature_select_widget(feature_cols_dict, n_per_row=1)
         filtered_df = df 
 
@@ -69,16 +70,25 @@ with col2:
                 the_rest = [cls for cls in classes if cls != selected_option[0]]
                 selected_option_text = f"{selected_option[0]} VS {', '.join(the_rest)}"
             st.write(f"Running {classification_method} to classify between: {selected_option_text}, trained on {int(splits*100)}% of the data {happy_emoji}.")
-            fig1, fig2, fig3, accuracy = classify(df_classify, classification_method, splits)
+            results = run_classification(df_classify, classification_method, splits)
+            st.markdown("---")  # Add a separator line
+            st.subheader("📈 Performance Metrics")
+            # Get current values from session state as defaults for the widgets
+            point_size, axis_label_size, legend_size = plot_config_widget(point_based=False)
+
+            # Now generate the plots with the selected styles
             cols = st.columns(2)
             with cols[0]:
+                fig1 = plot_confusion_matrix(results['y_test'], results['y_pred'], axis_label_size=axis_label_size, legend_size=legend_size)
                 st.pyplot(fig1)
             with cols[1]:
-                if fig2 is not None:
-                    st.pyplot(fig2)
-            st.write(f"Accuracy: {accuracy:.2f}")
-            if fig3 is not None:
+                fig2 = plot_roc_curve(results['y_test'], results['y_score'], axis_label_size=axis_label_size, legend_size=legend_size)
+                st.pyplot(fig2)
+            st.write(f"Accuracy: {results['accuracy']:.2f}")
+            if classification_method == "Random Forest":
+                fig3 = plot_feature_importance(results['classifier'], results['X_train'].columns, axis_label_size=axis_label_size, bar_label_size=legend_size)
                 st.pyplot(fig3)
+            st.markdown("---")
 
     else:
         st.write("Waiting for file/folder path upload")

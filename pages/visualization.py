@@ -43,7 +43,7 @@ with col1:
     col1_1, col1_2 = st.columns([1, 1])
     with col1_1:
         visualization_type = st.selectbox(
-            "Select a visualization type",
+            "Visualization types",
             ["Univariate", "Bivariate", "Multivariate"],
             help="Univariate: Visualize the distribution of a single feature. \
             Bivariate: Visualize the relationship between two features. \
@@ -52,7 +52,7 @@ with col1:
     available_methods = univar_methods if visualization_type == "Univariate" else bivar_methods if visualization_type == "Bivariate" else multivar_methods
     with col1_2:
         method = st.selectbox(
-            "Select a visualization method",
+            "Methods",
             available_methods,
         )
     uploaded_csv = st.file_uploader("Upload the CSV file obtained from [Data Extraction](/data_extraction)", type=["csv"])
@@ -63,7 +63,7 @@ with col1:
         if method in univar_methods:
             selected_var = single_feature_select_widget(feature_cols_dict, n_per_row=2)
             if method == "Feature Comparison":
-                selected_effect_size_method = st.selectbox("Select an effect size method", ["None", "Glass's Delta", "Cohen's Distance"], index=0)
+                selected_effect_size_method = st.selectbox("Effect size method", ["None", "Glass's Delta", "Cohen's Distance"], index=0)
         elif method in bivar_methods:
             if "2D" in method:
                 selected_x, selected_y = twod_single_feature_select_widget(feature_cols_dict, n_per_row=2)

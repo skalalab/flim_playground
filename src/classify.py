@@ -31,44 +31,40 @@ def calculate_roc_curve(num_classes, y_test, y_score):
             roc_auc[i] = auc(fpr[i], tpr[i])
     return fpr, tpr, roc_auc
 
-def plot_confusion_matrix(y_test, y_pred):
+def plot_confusion_matrix(y_test, y_pred, axis_label_size=12, legend_size=12):
     classes = np.unique(y_test)
     cm = confusion_matrix(y_test, y_pred)
     
-    # plot the confusion matrix
-    fig, ax = plt.subplots(figsize=(6, 6))
-    # Create the confusion matrix display
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes).plot(cmap='Blues', ax=ax,colorbar=False)
-    ax.set_title("Confusion Matrix")
-    ax.set_xlabel("Predicted Label")
-    ax.set_ylabel("True Label")
+    fig, ax = plt.subplots()
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes).plot(cmap='Blues', ax=ax, colorbar=False, text_kw={'fontsize': legend_size})
+    ax.set_title("Confusion Matrix", fontsize=axis_label_size)
+    ax.set_xlabel("Predicted Label", fontsize=axis_label_size)
+    ax.set_ylabel("True Label", fontsize=axis_label_size)
+    ax.tick_params(axis='both', labelsize=legend_size)
+    ax.set_aspect('equal', adjustable='box')
     return fig
 
-def plot_roc_curve(y_test, y_score):
+def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12):
     classes = np.unique(y_test)
-    num_classes = len( classes)
-
-    # calculate roc curve
+    num_classes = len(classes)
     fpr, tpr, roc_auc = calculate_roc_curve(num_classes, y_test, y_score)
-
-    # plot the ROC curve
-    fig, ax = plt.subplots(figsize=(6, 6))
-    if num_classes == 2:  # Binary classification
+    fig, ax = plt.subplots()
+    if num_classes == 2:
         ax.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
-    else:  # Multiclass classification
+    else:
         for i in range(num_classes):
             ax.plot(fpr[i], tpr[i], label=f"{classes[i]} (AUC = {roc_auc[i]:.2f})")
-        
-    ax.plot([0, 1], [0, 1], 'k--', label="Random Chance")  # Diagonal line
-    ax.set_xlabel("False Positive Rate")
-    ax.set_ylabel("True Positive Rate")
-    ax.set_title("ROC Curve")
-    ax.legend(loc="lower right")
+    ax.plot([0, 1], [0, 1], 'k--', label="Random Chance")
+    ax.set_xlabel("False Positive Rate", fontsize=axis_label_size)
+    ax.set_ylabel("True Positive Rate", fontsize=axis_label_size)
+    ax.set_title("ROC Curve", fontsize=axis_label_size)
+    ax.legend(loc="lower right", fontsize=legend_size)
+    ax.tick_params(axis='both', labelsize=legend_size)
+    ax.set_aspect('equal', adjustable='box')
     plt.tight_layout()
-
     return fig
 
-def plot_feature_importance(classifier, feature_names):
+def plot_feature_importance(classifier, feature_names, axis_label_size=12, bar_label_size=12):
     fig, ax = plt.subplots(figsize=(12,6))
     feature_importances = pd.Series(classifier.feature_importances_, index=feature_names)
     feature_importances = feature_importances.sort_values(ascending=False)
@@ -79,38 +75,51 @@ def plot_feature_importance(classifier, feature_names):
         edgecolor="black",
         height=0.8
     )
-    plt.xlabel("Feature Importance")
-    plt.ylabel("Features")
-    plt.title('Feature Importances from Random Forest')
-    plt.xticks(rotation=45, ha='right')  # Rotate x labels for better readability
+    plt.xlabel("Feature Importance", fontsize=axis_label_size)
+    plt.ylabel("Features", fontsize=axis_label_size)
+    plt.title('Feature Importances from Random Forest', fontsize=axis_label_size)
+    plt.xticks(rotation=45, ha='right', fontsize=bar_label_size)
+    plt.yticks(fontsize=bar_label_size)
     plt.gca().invert_yaxis()
     plt.tight_layout()
-
     return fig
 
-def classify(df, method, splits):
+def run_classification(df, method, splits):
     X_train, X_test, y_train, y_test = prepare_data(df, splits)
     if method == "Random Forest":
         classifier = RandomForestClassifier(random_state=42)
     elif method == "SVM":
-        # for svc and logreg, we need to scale the data
         classifier = make_pipeline(StandardScaler(), SVC(kernel='linear', probability=True, random_state=42))
     elif method == "Logistic Regression":
         classifier = make_pipeline(StandardScaler(), LogisticRegression(random_state=42, max_iter=1000))
     
-    # y_score is the probability of the sample for each class in the model
     classifier.fit(X_train, y_train)
     y_score = classifier.predict_proba(X_test)
     y_pred = classifier.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    return {
+        'classifier': classifier,
+        'X_train': X_train,
+        'X_test': X_test,
+        'y_train': y_train,
+        'y_test': y_test,
+        'y_pred': y_pred,
+        'y_score': y_score,
+        'accuracy': accuracy
+    }
 
-    fig1 = plot_confusion_matrix(y_test, y_pred)
-    fig2 = plot_roc_curve(y_test, y_score)
-
+def classify(df, method, splits):
+    results = run_classification(df, method, splits)
+    fig1 = plot_confusion_matrix(results['y_test'], results['y_pred'])
+    fig2 = plot_roc_curve(results['y_test'], results['y_score'])
+    fig3 = None
     if method == "Random Forest":
-        fig3 = plot_feature_importance(classifier, X_train.columns)
-        return fig1, fig2, fig3, accuracy_score(y_test, y_pred)
-    else:
-        return fig1, fig2, None, accuracy_score(y_test, y_pred)
+        clf = results['classifier']
+        if hasattr(clf, 'feature_importances_'):
+            fig3 = plot_feature_importance(clf, results['X_train'].columns)
+        elif hasattr(clf, 'named_steps') and 'randomforestclassifier' in clf.named_steps:
+            fig3 = plot_feature_importance(clf.named_steps['randomforestclassifier'], results['X_train'].columns)
+    return fig1, fig2, fig3, results['accuracy']
         
 
 
