@@ -342,21 +342,6 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
                 best_gmm = gmm
     return best_gmm
 
-def _ensure_aspect_ratio(aspect_ratio: str):  # Parameter is named 'aspect_ratio'
-    # The f-string correctly uses the 'aspect_ratio' parameter.
-    # Literal curly braces for CSS must be doubled (e.g., {{ and }}).
-    st.markdown(
-        f"""
-        <style>
-        div[data-testid="stPlotlyChart"] > div {{ /* Double curly braces for literal CSS */
-            aspect-ratio: {aspect_ratio} !important; /* Correctly references the function parameter */
-            height: auto !important;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
 # Function to apply plot styling to any figure
 def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     """Apply consistent styling to plotly figures"""

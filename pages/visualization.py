@@ -10,7 +10,7 @@ from src.navigation import render_top_menu
 from src.vis.multivar import dimension_reduction_plot
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
 from src.vis.univar import image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
-from src.vis.helpers import _ensure_aspect_ratio, apply_plot_styling
+from src.vis.helpers import apply_plot_styling
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
@@ -109,10 +109,7 @@ with col2:
                             fig, df = feature_gmm_plot(filtered_df, selected_var, color_by)
                             data_export_ready = True
                         else: 
-                            fig = feature_histogram_plot(filtered_df, selected_var, color_by)
-                        # Apply styling before displaying
-                        fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
-                            
+                            fig = feature_histogram_plot(filtered_df, selected_var, color_by)    
                 else:
                     st.write("No data available after removing rows with missing values {sad_emoji}")
             elif method in bivar_methods:
@@ -120,9 +117,7 @@ with col2:
                     # drop rows with NaN values in the selected_x and selected_y columns
                     filtered_df = filtered_df[filtered_df[selected_x].notna() & filtered_df[selected_y].notna()]
                     if len(filtered_df) > 0:
-                        #_ensure_aspect_ratio(aspect_ratio="1 / 1")
                         fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by)
-                        #fig.update_layout(width=600, height=600)
                         data_export_ready = True
                     else:
                         st.write("No data available after removing rows with missing values {sad_emoji}")
@@ -145,26 +140,13 @@ with col2:
                     else:
                         st.write(f"No data available after removing rows with missing values {sad_emoji}")
             
-            if fig is not None and not point_based:
-                st.plotly_chart(fig, use_container_width=True)
-            # Widgets after the plot is displayed
-            # 1. Data export (if applicable)
-            if data_export_ready:
-                # available for download
-                if method == "2D Feature Distribution" and "2D_GMM_group" in gmm_df.columns:
-                    st.download_button(label="Download 2D GMM data", data=gmm_df.to_csv(index=False), file_name="2D_gmm_data.csv")
-                elif method == "Feature Histogram (GMM optional)" and "GMM_group" in df.columns:
-                    st.download_button(label="Download GMM Grouped Data", data=df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
-         
-            # 2. Click events (if applicable)
-            if fig is not None and (point_based or image_based):
-                # Apply styling to the figure before displaying
+            if fig is not None: 
                 fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
-                
-                if image_based:
+                if not point_based and not image_based:
+                    st.plotly_chart(fig, use_container_width=True)
+                elif image_based:
                     current_clicked_points_img = plotly_events(
-                        fig, click_event=True, hover_event=False, select_event=False, key="image_removal_only" # Use a unique key
-                    )                                 
+                        fig, click_event=True, hover_event=False, select_event=False, key="image_removal_only")                                 
                     # --- Specific logic for Image Comparison outlier removal ---
                     # Process only if it's a new, non-empty click
                     if current_clicked_points_img and current_clicked_points_img != st.session_state.last_processed_click_img:
@@ -174,13 +156,12 @@ with col2:
                     elif not current_clicked_points_img:
                          st.session_state.last_processed_click_img = None
                     st.markdown(f"<h5 style='text-align: center;'>Click on a boxplot to show the detailed info of the selected image {happy_emoji}</h5>", unsafe_allow_html=True)
-                else:
+                else: # point_based
                     if method == "2D Feature Distribution":
-                        col2_1, col2_2 = st.columns([2, 1])
+                        col2_1, col2_2 = st.columns([1, 1])
                         with col2_1:
                             current_clicked_points = plotly_events(
-                                fig, click_event=True, hover_event=False, select_event=False, key="2d_distribution_removal" # Use a unique key
-                            )
+                                fig, click_event=True, hover_event=False, select_event=False, key="2d_distribution_removal")
                         with col2_2:
                             if table_md != []:
                                 st.markdown(table_md)
@@ -200,32 +181,39 @@ with col2:
                          st.session_state.last_processed_click = None
 
                     st.markdown(f"<h5 style='text-align: center;'>Click on a point to show the detailed info of the selected image or cell {happy_emoji}</h5>", unsafe_allow_html=True)
+                
+                # Widgets after the plot is displayed      
+                # 1. Display added items and reset options
+                if len(st.session_state["added_images"]) > 0 or len(st.session_state["added_cells"]) > 0:
+                    display_infoList_widget()
+                    reset_widget()
+                # 2. Data export (if applicable)
+                if data_export_ready:
+                    # available for download
+                    if method == "2D Feature Distribution" and "2D_GMM_group" in gmm_df.columns:
+                        st.download_button(label="Download 2D GMM data", data=gmm_df.to_csv(index=False), file_name="2D_gmm_data.csv")
+                    elif method == "Feature Histogram (GMM optional)" and "GMM_group" in df.columns:
+                        st.download_button(label="Download GMM Grouped Data", data=df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
+                # 3. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots 
+                st.markdown("---")  # Add a separator line
+                st.subheader("📊 Plot Styling")
+                # Get current values from session state as defaults for the widgets
+                new_point_size, new_axis_label_size, new_legend_size = plot_config_widget(point_based=point_based)
+                style_changed = False
+                if new_point_size != st.session_state.plot_point_size:
+                    st.session_state.plot_point_size = new_point_size
+                    style_changed = True
+                if new_axis_label_size != st.session_state.plot_axis_label_size:
+                    st.session_state.plot_axis_label_size = new_axis_label_size
+                    style_changed = True
+                if new_legend_size != st.session_state.plot_legend_size:
+                    st.session_state.plot_legend_size = new_legend_size
+                    style_changed = True   
+                if style_changed:
+                    st.rerun()
+                               
         else: 
             st.markdown(f"<h5 style='text-align: center; color: red'>No data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)
-
-        # Display added items and reset options (common logic)
-        if len(st.session_state["added_images"]) > 0 or len(st.session_state["added_cells"]) > 0:
-            display_infoList_widget()
-            reset_widget()
-
-        # 3. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots
-        if fig is not None:     
-            st.markdown("---")  # Add a separator line
-            st.subheader("📊 Plot Styling")
-            # Get current values from session state as defaults for the widgets
-            new_point_size, new_axis_label_size, new_legend_size = plot_config_widget(point_based=point_based)
-            style_changed = False
-            if new_point_size != st.session_state.plot_point_size:
-                st.session_state.plot_point_size = new_point_size
-                style_changed = True
-            if new_axis_label_size != st.session_state.plot_axis_label_size:
-                st.session_state.plot_axis_label_size = new_axis_label_size
-                style_changed = True
-            if new_legend_size != st.session_state.plot_legend_size:
-                st.session_state.plot_legend_size = new_legend_size
-                style_changed = True   
-            if style_changed:
-                st.rerun()
 
     else:
         st.write("Please upload a file to begin.")

@@ -166,19 +166,19 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
                 if best_gmm and best_gmm.n_components > 1:
                     table_md += ["\n**GMM Components:**"]
                     table_md.append("")
-                    table_md.append(f"| Component | **{selected_x}** | **{selected_y}** | Weight |")
-                    table_md.append(f"|------|-----|-----|------|")
-                    table_md.append(f"| | **Mean** | **Mean** | |")
+                    table_md.append(f"| Component | **{selected_x}** | **{selected_x}** | **{selected_y}** | **{selected_y}** | Weight |")
+                    table_md.append(f"|------|-----|-----|-----|-----|------|")
+                    table_md.append(f"| | **Mean** | **Std Dev** | **Mean** | **Std Dev** | |")
 
                     for i in range(best_gmm.n_components):
                         mean = best_gmm.means_[i]
                         cov = best_gmm.covariances_[i]
                         mean_x, mean_y = mean
-                        # std_x = np.sqrt(cov[0][0])
-                        # std_y = np.sqrt(cov[1][1])
+                        std_x = np.sqrt(cov[0][0])
+                        std_y = np.sqrt(cov[1][1])
                         weight = best_gmm.weights_[i]
 
-                        table_md.append(f"| {i+1} | {mean_x:.2f} | {mean_y:.2f} | {weight:.2f} |")
+                        table_md.append(f"| {i+1} | {mean_x:.2f} | {std_x:.2f} | {mean_y:.2f} | {std_y:.2f} | {weight:.2f} |")
                         # plot the gmm component using Ellipse
                         _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color_map[color_group], color_group, i+1)
                     # use the best gmm model to predict the component membership of the current group
