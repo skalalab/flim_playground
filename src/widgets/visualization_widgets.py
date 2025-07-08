@@ -3,26 +3,40 @@ import numpy as np
 from src.feature_groups import feature_groups_prefix, categorical_cols
 
 def visual_encoding_channels_widget(filtered_df, color_based=True, point_based=True):
-    # color is now a multi-select inside the filter widget, maybe move it here later
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
     color_by = []
     opacity_by = shape_by = separate_by = None
-    if len(available_categories) > 0:
-        if color_based and point_based:
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                color_by = st.multiselect("Color by", available_categories, default=available_categories[-1])  
-            with col2:
-                opacity_by = st.selectbox("Opacity by", available_categories, index=None, placeholder="Choose an option...")
-            with col3:
-                shape_by = st.selectbox("Shape by", available_categories, index=None, placeholder="Choose an option...")
-            with col4:
-                separate_by = st.selectbox("Separate by", available_categories, index=None, placeholder="Choose an option...")
-        elif color_based:
-            color_by = st.multiselect("Color by", available_categories, default=available_categories[-1]) 
-        else: 
-            # if point based, it must also be color based. So we do not need to have any widget for the case where only point based and not color based
-            pass
+    
+    if len(available_categories) == 0:
+        return color_by, opacity_by, shape_by, separate_by
+    
+    if not color_based:
+        return color_by, opacity_by, shape_by, separate_by
+    
+    # Create columns based on what widgets we need
+    if point_based:
+        col1, col2, col3, col4 = st.columns(4)
+        cols = [col1, col2, col3, col4]
+    else:
+        col1, col2 = st.columns(2)
+        cols = [col1, col2]
+    
+    # Separate by widget
+    with cols[0]:
+        separate_by = st.selectbox("Separate by", available_categories, index=None, placeholder="Choose an option...")
+    
+    # Color by widget (exclude separate_by option)
+    available_for_color = [cat for cat in available_categories if cat != separate_by]
+    with cols[1]:
+        if available_for_color:
+            color_by = st.multiselect("Color by", available_for_color, default=[available_for_color[-1]])
+    
+    # Point-based widgets (opacity and shape)
+    if point_based:
+        with cols[2]:
+            opacity_by = st.selectbox("Opacity by", available_categories, index=None, placeholder="Choose an option...")
+        with cols[3]:
+            shape_by = st.selectbox("Shape by", available_categories, index=None, placeholder="Choose an option...")
       
     return color_by, opacity_by, shape_by, separate_by
 
