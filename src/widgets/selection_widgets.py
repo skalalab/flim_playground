@@ -102,7 +102,7 @@ def multi_feature_select_widget(feature_cols_dict, n_per_row=2):
             with cols[i]:
                 if len(feature_list) > 1:
                     options = ["All"] + feature_list
-                    default = ["All"]
+                    default = ["All"] if feature_group != "Uncategorized Features" else []
                 else:
                     options = feature_list
                     default = feature_list

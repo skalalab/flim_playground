@@ -10,7 +10,7 @@ categorical_cols = [ "experiment", "day", "cell_type", "media", "dish", "cell_li
 feature_groups_default = {
     "Nadh Fit": ["ntm", "na1", "na2", "nt1", "nt2", "nint", "normrr", "nadh_tau_mean_mean","nadh_a1_mean", "nadh_a2_mean", "nadh_t1_mean", "nadh_t2_mean"],
     "Fad Fit": ["ftm", "fa1", "fa2", "ft1", "ft2", "fint", "fad_tau_mean_mean", "fad_a1_mean", "fad_a2_mean", "fad_t1_mean", "fad_t2_mean"],
-    "Mask Morphology": ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length"],
+    "Mask Morphology": ["area", "perimeter", "solidity", "eccentricity", "axis_major_length", "axis_minor_length"],
     "Feature Distribution Fit": [],
     "Fit Free Nadh": ["phasor_x", "phasor_y"],
     "Fit Free Fad": ["phasor_x", "phasor_y"],
