@@ -533,7 +533,11 @@ def feature_comparison_plot(df, selected_var, color_by, opacity_by=None, shape_b
         )
     else:
         # Standard x-axis configuration
-        xaxis_config = dict(title=', '.join(color_by))
+        xaxis_config = dict(
+            tickvals=list(range(len(compare_groups))),
+            ticktext=compare_groups,
+            title=', '.join(color_by)
+        )
     
     fig.update_layout(
         title=full_title,
