@@ -1,16 +1,6 @@
 from pathlib import Path
 from src.feature_groups import subset_feature_group_features
 
-unique_cell_id_col = "cell_id"
-required_cols = [unique_cell_id_col, "image_name"]
-
-spc_output_suffix = {
-    "a1": "_a1[%].asc",
-    "a2": "_a2[%].asc",
-    "t1": "_t1.asc",
-    "t2": "_t2.asc",
-    "intensity": "_photons.asc",
-}
 def list_files_with_suffix(folder_path, suffix):
     path = Path(folder_path)
     # rglob searches files recursively

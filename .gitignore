@@ -6,4 +6,6 @@ build/
 *.spec
 test.py
 .venv/
+logo/
+sdt_headers/
 *.csv

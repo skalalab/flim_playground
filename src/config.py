@@ -26,30 +26,6 @@ def save_config(cfg: dict) -> None:
         toml.dump(cfg, fh)
 
 
-def get_file_suffix_default() -> dict:
-    """Return a flat dict mapping each logical input file to its suffix.
-
-    This reshapes the hierarchical TOML structure into the legacy flat
-    `file_suffix_default` layout that the rest of the codebase expects.
-    """
-    cfg = load_config()
-
-    file_suffix_tbl = cfg.get("file_suffix", {})
-    channel_names = cfg.get("channel_name", {})
-
-    file_suffix_default: dict[str, str] = {}
-    file_suffix_default["mask"] = file_suffix_tbl.get("mask", "_mask.tiff")
-
-    channels = ["blue", "green", "red"]
-    input_files = ["irf", "a1", "histogram", "decay"]
-
-    for channel in channels:
-        channel_name = channel_names.get(channel, channel)
-        for input_file in input_files:
-            key = f"{channel}_{input_file}"
-            file_suffix_default[f"{channel_name} {input_file}"] = file_suffix_tbl.get(key, "")
-
-    return file_suffix_default
 
 
 

@@ -1,5 +1,5 @@
 import streamlit as st
-from src.navigation import render_top_menu, titles
+from src.navigation import render_top_menu
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on the main page
 render_top_menu()
@@ -11,7 +11,7 @@ def resource_path(rel: str) -> Path:
     """Return the absolute path to a bundled resource."""
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
     return base / rel
-logo_file = resource_path("logo/FP_trans_320.png")
+logo_file = resource_path("./logo.png")
 with center_column:
     st.image(str(logo_file))
 
@@ -36,28 +36,86 @@ from src.config import load_config, save_config
 # Load the current user configuration
 cfg = load_config()
 
-# Ask for channel names, using stored values as defaults if present
-channels = ["blue", "green", "red"]
-col1, col2, col3 = st.columns(3)
+max_num_channels = 4
+col1, col2 = st.columns(2)
+# Ask for the number of channels user needs
+with col1:
+    cfg["num_channels"] = st.selectbox("Number of channels you have in your data", list(range(1, max_num_channels + 1)), index=cfg.get("num_channels", 1) - 1)
+with col2:
+    cfg["unique_cell_id_col"] = st.text_input("Unique cell identifier column name", value=cfg.get("unique_cell_id_col", "cell_id"))
 
-for i, channel in enumerate(channels):
-    with [col1, col2, col3][i]:
-        cfg["channel_name"][channel] = st.text_input(f"Enter the name of the {channel} channel", value=cfg.get("channel_name", {}).get(channel, "nadh"), key=f"channel_{channel}")
+# Initialization: 
+# channel_names section if it doesn't exist
+if "channel_names" not in cfg:
+    cfg["channel_names"] = {}
+# feature type initialization
+if "available_feature_types" not in cfg:
+    cfg["available_feature_types"] = ["Lifetime_Fit", "Lifetime_FitFree", "Intensity"]
 
-cfg["file_suffix"]["mask"] = st.text_input("Enter the suffix of the mask file", value=cfg.get("file_suffix", {}).get("mask", "_mask.tiff"))
-for channel in channels:
-    channel_name = cfg["channel_name"][channel]
-    st.subheader(f"Suffix for input files of {channel_name} channel")
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        cfg["file_suffix"][f"{channel}_irf"] = st.text_input(f"IRF file suffix", value=cfg.get("file_suffix", {}).get(f"{channel}_irf", f"{channel}_irf.txt"), key=f"{channel}_irf")
-    with col2:
-        cfg["file_suffix"][f"{channel}_decay"] = st.text_input(f"Decay file suffix", value=cfg.get("file_suffix", {}).get(f"{channel}_decay", f"{channel}.sdt"), key=f"{channel}_decay")
-    with col3:
-        cfg["file_suffix"][f"{channel}_histogram"] = st.text_input(f"Histogram file suffix", value=cfg.get("file_suffix", {}).get(f"{channel}_histogram", f"{channel}_histogram.csv"), key=f"{channel}_histogram")
-    with col4:
-        cfg["file_suffix"][f"{channel}_a1"] = st.text_input(f"A1 file suffix", value=cfg.get("file_suffix", {}).get(f"{channel}_a1", f"{channel}_a1.asc"), key=f"{channel}_a1")
+if "available_input_types" not in cfg:
+    cfg["available_input_types"] = ["ROI Summing Fit", "SPCImage", "K-Flow"]
+# feature type input types initialization: for each feature type, the set of input types that are required to extract that feature type
+if "required_file_types" not in cfg:
+    cfg["required_file_types"] = {}
+
+for feature_type in cfg["available_feature_types"]:
+    if feature_type not in cfg["required_file_types"]:
+        cfg["required_file_types"][feature_type] = {}
+    for input_type in cfg["available_input_types"]:
+        if input_type not in cfg["required_file_types"][feature_type]:
+            cfg["required_file_types"][feature_type][input_type] = []
+        if input_type == "K-Flow":
+            cfg["required_file_types"][feature_type][input_type].append("Histogram")
+            if "Lifetime" in feature_type:
+                cfg["required_file_types"][feature_type][input_type].append("IRF")
+        else:
+            cfg["required_file_types"][feature_type][input_type].append("Mask")
+            cfg["required_file_types"][feature_type][input_type].append("Decay")
+            if "Lifetime" in feature_type:
+                if feature_type == "Lifetime_FitFree" or input_type == "ROI Summing Fit":
+                    cfg["required_file_types"][feature_type][input_type].append("IRF")
+                if input_type == "SPCImage":
+                    cfg["required_file_types"][feature_type][input_type].append("a1")
+        cfg["required_file_types"][feature_type][input_type] = list(set(cfg["required_file_types"][feature_type][input_type]))
+
+# input section initialization
+if "inputSuffixes" not in cfg:
+    cfg["inputSuffixes"] = {}
+# feature type for each channel initialization
+if "feature_types" not in cfg:
+    cfg["feature_types"] = {}
+
+# Ask for the name for each channel
+cols = st.columns(cfg["num_channels"])
+for i, col in enumerate(cols):
+    with col:
+        channel_key = f"ch{i+1}"
+        default_name = cfg.get("channel_names", {}).get(channel_key, f"Channel {i+1}")
+        new_name = st.text_input(f"Channel {i+1} name", value=default_name)
+        cfg["channel_names"][channel_key] = new_name
+        
+        default_feature_types = cfg["feature_types"].get(channel_key, [])
+        new_feature_types = st.multiselect(f"Extracted feature types from {new_name}", cfg["available_feature_types"], default=default_feature_types)
+        cfg["feature_types"][channel_key] = new_feature_types
+
+        # Initialize the input section for this channel if it doesn't exist
+        if channel_key not in cfg["inputSuffixes"]:
+            cfg["inputSuffixes"][channel_key] = {}
+
+        st.subheader(f"File suffixes: {new_name}")
+        required_file_types = set()
+        for feature_type in new_feature_types:
+            for input_type in cfg["available_input_types"]:
+                for required_file_type in cfg["required_file_types"][feature_type][input_type]:
+                    required_file_types.add(required_file_type)
+        # sort the required file types
+        required_file_types = sorted(required_file_types)
+        for required_file_type in required_file_types:
+            default_suffix = cfg["inputSuffixes"][channel_key].get(required_file_type, "")
+            new_suffix = st.text_input(f"{required_file_type}", value=default_suffix, key=f"{channel_key}_{required_file_type}")
+            cfg["inputSuffixes"][channel_key][required_file_type] = new_suffix
+
+
 
 update_config_button = st.button("Update Configuration")
 if update_config_button:

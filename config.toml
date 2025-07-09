@@ -1,19 +1,56 @@
-[channel_name]
+num_channels = 3
+unique_cell_id_col = "cell_id"
+available_feature_types = [ "Lifetime_Fit", "Lifetime_FitFree", "Intensity",]
+available_input_types = [ "ROI Summing Fit", "SPCImage", "K-Flow",]
+
+[channel_names]
 ch1 = "nadh"
 ch2 = "fad"
 ch3 = "red"
 
-[file_suffix]
-ch1_mask = "_photons_cellpose.tiff"
-ch1_irf = "nad_irf.txt"
-ch1_decay = "n.sdt"
-ch1_histogram = "_ch1.csv"
-ch1_a1 = "n_a1[%].asc"
-green_irf = "fad_irf.txt"
-green_decay = "f.sdt"
-green_histogram = "_ch2.csv"
-green_a1 = "f_a1[%].asc"
-red_irf = "red_irf.txt"
-red_decay = "r.sdt"
-red_histogram = "_ch3.csv"
-red_a1 = "r_a1[%].asc"
+[feature_types]
+ch1 = [ "Lifetime_Fit", "Lifetime_FitFree", "Intensity",]
+ch2 = [ "Lifetime_Fit", "Lifetime_FitFree", "Intensity",]
+ch3 = [ "Intensity",]
+
+[required_file_types.Lifetime_Fit]
+"ROI Summing Fit" = [ "IRF", "Mask", "Decay",]
+SPCImage = [ "Mask", "a1", "Decay",]
+K-Flow = [ "Histogram", "IRF",]
+
+[required_file_types.Lifetime_FitFree]
+"ROI Summing Fit" = [ "IRF", "Mask", "Decay",]
+SPCImage = [ "IRF", "Mask", "a1", "Decay",]
+K-Flow = [ "Histogram", "IRF",]
+
+[required_file_types.Intensity]
+"ROI Summing Fit" = [ "Mask", "Decay",]
+SPCImage = [ "Mask", "Decay",]
+K-Flow = [ "Histogram",]
+
+[inputSuffixes.ch1]
+Decay = "_n.sdt"
+Histogram = "_ch1.csv"
+IRF = "nadh_irf.txt"
+Mask = "_photons_cellpose.tiff"
+a1 = "_n_a1[%].asc"
+
+[inputSuffixes.ch2]
+Decay = "_f.sdt"
+Histogram = "_ch2.csv"
+IRF = "fad_irf.txt"
+Mask = "_photons_cellpose.tiff"
+a1 = "_f_a1[%].asc"
+
+[inputSuffixes.ch3]
+Decay = "_r.sdt"
+Histogram = "_ch3.csv"
+Mask = "_photons_cellpose.tiff"
+
+[spc_output_suffix]
+a1 = "_a1[%].asc"
+a2 = "_a2[%].asc"
+t1 = "_t1.asc"
+t2 = "_t2.asc"
+a3 = "_a3[%].asc"
+t3 = "_t3.asc"
