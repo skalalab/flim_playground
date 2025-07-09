@@ -25,14 +25,14 @@ st.title("Data Extraction")
 
 col1, col2 = st.columns([0.4, 1])
 steps = ["Image Metadata Extraction", "Numeric Feature Extraction", "Categorical Feature Extraction"]
-analysis_types =  ["ROI Summing Fit", "SPCImage", "K-Flow"]
+input_types =  ["ROI Summing Fit", "SPCImage", "K-Flow"]
 with col1:
     # first select the step to perform
     selected_step = st.selectbox("Select a step to perform", steps, index=0, help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: \
     Extracts numeric features from the images. Categorical Feature Extraction: Extracts categorical features from the images. \n ")
-    # select analysis type
+    # select input type
     if selected_step == "Image Metadata Extraction":
-        selected_analysis_type = st.selectbox("Select analysis type", analysis_types, index=0, help="ROI Summing Fit: Performs \
+        selected_input_type = st.selectbox("Select input type", input_types, index=0, help="ROI Summing Fit: Performs \
         ROI summing on raw lifetime decay file, and fit the summed decay curve for each cell. SPCImage: extracts single cell fitting data from outputs of SPCImage. K-Flow: \
         Fit K-Flow decay curves for each cell. Categorical Features: augment categorical columns to your existing data file")
         checkbox_col1, checkbox_col2, checkbox_col3 = st.columns(3)
@@ -45,7 +45,7 @@ with col1:
         with checkbox_col3:
             fit_free = st.checkbox("Fit Free Analysis", value=True, help="If checked, Fit free (e.g. Phasor) features will be extracted.")
         if has_nadh or has_fad:
-            actual_file_suffix, error_msg = load_data_suffix_widget(selected_analysis_type, fit_free, has_nadh, has_fad)
+            actual_file_suffix, error_msg = load_data_suffix_widget(selected_input_type, fit_free, has_nadh, has_fad)
             if error_msg != "":
                 st.error(error_msg)
             else:
@@ -121,15 +121,15 @@ with col2:
                 st.success(f"Images with ✅ are loaded successfully {happy_emoji}. Images with ❌ (if any) are not loaded. The following features will be extracted: ")
                 images_df = pd.DataFrame.from_dict(images, orient="index")
                 images_df['fit_free'] = fit_free
-                images_df['analysis_type'] = selected_analysis_type
+                images_df['input_type'] = selected_input_type
                 images_df.index.name = "image_name"  # Set index name 
                 images_df.reset_index(inplace=True)  # Reset index to make it a column
-                if selected_analysis_type == "K-Flow":
+                if selected_input_type == "K-Flow":
                     # copy the image_name column to kflow_exp_name
                     images_df["kflow_exp_name"] = images_df["image_name"]
               
                 # before exporting, check for the sdt channel (dimension)
-                if fit_free or selected_analysis_type == "ROI Summing Fit":
+                if fit_free or selected_input_type == "ROI Summing Fit":
                     error_msg, images_df = check_sdt_channel_widget(images_df)
                     if error_msg != "":
                         st.error(f"Error: {error_msg}")
@@ -174,7 +174,7 @@ with col2:
          # adding the fitting config to the metadata
             metadata_df["fitting_algo"] = fitting_algo
             metadata_df["fitting_mode"] = fitting_mode
-            if analysis_type == "K-Flow": # other types get the duration and time bins from the sdt file automatically
+            if selected_input_type == "K-Flow": # other types get the duration and time bins from the sdt file automatically
                 metadata_df["duration"] = duration
                 metadata_df["time_bins"] = time_bins
             metadata_df["num_components"] = num_components
@@ -187,7 +187,7 @@ with col2:
                 metadata_df["fad_start"] = fad_start
                 metadata_df["fad_end"] = fad_end
 
-        single_cell_features = image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_fad)
+        single_cell_features = image_extraction_widget(metadata_df, selected_input_type, fit_free, has_nadh, has_fad)
         if not single_cell_features.empty:
             st.success(f"Image features with ✅ are extracted successfully {happy_emoji}! Images with ❌ (if any) are excluded. The first few rows of the features are shown below.")
             st.write(single_cell_features.head())

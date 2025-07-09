@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 from itertools import combinations
 
-from src.classify import classify, run_classification, plot_confusion_matrix, plot_roc_curve, plot_feature_importance
+from src.classify import run_classification, plot_confusion_matrix, plot_roc_curve, plot_feature_importance
 from src.navigation import render_top_menu
 from src.widgets.selection_widgets import multi_feature_select_widget
 from src.widgets.filter_widgets import filters_widget

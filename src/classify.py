@@ -107,19 +107,4 @@ def run_classification(df, method, splits):
         'y_score': y_score,
         'accuracy': accuracy
     }
-
-def classify(df, method, splits):
-    results = run_classification(df, method, splits)
-    fig1 = plot_confusion_matrix(results['y_test'], results['y_pred'])
-    fig2 = plot_roc_curve(results['y_test'], results['y_score'])
-    fig3 = None
-    if method == "Random Forest":
-        clf = results['classifier']
-        if hasattr(clf, 'feature_importances_'):
-            fig3 = plot_feature_importance(clf, results['X_train'].columns)
-        elif hasattr(clf, 'named_steps') and 'randomforestclassifier' in clf.named_steps:
-            fig3 = plot_feature_importance(clf.named_steps['randomforestclassifier'], results['X_train'].columns)
-    return fig1, fig2, fig3, results['accuracy']
         
-
-
