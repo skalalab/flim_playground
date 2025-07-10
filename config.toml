@@ -10,8 +10,8 @@ ch2 = "fad"
 ch3 = "red"
 
 [feature_types]
-ch1 = [ "Lifetime_Fit", "Lifetime_FitFree", "Intensity",]
-ch2 = [ "Lifetime_Fit",]
+ch1 = [ "Lifetime_FitFree", "Lifetime_Fit", "Intensity",]
+ch2 = [ "Lifetime_Fit", "Lifetime_FitFree", "Intensity",]
 ch3 = [ "Intensity",]
 
 [spc_output_suffix]

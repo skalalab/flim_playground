@@ -7,12 +7,13 @@ from src.config import get_file_suffixes, get_spc_output_suffix
 from src.widgets.data_widgets import happy_emoji, sad_emoji
 from src.sdt_io import read_sdt150, read_sdt_metadata
 from collections import Counter
-def load_data_suffix_widget(input_type, selected_channels):
+def load_data_suffix_widget(input_type, selected_channels, selected_ch_num_components):
     """
     """
     actual_file_suffix = {}
     error_msg = ""
-
+    if input_type == "SPCImage":
+        spc_output_suffix = get_spc_output_suffix()
     for i, (channel_key, channel_name) in enumerate(selected_channels.items()):
         file_suffixes = get_file_suffixes(channel_key, input_type)
         if len(file_suffixes) == 0:
@@ -28,41 +29,33 @@ def load_data_suffix_widget(input_type, selected_channels):
             col = cols[j % num_cols]
             with col:
                 # only show the help message for the first file type of the first channel
-                help_msg = "The filenames are expected to have *exactly* two parts: *image_name + suffix*. All files from the same image should share the **same** image_name, with the only difference being the suffix." if i == 0 and j == 0 else None
+                if i == 0 and j == 0:
+                    help_msg = "The filenames are expected to have *exactly* two parts: *image_name + suffix*. All files from the same image should share the **same** image_name, with the only difference being the suffix."
+                elif i == 0 and input_type == "SPCImage" and file_type == "a1":
+                    help_msg = f"For other SPCImage output files (e.g. t1, a2, t2), the suffixes are automatically generated based on the provided a1 suffix by replacing {spc_output_suffix['a1']} to get the others."
+                else:
+                    help_msg = None
                 suffix = st.text_input(f"{file_type}", default_suffix, key=f"{channel_key}_{input_type}_{file_type}_suffix", help=help_msg)
                 if suffix == "":
                     error_msg += f"Please provide a suffix for {file_type}! "
                 else:
                     actual_file_suffix[channel_name][file_type] = suffix
-   
+        if input_type == "SPCImage" and error_msg == "": # write the spc outputs' suffixes for this channel
+            if channel_key in selected_ch_num_components and selected_ch_num_components[channel_key] != 0:
+                num_components = selected_ch_num_components[channel_key]
+                if num_components == 1:
+                    needed_suffix = ["t1"]
+                elif num_components == 2:
+                    needed_suffix = ["t1", "a2", "t2"]
+                elif num_components == 3:
+                    needed_suffix = ["t1", "a2", "t2", "a3", "t3"]
+                for key in needed_suffix:
+                    actual_file_suffix[channel_name][key] = actual_file_suffix[channel_name]["a1"].replace(spc_output_suffix["a1"], spc_output_suffix[key])
+        
+
     return actual_file_suffix, error_msg
 
-def ask_for_fit_components_widget(channel_name, input_type):
-    pass
-        # if input_type == "SPCImage":
-        # spc_output_suffix = get_spc_output_suffix()
-    #  if error_msg == "" and input_type == "SPCImage":
-    #     suffix_info = f"For other SPCImage output files (a2, t1, t2), the suffixes are automatically generated based on the provided a1 suffix \
-    #         by replacing {spc_output_suffix['a1']} to get the followings: \n"
-    #     for key, suffix in spc_output_suffix.items():
-    #         if key == "a1": 
-    #             # skip a1, since it is already in the actual_file_suffix dictionary
-    #             continue
-    #         if not fit_free and key == "shift":
-    #             continue
-    #         if has_nadh: 
-    #             nadh_a1_suffix = actual_file_suffix["nadh a1"]
-    #             actual_file_suffix["nadh " + key] = nadh_a1_suffix.replace(spc_output_suffix['a1'], suffix)
-    #             # Use Markdown list syntax for line breaks in st.info
-    #             # Prepend "- " to make it a list item and add backticks for clarity
-    #             suffix_info += f"- nadh {key}: `{actual_file_suffix['nadh ' + key]}`\n"
-    #         if has_fad:
-    #             fad_a1_suffix = actual_file_suffix["fad a1"]
-    #             actual_file_suffix["fad " + key] = fad_a1_suffix.replace(spc_output_suffix['a1'], suffix)
-    #             suffix_info += f"fad {key}: `{actual_file_suffix['fad ' + key]}`\n"
-                
-    #   #  st.info(suffix_info)
-        
+
 
 @st.cache_data
 def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):    

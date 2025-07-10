@@ -53,7 +53,7 @@ with col1:
         if len(selected_channels) == 0:
             st.error(f"Please check at least one of the channels {sad_emoji}")
         else:
-            actual_file_suffix, error_msg = load_data_suffix_widget(selected_input_type, selected_channels)
+            actual_file_suffix, error_msg = load_data_suffix_widget(selected_input_type, selected_channels, selected_ch_num_components)
             if error_msg != "":
                 st.error(error_msg)
             else:
