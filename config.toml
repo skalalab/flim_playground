@@ -13,40 +13,6 @@ ch1 = [ "Lifetime_Fit", "Lifetime_FitFree", "Intensity",]
 ch2 = [ "Lifetime_Fit", "Lifetime_FitFree", "Intensity",]
 ch3 = [ "Intensity",]
 
-[required_file_types.Lifetime_Fit]
-"ROI Summing Fit" = [ "IRF", "Mask", "Decay",]
-SPCImage = [ "Mask", "a1", "Decay",]
-K-Flow = [ "Histogram", "IRF",]
-
-[required_file_types.Lifetime_FitFree]
-"ROI Summing Fit" = [ "IRF", "Mask", "Decay",]
-SPCImage = [ "IRF", "Mask", "a1", "Decay",]
-K-Flow = [ "Histogram", "IRF",]
-
-[required_file_types.Intensity]
-"ROI Summing Fit" = [ "Mask", "Decay",]
-SPCImage = [ "Mask", "Decay",]
-K-Flow = [ "Histogram",]
-
-[inputSuffixes.ch1]
-Decay = "_n.sdt"
-Histogram = "_ch1.csv"
-IRF = "nadh_irf.txt"
-Mask = "_photons_cellpose.tiff"
-a1 = "_n_a1[%].asc"
-
-[inputSuffixes.ch2]
-Decay = "_f.sdt"
-Histogram = "_ch2.csv"
-IRF = "fad_irf.txt"
-Mask = "_photons_cellpose.tiff"
-a1 = "_f_a1[%].asc"
-
-[inputSuffixes.ch3]
-Decay = "_r.sdt"
-Histogram = "_ch3.csv"
-Mask = "_photons_cellpose.tiff"
-
 [spc_output_suffix]
 a1 = "_a1[%].asc"
 a2 = "_a2[%].asc"
@@ -54,3 +20,109 @@ t1 = "_t1.asc"
 t2 = "_t2.asc"
 a3 = "_a3[%].asc"
 t3 = "_t3.asc"
+
+[required_file_types.Lifetime_Fit]
+"ROI Summing Fit" = [ "Mask", "IRF", "Decay",]
+SPCImage = [ "Mask", "Decay", "a1",]
+K-Flow = [ "IRF", "Histogram",]
+
+[required_file_types.Lifetime_FitFree]
+"ROI Summing Fit" = [ "Mask", "IRF", "Decay",]
+SPCImage = [ "Mask", "IRF", "Decay", "a1",]
+K-Flow = [ "IRF", "Histogram",]
+
+[required_file_types.Intensity]
+"ROI Summing Fit" = [ "Mask", "Decay",]
+SPCImage = [ "Mask", "Decay",]
+K-Flow = [ "Histogram",]
+
+[inputSuffixes.ch1.Lifetime_Fit."ROI Summing Fit"]
+Mask = "_photons_cellpose.tiff"
+IRF = "nadh_irf.txt"
+Decay = "_n.sdt"
+
+[inputSuffixes.ch1.Lifetime_Fit.SPCImage]
+Mask = "_photons_cellpose.tiff"
+Decay = "_n.sdt"
+a1 = "n_a1[%].asc"
+
+[inputSuffixes.ch1.Lifetime_Fit.K-Flow]
+IRF = "nadh_irf.txt"
+Histogram = "_ch1.csv"
+
+[inputSuffixes.ch1.Lifetime_FitFree."ROI Summing Fit"]
+Mask = "_photons_cellpose.tiff"
+IRF = "nadh_irf.txt"
+Decay = "_n.sdt"
+
+[inputSuffixes.ch1.Lifetime_FitFree.SPCImage]
+Mask = "_photons_cellpose.tiff"
+IRF = "nadh_irf.txt"
+Decay = "_n.sdt"
+a1 = "n_a1[%].asc"
+
+[inputSuffixes.ch1.Lifetime_FitFree.K-Flow]
+IRF = "nadh_irf.txt"
+Histogram = "_ch1.csv"
+
+[inputSuffixes.ch1.Intensity."ROI Summing Fit"]
+Mask = "_photons_cellpose.tiff"
+Decay = "_n.sdt"
+
+[inputSuffixes.ch1.Intensity.SPCImage]
+Mask = "_photons_cellpose.tiff"
+Decay = "_n.sdt"
+
+[inputSuffixes.ch1.Intensity.K-Flow]
+Histogram = "_ch1.csv"
+
+[inputSuffixes.ch2.Lifetime_Fit."ROI Summing Fit"]
+Mask = "_photons_cellpose.tiff"
+IRF = "fad_irf.txt"
+Decay = "_f.sdt"
+
+[inputSuffixes.ch2.Lifetime_Fit.SPCImage]
+Mask = "_photons_cellpose.tiff"
+Decay = "_f.sdt"
+a1 = "f_a1[%].asc"
+
+[inputSuffixes.ch2.Lifetime_Fit.K-Flow]
+IRF = "fad_irf.txt"
+Histogram = "_ch2.csv"
+
+[inputSuffixes.ch2.Lifetime_FitFree."ROI Summing Fit"]
+Mask = "_photons_cellpose.tiff"
+IRF = "fad_irf.txt"
+Decay = "_f.sdt"
+
+[inputSuffixes.ch2.Lifetime_FitFree.SPCImage]
+Mask = "_photons_cellpose.tiff"
+IRF = "fad_irf.txt"
+Decay = "_f.sdt"
+a1 = "f_a1[%].asc"
+
+[inputSuffixes.ch2.Lifetime_FitFree.K-Flow]
+IRF = "fad_irf.txt"
+Histogram = "_ch2.csv"
+
+[inputSuffixes.ch2.Intensity."ROI Summing Fit"]
+Mask = "_photons_cellpose.tiff"
+Decay = "_f.sdt"
+
+[inputSuffixes.ch2.Intensity.SPCImage]
+Mask = "_photons_cellpose.tiff"
+Decay = "_f.sdt"
+
+[inputSuffixes.ch2.Intensity.K-Flow]
+Histogram = "_ch2.csv"
+
+[inputSuffixes.ch3.Intensity."ROI Summing Fit"]
+Mask = "_photons_cellpose.tiff"
+Decay = "_r.sdt"
+
+[inputSuffixes.ch3.Intensity.SPCImage]
+Mask = "_photons_cellpose.tiff"
+Decay = "_r.sdt"
+
+[inputSuffixes.ch3.Intensity.K-Flow]
+Histogram = "_ch3.csv"

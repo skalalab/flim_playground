@@ -103,18 +103,21 @@ for i, col in enumerate(cols):
             cfg["inputSuffixes"][channel_key] = {}
 
         st.subheader(f"File suffixes: {new_name}")
-        required_file_types = set()
+        asked_file_types = {} # stores key-value pairs of file type and suffix
         for feature_type in new_feature_types:
+            if feature_type not in cfg["inputSuffixes"][channel_key]:
+                cfg["inputSuffixes"][channel_key][feature_type] = {} 
             for input_type in cfg["available_input_types"]:
+                if input_type not in cfg["inputSuffixes"][channel_key][feature_type]:
+                    cfg["inputSuffixes"][channel_key][feature_type][input_type] = {}
                 for required_file_type in cfg["required_file_types"][feature_type][input_type]:
-                    required_file_types.add(required_file_type)
-        # sort the required file types
-        required_file_types = sorted(required_file_types)
-        for required_file_type in required_file_types:
-            default_suffix = cfg["inputSuffixes"][channel_key].get(required_file_type, "")
-            new_suffix = st.text_input(f"{required_file_type}", value=default_suffix, key=f"{channel_key}_{required_file_type}")
-            cfg["inputSuffixes"][channel_key][required_file_type] = new_suffix
-
+                    if required_file_type in asked_file_types:
+                        cfg["inputSuffixes"][channel_key][feature_type][input_type][required_file_type] = asked_file_types[required_file_type]
+                    else:
+                        default_suffix = cfg["inputSuffixes"][channel_key][feature_type][input_type].get(required_file_type, "")
+                        new_suffix = st.text_input(f"{required_file_type}", value=default_suffix, key=f"{channel_key}_{feature_type}_{input_type}_{required_file_type}")
+                        cfg["inputSuffixes"][channel_key][feature_type][input_type][required_file_type] = new_suffix
+                        asked_file_types[required_file_type] = new_suffix
 
 
 update_config_button = st.button("Update Configuration")

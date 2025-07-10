@@ -2,7 +2,7 @@
 
 # Quick try 
 It is deployed at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). 
-You can try out the **Visualization** and **Classification** modules using this sample [dataset] extracted previously by the **Data Extraction module**
+You can try out the **Visualization** and **Classification** modules using this sample [dataset] extracted previously by the **Data Extraction** module
 
 # Install
 ## Option 1: Download from Releases
