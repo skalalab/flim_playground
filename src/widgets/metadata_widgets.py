@@ -14,8 +14,8 @@ def load_data_suffix_widget(input_type, selected_channels, selected_ch_num_compo
     error_msg = ""
     if input_type == "SPCImage":
         spc_output_suffix = get_spc_output_suffix()
-    for i, (channel_key, channel_name) in enumerate(selected_channels.items()):
-        file_suffixes = get_file_suffixes(channel_key, input_type)
+    for i, channel_name in enumerate(selected_channels):
+        file_suffixes = get_file_suffixes(channel_name, input_type)
         if len(file_suffixes) == 0:
             error_msg += f"No file suffixes found for {channel_name} {sad_emoji}"
             return "", error_msg
@@ -35,14 +35,14 @@ def load_data_suffix_widget(input_type, selected_channels, selected_ch_num_compo
                     help_msg = f"For other SPCImage output files (e.g. t1, a2, t2), the suffixes are automatically generated based on the provided a1 suffix by replacing {spc_output_suffix['a1']} to get the others."
                 else:
                     help_msg = None
-                suffix = st.text_input(f"{file_type}", default_suffix, key=f"{channel_key}_{input_type}_{file_type}_suffix", help=help_msg)
+                suffix = st.text_input(f"{file_type}", default_suffix, key=f"{channel_name}_{input_type}_{file_type}_suffix", help=help_msg)
                 if suffix == "":
                     error_msg += f"Please provide a suffix for {file_type}! "
                 else:
                     actual_file_suffix[channel_name][file_type] = suffix
         if input_type == "SPCImage" and error_msg == "": # write the spc outputs' suffixes for this channel
-            if channel_key in selected_ch_num_components and selected_ch_num_components[channel_key] != 0:
-                num_components = selected_ch_num_components[channel_key]
+            if channel_name in selected_ch_num_components and selected_ch_num_components[channel_name] != 0:
+                num_components = selected_ch_num_components[channel_name]
                 if num_components == 1:
                     needed_suffix = ["t1"]
                 elif num_components == 2:
@@ -52,10 +52,12 @@ def load_data_suffix_widget(input_type, selected_channels, selected_ch_num_compo
                 for key in needed_suffix:
                     actual_file_suffix[channel_name][key] = actual_file_suffix[channel_name]["a1"].replace(spc_output_suffix["a1"], spc_output_suffix[key])
         
-
-    return actual_file_suffix, error_msg
-
-
+    # flatten the actual_file_suffix dictionary
+    actual_file_suffix_dict = {}
+    for channel_name, file_suffix_dict in actual_file_suffix.items():
+        for file_type, file_suffix in file_suffix_dict.items():
+            actual_file_suffix_dict[f"{channel_name}_{file_type}"] = file_suffix
+    return actual_file_suffix_dict, error_msg
 
 @st.cache_data
 def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):    
@@ -89,7 +91,7 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
         files_by_name[filename].append(file_path)
         
         # Index by suffix for each suffix we care about
-        for suffix in file_suffix.values():
+        for suffix in set(file_suffix.values()):
             if filename.endswith(suffix):
                 if suffix not in files_by_suffix:
                     files_by_suffix[suffix] = []
@@ -98,7 +100,6 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
     # use the first key to get the list of images (it does not matter which key to use, since they are all required, they should all be there)
     image_search_suffix = list(file_suffix.values())[0]
     image_files = files_by_suffix.get(image_search_suffix, [])
-    
     if len(image_files) == 0:
         st.warning(f"No image files found with suffix: **{image_search_suffix}**.")
         return {}
@@ -106,7 +107,6 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
     # get the image names from the file names by removing the suffix
     image_names = [os.path.basename(file).removesuffix(image_search_suffix) for file in image_files]
     # for each image name, build a widget card with the image name and the files that belong to it
-
     num_images = len(image_names)
     num_cols = min(num_cols, num_images)
     rows = (num_images + num_cols - 1) // num_cols
@@ -124,7 +124,7 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
             # get the list of files that belong to this image
             for key, suffix in file_suffix.items():
                 # find the file with the exact name: image_name + suffix recursively within the folder (except for IRF)
-                if "irf" not in key:
+                if "IRF" not in key:
                     filename = image_name + suffix
                     matched_files = files_by_name.get(filename, [])
                 else:
@@ -145,12 +145,12 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
                     if missing_keys or duplicate_keys:
                         st.write("❌ Missing or duplicate files:")
                         for key in missing_keys:
-                            if "irf" not in key:
+                            if "IRF" not in key:
                                 st.write(f"- Missing {key}: {image_name + file_suffix[key]}")
                             else:
                                 st.write(f"- Missing {key} with suffix: {file_suffix[key]}")
                         for key in duplicate_keys:
-                            if "irf" not in key:
+                            if "IRF" not in key:
                                 st.write(f"- Duplicate {key}: {image_name + file_suffix[key]}")
                             else:
                                 st.write(f"- Duplicate {key} with suffix: {file_suffix[key]}")
@@ -215,16 +215,11 @@ def parse_metadata_display_feature_widget(metadata_df, num_cols=3):
 
 
 @st.cache_data
-def check_sdt_data(images_df, channel):
+def check_raw_decay_data(images_df, channel_name):
     """
     Check if the sdt data is available.
     """
-    if channel == "nadh":
-        column_name = "nadh decay"
-    elif channel == "fad":
-        column_name = "fad decay"
-    else:
-        return "Error: Invalid channel", []
+    column_name = f"{channel_name}_Decay"
     if column_name not in images_df.columns:
         return "Error: No sdt data found. Please check the data.", []
 
@@ -241,12 +236,12 @@ def check_sdt_data(images_df, channel):
     # check for the consistency of the shape, a tuple
     if len(set(shape_list)) > 1:
         shape_counts = Counter(shape_list)
-        error_msg = f"Inconsistent sdt data shapes found for {channel} decay: \n"
+        error_msg = f"Inconsistent sdt data shapes found for {channel_name} decay: \n"
         for shape, count in shape_counts.items():
             error_msg += f"- Shape {shape} appears {count} times.\n"
         return error_msg, [], None, None
     if len(set(laser_rep_time_list)) > 1:
-        error_msg = f"Inconsistent laser rep time found for {channel} decay: \n"
+        error_msg = f"Inconsistent laser rep time found for {channel_name} decay: \n"
         for laser_rep_time, count in laser_rep_time_list.items():
             error_msg += f"- Laser rep time {laser_rep_time} appears {count} times.\n"
         return error_msg, [], None, None
@@ -266,39 +261,35 @@ def check_sdt_data(images_df, channel):
             return "", non_zero_channels, time_bins, laser_rep_time
 
 
-def check_sdt_channel_widget(images_df):   
+def check_assign_channel_widget(images_df, selected_channels):   
     error_msg = ""
-    col1, col2 = st.columns(2)
-    with col1:
-        if "nadh decay" in images_df.columns:
-            error_msg, available_nadh_sdt_channels, nadh_time_bins, nadh_laser_rep_time = check_sdt_data(images_df, "nadh")
+    num_cols = len(selected_channels)
+    time_bins_list = []
+    laser_rep_time_list = []
+    cols = st.columns(num_cols)
+    for i, col in enumerate(cols):
+        with col:
+            if f"{selected_channels[i]}_Decay" in images_df.columns:
+                error_msg, available_channels, time_bins, laser_rep_time = check_raw_decay_data(images_df, selected_channels[i])
             if error_msg == "":
-                if len(available_nadh_sdt_channels) == 1:
-                    images_df["nadh_channel"] = available_nadh_sdt_channels[0]
+                if len(available_channels) == 1:
+                    images_df[f"{selected_channels[i]}_channel"] = available_channels[0]
+                    time_bins_list.append(time_bins)
+                    laser_rep_time_list.append(laser_rep_time)
                 else:
-                    images_df["nadh_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_nadh_sdt_channels)
-                images_df["time_bins"] = nadh_time_bins
-                images_df["duration"] = nadh_laser_rep_time
-            else:
-                return error_msg, None
-    with col2:
-        if "fad decay" in images_df.columns:
-            error_msg, available_fad_sdt_channels, fad_time_bins, fad_laser_rep_time = check_sdt_data(images_df, "fad")
-            if error_msg == "":
-                if len(available_fad_sdt_channels) == 1:
-                    images_df["fad_channel"] = available_fad_sdt_channels[0]
-                else:   
-                    images_df["fad_channel"] = st.selectbox("Select the sdt channel for fad decay", available_fad_sdt_channels)
-                images_df["time_bins"] = fad_time_bins
-                images_df["duration"] = fad_laser_rep_time
+                    images_df[f"{selected_channels[i]}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels)
+                images_df[f"{selected_channels[i]}_time_bins"] = time_bins
+                images_df[f"{selected_channels[i]}_duration"] = laser_rep_time
+                time_bins_list.append(time_bins)
+                laser_rep_time_list.append(laser_rep_time)
             else:
                 return error_msg, None
 
-    if "nadh_decay" in images_df.columns and "fad_decay" in images_df.columns:
-        if nadh_time_bins != fad_time_bins:
-            return "Inconsistent time bins found for nadh and fad decay. Please check the data.", None
-        if nadh_laser_rep_time != fad_laser_rep_time:
-            return "Inconsistent laser rep time found for nadh and fad decay. Please check the data.", None
-      
+    if len(set(time_bins_list)) > 1:
+        error_msg = "Inconsistent time bins found for the selected channels. Please check the data."
+        return error_msg, None
+    if len(set(laser_rep_time_list)) > 1:
+        error_msg = "Inconsistent laser rep time found for the selected channels. Please check the data."
+        return error_msg, None
 
     return error_msg, images_df

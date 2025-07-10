@@ -4,11 +4,11 @@ import pandas as pd
 import time
 from src.navigation import render_top_menu
 from src.widgets.data_widgets import happy_emoji, sad_emoji, image_extraction_widget
-from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, parse_metadata_display_feature_widget, check_sdt_channel_widget
+from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, parse_metadata_display_feature_widget, check_assign_channel_widget
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.fit_widgets import fit_options_widget, choose_shift_widget, start_end_widget
 from src.metadata import parse_metadata_file
-from src.config import get_available_input_types, get_channel_names, get_num_components
+from src.config import get_available_input_types, get_channel_names, get_num_components, get_feature_types
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -26,7 +26,9 @@ st.title("Data Extraction")
 
 col1, col2 = st.columns([0.4, 1])
 steps = ["Image Metadata Extraction", "Numeric Feature Extraction", "Categorical Feature Extraction"]
-
+channel_names = get_channel_names()
+ch_num_components = get_num_components(channel_names.values())
+ch_feature_types = get_feature_types(channel_names.values())
 with col1:
     # first select the step to perform
     selected_step = st.selectbox("Select a step to perform", steps, index=0, help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: \
@@ -34,22 +36,20 @@ with col1:
     # select input type
     if selected_step == "Image Metadata Extraction":
         input_types, preferred_input_type_index =  get_available_input_types()
-        channel_names = get_channel_names()
-        ch_num_components = get_num_components(channel_names.keys())
         selected_input_type = st.selectbox("Select input type", input_types, index=preferred_input_type_index, help="ROI Summing Fit: Performs \
         ROI summing on raw lifetime decay file, and fit the summed decay curve for each cell. SPCImage: extracts single cell fitting data from outputs of SPCImage. K-Flow: \
         Fit K-Flow decay curves for each cell. Categorical Features: augment categorical columns to your existing data file")
         checkbox_cols = st.columns(len(channel_names))
         actual_file_suffix = None
-        selected_channels = {}
+        selected_channels = []
         selected_ch_num_components = {}
-        for index, (channel_key, channel_name) in enumerate(channel_names.items()):        
+        for index, channel_name in enumerate(channel_names.values()):        
             with checkbox_cols[index]:
                 has_channel = st.checkbox(f"has {channel_name}", value=True)
                 if has_channel:
-                    selected_channels[channel_key] = channel_name
-                    if ch_num_components[channel_key] != 0: # if equals to 0, it means this channel does not have any lifetime fit/fit free analysis
-                        selected_ch_num_components[channel_key] = st.number_input(f"No. component", value=ch_num_components[channel_key], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_key}")
+                    selected_channels.append(channel_name)
+                    if ch_num_components[channel_name] != 0: # if equals to 0, it means this channel does not have any lifetime fit/fit free analysis
+                        selected_ch_num_components[channel_name] = st.number_input(f"No. component", value=ch_num_components[channel_name], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_name}")
         if len(selected_channels) == 0:
             st.error(f"Please check at least one of the channels {sad_emoji}")
         else:
@@ -121,29 +121,34 @@ with col2:
     # check if the folder exists
     if selected_step == "Image Metadata Extraction" and error_msg == "" and actual_file_suffix is not None: 
         if os.path.isdir(folder_path): 
-            pass
-        #     images = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
-        #     if len(images) != 0:
-        #         st.success(f"Images with ✅ are loaded successfully {happy_emoji}. Images with ❌ (if any) are not loaded. The following features will be extracted: ")
-        #         images_df = pd.DataFrame.from_dict(images, orient="index")
-        #         images_df['fit_free'] = fit_free
-        #         images_df['input_type'] = selected_input_type
-        #         images_df.index.name = "image_name"  # Set index name 
-        #         images_df.reset_index(inplace=True)  # Reset index to make it a column
-        #         if selected_input_type == "K-Flow":
-        #             # copy the image_name column to kflow_exp_name
-        #             images_df["kflow_exp_name"] = images_df["image_name"]
-              
-        #         # before exporting, check for the sdt channel (dimension)
-        #         if fit_free or selected_input_type == "ROI Summing Fit":
-        #             error_msg, images_df = check_sdt_channel_widget(images_df)
-        #             if error_msg != "":
-        #                 st.error(f"Error: {error_msg}")
-        #         else:   
-        #             parse_metadata_display_feature_widget(images_df)
-        #             export_metadata_widget(images_df=images_df, folder_path=folder_path)
-        #     else: 
-        #         st.warning("No data found in the folder. Please check the path and the file suffixes.")
+            images = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
+            if len(images) != 0:
+                st.success(f"Images with ✅ are loaded successfully {happy_emoji}. Images with ❌ (if any) are not loaded. The following features will be extracted: ")
+                images_df = pd.DataFrame.from_dict(images, orient="index")
+                # augment metadata
+                images_df['input_type'] = selected_input_type
+                # For each channel, add the feature_types and num_components
+                for channel_name in selected_channels:
+                    if ch_num_components[channel_name] != 0: # if equals to 0, it means this channel does not care about lifetime analysis at all
+                        images_df[f"{channel_name}_num_components"] = ch_num_components[channel_name]
+                    for feature_type in ch_feature_types[channel_name]:
+                        images_df[f"{channel_name}_{feature_type}"] = True
+        
+                images_df.index.name = "image_name"  # Set index name 
+                images_df.reset_index(inplace=True)  # Reset index to make it a column
+                if selected_input_type == "K-Flow":
+                    # copy the image_name column to kflow_exp_name
+                    images_df["kflow_exp_name"] = images_df["image_name"]
+                # ROI Summing Fit and SPCImage takes in raw decay that maybe multiple channels. need to assign data channel to each image channel
+                if selected_input_type == "ROI Summing Fit" or selected_input_type == "SPCImage": 
+                    error_msg, images_df = check_assign_channel_widget(images_df, selected_channels)
+                if error_msg != "":
+                    st.error(f"Error: {error_msg}")
+                else:   
+                    parse_metadata_display_feature_widget(images_df)
+                    export_metadata_widget(images_df=images_df, folder_path=folder_path)
+            else: 
+                st.warning("No data found in the folder. Please check the path and the file suffixes.")
         elif folder_path != "":
             st.error(f"Folder not found! Please check the path. {sad_emoji}")
         else:

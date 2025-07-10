@@ -26,23 +26,18 @@ def parse_metadata_file(metadata_df):
     if "image_name" not in metadata_df.columns and "kflow_exp_name" not in metadata_df.columns:
         error_msg += "The required column `image_name` or `kflow_exp_name` not found in the metadata file! "
         return error_msg, None, None, None, None, None
-
-    if "fit_free" not in metadata_df.columns:
-        error_msg += "The required column `fit_free` not found in the metadata file! "
-        return error_msg, None, None, None, None, None
     
-    if "analysis_type" not in metadata_df.columns:
-        error_msg += "The required column `analysis_type` not found in the metadata file! "
+    if "input_type" not in metadata_df.columns:
+        error_msg += "The required column `input_type` not found in the metadata file! "
         return error_msg, None, None, None, None, None
     # check if analysis_type consistent for all rows
-    if not metadata_df["analysis_type"].nunique() == 1:
-        error_msg += "The analysis type is not consistent for all rows! "
+    if not metadata_df["input_type"].nunique() == 1:
+        error_msg += "The input type is not consistent for all rows! "
         return error_msg, None, None, None, None, None
-    analysis_type = metadata_df["analysis_type"].iloc[0]
+    input_type = metadata_df["input_type"].iloc[0]
     if len(metadata_df) == 0:
         error_msg += "The metadata file is empty! "
         return error_msg, None, None, None, None, None
-    fit_free = bool(metadata_df["fit_free"].iloc[0])
     # determine the avilable feature groups based on the metadata file
     has_nadh = has_fad =  has_mask = feature_distribution = False
 

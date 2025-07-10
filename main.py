@@ -114,42 +114,42 @@ for i, col in enumerate(cols):
         new_name = st.text_input(f"Channel {i+1} name", value=default_name)
         cfg["channel_names"][channel_key] = new_name
         
-        default_feature_types = cfg["feature_types"].get(channel_key, [])
+        default_feature_types = cfg["feature_types"].get(new_name, [])
         new_feature_types = st.multiselect(f"Extracted feature types from {new_name}", cfg["available_feature_types"], default=default_feature_types)
         if len(new_feature_types) == 0: 
             error_msg = f"Please select at least one feature type for {new_name}. Or you can adjust the number of channels on the top. "
             st.error(error_msg)
             continue
-        cfg["feature_types"][channel_key] = new_feature_types
+        cfg["feature_types"][new_name] = new_feature_types
         # get the number of components for each channel if feature types has "Lifetime"
-        if channel_key not in cfg["num_components"]:
-            cfg["num_components"][channel_key] = 0
+        if new_name not in cfg["num_components"]:
+            cfg["num_components"][new_name] = 0
         if any("Lifetime" in feature_type for feature_type in new_feature_types):
             num_components = st.number_input(f"Number of components for {new_name}", value=1, min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis")
-            cfg["num_components"][channel_key] = num_components
+            cfg["num_components"][new_name] = num_components
         else:
-            cfg["num_components"][channel_key] = 0
+            cfg["num_components"][new_name] = 0
 
         # Initialize the input section for this channel if it doesn't exist
-        if channel_key not in cfg["inputSuffixes"]:
-            cfg["inputSuffixes"][channel_key] = {}
+        if new_name not in cfg["inputSuffixes"]:
+            cfg["inputSuffixes"][new_name] = {}
 
         st.subheader(f"File suffixes: {new_name}")
         asked_file_types = {} # stores key-value pairs of file type and suffix
         for feature_type in new_feature_types:
-            if feature_type not in cfg["inputSuffixes"][channel_key]:
-                cfg["inputSuffixes"][channel_key][feature_type] = {} 
+            if feature_type not in cfg["inputSuffixes"][new_name]:
+                cfg["inputSuffixes"][new_name][feature_type] = {} 
             for input_type in cfg["available_input_types"]:
-                if input_type not in cfg["inputSuffixes"][channel_key][feature_type]:
-                    cfg["inputSuffixes"][channel_key][feature_type][input_type] = {}
+                if input_type not in cfg["inputSuffixes"][new_name][feature_type]:
+                    cfg["inputSuffixes"][new_name][feature_type][input_type] = {}
                 for required_file_type in cfg["required_file_types"][feature_type][input_type]:
                     if required_file_type in asked_file_types:
-                        cfg["inputSuffixes"][channel_key][feature_type][input_type][required_file_type] = asked_file_types[required_file_type]
+                        cfg["inputSuffixes"][new_name][feature_type][input_type][required_file_type] = asked_file_types[required_file_type]
                     else:
-                        default_suffix = cfg["inputSuffixes"][channel_key][feature_type][input_type].get(required_file_type, "")
+                        default_suffix = cfg["inputSuffixes"][new_name][feature_type][input_type].get(required_file_type, "")
                         help_msg = "Ignore this field if you don't have this file type in your data." if required_file_type == "a1" or required_file_type == "Histogram" else None
-                        new_suffix = st.text_input(f"{required_file_type}", value=default_suffix, key=f"{channel_key}_{feature_type}_{input_type}_{required_file_type}", help=help_msg)
-                        cfg["inputSuffixes"][channel_key][feature_type][input_type][required_file_type] = new_suffix
+                        new_suffix = st.text_input(f"{required_file_type}", value=default_suffix, key=f"{new_name}_{feature_type}_{input_type}_{required_file_type}", help=help_msg)
+                        cfg["inputSuffixes"][new_name][feature_type][input_type][required_file_type] = new_suffix
                         asked_file_types[required_file_type] = new_suffix
 
 if error_msg == "":

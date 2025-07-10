@@ -31,12 +31,12 @@ def get_cell_id_column_name() -> str:
     cell_id_column_name = cfg.get("unique_cell_id_col", "cell_id")
     return cell_id_column_name
 
-def get_file_suffixes(channel_key: str, input_type: str) -> dict:
+def get_file_suffixes(channel_name: str, input_type: str) -> dict:
     cfg = load_config()
-    channel_feature_types = cfg.get("feature_types", {}).get(channel_key, [])
+    channel_feature_types = cfg.get("feature_types", {}).get(channel_name, [])
     suffixes = {}
     for feature_type in channel_feature_types:
-        file_type_suffixes = cfg.get("inputSuffixes", {}).get(channel_key, {}).get(feature_type, {}).get(input_type, {})
+        file_type_suffixes = cfg.get("inputSuffixes", {}).get(channel_name, {}).get(feature_type, {}).get(input_type, {})
         for file_type, suffix in file_type_suffixes.items():
             if file_type not in suffixes:
                 suffixes[file_type] = suffix
@@ -68,9 +68,16 @@ def get_spc_output_suffix() -> dict:
     spc_output_suffix = cfg.get("spc_output_suffix", {})
     return spc_output_suffix
 
-def get_num_components(channel_keys: list) -> dict:
+def get_num_components(channel_names: list) -> dict:
     cfg = load_config()
     num_components = {}
-    for channel_key in channel_keys:
-        num_components[channel_key] = cfg.get("num_components", {}).get(channel_key, 0)
+    for channel_name in channel_names:
+        num_components[channel_name] = cfg.get("num_components", {}).get(channel_name, 0)
     return num_components
+
+def get_feature_types(channel_names: list) -> dict:
+    cfg = load_config()
+    feature_types = {}
+    for channel_name in channel_names:
+        feature_types[channel_name] = cfg.get("feature_types", {}).get(channel_name, [])
+    return feature_types
