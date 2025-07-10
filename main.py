@@ -35,14 +35,8 @@ from src.config import load_config, save_config
 
 # Load the current user configuration
 cfg = load_config()
-
+error_msg = ""
 max_num_channels = 4
-col1, col2 = st.columns(2)
-# Ask for the number of channels user needs
-with col1:
-    cfg["num_channels"] = st.selectbox("Number of channels you have in your data", list(range(1, max_num_channels + 1)), index=cfg.get("num_channels", 1) - 1)
-with col2:
-    cfg["unique_cell_id_col"] = st.text_input("Unique cell identifier column name", value=cfg.get("unique_cell_id_col", "cell_id"))
 
 # Initialization: 
 # channel_names section if it doesn't exist
@@ -57,6 +51,15 @@ if "available_input_types" not in cfg:
 # feature type input types initialization: for each feature type, the set of input types that are required to extract that feature type
 if "required_file_types" not in cfg:
     cfg["required_file_types"] = {}
+
+if "spc_output_suffix" not in cfg:
+    cfg["spc_output_suffix"] = {}
+    cfg["spc_output_suffix"]["a1"] = "_a1[%].asc"
+    cfg["spc_output_suffix"]["t1"] = "_t1.asc"
+    cfg["spc_output_suffix"]["a2"] = "_a2[%].asc"
+    cfg["spc_output_suffix"]["t2"] = "_t2.asc"
+    cfg["spc_output_suffix"]["a3"] = "_a3[%].asc"
+    cfg["spc_output_suffix"]["t3"] = "_t3.asc"
 
 for feature_type in cfg["available_feature_types"]:
     if feature_type not in cfg["required_file_types"]:
@@ -84,6 +87,23 @@ if "inputSuffixes" not in cfg:
 # feature type for each channel initialization
 if "feature_types" not in cfg:
     cfg["feature_types"] = {}
+# num_components for each channel initialization
+if "num_components" not in cfg:
+    cfg["num_components"] = {}
+
+col1, col2, col3 = st.columns(3)
+# Ask for the number of channels user needs
+with col1:
+    cfg["num_channels"] = st.selectbox("Number of channels you have in your data", list(range(1, max_num_channels + 1)), index=cfg.get("num_channels", 1) - 1, help="Number of channels you have in your data")
+with col2:
+    cfg["unique_cell_id_col"] = st.text_input("Unique cell identifier column name", value=cfg.get("unique_cell_id_col", "cell_id"), help="Unique cell identifier column name")
+with col3:
+    prev_input_type = cfg.get("preferred_input_type", None)
+    if prev_input_type is None:
+        index = 0
+    else:
+        index = cfg["available_input_types"].index(prev_input_type)
+    cfg["preferred_input_type"] = st.selectbox("Preferred input type", cfg["available_input_types"], index=index, help="Preferred input type")
 
 # Ask for the name for each channel
 cols = st.columns(cfg["num_channels"])
@@ -96,7 +116,19 @@ for i, col in enumerate(cols):
         
         default_feature_types = cfg["feature_types"].get(channel_key, [])
         new_feature_types = st.multiselect(f"Extracted feature types from {new_name}", cfg["available_feature_types"], default=default_feature_types)
+        if len(new_feature_types) == 0: 
+            error_msg = f"Please select at least one feature type for {new_name}. Or you can adjust the number of channels on the top. "
+            st.error(error_msg)
+            continue
         cfg["feature_types"][channel_key] = new_feature_types
+        # get the number of components for each channel if feature types has "Lifetime"
+        if channel_key not in cfg["num_components"]:
+            cfg["num_components"][channel_key] = 0
+        if any("Lifetime" in feature_type for feature_type in new_feature_types):
+            num_components = st.number_input(f"Number of components for {new_name}", value=1, min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis")
+            cfg["num_components"][channel_key] = num_components
+        else:
+            cfg["num_components"][channel_key] = 0
 
         # Initialize the input section for this channel if it doesn't exist
         if channel_key not in cfg["inputSuffixes"]:
@@ -115,12 +147,13 @@ for i, col in enumerate(cols):
                         cfg["inputSuffixes"][channel_key][feature_type][input_type][required_file_type] = asked_file_types[required_file_type]
                     else:
                         default_suffix = cfg["inputSuffixes"][channel_key][feature_type][input_type].get(required_file_type, "")
-                        new_suffix = st.text_input(f"{required_file_type}", value=default_suffix, key=f"{channel_key}_{feature_type}_{input_type}_{required_file_type}")
+                        help_msg = "Ignore this field if you don't have this file type in your data." if required_file_type == "a1" or required_file_type == "Histogram" else None
+                        new_suffix = st.text_input(f"{required_file_type}", value=default_suffix, key=f"{channel_key}_{feature_type}_{input_type}_{required_file_type}", help=help_msg)
                         cfg["inputSuffixes"][channel_key][feature_type][input_type][required_file_type] = new_suffix
                         asked_file_types[required_file_type] = new_suffix
 
-
-update_config_button = st.button("Update Configuration")
-if update_config_button:
-    save_config(cfg)
-    st.success("Configuration updated!")
+if error_msg == "":
+    update_config_button = st.button("Update Configuration")
+    if update_config_button:
+        save_config(cfg)
+        st.success("Configuration updated!")

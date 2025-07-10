@@ -2,6 +2,7 @@ num_channels = 3
 unique_cell_id_col = "cell_id"
 available_feature_types = [ "Lifetime_Fit", "Lifetime_FitFree", "Intensity",]
 available_input_types = [ "ROI Summing Fit", "SPCImage", "K-Flow",]
+preferred_input_type = "ROI Summing Fit"
 
 [channel_names]
 ch1 = "nadh"
@@ -10,16 +11,21 @@ ch3 = "red"
 
 [feature_types]
 ch1 = [ "Lifetime_Fit", "Lifetime_FitFree", "Intensity",]
-ch2 = [ "Lifetime_Fit", "Lifetime_FitFree", "Intensity",]
+ch2 = [ "Lifetime_Fit",]
 ch3 = [ "Intensity",]
 
 [spc_output_suffix]
 a1 = "_a1[%].asc"
-a2 = "_a2[%].asc"
 t1 = "_t1.asc"
+a2 = "_a2[%].asc"
 t2 = "_t2.asc"
 a3 = "_a3[%].asc"
 t3 = "_t3.asc"
+
+[num_components]
+ch1 = 2
+ch2 = 2
+ch3 = 0
 
 [required_file_types.Lifetime_Fit]
 "ROI Summing Fit" = [ "Mask", "IRF", "Decay",]
@@ -37,12 +43,12 @@ SPCImage = [ "Mask", "Decay",]
 K-Flow = [ "Histogram",]
 
 [inputSuffixes.ch1.Lifetime_Fit."ROI Summing Fit"]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 IRF = "nadh_irf.txt"
 Decay = "_n.sdt"
 
 [inputSuffixes.ch1.Lifetime_Fit.SPCImage]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 Decay = "_n.sdt"
 a1 = "n_a1[%].asc"
 
@@ -51,12 +57,12 @@ IRF = "nadh_irf.txt"
 Histogram = "_ch1.csv"
 
 [inputSuffixes.ch1.Lifetime_FitFree."ROI Summing Fit"]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 IRF = "nadh_irf.txt"
 Decay = "_n.sdt"
 
 [inputSuffixes.ch1.Lifetime_FitFree.SPCImage]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 IRF = "nadh_irf.txt"
 Decay = "_n.sdt"
 a1 = "n_a1[%].asc"
@@ -66,23 +72,23 @@ IRF = "nadh_irf.txt"
 Histogram = "_ch1.csv"
 
 [inputSuffixes.ch1.Intensity."ROI Summing Fit"]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 Decay = "_n.sdt"
 
 [inputSuffixes.ch1.Intensity.SPCImage]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 Decay = "_n.sdt"
 
 [inputSuffixes.ch1.Intensity.K-Flow]
 Histogram = "_ch1.csv"
 
 [inputSuffixes.ch2.Lifetime_Fit."ROI Summing Fit"]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 IRF = "fad_irf.txt"
 Decay = "_f.sdt"
 
 [inputSuffixes.ch2.Lifetime_Fit.SPCImage]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 Decay = "_f.sdt"
 a1 = "f_a1[%].asc"
 
@@ -91,12 +97,12 @@ IRF = "fad_irf.txt"
 Histogram = "_ch2.csv"
 
 [inputSuffixes.ch2.Lifetime_FitFree."ROI Summing Fit"]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 IRF = "fad_irf.txt"
 Decay = "_f.sdt"
 
 [inputSuffixes.ch2.Lifetime_FitFree.SPCImage]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 IRF = "fad_irf.txt"
 Decay = "_f.sdt"
 a1 = "f_a1[%].asc"
@@ -106,23 +112,52 @@ IRF = "fad_irf.txt"
 Histogram = "_ch2.csv"
 
 [inputSuffixes.ch2.Intensity."ROI Summing Fit"]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 Decay = "_f.sdt"
 
 [inputSuffixes.ch2.Intensity.SPCImage]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 Decay = "_f.sdt"
 
 [inputSuffixes.ch2.Intensity.K-Flow]
 Histogram = "_ch2.csv"
 
 [inputSuffixes.ch3.Intensity."ROI Summing Fit"]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 Decay = "_r.sdt"
 
 [inputSuffixes.ch3.Intensity.SPCImage]
-Mask = "_photons_cellpose.tiff"
+Mask = "n_photons_cellpose.tiff"
 Decay = "_r.sdt"
 
 [inputSuffixes.ch3.Intensity.K-Flow]
+Histogram = "_ch3.csv"
+
+[inputSuffixes.ch3.Lifetime_FitFree."ROI Summing Fit"]
+Mask = "n_photons_cellpose.tiff"
+IRF = "red_irf.txt"
+Decay = "_r.sdt"
+
+[inputSuffixes.ch3.Lifetime_FitFree.SPCImage]
+Mask = "n_photons_cellpose.tiff"
+IRF = "red_irf.txt"
+Decay = "_r.sdt"
+a1 = "r_a1[%].asc"
+
+[inputSuffixes.ch3.Lifetime_FitFree.K-Flow]
+IRF = "red_irf.txt"
+Histogram = "_ch3.csv"
+
+[inputSuffixes.ch3.Lifetime_Fit."ROI Summing Fit"]
+Mask = "n_photons_cellpose.tiff"
+IRF = "red_irf.txt"
+Decay = "_r.sdt"
+
+[inputSuffixes.ch3.Lifetime_Fit.SPCImage]
+Mask = "n_photons_cellpose.tiff"
+Decay = "_r.sdt"
+a1 = "r_a1[%].asc"
+
+[inputSuffixes.ch3.Lifetime_Fit.K-Flow]
+IRF = "red_irf.txt"
 Histogram = "_ch3.csv"

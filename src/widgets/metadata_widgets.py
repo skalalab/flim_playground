@@ -2,97 +2,67 @@ import streamlit as st
 import os 
 import numpy as np
 from pathlib import Path
-from src.metadata import parse_metadata_file, spc_output_suffix
-from src.config import get_file_suffix_default  
-from src.widgets.data_widgets import happy_emoji
+from src.metadata import parse_metadata_file
+from src.config import get_file_suffixes, get_spc_output_suffix
+from src.widgets.data_widgets import happy_emoji, sad_emoji
 from src.sdt_io import read_sdt150, read_sdt_metadata
 from collections import Counter
-def load_data_suffix_widget(analysis_type, fit_free, has_nadh, has_fad):
+def load_data_suffix_widget(input_type, selected_channels):
     """
-    ROI summing fit: requires mask, IRF, and raw lifetime decay files for nadh and fad
-    SPCImage: requires mask and SPC fitting outputs (a1, a2, t1, t2, and shift) for nadh and fad, and raw lifetime decay files for nadh and fad and IRF (if fit_free)
-    K-Flow: requires cell histograms and IRF 
-    Categorical Features: requires single cell features csv files
     """
-    # based on the analysis type, display the default suffix for each require file type
     actual_file_suffix = {}
     error_msg = ""
 
-    if analysis_type == "ROI Summing Fit":
-        # required files: mask, IRF
-        actual_file_suffix["mask"] = ""
-        if has_nadh:
-            actual_file_suffix["nadh decay"] = ""
-            actual_file_suffix["nadh irf"] = ""
-        if has_fad:
-            actual_file_suffix["fad decay"] = ""
-            actual_file_suffix["fad irf"] = ""
-        
-    elif "SPCImage" in analysis_type:
-        # required files: mask, SPC fitting outputs (a1, a2, t1, t2, and shift)
-        actual_file_suffix["mask"] = ""
-        if has_nadh:
-            # only use the a1. The rest will be deduced from the suffix of the shift 
-            actual_file_suffix["nadh a1"] = ""
-        if has_fad:
-            actual_file_suffix["fad a1"] = ""
-        if fit_free:
-            if has_nadh:
-                actual_file_suffix["nadh decay"] = ""
-                actual_file_suffix["nadh irf"] = ""
-            if has_fad:
-                actual_file_suffix["fad decay"] = ""
-                actual_file_suffix["fad irf"] = ""
-            
-    elif analysis_type == "K-Flow":
-        # required files: cell histograms and IRF
-        if has_nadh:
-            actual_file_suffix["nadh histogram"] = ""
-            actual_file_suffix["nadh irf"] = ""
-        if has_fad:
-            actual_file_suffix["red histogram"] = ""
-            actual_file_suffix["red irf"] = ""
-    # create a text input widget for each suffix in the dictionary, maximum 2 per row
-    # dynamically determine how many rows are needed
-    num_rows = (len(actual_file_suffix) + 1) // 2
-    cols = st.columns(2)
-    file_suffix_default = get_file_suffix_default()
-    for i, (key, value) in enumerate(actual_file_suffix.items()):
-        col = cols[i % 2]
-        with col:
-            # create a text input for the suffix
-            suffix = st.text_input(f"Suffix for {key}", file_suffix_default[key], key=f"{key}_suffix", help=f"The filenames are expected to have *exactly* two parts: \
-            *image_name + suffix*. All files from the same image should share the **same** image_name, with the only difference being the suffix. This is the \
-                                   suffix for the {key} file")
-            if suffix == "":
-                error_msg += f"Please provide a suffix for {key}! "
-            else:
-                actual_file_suffix[key] = suffix
-    if error_msg == "" and "SPCImage" in analysis_type:
-        # load nadh and fad spc image output files suffixes
-        suffix_info = f"For other SPCImage output files (a2, t1, t2), the suffixes are automatically generated based on the provided a1 suffix \
-            by replacing {spc_output_suffix['a1']} to get the followings: \n"
-        for key, suffix in spc_output_suffix.items():
-            if key == "a1": 
-                # skip a1, since it is already in the actual_file_suffix dictionary
-                continue
-            if not fit_free and key == "shift":
-                continue
-            if has_nadh: 
-                nadh_a1_suffix = actual_file_suffix["nadh a1"]
-                actual_file_suffix["nadh " + key] = nadh_a1_suffix.replace(spc_output_suffix['a1'], suffix)
-                # Use Markdown list syntax for line breaks in st.info
-                # Prepend "- " to make it a list item and add backticks for clarity
-                suffix_info += f"- nadh {key}: `{actual_file_suffix['nadh ' + key]}`\n"
-            if has_fad:
-                fad_a1_suffix = actual_file_suffix["fad a1"]
-                actual_file_suffix["fad " + key] = fad_a1_suffix.replace(spc_output_suffix['a1'], suffix)
-                suffix_info += f"fad {key}: `{actual_file_suffix['fad ' + key]}`\n"
-                
-        st.info(suffix_info)
-        
-    # check if the suffixes are valid
+    for i, (channel_key, channel_name) in enumerate(selected_channels.items()):
+        file_suffixes = get_file_suffixes(channel_key, input_type)
+        if len(file_suffixes) == 0:
+            error_msg += f"No file suffixes found for {channel_name} {sad_emoji}"
+            return "", error_msg
+        else:
+            actual_file_suffix[channel_name] = file_suffixes
+
+        st.subheader(f"File suffixes: {channel_name}")
+        num_cols = 3
+        cols = st.columns(num_cols)
+        for j, (file_type, default_suffix) in enumerate(file_suffixes.items()):
+            col = cols[j % num_cols]
+            with col:
+                # only show the help message for the first file type of the first channel
+                help_msg = "The filenames are expected to have *exactly* two parts: *image_name + suffix*. All files from the same image should share the **same** image_name, with the only difference being the suffix." if i == 0 and j == 0 else None
+                suffix = st.text_input(f"{file_type}", default_suffix, key=f"{channel_key}_{input_type}_{file_type}_suffix", help=help_msg)
+                if suffix == "":
+                    error_msg += f"Please provide a suffix for {file_type}! "
+                else:
+                    actual_file_suffix[channel_name][file_type] = suffix
+   
     return actual_file_suffix, error_msg
+
+def ask_for_fit_components_widget(channel_name, input_type):
+    pass
+        # if input_type == "SPCImage":
+        # spc_output_suffix = get_spc_output_suffix()
+    #  if error_msg == "" and input_type == "SPCImage":
+    #     suffix_info = f"For other SPCImage output files (a2, t1, t2), the suffixes are automatically generated based on the provided a1 suffix \
+    #         by replacing {spc_output_suffix['a1']} to get the followings: \n"
+    #     for key, suffix in spc_output_suffix.items():
+    #         if key == "a1": 
+    #             # skip a1, since it is already in the actual_file_suffix dictionary
+    #             continue
+    #         if not fit_free and key == "shift":
+    #             continue
+    #         if has_nadh: 
+    #             nadh_a1_suffix = actual_file_suffix["nadh a1"]
+    #             actual_file_suffix["nadh " + key] = nadh_a1_suffix.replace(spc_output_suffix['a1'], suffix)
+    #             # Use Markdown list syntax for line breaks in st.info
+    #             # Prepend "- " to make it a list item and add backticks for clarity
+    #             suffix_info += f"- nadh {key}: `{actual_file_suffix['nadh ' + key]}`\n"
+    #         if has_fad:
+    #             fad_a1_suffix = actual_file_suffix["fad a1"]
+    #             actual_file_suffix["fad " + key] = fad_a1_suffix.replace(spc_output_suffix['a1'], suffix)
+    #             suffix_info += f"fad {key}: `{actual_file_suffix['fad ' + key]}`\n"
+                
+    #   #  st.info(suffix_info)
+        
 
 @st.cache_data
 def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):    

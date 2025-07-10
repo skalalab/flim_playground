@@ -8,6 +8,7 @@ from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.fit_widgets import fit_options_widget, choose_shift_widget, start_end_widget
 from src.metadata import parse_metadata_file
+from src.config import get_available_input_types, get_channel_names, get_num_components
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -25,34 +26,38 @@ st.title("Data Extraction")
 
 col1, col2 = st.columns([0.4, 1])
 steps = ["Image Metadata Extraction", "Numeric Feature Extraction", "Categorical Feature Extraction"]
-input_types =  ["ROI Summing Fit", "SPCImage", "K-Flow"]
+
 with col1:
     # first select the step to perform
     selected_step = st.selectbox("Select a step to perform", steps, index=0, help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: \
     Extracts numeric features from the images. Categorical Feature Extraction: Extracts categorical features from the images. \n ")
     # select input type
     if selected_step == "Image Metadata Extraction":
-        selected_input_type = st.selectbox("Select input type", input_types, index=0, help="ROI Summing Fit: Performs \
+        input_types, preferred_input_type_index =  get_available_input_types()
+        channel_names = get_channel_names()
+        ch_num_components = get_num_components(channel_names.keys())
+        selected_input_type = st.selectbox("Select input type", input_types, index=preferred_input_type_index, help="ROI Summing Fit: Performs \
         ROI summing on raw lifetime decay file, and fit the summed decay curve for each cell. SPCImage: extracts single cell fitting data from outputs of SPCImage. K-Flow: \
         Fit K-Flow decay curves for each cell. Categorical Features: augment categorical columns to your existing data file")
-        checkbox_col1, checkbox_col2, checkbox_col3 = st.columns(3)
-        suffix_correct = False
-    
-        with checkbox_col1:
-            has_nadh = st.checkbox("Has NAD(P)H Data", value=True)
-        with checkbox_col2:
-            has_fad =  st.checkbox("Has FAD Data", value=True)   
-        with checkbox_col3:
-            fit_free = st.checkbox("Fit Free Analysis", value=True, help="If checked, Fit free (e.g. Phasor) features will be extracted.")
-        if has_nadh or has_fad:
-            actual_file_suffix, error_msg = load_data_suffix_widget(selected_input_type, fit_free, has_nadh, has_fad)
+        checkbox_cols = st.columns(len(channel_names))
+        actual_file_suffix = None
+        selected_channels = {}
+        selected_ch_num_components = {}
+        for index, (channel_key, channel_name) in enumerate(channel_names.items()):        
+            with checkbox_cols[index]:
+                has_channel = st.checkbox(f"has {channel_name}", value=True)
+                if has_channel:
+                    selected_channels[channel_key] = channel_name
+                    if ch_num_components[channel_key] != 0: # if equals to 0, it means this channel does not have any lifetime fit/fit free analysis
+                        selected_ch_num_components[channel_key] = st.number_input(f"No. component", value=ch_num_components[channel_key], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_key}")
+        if len(selected_channels) == 0:
+            st.error(f"Please check at least one of the channels {sad_emoji}")
+        else:
+            actual_file_suffix, error_msg = load_data_suffix_widget(selected_input_type, selected_channels)
             if error_msg != "":
                 st.error(error_msg)
             else:
-                suffix_correct = True
-                folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the raw data that is needed for the selected data extraction type. " \
-                , key="folder_path")
-        else: st.error(f"Please check at least one of the channels {sad_emoji}")
+                folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the raw data that is needed for the selected data extraction type." , key="image_metadata_folder_path")
     elif selected_step == "Numeric Feature Extraction":
         metadata_df = None
         if st.session_state["last_extracted_metadata"] is not None:
@@ -114,32 +119,35 @@ with col1:
 
 with col2: 
     # check if the folder exists
-    if selected_step == "Image Metadata Extraction" and suffix_correct: 
+    if selected_step == "Image Metadata Extraction" and error_msg == "" and actual_file_suffix is not None: 
         if os.path.isdir(folder_path): 
-            images = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
-            if len(images) != 0:
-                st.success(f"Images with ✅ are loaded successfully {happy_emoji}. Images with ❌ (if any) are not loaded. The following features will be extracted: ")
-                images_df = pd.DataFrame.from_dict(images, orient="index")
-                images_df['fit_free'] = fit_free
-                images_df['input_type'] = selected_input_type
-                images_df.index.name = "image_name"  # Set index name 
-                images_df.reset_index(inplace=True)  # Reset index to make it a column
-                if selected_input_type == "K-Flow":
-                    # copy the image_name column to kflow_exp_name
-                    images_df["kflow_exp_name"] = images_df["image_name"]
+            pass
+        #     images = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
+        #     if len(images) != 0:
+        #         st.success(f"Images with ✅ are loaded successfully {happy_emoji}. Images with ❌ (if any) are not loaded. The following features will be extracted: ")
+        #         images_df = pd.DataFrame.from_dict(images, orient="index")
+        #         images_df['fit_free'] = fit_free
+        #         images_df['input_type'] = selected_input_type
+        #         images_df.index.name = "image_name"  # Set index name 
+        #         images_df.reset_index(inplace=True)  # Reset index to make it a column
+        #         if selected_input_type == "K-Flow":
+        #             # copy the image_name column to kflow_exp_name
+        #             images_df["kflow_exp_name"] = images_df["image_name"]
               
-                # before exporting, check for the sdt channel (dimension)
-                if fit_free or selected_input_type == "ROI Summing Fit":
-                    error_msg, images_df = check_sdt_channel_widget(images_df)
-                    if error_msg != "":
-                        st.error(f"Error: {error_msg}")
-                else:   
-                    parse_metadata_display_feature_widget(images_df)
-                    export_metadata_widget(images_df=images_df, folder_path=folder_path)
-            else: 
-                st.warning("No data found in the folder. Please check the path and the file suffixes.")
+        #         # before exporting, check for the sdt channel (dimension)
+        #         if fit_free or selected_input_type == "ROI Summing Fit":
+        #             error_msg, images_df = check_sdt_channel_widget(images_df)
+        #             if error_msg != "":
+        #                 st.error(f"Error: {error_msg}")
+        #         else:   
+        #             parse_metadata_display_feature_widget(images_df)
+        #             export_metadata_widget(images_df=images_df, folder_path=folder_path)
+        #     else: 
+        #         st.warning("No data found in the folder. Please check the path and the file suffixes.")
         elif folder_path != "":
             st.error(f"Folder not found! Please check the path. {sad_emoji}")
+        else:
+            st.info(f"Please provide a folder path.")
     elif selected_step == "Numeric Feature Extraction" and st.session_state["choosing_shift"] and metadata_df is not None:
         st.info(f"Fitting for shift on {len(metadata_df)} image(s).")
         # first NADH, then FAD/red

@@ -1,5 +1,6 @@
 from pathlib import Path
 from src.feature_groups import subset_feature_group_features
+required_cols, unique_cell_id_col = "", ""
 
 def list_files_with_suffix(folder_path, suffix):
     path = Path(folder_path)
