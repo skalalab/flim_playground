@@ -2,9 +2,18 @@
 Numerical and Categorical Features for Data Extraction outputted CSV file. If new features are added, modify the lists below.
 """
 
+from src.config import get_unique_cell_id_col, get_image_name_col
+
+unique_cell_id_col = get_unique_cell_id_col()
+image_name_col = get_image_name_col()
+required_cols = [unique_cell_id_col, image_name_col]
 
 # customizable categorical columns
-categorical_cols = [ "experiment", "day", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "patient_id", "replicate", "GMM_group", "2D_GMM_group"]
+categorical_cols = [ "experiment", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "patient_id", "replicate", "GMM_group", "2D_GMM_group"]
+
+
+# Numerical Feature
+
 
 # customizable numeric column dicionary that store the default names of the features we want to extract (for backward compatibility)
 feature_groups_default = {

@@ -164,6 +164,43 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
 
     return valid_image_groups
 
+def display_feature_groups_widget(metadata_df, num_cols=3):
+    """
+    Display the feature groups to be extracted.
+    """
+    # if there are more than 3 rows, write the first 3 rows, else write all rows
+    if len(metadata_df) > 3:
+        st.write(metadata_df.head(3))
+    else:
+        st.write(metadata_df)
+
+    # display the feature types for each channel
+    metadata_dict = parse_metadata_file(metadata_df)
+
+    # cols = st.columns(num_cols)
+    # keys = list(selected_feature_types.keys())
+    # chunk_size = (len(keys) + num_cols - 1) // num_cols  # split into 3 roughly equal parts
+
+    # for i, col in enumerate(cols):
+    #     for key in keys[i * chunk_size : (i + 1) * chunk_size]:
+    #         values = selected_feature_types[key]
+    #         # Option 1: use a Markdown newline
+    #         col.markdown(
+    #             f"""
+    #             <div style="
+    #                 border:1px solid #ccc;
+    #                 padding:8px;
+    #                 border-radius:4px;
+    #                 margin-bottom:8px;
+    #             ">
+    #                 <strong style="color: orange;">{key}</strong><br>
+    #                 { ', '.join(values) }
+    #             </div>
+    #             """,
+    #             unsafe_allow_html=True
+    #         )
+
+
 def export_metadata_widget(images_df, folder_path):
     # use a botton to export the images as one csv file (one image per row) to the folder_path 
     confirm_export = st.button("Export Image Metadata as CSV", help=f"Export the image meta as one csv file (one image per row) to {folder_path}")
@@ -180,38 +217,6 @@ def export_metadata_widget(images_df, folder_path):
         st.session_state["last_extracted_metadata"] = images_df
         st.session_state["last_extracted_metadata_filepath"] = csv_file_path
 
-def parse_metadata_display_feature_widget(metadata_df, num_cols=3): 
-    """
-    Parse the metadata and display the features available to be extracted later for user to choose. 
-    """
-    error_msg, available_feature_groups_features, analysis_type, fit_free, has_nadh, has_fad =  parse_metadata_file(metadata_df)
-    if error_msg != "":
-        st.error(error_msg)
-        return 
-
-    # display the available features in a multi select widget, one group per widget
-    cols = st.columns(num_cols)
-    keys = list(available_feature_groups_features.keys())
-    chunk_size = (len(keys) + num_cols - 1) // num_cols  # split into 3 roughly equal parts
-
-    for i, col in enumerate(cols):
-        for key in keys[i * chunk_size : (i + 1) * chunk_size]:
-            values = available_feature_groups_features[key]
-            # Option 1: use a Markdown newline
-            col.markdown(
-                f"""
-                <div style="
-                    border:1px solid #ccc;
-                    padding:8px;
-                    border-radius:4px;
-                    margin-bottom:8px;
-                ">
-                    <strong style="color: orange;">{key}</strong><br>
-                    { ', '.join(values) }
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
 
 
 @st.cache_data
@@ -259,7 +264,6 @@ def check_raw_decay_data(images_df, channel_name):
                 if np.any(sdt_data[i]):
                     non_zero_channels.append(i)
             return "", non_zero_channels, time_bins, laser_rep_time
-
 
 def check_assign_channel_widget(images_df, selected_channels):   
     error_msg = ""

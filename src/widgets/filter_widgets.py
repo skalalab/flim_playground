@@ -1,5 +1,5 @@
 import streamlit as st
-from src.feature_groups import categorical_cols
+from src.feature_type_config import categorical_cols
 
 # Generic callback function to handle "All" logic
 def update_multiselect(key, options):

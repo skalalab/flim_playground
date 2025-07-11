@@ -1,6 +1,5 @@
 import pandas as pd
-from src.feature_groups import categorical_cols, feature_groups_default, feature_groups_prefix, feature_groups
-from src.metadata import required_cols, unique_cell_id_col
+from src.feature_type_config import unique_cell_id_col, required_cols, categorical_cols, feature_groups_default, feature_groups_prefix, feature_groups
 def match_col_name(col, col_list):
     """
     match_col_name: a function that takes a column name and a list of canonical column names and returns the first canonical column name that matches the column name

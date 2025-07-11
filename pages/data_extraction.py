@@ -4,11 +4,11 @@ import pandas as pd
 import time
 from src.navigation import render_top_menu
 from src.widgets.data_widgets import happy_emoji, sad_emoji, image_extraction_widget
-from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, parse_metadata_display_feature_widget, check_assign_channel_widget
+from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, display_feature_groups_widget, check_assign_channel_widget
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.fit_widgets import fit_options_widget, choose_shift_widget, start_end_widget
 from src.metadata import parse_metadata_file
-from src.config import get_available_input_types, get_channel_names, get_num_components, get_feature_types
+from src.config import get_available_input_types, get_channel_names, get_num_components, get_feature_extractors
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -28,7 +28,7 @@ col1, col2 = st.columns([0.4, 1])
 steps = ["Image Metadata Extraction", "Numeric Feature Extraction", "Categorical Feature Extraction"]
 channel_names = get_channel_names()
 ch_num_components = get_num_components(channel_names.values())
-ch_feature_types = get_feature_types(channel_names.values())
+ch_feature_extractors = get_feature_extractors(channel_names.values())
 with col1:
     # first select the step to perform
     selected_step = st.selectbox("Select a step to perform", steps, index=0, help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: \
@@ -119,7 +119,7 @@ with col1:
 
 with col2: 
     # check if the folder exists
-    if selected_step == "Image Metadata Extraction" and error_msg == "" and actual_file_suffix is not None: 
+    if selected_step == "Image Metadata Extraction" and error_msg == "": 
         if os.path.isdir(folder_path): 
             images = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
             if len(images) != 0:
@@ -131,8 +131,9 @@ with col2:
                 for channel_name in selected_channels:
                     if ch_num_components[channel_name] != 0: # if equals to 0, it means this channel does not care about lifetime analysis at all
                         images_df[f"{channel_name}_num_components"] = ch_num_components[channel_name]
-                    for feature_type in ch_feature_types[channel_name]:
-                        images_df[f"{channel_name}_{feature_type}"] = True
+                    for feature_extractor in ch_feature_extractors[channel_name]:
+                        for module in ch_feature_extractors[channel_name][feature_extractor]:
+                            images_df[f"{channel_name}_{feature_extractor}_{module}"] = True
         
                 images_df.index.name = "image_name"  # Set index name 
                 images_df.reset_index(inplace=True)  # Reset index to make it a column
@@ -145,7 +146,7 @@ with col2:
                 if error_msg != "":
                     st.error(f"Error: {error_msg}")
                 else:   
-                    parse_metadata_display_feature_widget(images_df)
+                    display_feature_groups_widget(images_df)
                     export_metadata_widget(images_df=images_df, folder_path=folder_path)
             else: 
                 st.warning("No data found in the folder. Please check the path and the file suffixes.")

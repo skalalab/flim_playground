@@ -1,5 +1,14 @@
 # FLIM Playground
 
+Input Type, Channels, Extracted Feature Types
+- Lifetime 
+    - Fit
+    - Fit free (e.g. Phasor)
+- Intensity
+    - morphology
+    - texture
+
+
 # Quick try 
 It is deployed at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). 
 You can try out the **Visualization** and **Classification** modules using this sample [dataset] extracted previously by the **Data Extraction** module

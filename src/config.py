@@ -26,20 +26,21 @@ def save_config(cfg: dict) -> None:
         toml.dump(cfg, fh)
 
 
-def get_cell_id_column_name() -> str:
+def get_unique_cell_id_col() -> str:
     cfg = load_config()
-    cell_id_column_name = cfg.get("unique_cell_id_col", "cell_id")
-    return cell_id_column_name
+    return cfg.get("unique_cell_id_col", "cell_id")
+
+def get_image_name_col() -> str:
+    cfg = load_config()
+    return cfg.get("image_name_col", "image_name")
 
 def get_file_suffixes(channel_name: str, input_type: str) -> dict:
     cfg = load_config()
-    channel_feature_types = cfg.get("feature_types", {}).get(channel_name, [])
     suffixes = {}
-    for feature_type in channel_feature_types:
-        file_type_suffixes = cfg.get("inputSuffixes", {}).get(channel_name, {}).get(feature_type, {}).get(input_type, {})
-        for file_type, suffix in file_type_suffixes.items():
-            if file_type not in suffixes:
-                suffixes[file_type] = suffix
+    file_type_suffixes = cfg.get("inputSuffixes", {}).get(channel_name, {}).get(input_type, {})
+    for file_type, suffix in file_type_suffixes.items():
+        if file_type not in suffixes:
+            suffixes[file_type] = suffix
     return suffixes
     
 
@@ -75,9 +76,9 @@ def get_num_components(channel_names: list) -> dict:
         num_components[channel_name] = cfg.get("num_components", {}).get(channel_name, 0)
     return num_components
 
-def get_feature_types(channel_names: list) -> dict:
+def get_feature_extractors(channel_names: list) -> dict:
     cfg = load_config()
-    feature_types = {}
+    feature_extractors = {}
     for channel_name in channel_names:
-        feature_types[channel_name] = cfg.get("feature_types", {}).get(channel_name, [])
-    return feature_types
+        feature_extractors[channel_name] = cfg.get("feature_extractors", {}).get(channel_name, {})
+    return feature_extractors

@@ -1,5 +1,4 @@
 import streamlit as st
-import pandas as pd
 from itertools import combinations
 
 from src.classify import run_classification, plot_confusion_matrix, plot_roc_curve, plot_feature_importance
@@ -8,7 +7,7 @@ from src.widgets.selection_widgets import multi_feature_select_widget
 from src.widgets.filter_widgets import filters_widget
 from src.widgets.data_widgets import load_csv, happy_emoji, sad_emoji
 from src.widgets.visualization_widgets import plot_config_widget
-from src.feature_groups import categorical_cols
+from src.feature_type_config import categorical_cols
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu on this page as well

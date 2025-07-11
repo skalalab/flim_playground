@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from skimage.measure import regionprops
-from src.feature_groups import feature_groups_prefix, feature_groups_features, feature_distribution_vars
+from src.feature_type_config import feature_groups_prefix, feature_groups_features, feature_distribution_vars
 from src.file_io import load_image
 from src.sdt_io import read_sdt150
 from src.fit import fit_curves, create_progress_callback
