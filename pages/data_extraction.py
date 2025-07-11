@@ -8,7 +8,7 @@ from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.fit_widgets import fit_options_widget, choose_shift_widget, start_end_widget
 from src.metadata import parse_metadata_file
-from src.config import get_available_input_types, get_channel_names, get_num_components, get_feature_extractors
+from src.config import get_available_input_types, get_channel_names, get_num_components, get_feature_extractors, get_image_name_col
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -29,6 +29,7 @@ steps = ["Image Metadata Extraction", "Numeric Feature Extraction", "Categorical
 channel_names = get_channel_names()
 ch_num_components = get_num_components(channel_names.values())
 ch_feature_extractors = get_feature_extractors(channel_names.values())
+image_name_col = get_image_name_col()
 with col1:
     # first select the step to perform
     selected_step = st.selectbox("Select a step to perform", steps, index=0, help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: \
@@ -74,10 +75,10 @@ with col1:
                     metadata_df = None # Ensure metadata_df is None if reading fail
 
         if metadata_df is not None:
-            error_msg, selected_feature_groups_features, analysis_type, fit_free, has_nadh, has_fad = parse_metadata_file(metadata_df)
+            error_msg, metadata_dict = parse_metadata_file(metadata_df, image_name_col)
             fitting = True if (analysis_type == "ROI Summing Fit" or analysis_type == "K-Flow" or (analysis_type == "SPCImage" and fit_free)) else False
             if error_msg == "":
-                st.success(f"✅ Features to be extracted confirmed. Analysis type: {analysis_type}. Fit free: {fit_free}. Channels: NADH: {has_nadh}, FAD/red: {has_fad}.") 
+                st.success(f"✅ Features to be extracted confirmed. input type: {analysis_type}. Fit free: {fit_free}. Channels: NADH: {has_nadh}, FAD/red: {has_fad}.") 
                 if fitting:
                     st.info("Please specify the following fitting options.")
                     default_laser_rate = 0.05 if analysis_type == "K-Flow" else 0.08
@@ -95,7 +96,6 @@ with col1:
                         st.session_state["choosing_shift"] = True
                         st.session_state["shift_ready"] = False
                             
-
                 if analysis_type == "SPCImage" and not fit_free:
                     if st.button("Confirm and Start Analysis"):
                         st.session_state["choosing_shift"] = False
@@ -135,11 +135,11 @@ with col2:
                         for module in ch_feature_extractors[channel_name][feature_extractor]:
                             images_df[f"{channel_name}_{feature_extractor}_{module}"] = True
         
-                images_df.index.name = "image_name"  # Set index name 
+                images_df.index.name = image_name_col  # Set index name 
                 images_df.reset_index(inplace=True)  # Reset index to make it a column
                 if selected_input_type == "K-Flow":
                     # copy the image_name column to kflow_exp_name
-                    images_df["kflow_exp_name"] = images_df["image_name"]
+                    images_df["kflow_exp_name"] = images_df[image_name_col]
                 # ROI Summing Fit and SPCImage takes in raw decay that maybe multiple channels. need to assign data channel to each image channel
                 if selected_input_type == "ROI Summing Fit" or selected_input_type == "SPCImage": 
                     error_msg, images_df = check_assign_channel_widget(images_df, selected_channels)

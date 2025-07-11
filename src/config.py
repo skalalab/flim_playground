@@ -82,3 +82,15 @@ def get_feature_extractors(channel_names: list) -> dict:
     for channel_name in channel_names:
         feature_extractors[channel_name] = cfg.get("feature_extractors", {}).get(channel_name, {})
     return feature_extractors
+
+def get_all_channel_names() -> list:
+    cfg = load_config()
+    return cfg.get("channel_names", {}).values()
+
+def get_all_feature_extractors() -> list:
+    cfg = load_config()
+    return cfg.get("available_feature_extractors", {})
+
+def get_all_file_types() -> list:
+    cfg = load_config()
+    return cfg.get("available_file_types", {})

@@ -5,7 +5,7 @@ from scipy.stats import gaussian_kde
 from scipy.stats import pearsonr
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 import streamlit as st
-from src.feature_type_config import feature_groups_prefix
+from src.feature_types import feature_groups_prefix
 
 def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, plotly_axis_params):
     """Helper function to plot marginal densities."""

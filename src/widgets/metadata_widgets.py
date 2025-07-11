@@ -12,6 +12,10 @@ def load_data_suffix_widget(input_type, selected_channels, selected_ch_num_compo
     """
     actual_file_suffix = {}
     error_msg = ""
+    a1_suffix_list = []
+    decay_suffix_list = []
+    histogram_suffix_list = []
+
     if input_type == "SPCImage":
         spc_output_suffix = get_spc_output_suffix()
     for i, channel_name in enumerate(selected_channels):
@@ -26,6 +30,12 @@ def load_data_suffix_widget(input_type, selected_channels, selected_ch_num_compo
         num_cols = 3
         cols = st.columns(num_cols)
         for j, (file_type, default_suffix) in enumerate(file_suffixes.items()):
+            if file_type == "a1":
+                a1_suffix_list.append(default_suffix)
+            elif file_type == "Decay":
+                decay_suffix_list.append(default_suffix)
+            elif file_type == "Histogram":
+                histogram_suffix_list.append(default_suffix)
             col = cols[j % num_cols]
             with col:
                 # only show the help message for the first file type of the first channel
@@ -51,7 +61,15 @@ def load_data_suffix_widget(input_type, selected_channels, selected_ch_num_compo
                     needed_suffix = ["t1", "a2", "t2", "a3", "t3"]
                 for key in needed_suffix:
                     actual_file_suffix[channel_name][key] = actual_file_suffix[channel_name]["a1"].replace(spc_output_suffix["a1"], spc_output_suffix[key])
-        
+
+    # check for duplicates in a1_suffix_list, decay_suffix_list, histogram_suffix_list
+    if len(set(a1_suffix_list)) != len(a1_suffix_list):
+        error_msg += f"Duplicate a1 suffixes found: {a1_suffix_list} {sad_emoji}"
+    if len(set(decay_suffix_list)) != len(decay_suffix_list):
+        error_msg += f"Duplicate decay suffixes found: {decay_suffix_list} {sad_emoji}"
+    if len(set(histogram_suffix_list)) != len(histogram_suffix_list):
+        error_msg += f"Duplicate histogram suffixes found: {histogram_suffix_list} {sad_emoji}"
+
     # flatten the actual_file_suffix dictionary
     actual_file_suffix_dict = {}
     for channel_name, file_suffix_dict in actual_file_suffix.items():

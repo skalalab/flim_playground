@@ -13,6 +13,9 @@ ch3 = "red"
 Lifetime = [ "fit", "fit free",]
 Intensity = [ "morphology", "texture",]
 
+available_file_types = ["Mask", "Decay", "IRF", "Histogram", "a1"]
+
+
 [spc_output_suffix]
 a1 = "_a1[%].asc"
 t1 = "_t1.asc"

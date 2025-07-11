@@ -1,5 +1,5 @@
 import pandas as pd
-from src.feature_type_config import unique_cell_id_col, required_cols, categorical_cols, feature_groups_default, feature_groups_prefix, feature_groups
+from src.feature_types import unique_cell_id_col, required_cols, categorical_cols, all_numerical_feature_groups
 def match_col_name(col, col_list):
     """
     match_col_name: a function that takes a column name and a list of canonical column names and returns the first canonical column name that matches the column name
@@ -31,22 +31,16 @@ def get_feature_cols(cols, weighted_cols = False):
     Only feature groups that have at least one column are included in the dictionary.
     """
     feature_cols_dict = {}
-    already_matched_cols = []
-    for feature_group in feature_groups:
+    for feature_group in all_numerical_feature_groups:
         # if the column is in the default list, add it to the group_cols
         # or if the column starts with any of the prefixes in the prefix list, add it to the group_cols
-        group_cols = [c for c in cols if (feature_group in feature_groups_default and c in feature_groups_default[feature_group]) or 
-        c.startswith(feature_groups_prefix[feature_group])]
+        group_cols = [c for c in cols if c.startswith(feature_group)]
         # remove the stdev columns from the group_cols
         # and remove the weighted columns if weighted_cols is False
         group_cols = [c for c in group_cols if "stdev" not in c and (weighted_cols or "weighted" not in c) and "Unnamed" not in c]
-        # remove the already matched columns from the group_cols
-        group_cols = [c for c in group_cols if c not in already_matched_cols]
         # only add non-empty feature groups to the dictionary
         if len(group_cols) > 0:
             feature_cols_dict[feature_group] = group_cols
-            # remove the matched columns from the cols list
-            already_matched_cols.extend(group_cols)
     
     return feature_cols_dict
 
@@ -63,17 +57,17 @@ def get_features(df):
     # convert 
     numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
     feature_cols_dict = get_feature_cols(numeric_cols)
-    all_features_cols = []
+    all_numerical_features_cols = []
     for feature_group, cols in feature_cols_dict.items():
-        all_features_cols.extend(cols)
+        all_numerical_features_cols.extend(cols)
 
-    if len(all_features_cols) == 0:
+    if len(all_numerical_features_cols) == 0:
         error_msg += "Error: No feature found in the uploaded file.\n"
         return None, None, None, error_msg
 
     # keep only the columns that are later used in downstream analysis
     avilable_categorical_cols = [col for col in categorical_cols if col in df.columns]
-    columns_to_keep = required_cols + avilable_categorical_cols + all_features_cols
+    columns_to_keep = required_cols + avilable_categorical_cols + all_numerical_features_cols
     df = df[columns_to_keep]  
    
     # Print columns that contain NaN values

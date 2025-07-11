@@ -157,6 +157,7 @@ for i, col in enumerate(cols):
                                 asked_file_types["IRF"] = cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"]
                             else:
                                 cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"] = asked_file_types["IRF"]
+                        # spc image fit only does not need irf
                     else:
                         if "IRF" not in asked_file_types:
                             cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"] = st.text_input(f"IRF", value=cfg["inputSuffixes"][custom_channel_name][input_type].get("IRF", ""), key=f"{custom_channel_name}_{input_type}_irf")

@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 import pandas as pd
 from datetime import datetime
-from src.feature_type_config import categorical_cols, unique_cell_id_col
+from src.feature_types import categorical_cols, unique_cell_id_col
 
 def map_categories_to_labels_widget(available_categories, combined_df, delimiter, df_folder_path):
     exp_cell_id = combined_df.iloc[0][unique_cell_id_col]

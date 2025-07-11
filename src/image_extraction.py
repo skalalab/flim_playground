@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from skimage.measure import regionprops
-from src.feature_type_config import feature_groups_prefix, feature_groups_features, feature_distribution_vars
+from src.feature_types import all_numerical_feature_groups
 from src.file_io import load_image
 from src.sdt_io import read_sdt150
 from src.fit import fit_curves, create_progress_callback
@@ -11,7 +11,7 @@ import streamlit as st
 
 def get_mask_morphology_features(mask, image_name, cell_dict):
         # get mask morphology features
-    mask_morphology_features = feature_groups_features["Mask Morphology"]
+    mask_morphology_features = all_numerical_feature_groups["Mask Morphology"]
     mask_props = regionprops(label_image=mask)
     for region in mask_props:
         cell_id = f"{image_name}_{region.label}"
@@ -21,7 +21,7 @@ def get_mask_morphology_features(mask, image_name, cell_dict):
         cell_dict[cell_id]['centroid_x'] = region.centroid[1]
         cell_dict[cell_id]['centroid_y'] = region.centroid[0]
         for feature in mask_morphology_features:
-            feature_name = f"{feature_groups_prefix['Mask Morphology']}{feature}"
+            feature_name = f"{feature}"
             if feature in region:
                 cell_dict[cell_id][feature_name] = region[feature]
             elif feature == "circularity":
@@ -73,7 +73,7 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad):
             return f"Error reading the NADH intensity file: {metadata['nadh intensity']}: {e}", None
         if mask.shape != nadh_intensity.shape:
             return f"Error: NADH intensity file has a different shape than the mask file: {nadh_intensity.shape} != {mask.shape}", None
-        nadh_feature_prefix = feature_groups_prefix['Nadh Fit']
+        nadh_feature_prefix = all_numerical_feature_groups['Nadh Fit']
         image_props[f"{nadh_feature_prefix}a1"] = regionprops(label_image=mask, intensity_image=nadh_a1)
         image_props[f"{nadh_feature_prefix}a2"] = regionprops(label_image=mask, intensity_image=nadh_a2)
         image_props[f"{nadh_feature_prefix}t1"] = regionprops(label_image=mask, intensity_image=nadh_t1)
@@ -117,7 +117,7 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad):
             return f"Error reading the FAD intensity file: {metadata['fad intensity']}: {e}", None
         if mask.shape != fad_intensity.shape:
             return f"Error: FAD intensity file has a different shape than the mask file: {fad_intensity.shape} != {mask.shape}", None
-        fad_feature_prefix = feature_groups_prefix['Fad Fit']
+        fad_feature_prefix = all_numerical_feature_groups['Fad Fit']
         image_props[f"{fad_feature_prefix}a1"] = regionprops(label_image=mask, intensity_image=fad_a1)
         image_props[f"{fad_feature_prefix}a2"] = regionprops(label_image=mask, intensity_image=fad_a2)
         image_props[f"{fad_feature_prefix}t1"] = regionprops(label_image=mask, intensity_image=fad_t1)
@@ -131,7 +131,7 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad):
         image_props[f"{nadh_feature_prefix}norm_redox"] = regionprops(label_image=mask, intensity_image=norm_redox)
     image_name = metadata['image_name']
     single_cell_features_img = {}
-    fit_fd_prefix = feature_groups_prefix["Feature Distribution Fit"]
+    fit_fd_prefix = all_numerical_feature_groups["Feature Distribution Fit"]
     for prop in image_props:
         for region in image_props[prop]:
             cell_id = f"{image_name}_{region.label}"
@@ -273,10 +273,10 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, fit_free):
         if has_nadh and has_fad:
             # get the intensity of NADH and FAD
             for cell_id in single_cell_features_img:
-                nadh_intensity = single_cell_features_img[cell_id][f"{feature_groups_prefix['Nadh Fit']}intensity"]
-                fad_intensity = single_cell_features_img[cell_id][f"{feature_groups_prefix['Fad Fit']}intensity"]
+                nadh_intensity = single_cell_features_img[cell_id][f"{all_numerical_feature_groups['Nadh Fit']}intensity"]
+                fad_intensity = single_cell_features_img[cell_id][f"{all_numerical_feature_groups['Fad Fit']}intensity"]
                 normalized_redox = nadh_intensity / (nadh_intensity + fad_intensity + 1e-10)
-                single_cell_features_img[cell_id][f"{feature_groups_prefix['Nadh Fit']}norm_redox"] = normalized_redox
+                single_cell_features_img[cell_id][f"{all_numerical_feature_groups['Nadh Fit']}norm_redox"] = normalized_redox
         # Add morphology features and convert to DataFrame
         single_cell_features_img = get_mask_morphology_features(mask, image_name, single_cell_features_img)
     single_cell_features_img = pd.DataFrame(single_cell_features_img).T
@@ -297,9 +297,9 @@ def extract_fit_results(channel, cell_ids, single_cell_features_img, results, de
     """
     # Basic parameters (always present)
     if channel == "NADH":
-        feature_prefix = feature_groups_prefix['Nadh Fit']
+        feature_prefix = all_numerical_feature_groups['Nadh Fit']
     else:
-        feature_prefix = feature_groups_prefix['Fad Fit']
+        feature_prefix = all_numerical_feature_groups['Fad Fit']
 
     for i, cell_id in enumerate(cell_ids):
         if cell_id not in single_cell_features_img:
