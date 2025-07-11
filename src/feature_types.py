@@ -17,4 +17,4 @@ categorical_cols = [ "experiment", "day", "hour", "cell_type", "media", "dish", 
 all_channel_names = get_all_channel_names()
 all_feature_extractors = get_all_feature_extractors()
 # get all possible combinations of channel_name_feature_extractor
-all_numerical_feature_groups = [channel_name + "_" + feature_extractor for channel_name in all_channel_names for feature_extractor in all_feature_extractors]
+all_numerical_feature_groups = [channel_name + "_" + feature_extractor for channel_name in all_channel_names for feature_extractor in all_feature_extractors.keys()]

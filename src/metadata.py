@@ -96,5 +96,4 @@ def parse_metadata_file(metadata_df, image_name_col):
                for file_path in metadata_df[f"{channel_name}_{file_type}"]:
                    if not Path(file_path).exists():
                        error_msg += f"File path {file_path} for {channel_name}_{file_type} is not valid."
-    st.write(metadata_dict)
     return error_msg, metadata_dict

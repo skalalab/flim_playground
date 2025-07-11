@@ -76,15 +76,16 @@ with col1:
 
         if metadata_df is not None:
             error_msg, metadata_dict = parse_metadata_file(metadata_df, image_name_col)
-            fitting = True if (analysis_type == "ROI Summing Fit" or analysis_type == "K-Flow" or (analysis_type == "SPCImage" and fit_free)) else False
             if error_msg == "":
-                st.success(f"✅ Features to be extracted confirmed. input type: {analysis_type}. Fit free: {fit_free}. Channels: NADH: {has_nadh}, FAD/red: {has_fad}.") 
+                st.success(f"✅ Features to be extracted confirmed.")
+                input_type = metadata_dict["input_type"]
+                channel_modules = metadata_dict["modules"]
                 if fitting:
                     st.info("Please specify the following fitting options.")
-                    default_laser_rate = 0.05 if analysis_type == "K-Flow" else 0.08
+                    default_laser_rate = 0.05 if input_type == "K-Flow" else 0.08
                     duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift, laser_rate = fit_options_widget(analysis_type, fit_free, default_laser_rate=default_laser_rate)
                     # based pm the time_bins, add the start and end for NADH and FAD widget 
-                    if analysis_type != "K-Flow":
+                    if input_type != "K-Flow":
                         time_bins = metadata_df["time_bins"].iloc[0]
                         duration = metadata_df["duration"].iloc[0]
                     if has_nadh:

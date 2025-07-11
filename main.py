@@ -39,6 +39,7 @@ error_msg = ""
 max_num_channels = 4
 available_feature_extractors = {"Lifetime": ["fit", "fit free"], "Intensity": ["morphology", "texture"]}
 available_input_types = ["ROI Summing Fit", "SPCImage", "K-Flow"]
+available_file_types = ["Mask", "Decay", "IRF", "Histogram", "a1"]
 spc_output_suffix = {"a1": "_a1[%].asc", "t1": "_t1.asc", "a2": "_a2[%].asc", "t2": "_t2.asc", "a3": "_a3[%].asc", "t3": "_t3.asc"}
 # Initialization: 
 # channel_names section if it doesn't exist
@@ -56,6 +57,9 @@ if "available_input_types" not in cfg:
 
 if "spc_output_suffix" not in cfg:
     cfg["spc_output_suffix"] = spc_output_suffix
+
+if "available_file_types" not in cfg:
+    cfg["available_file_types"] = available_file_types
 
 # input section initialization
 if "inputSuffixes" not in cfg:
