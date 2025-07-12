@@ -23,18 +23,22 @@ Navigate into the repository once cloned.
 - Install `uv` if not yet installed
 - run `uv sync`
 ### Build
-#### Mac OS
 ```bash
-pyinstaller launcher.py --name "Flim-Playground" --icon logo.png --add-data "src:src" --add-data "pages:pages" --add-data "main.py:." --add-data "config.toml:." --add-data "logo.png:." --hidden-import pages.classification --hidden-import pages.visualization --hidden-import pages.data_extraction --collect-all streamlit --collect-all streamlit_plotly_events --onefile --noconfirm --clean --noconsole
+pyinstaller Flim-Playground.spec --clean
 ```
-#### Windows 11
-``` bash
-streamlit-desktop-app build main.py --name Flim-Playground  --icon logo.png --pyinstaller-options --add-data src:src --add-data pages:pages --add-data logo.png:. --add-data config.toml:. --hidden-import pages.classification --hidden-import pages.visualization --hidden-import pages.data_extraction --collect-all streamlit_plotly_events --onefile --noconfirm --clean --noconsole
-```
-- You can see debug output when the app starts by removing the `--noconsole` flag.
+
 # Documentation
 - @[docs]()
 
 
 # TODO
 - more rigorous classification 
+
+
+```bash
+streamlit run main.py # when in development
+```
+
+```bash
+python launcher.py # check for building 
+```

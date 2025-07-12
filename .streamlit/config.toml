@@ -1,0 +1,14 @@
+[server]
+headless = false
+enableStaticServing = false
+
+[browser]
+gatherUsageStats = false
+serverAddress = "localhost"
+serverPort = 8501
+
+[global]
+developmentMode = false
+
+[client]
+showErrorDetails = false 

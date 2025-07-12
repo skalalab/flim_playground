@@ -3,7 +3,6 @@ __pycache__/
 dist/
 build/
 .vscode/
-*.spec
 test.py
 .venv/
 logo/

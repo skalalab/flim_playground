@@ -1,278 +1,320 @@
 #!/usr/bin/env python3
 """
-Launcher script for FLIM Playground - opens Streamlit app in browser
+Launcher script for Flim-Playground Streamlit application.
+This script handles proper initialization and execution of the Streamlit app
+when bundled with PyInstaller.
 """
 
 import os
 import sys
-import subprocess
-import webbrowser
 import time
-import threading
-import signal
+import webbrowser
 import socket
-import warnings
-from pathlib import Path
+import threading
+import platform
 
-# Suppress specific warnings that occur in PyInstaller bundles
-warnings.filterwarnings("ignore", category=UserWarning, module="streamlit")
-warnings.filterwarnings("ignore", message=".*event loop.*")
-warnings.filterwarnings("ignore", message=".*protobuf.*")
-
-# Redirect stderr to suppress asyncio errors that don't affect functionality
-class ErrorFilter:
-    def __init__(self, original_stderr):
-        self.original_stderr = original_stderr
-        self.suppressed_errors = [
-            "RuntimeError: no running event loop",
-            "TypeError: 'str' object cannot be interpreted as an integer",
-            "Exception in callback AppSession._on_scriptrunner_event",
-            "asyncio/events.py"
-        ]
+def resource_path(relative_path):
+    """Get absolute path to resource, works for dev and for PyInstaller"""
+    try:
+        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
     
-    def write(self, data):
-        # Check if this is one of the errors we want to suppress
-        if any(error in str(data) for error in self.suppressed_errors):
-            return  # Suppress this error
-        self.original_stderr.write(data)
-    
-    def flush(self):
-        self.original_stderr.flush()
+    return os.path.join(base_path, relative_path)
 
-def resource_path(rel: str) -> Path:
-    """Return the absolute path to a bundled resource."""
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
-    return base / rel
+
+def setup_environment():
+    """Setup environment variables for Streamlit"""
+    # Disable Streamlit's usage statistics and telemetry
+    os.environ['STREAMLIT_BROWSER_GATHER_USAGE_STATS'] = 'false'
+    os.environ['STREAMLIT_GATHER_USAGE_STATS'] = 'false'
+    
+    # Disable file watchers that can cause issues in bundled apps
+    os.environ['STREAMLIT_SERVER_FILE_WATCHER_TYPE'] = 'none'
+    
+    # Set the main script path
+    main_script = resource_path('main.py')
+    if not os.path.exists(main_script):
+        print(f"Error: main.py not found at {main_script}")
+        sys.exit(1)
+    
+    return main_script
+
+
+def get_platform_info():
+    """Get platform information for cross-platform compatibility"""
+    system = platform.system()
+    return {
+        'system': system,
+        'is_macos': system == 'Darwin',
+        'is_windows': system == 'Windows',
+        'is_linux': system == 'Linux'
+    }
+
 
 def find_free_port():
-    """Find a free port to run Streamlit on"""
+    """Find a free port for the Streamlit server"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(('', 0))
         s.listen(1)
         port = s.getsockname()[1]
     return port
 
-def wait_for_server(port, timeout=30):
-    """Wait for the Streamlit server to be ready"""
-    start_time = time.time()
-    while time.time() - start_time < timeout:
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                result = s.connect_ex(('localhost', port))
-                if result == 0:
-                    return True
-        except Exception as e:
-            print(f"Error checking server: {e}")
-        time.sleep(0.5)
-    return False
 
-def open_browser_after_delay(port, delay=0):
-    """Open browser immediately and check if server is ready"""
-    if delay > 0:
-        print(f"Waiting {delay} seconds for server to be ready...")
-        time.sleep(delay)
-    
-    if wait_for_server(port, timeout=10):
-        print("Server ready, opening browser...")
-        url = f"http://localhost:{port}"
-        try:
-            webbrowser.open(url)
-            print(f"FLIM Playground opened at {url}")
-            print("Close this window or press Ctrl+C to stop the application.")
-        except Exception as e:
-            print(f"ERROR: Failed to open browser: {e}")
-            print(f"Please manually open: {url}")
-    else:
-        print("Failed to start server within timeout period")
-
-def run_streamlit_bundled(main_py_path, port):
-    """Run Streamlit in bundled mode using bootstrap with error filtering"""
+def check_server_running(port):
+    """Check if server is running on the given port"""
     try:
-        # Activate error filtering for PyInstaller-specific issues
-        original_stderr = sys.stderr
-        sys.stderr = ErrorFilter(original_stderr)
-        
-        # Change to the bundle directory so relative imports work
-        if hasattr(sys, '_MEIPASS'):
-            original_cwd = os.getcwd()
-            os.chdir(sys._MEIPASS)
-        
-        # Set environment variables for protobuf compatibility
-        os.environ['PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION'] = 'python'
-        os.environ['PROTOBUF_PYTHON_IMPLEMENTATION'] = 'python'
-        
-        # Set up asyncio event loop to avoid issues
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-            if loop.is_closed():
-                asyncio.set_event_loop(asyncio.new_event_loop())
-        except RuntimeError:
-            asyncio.set_event_loop(asyncio.new_event_loop())
-        
-        # Configure streamlit
-        from streamlit import config
-        config.set_option('server.port', port)
-        config.set_option('server.headless', True)
-        config.set_option('browser.gatherUsageStats', False)
-        config.set_option('server.address', 'localhost')
-        config.set_option('global.developmentMode', False)
-        config.set_option('server.enableCORS', True)
-        config.set_option('server.enableXsrfProtection', False)
-        config.set_option('server.fileWatcherType', 'none')
-        config.set_option('global.suppressDeprecationWarnings', True)
-        
-        print(f"Starting Streamlit server on port {port}...")
-        
-        # Start browser opening in background thread
-        browser_thread = threading.Thread(
-            target=open_browser_after_delay, 
-            args=(port, 2),  # Give server more time to start
-            daemon=True
-        )
-        browser_thread.start()
-        
-        # Use bootstrap approach with proper sys.argv setup
-        import streamlit.web.bootstrap as bootstrap
-        
-        # Set up sys.argv for streamlit
-        original_argv = sys.argv.copy()
-        sys.argv = ['streamlit', 'run', str(main_py_path)]
-        
-        try:
-            # Run streamlit with bootstrap (respects port config better)
-            bootstrap.run(str(main_py_path), '', [], {})
-        finally:
-            sys.argv = original_argv
-            sys.stderr = original_stderr  # Restore original stderr
-        
-    except Exception as e:
-        # Restore stderr before printing error
-        if 'original_stderr' in locals():
-            sys.stderr = original_stderr
-        print(f"Error running Streamlit: {e}")
-        import traceback
-        traceback.print_exc()
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(1)
+            result = s.connect_ex(('localhost', port))
+            return result == 0
+    except Exception:
+        return False
 
-def main():
-    print("=== FLIM Playground Launcher ===")
-    print(f"Python executable: {sys.executable}")
-    print(f"Current working directory: {os.getcwd()}")
-    
-    # Check if we're in a PyInstaller bundle
-    is_bundled = hasattr(sys, '_MEIPASS')
-    if is_bundled:
-        print(f"Running from PyInstaller bundle: {sys._MEIPASS}")
-    else:
-        print("Running in development mode")
-    
-    # Find a free port
-    port = find_free_port()
-    print(f"Found free port: {port}")
-    
-    # Get the path to main.py
-    main_py_path = resource_path("main.py")
-    print(f"Main.py path: {main_py_path}")
-    print(f"Main.py exists: {main_py_path.exists()}")
-    
-    if not main_py_path.exists():
-        print("ERROR: main.py not found!")
-        input("Press Enter to exit...")
-        return 1
-    
-    # Check if streamlit is available
+
+def check_browser_windows_open(port):
+    """Check if browser windows are open to our app"""
     try:
-        import streamlit
-        print(f"Streamlit version: {streamlit.__version__}")
-        print(f"Streamlit location: {streamlit.__file__}")
-    except ImportError as e:
-        print(f"ERROR: Failed to import streamlit: {e}")
-        input("Press Enter to exit...")
-        return 1
-    
-    if is_bundled:
-        # In PyInstaller bundle, run Streamlit in main thread
-        print("Running Streamlit in bundled mode...")
-        run_streamlit_bundled(main_py_path, port)
-    else:
-        # In development mode, use subprocess as before
-        streamlit_cmd = [
-            sys.executable, "-m", "streamlit", "run", 
-            str(main_py_path),
-            "--server.port", str(port),
-            "--server.headless", "true",
-            "--browser.gatherUsageStats", "false",
-            "--server.address", "localhost"
+        import psutil
+        
+        # Count browser processes with our URL - most reliable method
+        browser_processes_with_url = 0
+        
+        # Get platform info for better browser detection
+        platform_info = get_platform_info()
+        
+        # Browser names for different platforms
+        browser_names = [
+            # Windows/Linux names
+            'chrome', 'firefox', 'edge', 'msedge', 'safari', 'opera', 'brave',
+            # macOS names
+            'google chrome', 'microsoft edge', 'firefox', 'safari', 'opera', 'brave browser'
         ]
         
-        print(f"Streamlit command: {' '.join(streamlit_cmd)}")
-        print(f"Starting FLIM Playground on port {port}...")
+        # Add platform-specific browser names
+        if platform_info['is_macos']:
+            browser_names.extend([
+                'chrome helper', 'safari web content', 'firefox web content',
+                'microsoft edge helper', 'opera helper'
+            ])
         
-        try:
-            process = subprocess.Popen(
-                streamlit_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-            )
-            print(f"Process started with PID: {process.pid}")
-        except Exception as e:
-            print(f"ERROR: Failed to start process: {e}")
-            input("Press Enter to exit...")
-            return 1
+        url_patterns = [f'localhost:{port}', f'127.0.0.1:{port}']
         
-        # Wait for server to be ready
-        print("Waiting for server to be ready...")
-        if wait_for_server(port):
-            print("Server ready, opening browser...")
-            url = f"http://localhost:{port}"
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
-                webbrowser.open(url)
-                print(f"FLIM Playground opened at {url}")
-                print("Close this window or press Ctrl+C to stop the application.")
-            except Exception as e:
-                print(f"ERROR: Failed to open browser: {e}")
-                print(f"Please manually open: {url}")
-        else:
-            print("Failed to start server within timeout period")
-            print("Server output:")
-            stdout, stderr = process.communicate(timeout=5)
-            if stdout:
-                print("STDOUT:", stdout.decode())
-            if stderr:
-                print("STDERR:", stderr.decode())
-            process.terminate()
-            input("Press Enter to exit...")
-            return 1
+                if proc.info['name']:
+                    proc_name_lower = proc.info['name'].lower()
+                    # Check if any browser name is contained in the process name
+                    if any(browser in proc_name_lower for browser in browser_names):
+                        if proc.info['cmdline']:
+                            cmdline_str = ' '.join(proc.info['cmdline']).lower()
+                            if any(pattern in cmdline_str for pattern in url_patterns):
+                                browser_processes_with_url += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
         
-        # Handle cleanup on exit
-        def signal_handler(sig, frame):
-            print("\nShutting down FLIM Playground...")
-            process.terminate()
-            sys.exit(0)
+        # Optional: Count connections for status info
+        connection_count = 0
+        for conn in psutil.net_connections(kind='inet'):
+            if conn.laddr.port == port and conn.status == 'ESTABLISHED' and conn.raddr:
+                connection_count += 1
         
-        signal.signal(signal.SIGINT, signal_handler)
-        if sys.platform != "win32":
-            signal.signal(signal.SIGTERM, signal_handler)
+        # Simple logic: windows are open if we have browser processes with our URL
+        windows_open = browser_processes_with_url > 0
+        status = f"Browser processes: {browser_processes_with_url}, Connections: {connection_count}"
         
-        # Wait for subprocess
-        try:
-            process.wait()
-        except KeyboardInterrupt:
-            print("\nShutting down FLIM Playground...")
-            process.terminate()
-    
-    return 0
+        return windows_open, status
+        
+    except ImportError:
+        # Fallback without psutil
+        return False, "psutil not available"
 
-if __name__ == "__main__":
+
+def aggressive_shutdown():
+    """Shut down the application"""
+    print("Shutting down...")
+    
     try:
-        exit_code = main()
-        if exit_code != 0:
-            input("Press Enter to exit...")
-        sys.exit(exit_code)
+        import psutil
+        current_pid = os.getpid()
+        
+        # Terminate streamlit processes
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            try:
+                if proc.info['name'] and 'streamlit' in proc.info['name'].lower():
+                    if proc.info['pid'] != current_pid:
+                        proc.terminate()
+                        proc.wait(timeout=3)
+                elif proc.info['cmdline'] and any('streamlit' in str(cmd).lower() for cmd in proc.info['cmdline']):
+                    if proc.info['pid'] != current_pid:
+                        proc.terminate()
+                        proc.wait(timeout=3)
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+                continue
+    except ImportError:
+        pass
+    
+    os._exit(0)
+
+
+def monitor_browser_windows(port, shutdown_event):
+    """Monitor browser windows and shutdown when all are closed"""
+    print("Starting browser monitoring...")
+    
+    # Wait for server to start
+    max_wait = 20
+    waited = 0
+    while waited < max_wait and not shutdown_event.is_set():
+        if check_server_running(port):
+            break
+        time.sleep(0.5)
+        waited += 0.5
+    
+    if waited >= max_wait:
+        print("Server failed to start, disabling monitoring")
+        return
+    
+    print("Browser monitoring active - app will close 30 seconds after all browser windows are closed")
+    
+    # Monitor browser windows
+    no_windows_count = 0
+    max_no_windows_checks = 6  # 6 checks * 5 seconds = 30 seconds
+    
+    # Wait for initial browser connection
+    time.sleep(5)
+    
+    while not shutdown_event.is_set():
+        try:
+            # Check if browser windows are open
+            windows_open, status = check_browser_windows_open(port)
+            
+            if not windows_open:
+                no_windows_count += 1
+                print(f"No browser windows detected ({no_windows_count}/{max_no_windows_checks}) - {status}")
+            else:
+                if no_windows_count > 0:
+                    print(f"Browser windows detected - {status}")
+                no_windows_count = 0
+            
+            # Shutdown if no windows for full duration
+            if no_windows_count >= max_no_windows_checks:
+                print("All browser windows closed for 30+ seconds. Shutting down...")
+                shutdown_event.set()
+                aggressive_shutdown()
+                
+        except Exception as e:
+            print(f"Monitor error: {e}")
+            shutdown_event.set()
+            aggressive_shutdown()
+        
+        time.sleep(5)
+
+
+def run_streamlit_app(main_script):
+    """Run the Streamlit application"""
+    shutdown_event = threading.Event()
+    
+    try:
+        # Find a free port
+        port = find_free_port()
+        
+        print("Starting Flim-Playground...")
+        print(f"Server will start on port {port}")
+        print("The application will open in your default web browser.")
+        print("App will auto-close 30 seconds after ALL browser windows are closed.")
+        
+        # Import streamlit and set up arguments
+        from streamlit.web import cli as stcli
+        
+        # Set up the arguments for streamlit with proper bundled app config
+        sys.argv = [
+            "streamlit",
+            "run",
+            main_script,
+            "--server.port",
+            str(port),
+            "--server.address",
+            "localhost",
+            "--browser.gatherUsageStats",
+            "false",
+            "--global.developmentMode",
+            "false",
+            "--server.fileWatcherType",
+            "none",
+            "--server.headless",
+            "true"
+        ]
+        
+        # Start a thread to open the browser after a delay
+        def open_browser():
+            print("Waiting for server to start...")
+            
+            # Wait for server to actually be ready
+            max_wait = 15  # Maximum 15 seconds
+            waited = 0
+            while waited < max_wait:
+                if check_server_running(port):
+                    break
+                time.sleep(0.5)  # Check every half second
+                waited += 0.5
+            
+            url = f"http://localhost:{port}"
+            print(f"Opening browser to: {url}")
+            webbrowser.open(url)
+        
+        # Start browser opening thread
+        browser_thread = threading.Thread(target=open_browser, daemon=True)
+        browser_thread.start()
+        
+        # Start browser window monitoring
+        monitor_thread = threading.Thread(
+            target=monitor_browser_windows, 
+            args=(port, shutdown_event), 
+            daemon=True
+        )
+        monitor_thread.start()
+        
+        # Run streamlit
+        print("Starting Streamlit server...")
+        try:
+            stcli.main()
+        finally:
+            # Cleanup on exit
+            shutdown_event.set()
+            print("Server stopped, initiating cleanup...")
+            aggressive_shutdown()
+        
+    except KeyboardInterrupt:
+        print("\nKeyboard interrupt - shutting down...")
+        shutdown_event.set()
+        aggressive_shutdown()
     except Exception as e:
-        print(f"FATAL ERROR: {e}")
-        import traceback
-        traceback.print_exc()
-        input("Press Enter to exit...")
-        sys.exit(1) 
+        print(f"Error running Streamlit app: {e}")
+        shutdown_event.set()
+        aggressive_shutdown()
+
+
+def main():
+    """Main function to launch the Streamlit app"""
+    platform_info = get_platform_info()
+    
+    print("="*60)
+    print("Flim-Playground Launcher")
+    print(f"Platform: {platform_info['system']}")
+    print("="*60)
+    
+    try:
+        # Setup environment
+        main_script = setup_environment()
+        
+        # Run the Streamlit application
+        run_streamlit_app(main_script)
+        
+    except Exception as e:
+        print(f"Fatal error: {e}")
+        aggressive_shutdown()
+
+
+if __name__ == '__main__':
+    main() 

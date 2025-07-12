@@ -192,9 +192,6 @@ def display_feature_groups_widget(metadata_df, num_cols=3):
     else:
         st.write(metadata_df)
 
-    # display the feature types for each channel
-    metadata_dict = parse_metadata_file(metadata_df)
-
     # cols = st.columns(num_cols)
     # keys = list(selected_feature_types.keys())
     # chunk_size = (len(keys) + num_cols - 1) // num_cols  # split into 3 roughly equal parts
