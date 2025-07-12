@@ -29,16 +29,16 @@ def parse_metadata_file(metadata_df, image_name_col):
     metadata_dict = {}
     # check for required column
     if image_name_col not in metadata_df.columns:
-        error_msg += f"Image name column {image_name_col} not found in metadata file."
+       return f"Image name column {image_name_col} not found in metadata file.", None
     # check for unique image name
     if metadata_df[image_name_col].duplicated().any():
-        error_msg += f"Image name column {image_name_col} is not unique."
+        return f"Image name column {image_name_col} is not unique.", None
     # check for input type
     if "input_type" not in metadata_df.columns:
-        error_msg += f"Input type column not found in metadata file."
+        return f"Input type column not found in metadata file.", None
     # check for consistent input type
     if metadata_df["input_type"].nunique() != 1:
-        error_msg += f"Input type column is not consistent."
+        return f"Input type column is not consistent.", None
     
     input_type = metadata_df["input_type"].iloc[0]
    
@@ -54,10 +54,10 @@ def parse_metadata_file(metadata_df, image_name_col):
         if "Lifetime" in channel_modules[channel_name] and "fit" in channel_modules[channel_name]["Lifetime"]:
             component_col = f"{channel_name}_num_components"
             if component_col not in metadata_df.columns:
-                error_msg += f"Component column {component_col} not found in metadata file."
+                return f"Component column {component_col} not found in metadata file.", None
             else:
                 if metadata_df[component_col].nunique() != 1:
-                    error_msg += f"Component column {component_col} is not consistent."
+                    return f"Component column {component_col} is not consistent.", None
                 else:
                     metadata_dict[channel_name]["num_components"] = metadata_df[component_col].iloc[0]
         if input_type == "ROI Summing Fit" or input_type == "SPCImage":
@@ -65,35 +65,41 @@ def parse_metadata_file(metadata_df, image_name_col):
             # get channel number, time bins, duration
             if f"{channel_name}_channel" in metadata_df.columns:
                 if metadata_df[f"{channel_name}_channel"].nunique() != 1:
-                    error_msg += f"Channel number column {f"{channel_name}_channel"} is not consistent."
+                    return f"Channel number column {f"{channel_name}_channel"} is not consistent.", None
                 else:
                     metadata_dict[channel_name]["channel_number"] = metadata_df[f"{channel_name}_channel"].iloc[0]
             else:
-                error_msg += f"Channel number column {f"{channel_name}_channel"} not found in metadata file."
-            if f"{channel_name}_time_bins" in metadata_df.columns:
-                if metadata_df[f"{channel_name}_time_bins"].nunique() != 1:
-                    error_msg += f"Time bins column {f"{channel_name}_time_bins"} is not consistent."
-                metadata_dict[channel_name]["time_bins"] = metadata_df[f"{channel_name}_time_bins"].iloc[0]
-            else:
-                error_msg += f"Time bins column {f"{channel_name}_time_bins"} not found in metadata file."
-            if f"{channel_name}_duration" in metadata_df.columns:
-                if metadata_df[f"{channel_name}_duration"].nunique() != 1:
-                    error_msg += f"Duration column {f"{channel_name}_duration"} is not consistent."
-                metadata_dict[channel_name]["duration"] = metadata_df[f"{channel_name}_duration"].iloc[0]
-            else:
-                error_msg += f"Duration column {f"{channel_name}_duration"} not found in metadata file."
-
-
+                return f"Channel number column {f"{channel_name}_channel"} not found in metadata file.", None
         # check for file paths
         for file_type in available_file_types:
-            if f"{channel_name}_{file_type}" in metadata_df.columns:
+            if f"{channel_name}_{file_type}" in metadata_df.columns and file_type != "IRF":
                # then this is a column storing file paths 
                # check if all file paths are valid and if they are unique
                if metadata_df[f"{channel_name}_{file_type}"].duplicated().any():
-                   error_msg += f"File paths for {channel_name}_{file_type} are not unique."
+                   return f"File paths for {channel_name}_{file_type} are not unique.", None
 
                # check if the file paths are valid
                for file_path in metadata_df[f"{channel_name}_{file_type}"]:
                    if not Path(file_path).exists():
-                       error_msg += f"File path {file_path} for {channel_name}_{file_type} is not valid."
+                       return f"File path {file_path} for {channel_name}_{file_type} is not valid.", None
+    if "time_bins" in metadata_df.columns:
+        if metadata_df["time_bins"].nunique() != 1:
+            return f"Time bins column {f"{channel_name}_time_bins"} is not consistent.", None
+        metadata_dict["time_bins"] = metadata_df["time_bins"].iloc[0]
+    else:
+        return f"Time bins column {f"{channel_name}_time_bins"} not found in metadata file.", None
+    if "duration" in metadata_df.columns:
+        if metadata_df["duration"].nunique() != 1:
+            return f"Duration column {f"{channel_name}_duration"} is not consistent.", None
+        metadata_dict["duration"] = metadata_df["duration"].iloc[0]
+    else:
+        return f"Duration column {f"{channel_name}_duration"} not found in metadata file.", None
+    
+    if "laser_rate" in metadata_df.columns:
+        if metadata_df["laser_rate"].nunique() != 1:
+            return f"Laser rate column {f"{channel_name}_laser_rate"} is not consistent.", None
+        metadata_dict["laser_rate"] = metadata_df["laser_rate"].iloc[0]
+    else:
+        return f"Laser rate column {f"{channel_name}_laser_rate"} not found in metadata file.", None
+
     return error_msg, metadata_dict

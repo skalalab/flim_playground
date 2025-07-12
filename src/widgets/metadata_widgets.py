@@ -1,9 +1,9 @@
 import streamlit as st
 import os 
 import numpy as np
+import pandas as pd
 from pathlib import Path
-from src.metadata import parse_metadata_file
-from src.config import get_file_suffixes, get_spc_output_suffix
+from src.config import get_file_suffixes, get_spc_output_suffix, get_default_k_flow_config, get_default_laser_rate
 from src.widgets.data_widgets import happy_emoji, sad_emoji
 from src.sdt_io import read_sdt150, read_sdt_metadata
 from collections import Counter
@@ -215,7 +215,6 @@ def display_feature_groups_widget(metadata_df, num_cols=3):
     #             unsafe_allow_html=True
     #         )
 
-
 def export_metadata_widget(images_df, folder_path):
     # use a botton to export the images as one csv file (one image per row) to the folder_path 
     confirm_export = st.button("Export Image Metadata as CSV", help=f"Export the image meta as one csv file (one image per row) to {folder_path}")
@@ -231,8 +230,6 @@ def export_metadata_widget(images_df, folder_path):
         st.success(f"Image metadata exported successfully to {csv_file_path} {happy_emoji}")
         st.session_state["last_extracted_metadata"] = images_df
         st.session_state["last_extracted_metadata_filepath"] = csv_file_path
-
-
 
 @st.cache_data
 def check_raw_decay_data(images_df, channel_name):
@@ -280,35 +277,90 @@ def check_raw_decay_data(images_df, channel_name):
                     non_zero_channels.append(i)
             return "", non_zero_channels, time_bins, laser_rep_time
 
-def check_assign_channel_widget(images_df, selected_channels):   
+def check_raw_histogram_data(images_df, channel_name):
+    for i, row in images_df.iterrows():
+        try:
+            histogram_data = pd.read_csv(row[f"{channel_name}_Histogram"], header=None)
+        except Exception as e:
+            return f"Error reading histogram data for {channel_name}: {e}", None
+        return "", histogram_data.shape[1]
+
+def check_assign_channel_widget(images_df, selected_channels, input_type, duration=None, time_bins=None):   
     error_msg = ""
-    num_cols = len(selected_channels)
-    time_bins_list = []
-    laser_rep_time_list = []
-    cols = st.columns(num_cols)
-    for i, col in enumerate(cols):
-        with col:
-            if f"{selected_channels[i]}_Decay" in images_df.columns:
-                error_msg, available_channels, time_bins, laser_rep_time = check_raw_decay_data(images_df, selected_channels[i])
-            if error_msg == "":
-                if len(available_channels) == 1:
-                    images_df[f"{selected_channels[i]}_channel"] = available_channels[0]
+    if input_type == "K-Flow":
+        if duration is not None:
+            images_df["duration"] = duration
+        if time_bins is not None:
+            time_bins_list = []
+            for channel_name in selected_channels:
+                if f"{channel_name}_Histogram" in images_df.columns:
+                    error_msg, time_bins = check_raw_histogram_data(images_df, channel_name)
+                    if error_msg == "":
+                        time_bins_list.append(time_bins)
+                    else:
+                        return error_msg, None
+            if len(set(time_bins_list)) > 1:
+                error_msg = "Inconsistent time bins found for the selected channels. Please check the data."
+                return error_msg, None
+            else:
+                images_df["time_bins"] = time_bins_list[0]
+          
+    else:
+        num_cols = len(selected_channels)
+        time_bins_list = []
+        laser_rep_time_list = []
+        cols = st.columns(num_cols)
+        for i, col in enumerate(cols):
+            with col:
+                if f"{selected_channels[i]}_Decay" in images_df.columns:
+                    error_msg, available_channels, time_bins, laser_rep_time = check_raw_decay_data(images_df, selected_channels[i])
+                if error_msg == "":
+                    if len(available_channels) == 1:
+                        images_df[f"{selected_channels[i]}_channel"] = available_channels[0]
+                        time_bins_list.append(time_bins)
+                        laser_rep_time_list.append(laser_rep_time)
+                    else:
+                        images_df[f"{selected_channels[i]}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels)
                     time_bins_list.append(time_bins)
                     laser_rep_time_list.append(laser_rep_time)
                 else:
-                    images_df[f"{selected_channels[i]}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels)
-                images_df[f"{selected_channels[i]}_time_bins"] = time_bins
-                images_df[f"{selected_channels[i]}_duration"] = laser_rep_time
-                time_bins_list.append(time_bins)
-                laser_rep_time_list.append(laser_rep_time)
-            else:
-                return error_msg, None
+                    return error_msg, None
 
-    if len(set(time_bins_list)) > 1:
-        error_msg = "Inconsistent time bins found for the selected channels. Please check the data."
-        return error_msg, None
-    if len(set(laser_rep_time_list)) > 1:
-        error_msg = "Inconsistent laser rep time found for the selected channels. Please check the data."
-        return error_msg, None
+        if len(set(time_bins_list)) > 1:
+            error_msg = "Inconsistent time bins found for the selected channels. Please check the data."
+            return error_msg, None
+        else:
+            images_df["time_bins"] = time_bins_list[0]
+        if len(set(laser_rep_time_list)) > 1:
+            error_msg = "Inconsistent laser rep time found for the selected channels. Please check the data."
+            return error_msg, None
+        else:
+            images_df["duration"] = laser_rep_time_list[0]
 
     return error_msg, images_df
+
+def lifetime_data_config_widget(modules, input_type):
+    fit_free = False
+    lifetime = False
+    duration = time_bins = laser_rate = None
+    for ch_name, ch_modules in modules.items():
+        if "Lifetime" in ch_modules:
+            lifetime = True
+            if "fit free" in ch_modules["Lifetime"]:
+                fit_free = True
+    if input_type == "K-Flow" and lifetime:
+        default_k_flow_duration, default_k_flow_time_bins = get_default_k_flow_config()
+        cols = st.columns(3 if fit_free else 2)
+        with cols[0]:
+            duration = st.number_input("Duration (s)", value=default_k_flow_duration, min_value=0.0, max_value=100.0, key="k_flow_duration")
+        with cols[1]:
+            time_bins = st.number_input("Time bins", value=default_k_flow_time_bins, min_value=256, max_value=2048, key="k_flow_time_bins")
+        if fit_free:
+            default_laser_rate = get_default_laser_rate(input_type)
+            with cols[2]:
+                laser_rate = st.number_input("Laser rate (GHz)", value=default_laser_rate, min_value=0.0, max_value=2.0, key="k_flow_laser_rate")
+    else: 
+        if fit_free:
+            default_laser_rate = get_default_laser_rate(input_type)
+            laser_rate = st.number_input("Laser rate (GHz)", value=default_laser_rate, min_value=0.0, max_value=2.0, key="laser_rate")
+    return duration, time_bins, laser_rate

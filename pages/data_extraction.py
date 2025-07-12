@@ -4,7 +4,7 @@ import pandas as pd
 import time
 from src.navigation import render_top_menu
 from src.widgets.data_widgets import happy_emoji, sad_emoji, image_extraction_widget
-from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, display_feature_groups_widget, check_assign_channel_widget
+from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, display_feature_groups_widget, check_assign_channel_widget, lifetime_data_config_widget
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.fit_widgets import fit_options_widget, choose_shift_widget, start_end_widget
 from src.metadata import parse_metadata_file
@@ -54,6 +54,7 @@ with col1:
         if len(selected_channels) == 0:
             st.error(f"Please check at least one of the channels {sad_emoji}")
         else:
+            duration, time_bins, laser_rate = lifetime_data_config_widget(ch_feature_extractors, selected_input_type)
             actual_file_suffix, error_msg = load_data_suffix_widget(selected_input_type, selected_channels, selected_ch_num_components)
             if error_msg != "":
                 st.error(error_msg)
@@ -80,17 +81,14 @@ with col1:
                 st.success(f"✅ Features to be extracted confirmed.")
                 input_type = metadata_dict["input_type"]
                 channel_modules = metadata_dict["modules"]
+                st.write(metadata_dict)
                 if fitting:
                     st.info("Please specify the following fitting options.")
-                    default_laser_rate = 0.05 if input_type == "K-Flow" else 0.08
-                    duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift, laser_rate = fit_options_widget(analysis_type, fit_free, default_laser_rate=default_laser_rate)
+                 
+                    num_components, fitting_algo, fitting_mode, fix_shift= fit_options_widget(analysis_type, fit_free, default_laser_rate=default_laser_rate)
                     # based pm the time_bins, add the start and end for NADH and FAD widget 
                     if input_type != "K-Flow":
-                        time_bins = metadata_df["time_bins"].iloc[0]
-                        duration = metadata_df["duration"].iloc[0]
-                    if has_nadh:
                         nadh_start, nadh_end = start_end_widget(time_bins, "NADH")
-                    if has_fad:
                         fad_start, fad_end = start_end_widget(time_bins, "FAD")
                 
                     if st.button("Start Finding Shifts"):
@@ -141,12 +139,16 @@ with col2:
                 if selected_input_type == "K-Flow":
                     # copy the image_name column to kflow_exp_name
                     images_df["kflow_exp_name"] = images_df[image_name_col]
+                
                 # ROI Summing Fit and SPCImage takes in raw decay that maybe multiple channels. need to assign data channel to each image channel
-                if selected_input_type == "ROI Summing Fit" or selected_input_type == "SPCImage": 
-                    error_msg, images_df = check_assign_channel_widget(images_df, selected_channels)
+                # K-flow already knows the duration and time bins and do not need to assign channel
+                error_msg, images_df = check_assign_channel_widget(images_df, selected_channels, input_type=selected_input_type, duration=duration, time_bins=time_bins)
+                
                 if error_msg != "":
                     st.error(f"Error: {error_msg}")
                 else:   
+                    if laser_rate is not None:
+                        images_df["laser_rate"] = laser_rate
                     display_feature_groups_widget(images_df)
                     export_metadata_widget(images_df=images_df, folder_path=folder_path)
             else: 

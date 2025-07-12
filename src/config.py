@@ -94,3 +94,13 @@ def get_all_feature_extractors() -> list:
 def get_all_file_types() -> list:
     cfg = load_config()
     return cfg.get("available_file_types", {})
+
+def get_default_k_flow_config() -> tuple:
+    cfg = load_config()
+    default_k_flow_duration = cfg.get("k_flow_duration", 20.0)
+    default_k_flow_time_bins = cfg.get("k_flow_time_bins", 1024)
+    return default_k_flow_duration, default_k_flow_time_bins
+
+def get_default_laser_rate(input_type: str) -> float:
+    cfg = load_config()
+    return cfg.get("laser_rate", {}).get(input_type, 1.0)

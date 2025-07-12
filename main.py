@@ -61,6 +61,9 @@ def main():
     if "image_name_col" not in cfg:
         cfg["image_name_col"] = "image_name"
 
+    if "laser_rate" not in cfg:
+        cfg["laser_rate"] = {}
+
     if "available_input_types" not in cfg:
         cfg["available_input_types"] = available_input_types
 
@@ -190,7 +193,18 @@ def main():
                             asked_file_types["IRF"] = cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"]
                         else:
                             cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"] = asked_file_types["IRF"]
-
+    # laser rate 
+    cols = st.columns(len(available_input_types))
+    for i, col in enumerate(cols):
+        with col:
+            input_type = available_input_types[i]   
+            cfg["laser_rate"][input_type] = st.number_input(f"Laser rate (GHz) for {input_type}", value=cfg.get("laser_rate", {}).get(input_type, 1.0), min_value=0.0, max_value=2.0, key=f"laser_rate_{input_type}")
+    cols = st.columns(2)
+    with cols[0]:
+        # ask for k_flow duration and time bins
+        cfg["k_flow_duration"] = st.number_input(f"K-Flow duration (s)", value=cfg.get("k_flow_duration", 20.0), min_value=0.0, max_value=100.0, key="k_flow_duration")
+    with cols[1]:
+        cfg["k_flow_time_bins"] = st.number_input(f"K-Flow time bins", value=cfg.get("k_flow_time_bins", 1024), min_value=256, max_value=2048, key="k_flow_time_bins")
     if error_msg == "":
         update_config_button = st.button("Update Configuration")
         if update_config_button:

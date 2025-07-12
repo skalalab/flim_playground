@@ -3,6 +3,9 @@ available_input_types = [ "ROI Summing Fit", "SPCImage", "K-Flow",]
 num_channels = 2
 unique_cell_id_col = "cell_id"
 preferred_input_type = "ROI Summing Fit"
+k_flow_duration = 20.0
+k_flow_time_bins = 1024
+available_file_types = [ "Mask", "Decay", "IRF", "Histogram", "a1",]
 
 [channel_names]
 ch1 = "nadh"
@@ -12,9 +15,6 @@ ch3 = "red"
 [available_feature_extractors]
 Lifetime = [ "fit", "fit free",]
 Intensity = [ "morphology", "texture",]
-
-available_file_types = ["Mask", "Decay", "IRF", "Histogram", "a1"]
-
 
 [spc_output_suffix]
 a1 = "_a1[%].asc"
@@ -28,6 +28,11 @@ t3 = "_t3.asc"
 nadh = 2
 fad = 2
 red = 0
+
+[laser_rate]
+"ROI Summing Fit" = 0.8
+SPCImage = 0.8
+K-Flow = 0.5
 
 [feature_extractors.nadh]
 Lifetime = [ "fit free", "fit",]
