@@ -45,11 +45,17 @@ def parse_metadata_file(metadata_df, image_name_col):
     metadata_dict["input_type"] = input_type
     channel_modules = get_ch_modules(metadata_df)
     metadata_dict["modules"] = channel_modules
-
+    metadata_dict["channels_fit"] = []
+    metadata_dict["channels_fit_free"] = []
     channels = channel_modules.keys()
     available_file_types = get_all_file_types()
     # check for num_components
     for channel_name in channels:
+        # spcimage is already fitted 
+        if "Lifetime" in channel_modules[channel_name] and "fit" in channel_modules[channel_name]["Lifetime"] and input_type != "SPCImage":
+            metadata_dict["channels_fit"].append(channel_name)
+        if "Lifetime" in channel_modules[channel_name] and "fit free" in channel_modules[channel_name]["Lifetime"]:
+            metadata_dict["channels_fit_free"].append(channel_name)
         metadata_dict[channel_name] = {}
         if "Lifetime" in channel_modules[channel_name] and "fit" in channel_modules[channel_name]["Lifetime"]:
             component_col = f"{channel_name}_num_components"
@@ -82,6 +88,15 @@ def parse_metadata_file(metadata_df, image_name_col):
                for file_path in metadata_df[f"{channel_name}_{file_type}"]:
                    if not Path(file_path).exists():
                        return f"File path {file_path} for {channel_name}_{file_type} is not valid.", None
+    # Create channels_shift as a dictionary with channel names as keys
+    metadata_dict["channels_shift"] = {}
+    all_shift_channels = set(metadata_dict["channels_fit"] + metadata_dict["channels_fit_free"])
+    for channel_name in all_shift_channels:
+        if channel_name in metadata_dict["channels_fit"]:
+            metadata_dict["channels_shift"][channel_name] = "fit"
+        else:
+            metadata_dict["channels_shift"][channel_name] = "fit free"
+    # check for time bins, duration, laser rate
     if "time_bins" in metadata_df.columns:
         if metadata_df["time_bins"].nunique() != 1:
             return f"Time bins column {f"{channel_name}_time_bins"} is not consistent.", None

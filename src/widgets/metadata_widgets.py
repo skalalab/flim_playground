@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 from src.config import get_file_suffixes, get_spc_output_suffix, get_default_k_flow_config, get_default_laser_rate
-from src.widgets.data_widgets import happy_emoji, sad_emoji
+from src.dataframe_io import happy_emoji, sad_emoji
 from src.sdt_io import read_sdt150, read_sdt_metadata
 from collections import Counter
 def load_data_suffix_widget(input_type, selected_channels, selected_ch_num_components):
@@ -341,14 +341,12 @@ def check_assign_channel_widget(images_df, selected_channels, input_type, durati
 
 def lifetime_data_config_widget(modules, input_type):
     fit_free = False
-    lifetime = False
     duration = time_bins = laser_rate = None
-    for ch_name, ch_modules in modules.items():
+    for _, ch_modules in modules.items():
         if "Lifetime" in ch_modules:
-            lifetime = True
             if "fit free" in ch_modules["Lifetime"]:
                 fit_free = True
-    if input_type == "K-Flow" and lifetime:
+    if input_type == "K-Flow":
         default_k_flow_duration, default_k_flow_time_bins = get_default_k_flow_config()
         cols = st.columns(3 if fit_free else 2)
         with cols[0]:

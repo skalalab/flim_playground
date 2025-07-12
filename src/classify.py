@@ -7,7 +7,6 @@ from sklearn.svm import SVC
 from sklearn.preprocessing import label_binarize, StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import train_test_split
-import seaborn as sns
 import matplotlib.pyplot as plt
 
 def prepare_data(df, splits):

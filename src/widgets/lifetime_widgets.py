@@ -186,63 +186,111 @@ def choose_shift_widget(metadata_df, duration, time_bins, num_components, fittin
     
     return error_msg, shift_data
 
-def fit_options_widget(analysis_type, fit_free, default_k_flow_duration=20.0, default_k_flow_time_bins=1024, default_laser_rate=0.08):
+def fit_options_widget(input_type, metadata_dict):
     """
     Fit options widget for Streamlit app.
     """
-    # 1) Define each field as a (name, factory) tuple
-    fields = [
-        ("num_components", lambda: st.number_input("Component No.", value=2, step=1, min_value=1, max_value=3)),
-        ("fitting_algo",   lambda: st.selectbox("Algorithm", ["MLE", "WLS"], index=0, help="MLE: Maximum Likelihood Estimation. WLS: Weighted Least Squares.")),
-        ("fitting_mode",   lambda: st.selectbox("Fitting Mode", ["Hybrid", "Global", "Local"], index=0, help="Hybrid: use global fit to get a good initial guess, then use local fit to refine the fit. Global: use global fit to get the best fit. Local: use local fit to get the best fit.")),
-    ]
-
-    # add laser_rate
-    fields.append(("laser_rate", lambda: st.number_input("Laser Rep Rate (GHz)", value=default_laser_rate, step=0.01, format="%.2f", min_value=0.0)))
-
-    # add fix_shift for ROI Summing Fit
-    if analysis_type == "ROI Summing Fit" or analysis_type == "SPCImage":
-        fields.append(("fix_shift", lambda: st.checkbox("Fix the Shift", value=True, help="If True, the shift will be fixed for all images. If False, the shift will be estimated for each image.")))
-
-    if analysis_type == "K-Flow":
-        fields.append(("duration",   lambda: st.number_input("Time Window (ns)", value=default_k_flow_duration, step=0.1, format="%.1f")))
-        fields.append(("time_bins",      lambda: st.number_input("Time Bins", value=default_k_flow_time_bins, step=256, min_value=256, max_value=1024)))
-    
-
-    # 2) figure out how many rows of up to 4 cols
+    # Create columns for layout
     cols_per_row = 3
-    num_rows = math.ceil(len(fields) / cols_per_row)
-
-    # 3) render them
-    results = {}
-    for row in range(num_rows):
-        cols = st.columns(cols_per_row)
-        for col_idx in range(cols_per_row):
-            idx = row * cols_per_row + col_idx
-            if idx >= len(fields):
-                break
-            name, factory = fields[idx]
-            with cols[col_idx]:
-                results[name] = factory()
-
-    # 4) unpack
-   
-    num_components = results["num_components"]
-    fitting_algo   = results["fitting_algo"]
-
-    fitting_mode   = results["fitting_mode"]
-    fix_shift      = results.get("fix_shift", True)
-    duration      = results.get("duration", None)
-    time_bins      = results.get("time_bins", None)
-    laser_rate     = results.get("laser_rate", None)
-
-    return duration, time_bins, num_components, fitting_algo, fitting_mode, fix_shift, laser_rate
+    
+    # First row - algorithm and fitting mode
+    cols1 = st.columns(cols_per_row)
+    with cols1[0]:
+        fitting_algo = st.selectbox(
+            "Algorithm", 
+            ["MLE", "WLS"], 
+            index=0, 
+            key="fitting_algo",
+            help="MLE: Maximum Likelihood Estimation. WLS: Weighted Least Squares."
+        )
+    with cols1[1]:
+        fitting_mode = st.selectbox(
+            "Fitting Mode", 
+            ["Hybrid", "Global", "Local"], 
+            index=0, 
+            key="fitting_mode",
+            help="Hybrid: use global fit to get a good initial guess, then use local fit to refine the fit. Global: use global fit to get the best fit. Local: use local fit to get the best fit."
+        )
+    
+    # Add fix_shift for ROI Summing Fit
+    fix_shift = None
+    if input_type == "ROI Summing Fit":
+        with cols1[2]:
+            fix_shift = st.checkbox(
+                "Fix the Shift", 
+                value=True, 
+                key="fix_shift",
+                help="If True, the shift will be fixed for all images. If False, the shift will be estimated for each image."
+            )
+    
+    # Handle channel-specific number of components
+    channel_components = {}
+    channels_fit = metadata_dict["channels_fit"]
+    
+    # Create additional rows for channel components
+    if channels_fit:
+        st.write("**Number of components:**")
+        num_channels = len(channels_fit)
+        num_rows = math.ceil(num_channels / cols_per_row)
+        
+        for row in range(num_rows):
+            cols = st.columns(cols_per_row)
+            for col_idx in range(cols_per_row):
+                channel_idx = row * cols_per_row + col_idx
+                if channel_idx >= num_channels:
+                    break
+                
+                channel_name = channels_fit[channel_idx]
+                with cols[col_idx]:
+                    channel_components[channel_name] = st.number_input(
+                        f"{channel_name}", 
+                        value=metadata_dict[channel_name]["num_components"], 
+                        step=1, 
+                        min_value=1, 
+                        max_value=3,
+                        key=f"{channel_name}_num_components"
+                    )
+    
+    # Update metadata_dict with results
+    metadata_dict["fitting_algo"] = fitting_algo
+    metadata_dict["fitting_mode"] = fitting_mode
+    if input_type == "ROI Summing Fit":
+        metadata_dict["fix_shift"] = fix_shift
+    else: 
+        # for other input types, fix the shift always
+        metadata_dict["fix_shift"] = True
+    
+    # Update channel-specific components
+    for channel_name in channels_fit:
+        metadata_dict[channel_name]["num_components"] = channel_components[channel_name]
+    
+    # Add start and end widgets for each channel
+    for channel_name in channels_fit:
+        start, end = start_end_widget(metadata_dict["time_bins"], channel_name)
+        metadata_dict[channel_name]["start"] = start
+        metadata_dict[channel_name]["end"] = end
+    
+    return metadata_dict
 
 def start_end_widget(time_bins, channel):
     col1, col2 = st.columns(2)
     with col1:
-        start = st.number_input(f"{channel} Start (T1)", value=0, step=1, min_value=0, max_value=time_bins-1)
+        start = st.number_input(
+            f"{channel} Start (T1)", 
+            value=0, 
+            step=1, 
+            min_value=0, 
+            max_value=time_bins-1,
+            key=f"{channel}_start"
+        )
     with col2:
-        end = st.number_input(f"{channel} End (T2)", value=time_bins, step=1, min_value=1, max_value=time_bins)
+        end = st.number_input(
+            f"{channel} End (T2)", 
+            value=time_bins, 
+            step=1, 
+            min_value=1, 
+            max_value=time_bins,
+            key=f"{channel}_end"
+        )
 
     return start, end

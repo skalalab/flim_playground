@@ -3,10 +3,11 @@ import os
 import pandas as pd
 import time
 from src.navigation import render_top_menu
-from src.widgets.data_widgets import happy_emoji, sad_emoji, image_extraction_widget
+from src.dataframe_io import happy_emoji, sad_emoji
+from src.widgets.numeric_extraction_widgets import image_extraction_widget
 from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, display_feature_groups_widget, check_assign_channel_widget, lifetime_data_config_widget
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
-from src.widgets.fit_widgets import fit_options_widget, choose_shift_widget, start_end_widget
+from src.widgets.lifetime_widgets import fit_options_widget, choose_shift_widget
 from src.metadata import parse_metadata_file
 from src.config import get_available_input_types, get_channel_names, get_num_components, get_feature_extractors, get_image_name_col
 
@@ -80,26 +81,22 @@ with col1:
             if error_msg == "":
                 st.success(f"✅ Features to be extracted confirmed.")
                 input_type = metadata_dict["input_type"]
-                channel_modules = metadata_dict["modules"]
-                st.write(metadata_dict)
-                if fitting:
+
+                shift_needed = len(metadata_dict["channels_shift"]) > 0
+                # if there are channels to be fitted, show the fitting options
+                if len(metadata_dict["channels_fit"]) > 0:
                     st.info("Please specify the following fitting options.")
-                 
-                    num_components, fitting_algo, fitting_mode, fix_shift= fit_options_widget(analysis_type, fit_free, default_laser_rate=default_laser_rate)
-                    # based pm the time_bins, add the start and end for NADH and FAD widget 
-                    if input_type != "K-Flow":
-                        nadh_start, nadh_end = start_end_widget(time_bins, "NADH")
-                        fad_start, fad_end = start_end_widget(time_bins, "FAD")
-                
+                    metadata_dict= fit_options_widget(input_type, metadata_dict)
+                st.write(metadata_dict) 
+                if shift_needed:
                     if st.button("Start Finding Shifts"):
                         st.session_state["choosing_shift"] = True
                         st.session_state["shift_ready"] = False
-                            
-                if analysis_type == "SPCImage" and not fit_free:
+                else:
                     if st.button("Confirm and Start Analysis"):
                         st.session_state["choosing_shift"] = False
                         st.session_state["shift_ready"] = True
-
+                        st.rerun()
             else:
                 st.error(f"Error: {error_msg}")
 
@@ -158,28 +155,18 @@ with col2:
         else:
             st.info(f"Please provide a folder path.")
     elif selected_step == "Numeric Feature Extraction" and st.session_state["choosing_shift"] and metadata_df is not None:
-        st.info(f"Fitting for shift on {len(metadata_df)} image(s).")
-        # first NADH, then FAD/red
-        if has_nadh: 
-            #st.info("Preproceessing step: choose the shift for all images on channel NADH.")
-            error_msg, nadh_shifts = choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, fix_shift, channel="NADH")
+        channel_shifts = {}
+        for channel_name in metadata_dict["channels_shift"]:
+            error_msg, shifts = choose_shift_widget(metadata_df, metadata_dict, channel=channel_name)
             if error_msg != "":
                 st.error(f"Error: {error_msg}")
-        if has_fad:
-            #st.info("Preproceessing step: choose the shift for all images on channel FAD/red.")
-            error_msg, fad_shifts = choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, fix_shift, channel="FAD")
-            if error_msg != "":
-                st.error(f"Error: {error_msg}")
-        
+            else:
+                channel_shifts[channel_name] = shifts
         shift_finished = st.button("Confirm the Shift and Start the Analysis")
         if shift_finished:
             # write the shift to the metadata file
-            if has_nadh:
-                metadata_df["nadh_shift"] = nadh_shifts
-                
-            if has_fad:
-                metadata_df["fad_shift"] = fad_shifts
-            
+            for channel_name in channel_shifts:
+                metadata_df[f"{channel_name}_shift"] = channel_shifts[channel_name]        
             # Store the updated metadata_df in session state so it persists across rerun
             st.session_state["last_extracted_metadata"] = metadata_df
             st.session_state["choosing_shift"] = False
@@ -187,24 +174,9 @@ with col2:
             st.rerun()
                 
     elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"] and metadata_df is not None:
-        if fitting:
-         # adding the fitting config to the metadata
-            metadata_df["fitting_algo"] = fitting_algo
-            metadata_df["fitting_mode"] = fitting_mode
-            if selected_input_type == "K-Flow": # other types get the duration and time bins from the sdt file automatically
-                metadata_df["duration"] = duration
-                metadata_df["time_bins"] = time_bins
-            metadata_df["num_components"] = num_components
-            metadata_df["laser_rate"] = laser_rate
 
-            if has_nadh:
-                metadata_df["nadh_start"] = nadh_start
-                metadata_df["nadh_end"] = nadh_end
-            if has_fad:
-                metadata_df["fad_start"] = fad_start
-                metadata_df["fad_end"] = fad_end
 
-        single_cell_features = image_extraction_widget(metadata_df, selected_input_type, fit_free, has_nadh, has_fad)
+        single_cell_features = image_extraction_widget(metadata_df, metadata_dict)
         if not single_cell_features.empty:
             st.success(f"Image features with ✅ are extracted successfully {happy_emoji}! Images with ❌ (if any) are excluded. The first few rows of the features are shown below.")
             st.write(single_cell_features.head())
