@@ -5,7 +5,7 @@ import pandas as pd
 from pathlib import Path
 from src.config import get_file_suffixes, get_spc_output_suffix, get_default_k_flow_config, get_default_laser_rate
 from src.dataframe_io import happy_emoji, sad_emoji
-from src.sdt_io import read_sdt150, read_sdt_metadata
+from src.sdt_io import read_sdt, read_sdt_metadata
 from collections import Counter
 def load_data_suffix_widget(input_type, selected_channels, selected_ch_num_components):
     """
@@ -243,7 +243,7 @@ def check_raw_decay_data(images_df, channel_name):
     shape_list = []
     laser_rep_time_list = []
     for i, row in images_df.iterrows():
-        sdt_data = read_sdt150(row[column_name])
+        sdt_data = read_sdt(row[column_name])
         shape_list.append(sdt_data.shape)
         laser_rep_time = read_sdt_metadata(row[column_name])
         laser_rep_time_list.append(laser_rep_time)

@@ -71,16 +71,9 @@ def objective(params, data, irf, time_axis, start=0, end=-1, fitting_algo="MLE")
         residuals = data[start:end] - fitted[start:end]
         return residuals
 
-def guess_shift(irf, curves):
-    def align_irf(irf, curve):
-        # Cross-correlation to find the optimal shift
-        correlation = np.correlate(curve, irf, mode='full')
-        shift = np.argmax(correlation) - (len(irf) - 1)
-        return shift
-    shifts = []
-    for i in range(len(curves)):
-        shift = align_irf(irf, curves[i])
-        shifts.append(shift)
-        
-    shift_guess = np.median(shifts)
-    return shift_guess
+
+def create_progress_callback(progress_bar):
+    def progress_callback(current, total):
+        progress = (current + 1) / total
+        progress_bar.progress(progress)
+    return progress_callback

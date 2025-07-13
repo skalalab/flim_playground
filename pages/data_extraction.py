@@ -157,7 +157,7 @@ with col2:
     elif selected_step == "Numeric Feature Extraction" and st.session_state["choosing_shift"] and metadata_df is not None:
         channel_shifts = {}
         for channel_name in metadata_dict["channels_shift"]:
-            error_msg, shifts = choose_shift_widget(metadata_df, metadata_dict, channel=channel_name)
+            error_msg, shifts = choose_shift_widget(metadata_df, metadata_dict, channel_name=channel_name)
             if error_msg != "":
                 st.error(f"Error: {error_msg}")
             else:

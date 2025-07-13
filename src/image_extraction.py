@@ -3,9 +3,9 @@ import numpy as np
 from skimage.measure import regionprops
 from src.feature_types import all_numerical_feature_groups
 from src.file_io import load_image
-from src.sdt_io import read_sdt150
-from src.fit import fit_curves, create_progress_callback
-from src.fit_helper import irf_shift
+from src.sdt_io import read_sdt
+from src.fit import fit_curves
+from src.fit_helper import create_progress_callback, irf_shift
 from src.fit_free import get_phasor_features
 import streamlit as st
 
@@ -194,7 +194,7 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, fit_free):
         try:
             nadh_decay_path = metadata['nadh decay']
             nadh_channel = metadata['nadh_channel']
-            nadh_decay = read_sdt150(nadh_decay_path, nadh_channel)
+            nadh_decay = read_sdt(nadh_decay_path, nadh_channel)
         except Exception as e:
             error_msg = f"Error reading the decay file for image {image_name} at {nadh_decay_path}: {e}"
             return error_msg, None
@@ -219,7 +219,7 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, fit_free):
         try:
             fad_decay_path = metadata['fad decay']
             fad_channel = metadata['fad_channel']
-            fad_decay = read_sdt150(fad_decay_path, fad_channel)
+            fad_decay = read_sdt(fad_decay_path, fad_channel)
         except Exception as e:
             error_msg = f"Error reading the decay file for image {image_name} at {fad_decay_path}: {e}"
             return error_msg, None

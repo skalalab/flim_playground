@@ -3,7 +3,7 @@ import math
 import pandas as pd
 import numpy as np
 from plotly import graph_objects as go
-from src.fit import choose_shift
+from src.choose_shift import choose_shift
 from src.fit_helper import forward_pass, irf_shift, mle_likelihood, chi_square
 
 
@@ -169,20 +169,28 @@ def display_shift_data_widget(results, analysis_type, metadata_df, time_axis, pe
                 showlegend=True,
             )
             st.plotly_chart(fig2, use_container_width=True)
-def choose_shift_widget(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, fix_shift, channel, log_y=True):
-    period = duration / time_bins
-    time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
-    #if analysis_type == "SPCImage" or analysis_type == "ROI Summing Fit":
-    error_msg, results = choose_shift(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, analysis_type, channel)
+def choose_shift_widget(metadata_df, metadata_dict, channel_name, log_y=True):
+    duration = metadata_dict["duration"]
+    time_bins = metadata_dict["time_bins"]
+    input_type = metadata_dict["input_type"]
+    if "choose_shift" in metadata_dict and channel_name in metadata_dict["choose_shift"]:
+        choose_shift_method = metadata_dict["choose_shift"][channel_name]
+    else:
+        return "Error: Choose shift method not found for channel: " + channel_name, None
+    error_msg, results = choose_shift(metadata_df, metadata_dict, channel_name)
     if error_msg != "":
-        # Display error and stop
-        st.error(error_msg)
         return error_msg, None
-    display_shift_data_widget(results, analysis_type, metadata_df, time_axis, period, num_components, log_y, channel)
-    shift_data = results["shift"]
+    
+    display_shift_data_widget(results, metadata_dict, channel_name, log_y)
+
+    if choose_shift_method == "fit free" or "fix_shift" not in metadata_dict or metadata_dict["fix_shift"]:
+        fix_shift = True
+    else:
+        fix_shift = False
+    
     if fix_shift:
-        median_shift = np.median(shift_data)
-        shift_data = st.number_input(f"{channel} Shift", value=median_shift, step=0.1, help=f"The shift for {channel} channel. The provided default value is the median of the shifts. You can change it to a specific value.")
+        median_shift = np.median(results["shift"])
+        shift_data = st.number_input(f"{channel_name} Shift", value=median_shift, step=0.1, help=f"The shift for {channel_name} channel. The provided default value is the median of the shifts. You can change it to a specific value.")
     
     return error_msg, shift_data
 

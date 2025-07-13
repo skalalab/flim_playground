@@ -84,7 +84,7 @@ def read_sdt_info_brukerSDT(filename):
         return (header.data_block_offs[0], times, [mi.scan_x[0], mi.scan_y[0], mi.adc_re[0], routing_channels_x])
     
     
-def read_sdt150(filename, channel=-1):
+def read_sdt(filename, channel=-1):
     """ sdt bruker uses data_block001 instead of data_block"""
     import warnings
     warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -154,7 +154,7 @@ def sdt_convert(src, destination=""):
     Convert a sdt file to a numpy array
     """
     errormsg = ""
-    sdt_data = read_sdt150(src)
+    sdt_data = read_sdt(src)
     # the last dimension is time 
     if sdt_data.shape[-1] < 256:
         errormsg += f"{src} data should be at least 8-bit! "
