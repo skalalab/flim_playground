@@ -78,57 +78,40 @@ def check_browser_windows_open(port):
     try:
         import psutil
         
-        # Count browser processes with our URL - most reliable method
-        browser_processes_with_url = 0
+        # Browser process names
+        browser_names = ['chrome', 'firefox', 'edge', 'msedge', 'safari', 'opera', 'brave']
         
-        # Get platform info for better browser detection
-        platform_info = get_platform_info()
+        # Count browsers with active connections to our port
+        connected_browsers = 0
         
-        # Browser names for different platforms
-        browser_names = [
-            # Windows/Linux names
-            'chrome', 'firefox', 'edge', 'msedge', 'safari', 'opera', 'brave',
-            # macOS names
-            'google chrome', 'microsoft edge', 'firefox', 'safari', 'opera', 'brave browser'
-        ]
-        
-        # Add platform-specific browser names
-        if platform_info['is_macos']:
-            browser_names.extend([
-                'chrome helper', 'safari web content', 'firefox web content',
-                'microsoft edge helper', 'opera helper'
-            ])
-        
-        url_patterns = [f'localhost:{port}', f'127.0.0.1:{port}']
-        
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+        for proc in psutil.process_iter(['pid', 'name']):
             try:
-                if proc.info['name']:
-                    proc_name_lower = proc.info['name'].lower()
-                    # Check if any browser name is contained in the process name
-                    if any(browser in proc_name_lower for browser in browser_names):
-                        if proc.info['cmdline']:
-                            cmdline_str = ' '.join(proc.info['cmdline']).lower()
-                            if any(pattern in cmdline_str for pattern in url_patterns):
-                                browser_processes_with_url += 1
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                if proc.info['name'] and any(browser in proc.info['name'].lower() for browser in browser_names):
+                    # Check if this browser has connections to our port
+                    process = psutil.Process(proc.info['pid'])
+                    for conn in process.net_connections(kind='inet'):
+                        if (hasattr(conn, 'raddr') and conn.raddr and 
+                            conn.raddr.port == port and conn.status == 'ESTABLISHED'):
+                            connected_browsers += 1
+                            print(f"Debug - Browser connected: {proc.info['name']} (PID: {proc.info['pid']})")
+                            break  # Only count each browser process once
+                    
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
         
-        # Optional: Count connections for status info
-        connection_count = 0
-        for conn in psutil.net_connections(kind='inet'):
-            if conn.laddr.port == port and conn.status == 'ESTABLISHED' and conn.raddr:
-                connection_count += 1
+        # Return result
+        windows_open = connected_browsers > 0
+        status = f"Connected browsers: {connected_browsers}"
         
-        # Simple logic: windows are open if we have browser processes with our URL
-        windows_open = browser_processes_with_url > 0
-        status = f"Browser processes: {browser_processes_with_url}, Connections: {connection_count}"
+        if connected_browsers == 0:
+            print(f"Debug - No browsers connected to port {port}")
         
         return windows_open, status
         
     except ImportError:
         # Fallback without psutil
-        return False, "psutil not available"
+        server_active = check_server_running(port)
+        return server_active, "psutil not available"
 
 
 def aggressive_shutdown():
@@ -317,4 +300,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main() 
+    main()
