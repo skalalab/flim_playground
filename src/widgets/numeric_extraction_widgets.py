@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
-from src.image_extraction import image_fit_extraction, roi_summing_fit_extraction
-
+from src.image_extraction import image_extraction
 
 def check_img_features(single_img_cell_features, image_name):
     """
@@ -26,10 +25,8 @@ def check_img_features(single_img_cell_features, image_name):
     
     return single_img_cell_features
             
-
-
 @st.cache_data
-def image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_fad, num_cols=3):
+def image_extraction_widget(metadata_df, metadata_dict, num_cols=3):
 
     single_cell_features = pd.DataFrame()
     image_names = metadata_df['image_name'].tolist()
@@ -49,22 +46,12 @@ def image_extraction_widget(metadata_df, analysis_type, fit_free, has_nadh, has_
                 with st.container(border=True):
                     st.markdown(f"Image name: **{image_name}**")
                     metadata = metadata_df[metadata_df['image_name'] == image_name].iloc[0]
-                    error_msg, single_cell_features_img = image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free)
+                    error_msg, single_cell_features_img = image_extraction(metadata, metadata_dict) 
                     if error_msg != "":
                         st.error(error_msg)
                     else:
                         single_cell_features_img = check_img_features(single_cell_features_img, image_name)
-                        if not single_cell_features_img.empty and analysis_type == "SPCImage" and fit_free:
-                            error_msg, single_cell_fit_free_features_img = roi_summing_fit_extraction(metadata, has_nadh, has_fad, fit_free)
-                            if error_msg != "":
-                                st.error(error_msg)
-                            else:
-                                # merge two dataframes on cell_id: the left df: "single_cell_features_img" has the cell_ids that passed the check_img_features
-                                single_cell_features_img = pd.merge(single_cell_features_img, single_cell_fit_free_features_img, on='cell_id', how='left')
-                                st.success("✅ Success!")
-                        else:
-                            st.success("✅ Success!")
+                        st.success("✅ Success!")
                         single_cell_features = pd.concat([single_cell_features, single_cell_features_img])
 
     return single_cell_features
-

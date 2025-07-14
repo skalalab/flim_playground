@@ -3,7 +3,7 @@ import os
 import pandas as pd
 import time
 from src.navigation import render_top_menu
-from src.dataframe_io import happy_emoji, sad_emoji
+from src.dataset_io import happy_emoji, sad_emoji
 from src.widgets.numeric_extraction_widgets import image_extraction_widget
 from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, display_feature_groups_widget, check_assign_channel_widget, lifetime_data_config_widget
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
@@ -83,8 +83,8 @@ with col1:
                 input_type = metadata_dict["input_type"]
 
                 shift_needed = len(metadata_dict["channels_shift"]) > 0
-                # if there are channels to be fitted, show the fitting options
-                if len(metadata_dict["channels_fit"]) > 0:
+                # if there are channels to be fitted, show the fitting options: spcimage is already fitted
+                if len(metadata_dict["channels_fit"]) > 0 and input_type != "SPCImage":
                     st.info("Please specify the following fitting options.")
                     metadata_dict= fit_options_widget(input_type, metadata_dict)
                 st.write(metadata_dict) 
@@ -111,7 +111,6 @@ with col1:
                 st.write(available_dfs)
             else:
                 st.error(f"No available csv files found at {df_folder_path} {sad_emoji}")
-
 
 with col2: 
     # check if the folder exists
@@ -174,8 +173,6 @@ with col2:
             st.rerun()
                 
     elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"] and metadata_df is not None:
-
-
         single_cell_features = image_extraction_widget(metadata_df, metadata_dict)
         if not single_cell_features.empty:
             st.success(f"Image features with ✅ are extracted successfully {happy_emoji}! Images with ❌ (if any) are excluded. The first few rows of the features are shown below.")

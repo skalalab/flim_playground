@@ -28,36 +28,40 @@ def get_mask_morphology_features(mask, image_name, cell_dict):
                 cell_dict[cell_id][feature_name] = 4 * np.pi * region.area / region.perimeter**2 if region.perimeter > 0 else 0
     return cell_dict
 
-def spcimage_fit_extraction(metadata, has_nadh, has_fad):
+def spcimage_fit_extraction(metadata, channel_name, num_components):
 
     image_props = {}
-    if has_nadh:
-        try:
-            nadh_a1 = load_image(metadata['nadh a1'])
-            # SPC image will output 0 for the thresholded pixels (background), so we need to mask them
-            nadh_a1 = np.ma.masked_array(nadh_a1, mask=nadh_a1==0, fill_value=np.nan)
-        except Exception as e:
-            return f"Error reading the NADH a1 file: {metadata['nadh a1']}: {e}", None
-        try:
-            mask = load_image(metadata['mask'])
-        except Exception as e:
-            return f"Error reading the mask file: {metadata['mask']}: {e}", None
-        if mask.shape != nadh_a1.shape:
-            return f"Error: NADH a1 file has a different shape than the mask file: {nadh_a1.shape} != {mask.shape}", None
-        try:
-            nadh_a2 = load_image(metadata['nadh a2'])
-            nadh_a2 = np.ma.masked_array(nadh_a2, mask=nadh_a2==0, fill_value=np.nan)
-        except Exception as e:
-            return f"Error reading the NADH a2 file: {metadata['nadh a2']}: {e}", None
-        if mask.shape != nadh_a2.shape:
-            return f"Error: NADH a2 file has a different shape than the mask file: {nadh_a2.shape} != {mask.shape}", None
-        try:
-            nadh_t1 = load_image(metadata['nadh t1'])
-            nadh_t1 = np.ma.masked_array(nadh_t1, mask=nadh_t1==0, fill_value=np.nan)
-        except Exception as e:
-            return f"Error reading the NADH t1 file: {metadata['nadh t1']}: {e}", None
-        if mask.shape != nadh_t1.shape:
-            return f"Error: NADH t1 file has a different shape than the mask file: {nadh_t1.shape} != {mask.shape}", None
+    try:
+        a1 = load_image(metadata[f"{channel_name} a1"])
+        # SPC image will output 0 for the thresholded pixels (background), so we need to mask them
+        a1 = np.ma.masked_array(a1, mask=a1==0, fill_value=np.nan)
+    except Exception as e:
+        return f"Error reading the {channel_name} a1 file: {metadata[f'{channel_name} a1']}: {e}", None
+    try:
+        mask = load_image(metadata[f"{channel_name} Mask"])
+    except Exception as e:
+        return f"Error reading the {channel_name} mask file: {metadata[f'{channel_name} Mask']}: {e}", None
+    if mask.shape != a1.shape:
+        return f"Error: {channel_name} a1 file has a different shape than the mask file: {a1.shape} != {mask.shape}", None
+    try:
+        t1 = load_image(metadata[f"{channel_name} t1"])
+        t1 = np.ma.masked_array(t1, mask=t1==0, fill_value=np.nan)
+    except Exception as e:
+        return f"Error reading the {channel_name} t1 file: {metadata[f'{channel_name} t1']}: {e}", None
+    if mask.shape != t1.shape:
+        return f"Error: {channel_name} t1 file has a different shape than the mask file: {t1.shape} != {mask.shape}", None
+    
+    image_props[f"{channel_name}_a1"] = regionprops(label_image=mask, intensity_image=a1)
+    image_props[f"{channel_name} t1"] = regionprops(label_image=mask, intensity_image=t1)
+    
+    try:
+        a2 = load_image(metadata[f"{channel_name} a2"])
+        a2 = np.ma.masked_array(a2, mask=a2==0, fill_value=np.nan)
+    except Exception as e:
+        return f"Error reading the {channel_name} a2 file: {metadata[f'{channel_name} a2']}: {e}", None
+    if mask.shape != a2.shape:
+        return f"Error: {channel_name} a2 file has a different shape than the mask file: {a2.shape} != {mask.shape}", None
+
         try:
             nadh_t2 = load_image(metadata['nadh t2'])
             nadh_t2 = np.ma.masked_array(nadh_t2, mask=nadh_t2==0, fill_value=np.nan)
@@ -68,9 +72,9 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad):
         nadh_tm= (nadh_a1 / 100 * nadh_t1) + (nadh_a2 / 100 * nadh_t2)
 
         try: 
-            nadh_intensity = load_image(metadata['nadh intensity'])
+            intensity = load_image(metadata[f"{channel_name} intensity"])
         except Exception as e:
-            return f"Error reading the NADH intensity file: {metadata['nadh intensity']}: {e}", None
+            return f"Error reading the {channel_name} intensity file: {metadata[f'{channel_name} intensity']}: {e}", None
         if mask.shape != nadh_intensity.shape:
             return f"Error: NADH intensity file has a different shape than the mask file: {nadh_intensity.shape} != {mask.shape}", None
         nadh_feature_prefix = all_numerical_feature_groups['Nadh Fit']
@@ -80,50 +84,6 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad):
         image_props[f"{nadh_feature_prefix}t2"] = regionprops(label_image=mask, intensity_image=nadh_t2)
         image_props[f"{nadh_feature_prefix}tm"] = regionprops(label_image=mask, intensity_image=nadh_tm)
         image_props[f"{nadh_feature_prefix}intensity"] = regionprops(label_image=mask, intensity_image=nadh_intensity)
-
-    if has_fad:
-        try:
-            fad_a1 = load_image(metadata['fad a1'])
-            fad_a1 = np.ma.masked_array(fad_a1, mask=fad_a1==0, fill_value=np.nan)
-        except Exception as e:
-            return f"Error reading the FAD a1 file: {metadata['fad a1']}: {e}", None
-        if mask.shape != fad_a1.shape:
-            return f"Error: FAD a1 file has a different shape than the mask file: {fad_a1.shape} != {mask.shape}", None 
-        try:
-            fad_a2 = load_image(metadata['fad a2'])
-            fad_a2 = np.ma.masked_array(fad_a2, mask=fad_a2==0, fill_value=np.nan)
-        except Exception as e:
-            return f"Error reading the FAD a2 file: {metadata['fad a2']}: {e}", None
-        if mask.shape != fad_a2.shape:
-            return f"Error: FAD a2 file has a different shape than the mask file: {fad_a2.shape} != {mask.shape}", None
-        try:
-            fad_t1 = load_image(metadata['fad t1'])
-            fad_t1 = np.ma.masked_array(fad_t1, mask=fad_t1==0, fill_value=np.nan)
-        except Exception as e:
-            return f"Error reading the FAD t1 file: {metadata['fad t1']}: {e}", None
-        if mask.shape != fad_t1.shape:
-            return f"Error: FAD t1 file has a different shape than the mask file: {fad_t1.shape} != {mask.shape}", None
-        try:
-            fad_t2 = load_image(metadata['fad t2'])
-            fad_t2 = np.ma.masked_array(fad_t2, mask=fad_t2==0, fill_value=np.nan)
-        except Exception as e:
-            return f"Error reading the FAD t2 file: {metadata['fad t2']}: {e}", None
-        if mask.shape != fad_t2.shape:
-            return f"Error: FAD t2 file has a different shape than the mask file: {fad_t2.shape} != {mask.shape}", None
-        fad_tm = (fad_a1 / 100 * fad_t1) + (fad_a2 / 100 * fad_t2)
-        try: 
-            fad_intensity = load_image(metadata['fad intensity'])
-        except Exception as e:
-            return f"Error reading the FAD intensity file: {metadata['fad intensity']}: {e}", None
-        if mask.shape != fad_intensity.shape:
-            return f"Error: FAD intensity file has a different shape than the mask file: {fad_intensity.shape} != {mask.shape}", None
-        fad_feature_prefix = all_numerical_feature_groups['Fad Fit']
-        image_props[f"{fad_feature_prefix}a1"] = regionprops(label_image=mask, intensity_image=fad_a1)
-        image_props[f"{fad_feature_prefix}a2"] = regionprops(label_image=mask, intensity_image=fad_a2)
-        image_props[f"{fad_feature_prefix}t1"] = regionprops(label_image=mask, intensity_image=fad_t1)
-        image_props[f"{fad_feature_prefix}t2"] = regionprops(label_image=mask, intensity_image=fad_t2)
-        image_props[f"{fad_feature_prefix}tm"] = regionprops(label_image=mask, intensity_image=fad_tm)
-        image_props[f"{fad_feature_prefix}intensity"] = regionprops(label_image=mask, intensity_image=fad_intensity)
 
     # calculate redox
     if has_nadh and has_fad:
@@ -140,7 +100,7 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad):
             single_cell_features_img[cell_id][prop] = region.intensity_mean
             single_cell_features_img[cell_id][f"{prop}_stdev"] = region.intensity_std
             # add fit variable feature distribution features for this fit 
-            for feature_distribution_var in feature_distribution_vars:
+            for feature_distribution_var in texture_features:
                 if feature_distribution_var == "polarity":
                     geometric_centroid = region.centroid
                     weighted_centroid = region.centroid_weighted
@@ -151,7 +111,6 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad):
                         (geometric_centroid[0] - weighted_centroid[0]) ** 2 +
                         (geometric_centroid[1] - weighted_centroid[1]) ** 2)
                     
-    single_cell_features_img = get_mask_morphology_features(mask, image_name, single_cell_features_img)
     
     # convert single_cell_features_img to a dataframe
     single_cell_features_img = pd.DataFrame(single_cell_features_img).T
@@ -165,18 +124,8 @@ def spcimage_fit_extraction(metadata, has_nadh, has_fad):
 @st.cache_data
 def roi_summing_fit_extraction(metadata, has_nadh, has_fad, fit_free):
 
-    # checks
-    try:
-        analysis_type = metadata['analysis_type']
-    except Exception as e:
-        return "Error: Analysis type is not provided", None
-    extract_fit = analysis_type == "ROI Summing Fit"
-   
     image_name = metadata['image_name']
-    try:
-        mask = load_image(metadata['mask'])
-    except Exception as e:
-        return f"Error reading the mask file: {metadata['mask']}: {e}", None
+
     if has_nadh:
         try:
              # check if the shift is provided
@@ -184,51 +133,12 @@ def roi_summing_fit_extraction(metadata, has_nadh, has_fad, fit_free):
         except Exception as e:
             return "Error: NADH shift is not provided", None
 
-        try:
-            nadh_irf_path = metadata['nadh irf']
-            nadh_irf = np.loadtxt(nadh_irf_path)
-        except Exception as e:
-            error_msg = f"Error reading the IRF file for image {image_name} at {nadh_irf_path}: {e}"
-            return error_msg, None
-
-        try:
-            nadh_decay_path = metadata['nadh decay']
-            nadh_channel = metadata['nadh_channel']
-            nadh_decay = read_sdt(nadh_decay_path, nadh_channel)
-        except Exception as e:
-            error_msg = f"Error reading the decay file for image {image_name} at {nadh_decay_path}: {e}"
-            return error_msg, None
         shifted_nadh_irf = irf_shift(nadh_irf, nadh_shift)
         try:
             nadh_start = metadata['nadh_start']
             nadh_end = metadata['nadh_end']
         except Exception as e:
             return "Error: NADH start and end are not provided", None
-        # st.write(f"NADH start: {nadh_start}, NADH end: {nadh_end}", "Shift: ", nadh_shift)
-    if has_fad:
-        try:
-            fad_shift = metadata['fad_shift']
-        except Exception as e:
-            return "Error: FAD shift is not provided", None
-        try:
-            fad_irf_path = metadata['fad irf']
-            fad_irf = np.loadtxt(fad_irf_path)
-        except Exception as e:
-            error_msg = f"Error reading the IRF file for image {image_name} at {fad_irf_path}: {e}"
-            return error_msg, None
-        try:
-            fad_decay_path = metadata['fad decay']
-            fad_channel = metadata['fad_channel']
-            fad_decay = read_sdt(fad_decay_path, fad_channel)
-        except Exception as e:
-            error_msg = f"Error reading the decay file for image {image_name} at {fad_decay_path}: {e}"
-            return error_msg, None
-        shifted_fad_irf = irf_shift(fad_irf, fad_shift)
-        try:
-            fad_start = metadata['fad_start']
-            fad_end = metadata['fad_end']
-        except Exception as e:
-            return "Error: FAD start and end are not provided", None
         
     # get fitting config from metadata
     try: 
@@ -449,23 +359,25 @@ def k_flow_fit_extraction(metadata, has_nadh, has_fad):
     single_cell_features_img.index.name = "cell_id" 
     return "", single_cell_features_img
 
-def image_fit_extraction(metadata, analysis_type, has_nadh, has_fad, fit_free):
+def image_extraction(metadata, metadata_dict):
     """
     Extract single cell fitting parameters from spc image output files
     """
-    if analysis_type == "SPCImage":
-        error_msg, single_cell_features_img = spcimage_fit_extraction(metadata, has_nadh, has_fad)
-        if error_msg != "":
-            return error_msg, None
-    elif analysis_type == "ROI Summing Fit":
-        error_msg, single_cell_features_img = roi_summing_fit_extraction(metadata, has_nadh, has_fad, fit_free)
-        if error_msg != "":
-            return error_msg, None
-    elif analysis_type == "K-Flow":
-        error_msg, single_cell_features_img = k_flow_fit_extraction(metadata, has_nadh, has_fad)
-        if error_msg != "":
-            return error_msg, None
-    return "", single_cell_features_img
+    for channel_name in metadata_dict["modules"]:
+        if "Lifetime" in metadata_dict["modules"][channel_name]:
+            if "fit" in metadata_dict["modules"][channel_name]["Lifetime"]:
+                num_components = metadata_dict[channel_name]["num_components"]
+                if input_type == "SPCImage":
+                    
+            if "fit_free" in metadata_dict["modules"][channel_name]["Lifetime"]:
+                pass
+
+        if "Intensity" in metadata_dict["modules"][channel_name]:
+            if "morphology" in metadata_dict["modules"][channel_name]["Intensity"]:
+                pass
+            if "texture" in metadata_dict["modules"][channel_name]["Intensity"]:
+                pass
+
 
 
 def fit_and_extract_results(channel, duration, time_bins, num_components, fitting_algo, fitting_mode, fit_free, laser_rate, time_axis, cell_ids, single_cell_features_img, start, end, decay_curves, shifted_irf, extract_fit=True):

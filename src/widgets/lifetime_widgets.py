@@ -3,33 +3,14 @@ import math
 import pandas as pd
 import numpy as np
 from plotly import graph_objects as go
-from src.choose_shift import choose_shift
+from src.choose_shift import choose_shift_fit_free, choose_shift_fit
 from src.fit_helper import forward_pass, irf_shift, mle_likelihood, chi_square
 
-
-def display_shift_data_widget(results, analysis_type, metadata_df, time_axis, period, num_components, log_y, channel):
-    # display the shift in an interactive plot scatter plot, the y-axis is the shift. When click on the point, it will show the curve with the fitted line
-    # prepare the data
-    decay_curves = results["decay_curves"]
-    original_decay_curves = results["original_decay_curves"]
-    shift_data = results["shift"]
-    amp1 = results["amp1"]
-    t1 = results["t1"]
-    offset = results["offset"]
-    if num_components > 1:
-        amp2 = results["amp2"]
-        t2 = results["t2"]
-    if num_components > 2:
-        amp3 = results["amp3"]
-        t3 = results["t3"]
-    irf = results["irf"]
+def display_shift_data_widget(results, input_type, channel_name, choose_shift_method, time_axis=None, period=None, num_components=None, log_y=True):
+    
     # combines image_name and shift from results into a df
-    if analysis_type == "K-Flow":
-        image_name = metadata_df['kflow_exp_name'].iloc[0]
-        image_names = [image_name] * len(shift_data)
-        plot_df =  pd.DataFrame({'image_name': image_names, 'shift': shift_data})
-    else:
-        plot_df =  pd.DataFrame({'image_name': metadata_df['image_name'], 'shift': shift_data})
+    # kflow decay_id is the cell_name, otherwise it is the image_name
+    plot_df =  pd.DataFrame({"decay_id": results["decay_id"], "shift": results["shift"]})
     cols = st.columns(2)
     with cols[0]:
         fig = go.Figure()
@@ -47,13 +28,13 @@ def display_shift_data_widget(results, analysis_type, metadata_df, time_axis, pe
             ),
             fillcolor='rgba(0,0,0,0)',
             line_color='rgba(0,0,0,0)',
-            hovertext=plot_df['image_name'],
-            customdata=plot_df['image_name'], # Assign image_name to customdata
-            hovertemplate="<b>Shift</b>: %{y}<br>Image: %{hovertext}<extra></extra>",
+            hovertext=plot_df["decay_id"],
+            customdata=plot_df["decay_id"], # Assign image_name to customdata
+            hovertemplate="<b>Shift</b>: %{y}<br>%{hovertext}<extra></extra>",
         ))
         fig.update_layout(
             title=dict(
-                text=f"Shifts for {channel} channel",
+                text=f"Shifts for {channel_name} channel",
                 x=0.5,  # Center the title horizontally
                 xanchor='center'  # Anchor the title to its center point
             ),
@@ -61,21 +42,46 @@ def display_shift_data_widget(results, analysis_type, metadata_df, time_axis, pe
             showlegend=False, # Hide legend for single trace
             hovermode='closest', # Enable hover mode
         )
-        event = st.plotly_chart(fig, on_select="rerun", key=f"shift_image_plot_{channel}")
-        
+        if choose_shift_method == "fit free":
+            st.plotly_chart(fig) # no event for fit free
+            event = None
+        else:
+            # display the shift in an interactive plot scatter plot, the y-axis is the shift. When click on the point, it will show the curve with the fitted line
+            # prepare the data
+            try: 
+                decay_curves = results["decay_curves"]
+                original_decay_curves = results["original_decay_curves"]
+                shift_data = results["shift"]
+                amp1 = results["amp1"]
+                t1 = results["t1"]
+                offset = results["offset"]
+                if num_components > 1:
+                    amp2 = results["amp2"]
+                    t2 = results["t2"]
+                if num_components > 2:
+                    amp3 = results["amp3"]
+                    t3 = results["t3"]
+                irf = results["irf"]
+            except:
+                return "Error: Results not found for channel: " + channel_name
+            event = st.plotly_chart(fig, on_select="rerun", key=f"shift_image_plot_{channel_name}")
+
     with cols[1]:
         if event and event.selection and event.selection.points:
         # each point dict has point_index, customdata, x, y, etc.
             p = event.selection.points[0]         # first (or loop them)
 
             idx = p["point_index"]                # row index back into plot_df
-            img_name = plot_df.iloc[idx]["image_name"]
+            clicked_shift_identifier = plot_df.iloc[idx]["decay_id"]
 
-            st.session_state["clicked_image_shift_plot"] = img_name
+            st.session_state["clicked_shift_plot"] = clicked_shift_identifier
             # plot the decay curve with the fitted line
             fig2 = go.Figure()
             # Calculate bin numbers for hover display
-            bin_numbers = time_axis / period
+            try:
+                bin_numbers = time_axis / period
+            except:
+                return "Error: Time axis not found for channel: " + channel_name
             fig2.add_trace(go.Scatter(
                 x=time_axis,
                 y=original_decay_curves[idx],
@@ -162,14 +168,16 @@ def display_shift_data_widget(results, analysis_type, metadata_df, time_axis, pe
             )
 
             fig2.update_layout(
-                title=f"Decay Curve and Fitted Line for {img_name}",
+                title=f"Decay Curve and Fitted Line for {clicked_shift_identifier}",
                 xaxis_title="Time (ns)",
                 yaxis_title="Intensity (log)",
                 yaxis_type="log" if log_y else "linear",
                 showlegend=True,
             )
             st.plotly_chart(fig2, use_container_width=True)
+
 def choose_shift_widget(metadata_df, metadata_dict, channel_name, log_y=True):
+    error_msg = ""
     duration = metadata_dict["duration"]
     time_bins = metadata_dict["time_bins"]
     input_type = metadata_dict["input_type"]
@@ -177,11 +185,22 @@ def choose_shift_widget(metadata_df, metadata_dict, channel_name, log_y=True):
         choose_shift_method = metadata_dict["choose_shift"][channel_name]
     else:
         return "Error: Choose shift method not found for channel: " + channel_name, None
-    error_msg, results = choose_shift(metadata_df, metadata_dict, channel_name)
+    if choose_shift_method == "fit free":
+        error_msg, results = choose_shift_fit_free(metadata_df, time_bins, input_type, channel_name)
+    else:
+        try: 
+            fitting_algo = metadata_dict["fitting_algo"]
+            fitting_mode =  metadata_dict["fitting_mode"]
+            num_components = metadata_dict[channel_name]["num_components"]
+        except:
+            return "Error: Fitting algorithm or mode or number of components not found for channel: " + channel_name, None
+        error_msg, results = choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, input_type, channel_name)
     if error_msg != "":
         return error_msg, None
     
-    display_shift_data_widget(results, metadata_dict, channel_name, log_y)
+    period = time_bins / duration
+    time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
+    error_msg = display_shift_data_widget(results, input_type, channel_name, choose_shift_method, time_axis, period, metadata_dict[channel_name].get("num_components", 0), log_y)
 
     if choose_shift_method == "fit free" or "fix_shift" not in metadata_dict or metadata_dict["fix_shift"]:
         fix_shift = True

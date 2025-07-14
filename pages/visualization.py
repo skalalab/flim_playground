@@ -1,7 +1,7 @@
 import streamlit as st
 from streamlit_plotly_events import plotly_events
 
-from src.dataframe_io import load_csv, happy_emoji, sad_emoji
+from src.dataset_io import load_csv, happy_emoji, sad_emoji
 from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget, twod_single_feature_select_widget
 from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget, visual_encoding_channels_widget, plot_config_widget
 from src.widgets.filter_widgets import filters_widget
