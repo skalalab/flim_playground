@@ -1,10 +1,8 @@
 import toml
 from pathlib import Path
-from collections import defaultdict
 
 # Absolute path to the project-level config file (../config.toml)
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.toml"
-
 
 def load_config() -> dict:
     """Load and return the TOML configuration as a dict.
@@ -17,7 +15,6 @@ def load_config() -> dict:
     except (FileNotFoundError, toml.TomlDecodeError):
         return {}
 
-
 def save_config(cfg: dict) -> None:
     """Persist *cfg* to disk, overwriting the previous *config.toml*."""
     # Ensure the parent directory exists (helpful when running tests, etc.)
@@ -25,43 +22,43 @@ def save_config(cfg: dict) -> None:
     with _CONFIG_PATH.open("w", encoding="utf-8") as fh:
         toml.dump(cfg, fh)
 
-
 def get_unique_cell_id_col() -> str:
     cfg = load_config()
     return cfg.get("unique_cell_id_col", "cell_id")
 
-def get_image_name_col() -> str:
+def get_fov_name_col() -> str:
     cfg = load_config()
-    return cfg.get("image_name_col", "image_name")
+    return cfg.get("fov_name_col", "image_name")
 
-def get_file_suffixes(channel_name: str, input_type: str) -> dict:
+def get_input_types(channel_keys: list) -> dict:
     cfg = load_config()
-    suffixes = {}
-    file_type_suffixes = cfg.get("inputSuffixes", {}).get(channel_name, {}).get(input_type, {})
-    for file_type, suffix in file_type_suffixes.items():
-        if file_type not in suffixes:
-            suffixes[file_type] = suffix
-    return suffixes
-    
+    input_types = {}
+    for channel_key in channel_keys:
+        input_types[channel_key] = cfg.get(channel_key, {}).get("input_type", None)
+    return input_types
 
-def get_available_input_types() -> list:
+def get_default_file_suffixes(channel_key: str, input_type: str, selected_feature_extractors: list) -> dict:
     cfg = load_config()
-    available_input_types = cfg.get("available_input_types", [])
-    preferred_input_type = cfg.get("preferred_input_type", None)
-    if preferred_input_type is not None:
-        preferred_input_type_index = available_input_types.index(preferred_input_type)
-    else:
-        preferred_input_type_index = 0
-    return available_input_types, preferred_input_type_index
+    filtered_file_suffixes = {}
+    file_suffixes = cfg.get(channel_key, {}).get(input_type, {}).get("input_suffixes", {})
+    for file_type in file_suffixes.keys():
+        # skip a bunch of things 
+        if file_type == "a1" and "Lifetime fit" not in selected_feature_extractors:
+            continue
+        # skip IRF if no Lifetime extractors OR if prefitted and no fit free extractors
+        if file_type == "IRF" and (not any("Lifetime" in extractor for extractor in selected_feature_extractors) or 
+                                        ("prefitted" in input_type and not any("Lifetime fit free" in extractor for extractor in selected_feature_extractors))):
+            continue
+        filtered_file_suffixes[file_type] = file_suffixes[file_type]
+    return filtered_file_suffixes
 
 def get_channel_names() -> dict:
     cfg = load_config()
     num_channels = cfg.get("num_channels", 0)
-    all_channel_names = cfg.get("channel_names", {})
     channel_names = {}
-    for i, (channel_key, channel_name) in enumerate(all_channel_names.items()):
-        if i < num_channels:
-            channel_names[channel_key] = channel_name
+    for i in range(num_channels):
+        channel_key = f"ch{i+1}"
+        channel_names[channel_key] = cfg.get(channel_key, {}).get("channel_name", channel_key)
     return channel_names
 
 def get_spc_output_suffix() -> dict:
@@ -69,38 +66,47 @@ def get_spc_output_suffix() -> dict:
     spc_output_suffix = cfg.get("spc_output_suffix", {})
     return spc_output_suffix
 
-def get_num_components(channel_names: list) -> dict:
+def get_num_components(input_types: dict, channel_keys: list) -> dict:
     cfg = load_config()
     num_components = {}
-    for channel_name in channel_names:
-        num_components[channel_name] = cfg.get("num_components", {}).get(channel_name, 0)
+    for channel_key in channel_keys:
+        input_type = input_types[channel_key]
+        num_components[channel_key] = cfg.get(channel_key, {}).get(input_type, {}).get("num_components", 0)
     return num_components
 
-def get_feature_extractors(channel_names: list) -> dict:
+def get_selected_feature_extractors(input_types: dict, channel_keys: list) -> dict:
     cfg = load_config()
-    feature_extractors = {}
-    for channel_name in channel_names:
-        feature_extractors[channel_name] = cfg.get("feature_extractors", {}).get(channel_name, {})
-    return feature_extractors
+    selected_feature_extractors = {}
+    for channel_key in channel_keys:
+        input_type = input_types[channel_key]
+        selected_feature_extractors[channel_key] = cfg.get(channel_key, {}).get(input_type, {}).get("selected_feature_extractors", [])
+    return selected_feature_extractors
 
-def get_all_channel_names() -> list:
+def get_default_2D_decay_config() -> tuple:
     cfg = load_config()
-    return cfg.get("channel_names", {}).values()
-
-def get_all_feature_extractors() -> list:
-    cfg = load_config()
-    return cfg.get("available_feature_extractors", {})
-
-def get_all_file_types() -> list:
-    cfg = load_config()
-    return cfg.get("available_file_types", {})
-
-def get_default_k_flow_config() -> tuple:
-    cfg = load_config()
-    default_k_flow_duration = cfg.get("k_flow_duration", 20.0)
-    default_k_flow_time_bins = cfg.get("k_flow_time_bins", 1024)
-    return default_k_flow_duration, default_k_flow_time_bins
+    default_duration = cfg.get("Decay (2D)", {}).get("duration", 20.0)
+    default_time_bins = cfg.get("Decay (2D)", {}).get("time_bins", 1024)
+    return default_duration, default_time_bins
 
 def get_default_laser_rate(input_type: str) -> float:
     cfg = load_config()
-    return cfg.get("laser_rate", {}).get(input_type, 1.0)
+    return cfg.get(input_type, {}).get("laser_rate", 1.0)
+
+def get_decay_input_type() -> str:
+    cfg = load_config()
+    return cfg.get("flim_decay_input_type", "Decay (2D)")
+
+def get_imaging_modality(channel_keys: list) -> dict:
+    cfg = load_config()
+    imaging_modality = {}
+    for channel_key in channel_keys:
+        imaging_modality[channel_key] = cfg.get(channel_key, {}).get("imaging_modality", "FLIM")
+    return imaging_modality
+
+def get_available_feature_extractors(input_type: str) -> list:
+    cfg = load_config()
+    return cfg.get(input_type, {}).get("available_feature_extractors", [])
+
+def get_file_types(input_type: str) -> list:
+    cfg = load_config()
+    return cfg.get(input_type, {}).get("file_types", [])

@@ -1,82 +1,94 @@
 from pathlib import Path
-from src.config import get_all_channel_names, get_all_feature_extractors, get_all_file_types
-import streamlit as st
-def get_ch_modules(metadata_df):
-    available_channels = get_all_channel_names()
-    available_feature_extractors = get_all_feature_extractors()
-    ch_modules = {}
-    column_names = metadata_df.columns
+from src.config import get_available_feature_extractors, get_file_types
+
+def get_ch_info(metadata_df):
+    # get available channels in the metadata file
+    # use the {channel_name}_input_type column name to get available channels
+    available_channels = [col for col in metadata_df.columns if col.endswith("_input_type")]
+    available_channels = [col.split("_input_type")[0] for col in available_channels]
+    available_channels = list(set(available_channels))
+    if len(available_channels) == 0:
+        return f"No channels found in metadata file.", None
+    metadata_dict = {}
+    metadata_dict["channels_shift"] = {}
+    metadata_dict["channel_names"] = []
     for channel_name in available_channels:
-        for feature_extractor in available_feature_extractors.keys():
-            available_modules = available_feature_extractors[feature_extractor]
-            for module in available_modules:
-                if f"{channel_name}_{feature_extractor}_{module}" in column_names:             
-                    if channel_name not in ch_modules:
-                        ch_modules[channel_name] = {}
-                    if feature_extractor not in ch_modules[channel_name]:    
-                        ch_modules[channel_name][feature_extractor] = []
-                    ch_modules[channel_name][feature_extractor].append(module)
-    
-    return ch_modules
+        if channel_name not in metadata_dict:
+            metadata_dict[channel_name] = {}
+            metadata_dict["channel_names"].append(channel_name)
+       
+        # get input type
+        input_type_col = f"{channel_name}_input_type"
+        # check for consistency of input type
+        if metadata_df[input_type_col].nunique() != 1:
+            return f"Input type column {input_type_col} is not consistent.", None
+        input_type = metadata_df[input_type_col].iloc[0]
+        metadata_dict[channel_name]["input_type"] = input_type
+
+         # get imaging modality
+        imaging_modality_col = f"{channel_name}_imaging_modality"
+        if imaging_modality_col not in metadata_df.columns:
+            return f"Imaging modality column {imaging_modality_col} not found in metadata file.", None
+        metadata_dict[channel_name]["imaging_modality"] = metadata_df[imaging_modality_col].iloc[0]
+        if metadata_dict[channel_name]["imaging_modality"] == "FLIM":
+            # get decay input type
+            if "decay_input_type" not in metadata_dict:
+                metadata_dict["decay_input_type"] = input_type
+            else:
+                if metadata_dict["decay_input_type"] != input_type:
+                    return f"Decay input type should be consistent across all channels.", None
+
+        # get selected feature extractors
+        available_feature_extractors = get_available_feature_extractors(input_type)
+        selected_feature_extractors = []
+        for feature_extractor in available_feature_extractors:
+            feature_extractor_col = f"{channel_name}_{feature_extractor}"
+            if feature_extractor_col in metadata_df.columns:
+                if feature_extractor not in metadata_dict:
+                    metadata_dict[feature_extractor] = [channel_name]
+                else:
+                    metadata_dict[feature_extractor].append(channel_name)
+                selected_feature_extractors.append(feature_extractor)
+        if len(selected_feature_extractors) == 0:
+            return f"No feature extractors found for channel {channel_name}.", None
+        metadata_dict[channel_name]["selected_feature_extractors"] = selected_feature_extractors
+        # get num_components
+        if "Lifetime fit" in selected_feature_extractors:
+            num_components_col = f"{channel_name}_num_components"
+            if num_components_col not in metadata_df.columns:
+                return f"Num components column {num_components_col} not found in metadata file.", None
+            metadata_dict[channel_name]["num_components"] = metadata_df[num_components_col].iloc[0]
+            if "prefitted" not in input_type:
+                # use fitting to find the shift, if it is already fitted, then do not use fitting to find shift (if needed)
+                metadata_dict["channels_shift"][channel_name] = "fit"
+        if "Lifetime fit free" in selected_feature_extractors:
+            if channel_name not in metadata_dict["channels_shift"]:
+                # if not using fitting to find the shift, then use fit free to find the shift
+                metadata_dict["channels_shift"][channel_name] = "fit free"
+        
+        if "Decay (3/4D)" in input_type:
+            metadata_dict[channel_name]["channel_no"] = metadata_df[f"{channel_name}_channel"].iloc[0] 
+
+    return "", metadata_dict
 
 
-def parse_metadata_file(metadata_df, image_name_col):
+def parse_metadata_file(metadata_df, fov_name_col):
     """
     Parse the metadata file and return a dictionary of metadata.
     metadata_df: pandas dataframe of metadata
     """
-    error_msg = ""
-    metadata_dict = {}
     # check for required column
-    if image_name_col not in metadata_df.columns:
-       return f"Image name column {image_name_col} not found in metadata file.", None
+    if fov_name_col not in metadata_df.columns:
+       return f"Image name column {fov_name_col} not found in metadata file.", None
     # check for unique image name
-    if metadata_df[image_name_col].duplicated().any():
-        return f"Image name column {image_name_col} is not unique.", None
-    # check for input type
-    if "input_type" not in metadata_df.columns:
-        return f"Input type column not found in metadata file.", None
-    # check for consistent input type
-    if metadata_df["input_type"].nunique() != 1:
-        return f"Input type column is not consistent.", None
-    
-    input_type = metadata_df["input_type"].iloc[0]
-   
-    metadata_dict["input_type"] = input_type
-    channel_modules = get_ch_modules(metadata_df)
-    metadata_dict["modules"] = channel_modules
-    metadata_dict["channels_fit"] = []
-    metadata_dict["channels_fit_free"] = []
-    channels = channel_modules.keys()
-    available_file_types = get_all_file_types()
-    # check for num_components
-    for channel_name in channels:
-        # spcimage is already fitted 
-        if "Lifetime" in channel_modules[channel_name] and "fit" in channel_modules[channel_name]["Lifetime"]:
-            metadata_dict["channels_fit"].append(channel_name)
-        if "Lifetime" in channel_modules[channel_name] and "fit free" in channel_modules[channel_name]["Lifetime"]:
-            metadata_dict["channels_fit_free"].append(channel_name)
-        metadata_dict[channel_name] = {}
-        if "Lifetime" in channel_modules[channel_name] and "fit" in channel_modules[channel_name]["Lifetime"]:
-            component_col = f"{channel_name}_num_components"
-            if component_col not in metadata_df.columns:
-                return f"Component column {component_col} not found in metadata file.", None
-            else:
-                if metadata_df[component_col].nunique() != 1:
-                    return f"Component column {component_col} is not consistent.", None
-                else:
-                    metadata_dict[channel_name]["num_components"] = metadata_df[component_col].iloc[0]
-        if input_type == "ROI Summing Fit" or input_type == "SPCImage":
-            # get decay info from the metadata file
-            # get channel number, time bins, duration
-            if f"{channel_name}_channel" in metadata_df.columns:
-                if metadata_df[f"{channel_name}_channel"].nunique() != 1:
-                    return f"Channel number column {f"{channel_name}_channel"} is not consistent.", None
-                else:
-                    metadata_dict[channel_name]["channel_number"] = metadata_df[f"{channel_name}_channel"].iloc[0]
-            else:
-                return f"Channel number column {f"{channel_name}_channel"} not found in metadata file.", None
+    if metadata_df[fov_name_col].duplicated().any():
+        return f"Image name column {fov_name_col} is not unique.", None
+
+    error_msg, metadata_dict = get_ch_info(metadata_df)
+    for channel_name in metadata_dict["channel_names"]:
         # check for file paths
+        input_type = metadata_dict[channel_name]["input_type"]
+        available_file_types = get_file_types(input_type)
         for file_type in available_file_types:
             if f"{channel_name}_{file_type}" in metadata_df.columns and file_type != "IRF":
                # then this is a column storing file paths 
@@ -88,14 +100,7 @@ def parse_metadata_file(metadata_df, image_name_col):
                for file_path in metadata_df[f"{channel_name}_{file_type}"]:
                    if not Path(file_path).exists():
                        return f"File path {file_path} for {channel_name}_{file_type} is not valid.", None
-    # Create channels_shift as a dictionary with channel names as keys
-    metadata_dict["channels_shift"] = {}
-    channels_to_shift = set(metadata_dict["channels_fit"] + metadata_dict["channels_fit_free"])
-    for channel_name in channels_to_shift:
-        if channel_name in metadata_dict["channels_fit"] and input_type != "SPCImage":
-            metadata_dict["channels_shift"][channel_name] = "fit"
-        else:
-            metadata_dict["channels_shift"][channel_name] = "fit free"
+ 
     # check for time bins, duration, laser rate
     if "time_bins" in metadata_df.columns:
         if metadata_df["time_bins"].nunique() != 1:

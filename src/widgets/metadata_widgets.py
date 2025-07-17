@@ -3,46 +3,41 @@ import os
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from src.config import get_file_suffixes, get_spc_output_suffix, get_default_k_flow_config, get_default_laser_rate
+from src.config import get_default_file_suffixes, get_spc_output_suffix, get_default_2D_decay_config, get_default_laser_rate
 from src.dataset_io import happy_emoji, sad_emoji
 from src.sdt_io import read_sdt, read_sdt_metadata
 from collections import Counter
-def load_data_suffix_widget(input_type, selected_channels, selected_ch_num_components):
+def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_components, selected_feature_extractors):
     """
     """
     actual_file_suffix = {}
     error_msg = ""
     a1_suffix_list = []
-    decay_suffix_list = []
-    histogram_suffix_list = []
 
-    if input_type == "SPCImage":
+    if "Decay (3/4D) pixel-prefitted" in input_types.values():
         spc_output_suffix = get_spc_output_suffix()
-    for i, channel_name in enumerate(selected_channels):
-        file_suffixes = get_file_suffixes(channel_name, input_type)
+    for i, (channel_key, channel_name) in enumerate(selected_channels.items()):
+        input_type = input_types[channel_key]
+        file_suffixes = get_default_file_suffixes(channel_key, input_type, selected_feature_extractors[channel_key])
         if len(file_suffixes) == 0:
             error_msg += f"No file suffixes found for {channel_name} {sad_emoji}"
             return "", error_msg
-        else:
+        else: 
             actual_file_suffix[channel_name] = file_suffixes
 
         st.subheader(f"File suffixes: {channel_name}")
         num_cols = 3
         cols = st.columns(num_cols)
-        for j, (file_type, default_suffix) in enumerate(file_suffixes.items()):
+        for j, (file_type, default_suffix) in enumerate(actual_file_suffix[channel_name].items()):
             if file_type == "a1":
                 a1_suffix_list.append(default_suffix)
-            elif file_type == "Decay":
-                decay_suffix_list.append(default_suffix)
-            elif file_type == "Histogram":
-                histogram_suffix_list.append(default_suffix)
             col = cols[j % num_cols]
             with col:
                 # only show the help message for the first file type of the first channel
                 if i == 0 and j == 0:
                     help_msg = "The filenames are expected to have *exactly* two parts: *image_name + suffix*. All files from the same image should share the **same** image_name, with the only difference being the suffix."
-                elif i == 0 and input_type == "SPCImage" and file_type == "a1":
-                    help_msg = f"For other SPCImage output files (e.g. t1, a2, t2), the suffixes are automatically generated based on the provided a1 suffix by replacing {spc_output_suffix['a1']} to get the others."
+                elif i == 0 and input_type == "Decay (3/4D) pixel-prefitted" and file_type == "a1":
+                    help_msg = f"For other SPCImage output files (e.g. t1, t2), the suffixes are automatically generated based on the provided a1 suffix by replacing {spc_output_suffix['a1']} to get the others."
                 else:
                     help_msg = None
                 suffix = st.text_input(f"{file_type}", default_suffix, key=f"{channel_name}_{input_type}_{file_type}_suffix", help=help_msg)
@@ -50,25 +45,21 @@ def load_data_suffix_widget(input_type, selected_channels, selected_ch_num_compo
                     error_msg += f"Please provide a suffix for {file_type}! "
                 else:
                     actual_file_suffix[channel_name][file_type] = suffix
-        if input_type == "SPCImage" and error_msg == "": # write the spc outputs' suffixes for this channel
+        if input_type == "Decay (3/4D) pixel-prefitted" and error_msg == "": # write the spc outputs' suffixes for this channel
             if channel_name in selected_ch_num_components and selected_ch_num_components[channel_name] != 0:
                 num_components = selected_ch_num_components[channel_name]
                 if num_components == 1:
                     needed_suffix = ["t1"]
                 elif num_components == 2:
-                    needed_suffix = ["t1", "a2", "t2"]
+                    needed_suffix = ["t1", "t2"]
                 elif num_components == 3:
-                    needed_suffix = ["t1", "a2", "t2", "a3", "t3"]
+                    needed_suffix = ["t1", "a2", "t2", "t3"]
                 for key in needed_suffix:
                     actual_file_suffix[channel_name][key] = actual_file_suffix[channel_name]["a1"].replace(spc_output_suffix["a1"], spc_output_suffix[key])
 
-    # check for duplicates in a1_suffix_list, decay_suffix_list, histogram_suffix_list
+    # check for duplicates in a1_suffix_list
     if len(set(a1_suffix_list)) != len(a1_suffix_list):
         error_msg += f"Duplicate a1 suffixes found: {a1_suffix_list} {sad_emoji}"
-    if len(set(decay_suffix_list)) != len(decay_suffix_list):
-        error_msg += f"Duplicate decay suffixes found: {decay_suffix_list} {sad_emoji}"
-    if len(set(histogram_suffix_list)) != len(histogram_suffix_list):
-        error_msg += f"Duplicate histogram suffixes found: {histogram_suffix_list} {sad_emoji}"
 
     # flatten the actual_file_suffix dictionary
     actual_file_suffix_dict = {}
@@ -265,7 +256,7 @@ def check_raw_decay_data(images_df, channel_name):
     else:
         # get the first shape
         shape = shape_list[0]
-        time_bins = shape[2]
+        time_bins = shape[-1]
         laser_rep_time = laser_rep_time_list[0]
         if len(shape) == 3:
             return "", [-1], time_bins, laser_rep_time
@@ -277,86 +268,85 @@ def check_raw_decay_data(images_df, channel_name):
                     non_zero_channels.append(i)
             return "", non_zero_channels, time_bins, laser_rep_time
 
-def check_raw_histogram_data(images_df, channel_name):
+def check_raw_2D_decay_data(images_df, channel_name):
     for i, row in images_df.iterrows():
         try:
-            histogram_data = pd.read_csv(row[f"{channel_name}_Histogram"], header=None)
+            decay_data = pd.read_csv(row[f"{channel_name}_Decay"], header=None)
         except Exception as e:
-            return f"Error reading histogram data for {channel_name}: {e}", None
-        return "", histogram_data.shape[1]
+            return f"Error reading decay data for {channel_name}: {e}", None
+        return "", decay_data.shape[1]
 
-def check_assign_channel_widget(images_df, selected_channels, input_type, duration=None, time_bins=None):   
+def check_assign_channel_widget(images_df, selected_channels, flim_decay_input_type, imaging_modalities, duration=None, time_bins=None):   
     error_msg = ""
-    if input_type == "K-Flow":
-        if duration is not None:
-            images_df["duration"] = duration
-        if time_bins is not None:
-            time_bins_list = []
-            for channel_name in selected_channels:
-                if f"{channel_name}_Histogram" in images_df.columns:
-                    error_msg, time_bins = check_raw_histogram_data(images_df, channel_name)
+    time_bins_list = []
+    laser_rep_time_list = []
+    num_cols = len(selected_channels)
+    cols = st.columns(num_cols)
+    for i, (channel_key, channel_name) in enumerate(selected_channels.items()):
+        imaging_modality = imaging_modalities[channel_key]
+        if imaging_modality != "FLIM":
+            continue
+        else:
+            decay_col_name = f"{channel_name}_Decay"
+            if decay_col_name not in images_df.columns:
+                return "Error: File paths for decay data are not provided.", None
+            if flim_decay_input_type == "Decay (2D)":
+                if duration is not None:
+                    images_df["duration"] = duration
+                else:
+                    return "Error: Duration is not provided.", None
+                if time_bins is not None:
+                    error_msg, time_bins = check_raw_2D_decay_data(images_df, channel_name)
                     if error_msg == "":
                         time_bins_list.append(time_bins)
                     else:
                         return error_msg, None
-            if len(set(time_bins_list)) > 1:
-                error_msg = "Inconsistent time bins found for the selected channels. Please check the data."
-                return error_msg, None
-            else:
-                images_df["time_bins"] = time_bins_list[0]
-          
-    else:
-        num_cols = len(selected_channels)
-        time_bins_list = []
-        laser_rep_time_list = []
-        cols = st.columns(num_cols)
-        for i, col in enumerate(cols):
-            with col:
-                if f"{selected_channels[i]}_Decay" in images_df.columns:
-                    error_msg, available_channels, time_bins, laser_rep_time = check_raw_decay_data(images_df, selected_channels[i])
-                if error_msg == "":
-                    if len(available_channels) == 1:
-                        images_df[f"{selected_channels[i]}_channel"] = available_channels[0]
-                        time_bins_list.append(time_bins)
-                        laser_rep_time_list.append(laser_rep_time)
+            else: # 3/4D decay
+                with cols[i]:
+                    error_msg, available_channels, time_bins, laser_rep_time = check_raw_decay_data(images_df, channel_name)
+                    if error_msg == "":
+                        if len(available_channels) == 1:
+                            images_df[f"{channel_name}_channel"] = available_channels[0]
+                            time_bins_list.append(time_bins)
+                            laser_rep_time_list.append(laser_rep_time)
                     else:
-                        images_df[f"{selected_channels[i]}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels)
+                        images_df[f"{channel_name}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels)
                     time_bins_list.append(time_bins)
                     laser_rep_time_list.append(laser_rep_time)
-                else:
-                    return error_msg, None
+            
+    if len(set(time_bins_list)) > 1:
+        return "Inconsistent time bins found for the selected channels. Please check the data.", None
+    elif len(time_bins_list) == 0:
+        return "No time bins found for the selected channels. Please check the data.", None
+    else:
+        images_df["time_bins"] = time_bins_list[0]
 
-        if len(set(time_bins_list)) > 1:
-            error_msg = "Inconsistent time bins found for the selected channels. Please check the data."
-            return error_msg, None
-        else:
-            images_df["time_bins"] = time_bins_list[0]
-        if len(set(laser_rep_time_list)) > 1:
-            error_msg = "Inconsistent laser rep time found for the selected channels. Please check the data."
-            return error_msg, None
-        else:
-            images_df["duration"] = laser_rep_time_list[0]
+    if len(set(laser_rep_time_list)) > 1:
+        return "Inconsistent laser rep time found for the selected channels. Please check the data.", None
+    elif len(laser_rep_time_list) == 0:
+        return "No laser rep time found for the selected channels. Please check the data.", None
+    else:
+        images_df["duration"] = laser_rep_time_list[0]
 
     return error_msg, images_df
 
-def lifetime_data_config_widget(modules, input_type):
+def lifetime_data_config_widget(selected_feature_extractors, input_type):
     fit_free = False
     duration = time_bins = laser_rate = None
-    for _, ch_modules in modules.items():
-        if "Lifetime" in ch_modules:
-            if "fit free" in ch_modules["Lifetime"]:
-                fit_free = True
-    if input_type == "K-Flow":
-        default_k_flow_duration, default_k_flow_time_bins = get_default_k_flow_config()
+    for _, extractors in selected_feature_extractors.items():
+        if "Lifetime fit free" in extractors:
+            fit_free = True
+    if input_type == "Decay (2D)":
+        default_2D_decay_duration, default_2D_decay_time_bins = get_default_2D_decay_config()
         cols = st.columns(3 if fit_free else 2)
         with cols[0]:
-            duration = st.number_input("Duration (s)", value=default_k_flow_duration, min_value=0.0, max_value=100.0, key="k_flow_duration")
+            duration = st.number_input("Duration (s)", value=default_2D_decay_duration, min_value=0.0, max_value=100.0, key="2D_decay_duration")
         with cols[1]:
-            time_bins = st.number_input("Time bins", value=default_k_flow_time_bins, min_value=256, max_value=2048, key="k_flow_time_bins")
+            time_bins = st.number_input("Time bins", value=default_2D_decay_time_bins, min_value=256, max_value=2048, key="2D_decay_time_bins")
         if fit_free:
             default_laser_rate = get_default_laser_rate(input_type)
             with cols[2]:
-                laser_rate = st.number_input("Laser rate (GHz)", value=default_laser_rate, min_value=0.0, max_value=2.0, key="k_flow_laser_rate")
+                laser_rate = st.number_input("Laser rate (GHz)", value=default_laser_rate, min_value=0.0, max_value=2.0, key="2D_decay_laser_rate")
     else: 
         if fit_free:
             default_laser_rate = get_default_laser_rate(input_type)

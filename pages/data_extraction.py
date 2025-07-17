@@ -9,7 +9,7 @@ from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.lifetime_widgets import fit_options_widget, choose_shift_widget
 from src.metadata import parse_metadata_file
-from src.config import get_available_input_types, get_channel_names, get_num_components, get_feature_extractors, get_image_name_col
+from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -28,35 +28,39 @@ st.title("Data Extraction")
 col1, col2 = st.columns([0.4, 1])
 steps = ["Image Metadata Extraction", "Numeric Feature Extraction", "Categorical Feature Extraction"]
 channel_names = get_channel_names()
-ch_num_components = get_num_components(channel_names.values())
-ch_feature_extractors = get_feature_extractors(channel_names.values())
-image_name_col = get_image_name_col()
+input_types = get_input_types(channel_names.keys())
+imaging_modalities = get_imaging_modality(channel_names.keys())
+has_flim = "FLIM" in imaging_modalities.values()
+decay_input_type = get_decay_input_type()
+ch_num_components = get_num_components(input_types, channel_names.keys())
+selected_ch_feature_extractors = get_selected_feature_extractors(input_types, channel_names.keys())
+fov_name_col = get_fov_name_col()
 with col1:
     # first select the step to perform
     selected_step = st.selectbox("Select a step to perform", steps, index=0, help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: \
     Extracts numeric features from the images. Categorical Feature Extraction: Extracts categorical features from the images. \n ")
-    # select input type
     if selected_step == "Image Metadata Extraction":
-        input_types, preferred_input_type_index =  get_available_input_types()
-        selected_input_type = st.selectbox("Select input type", input_types, index=preferred_input_type_index, help="ROI Summing Fit: Performs \
-        ROI summing on raw lifetime decay file, and fit the summed decay curve for each cell. SPCImage: extracts single cell fitting data from outputs of SPCImage. K-Flow: \
-        Fit K-Flow decay curves for each cell. Categorical Features: augment categorical columns to your existing data file")
+        #config_summary_msg = st.info()
         checkbox_cols = st.columns(len(channel_names))
         actual_file_suffix = None
-        selected_channels = []
+        selected_channels = {}
         selected_ch_num_components = {}
-        for index, channel_name in enumerate(channel_names.values()):        
+        for index, (channel_key, channel_name) in enumerate(channel_names.items()):       
+
             with checkbox_cols[index]:
-                has_channel = st.checkbox(f"has {channel_name}", value=True)
+                has_channel = st.checkbox(f"has {channel_name}", value=True, key=f"has_channel_{channel_key}")
                 if has_channel:
-                    selected_channels.append(channel_name)
-                    if ch_num_components[channel_name] != 0: # if equals to 0, it means this channel does not have any lifetime fit/fit free analysis
-                        selected_ch_num_components[channel_name] = st.number_input(f"No. component", value=ch_num_components[channel_name], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_name}")
+                    selected_channels[channel_key] = channel_name
+                    if ch_num_components[channel_key] != 0: # if equals to 0, it means this channel does not have any lifetime fit/fit free analysis
+                        selected_ch_num_components[channel_key] = st.number_input(f"No. component", value=ch_num_components[channel_key], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_key}")
         if len(selected_channels) == 0:
             st.error(f"Please check at least one of the channels {sad_emoji}")
         else:
-            duration, time_bins, laser_rate = lifetime_data_config_widget(ch_feature_extractors, selected_input_type)
-            actual_file_suffix, error_msg = load_data_suffix_widget(selected_input_type, selected_channels, selected_ch_num_components)
+            if has_flim:
+                duration, time_bins, laser_rate = lifetime_data_config_widget(selected_ch_feature_extractors, decay_input_type)
+            else: # for later, we will add other imaging modalities and this will ask for those imaging modality specific config
+                duration, time_bins, laser_rate = None, None, None
+            actual_file_suffix, error_msg = load_data_suffix_widget(input_types, selected_channels, selected_ch_num_components, selected_ch_feature_extractors)
             if error_msg != "":
                 st.error(error_msg)
             else:
@@ -77,16 +81,15 @@ with col1:
                     metadata_df = None # Ensure metadata_df is None if reading fail
 
         if metadata_df is not None:
-            error_msg, metadata_dict = parse_metadata_file(metadata_df, image_name_col)
+            error_msg, metadata_dict = parse_metadata_file(metadata_df, fov_name_col)
             if error_msg == "":
                 st.success(f"✅ Features to be extracted confirmed.")
-                input_type = metadata_dict["input_type"]
-
+                decay_input_type = metadata_dict["decay_input_type"]
                 shift_needed = len(metadata_dict["channels_shift"]) > 0
                 # if there are channels to be fitted, show the fitting options: spcimage is already fitted
-                if len(metadata_dict["channels_fit"]) > 0 and input_type != "SPCImage":
+                if len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
                     st.info("Please specify the following fitting options.")
-                    metadata_dict= fit_options_widget(input_type, metadata_dict)
+                    metadata_dict= fit_options_widget(decay_input_type, metadata_dict)
                 st.write(metadata_dict) 
                 if shift_needed:
                     if st.button("Start Finding Shifts"):
@@ -120,28 +123,28 @@ with col2:
             if len(images) != 0:
                 st.success(f"Images with ✅ are loaded successfully {happy_emoji}. Images with ❌ (if any) are not loaded. The following features will be extracted: ")
                 images_df = pd.DataFrame.from_dict(images, orient="index")
-                # augment metadata
-                images_df['input_type'] = selected_input_type
-                # For each channel, add the feature_types and num_components
-                for channel_name in selected_channels:
-                    if ch_num_components[channel_name] != 0: # if equals to 0, it means this channel does not care about lifetime analysis at all
-                        images_df[f"{channel_name}_num_components"] = ch_num_components[channel_name]
-                    for feature_extractor in ch_feature_extractors[channel_name]:
-                        for module in ch_feature_extractors[channel_name][feature_extractor]:
-                            images_df[f"{channel_name}_{feature_extractor}_{module}"] = True
-        
-                images_df.index.name = image_name_col  # Set index name 
+
+                # Set index name and reset to column (do this once, outside the loop)
+                images_df.index.name = fov_name_col  # Set index name 
                 images_df.reset_index(inplace=True)  # Reset index to make it a column
-                if selected_input_type == "K-Flow":
-                    # copy the image_name column to kflow_exp_name
-                    images_df["kflow_exp_name"] = images_df[image_name_col]
                 
-                # ROI Summing Fit and SPCImage takes in raw decay that maybe multiple channels. need to assign data channel to each image channel
-                # K-flow already knows the duration and time bins and do not need to assign channel
-                error_msg, images_df = check_assign_channel_widget(images_df, selected_channels, input_type=selected_input_type, duration=duration, time_bins=time_bins)
+                # For each channel, add the feature_types and num_components
+                for channel_key, channel_name in selected_channels.items():
+                    # assign input type to the channel
+                    images_df[f"{channel_name}_input_type"] = input_types[channel_key]
+                    images_df[f"{channel_name}_imaging_modality"] = imaging_modalities[channel_key]
+                    for feature_extractor in selected_ch_feature_extractors[channel_key]:
+                        images_df[f"{channel_name}_{feature_extractor}"] = True
+                    if has_flim:
+                        if selected_ch_num_components[channel_key] != 0: # if equals to 0, it means this channel does not care about lifetime analysis at all
+                            images_df[f"{channel_name}_num_components"] = selected_ch_num_components[channel_key]
+                    # ROI Summing Fit and SPCImage takes in raw decay that maybe multiple channels. need to assign data channel to each image channel
+                    # K-flow already knows the duration and time bins and do not need to assign channel
                 
+                error_msg, images_df = check_assign_channel_widget(images_df, selected_channels, flim_decay_input_type=decay_input_type, imaging_modalities=imaging_modalities, duration=duration, time_bins=time_bins)
+
                 if error_msg != "":
-                    st.error(f"Error: {error_msg}")
+                    st.error(f"Error: {error_msg}")        
                 else:   
                     if laser_rate is not None:
                         images_df["laser_rate"] = laser_rate
@@ -158,7 +161,7 @@ with col2:
         for channel_name in metadata_dict["channels_shift"]:
             error_msg, shifts = choose_shift_widget(metadata_df, metadata_dict, channel_name=channel_name)
             if error_msg != "":
-                st.error(f"Error: {error_msg}")
+                st.error(error_msg)
             else:
                 channel_shifts[channel_name] = shifts
         shift_finished = st.button("Confirm the Shift and Start the Analysis")

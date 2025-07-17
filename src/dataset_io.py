@@ -1,5 +1,5 @@
 import pandas as pd
-from src.feature_types import unique_cell_id_col, required_cols, categorical_cols, all_numerical_feature_groups
+from src.feature_types import unique_cell_id_col, required_cols, categorical_cols
 import streamlit as st
 import random
 happy_celebratory_emojis = [

@@ -6,6 +6,7 @@ import tifffile
 from typing import Union
 from src.sdt_io import read_sdt
 import pandas as pd
+import streamlit as st
 
 def load_image(path: Union[str, pathlib.PurePath]) -> np.ndarray:
     """
@@ -77,53 +78,51 @@ def get_decay_curves_shift(metadata_df, input_type, channel_name, time_bins):
     try:
         irf = np.loadtxt(irf_path)
     except Exception as e:
-        return f"Error: IRF file not found for image {image_name}", None
+        return f"Error: IRF file not found for image {image_name}", None, None
     if len(irf) != time_bins:
-        return f"IRF length mismatch with specified time bins. IRF length: {len(irf)}, time bins: {time_bins}.", None
+        return f"IRF length mismatch with specified time bins. IRF length: {len(irf)}, time bins: {time_bins}.", None, None
     for i, row in metadata_df.iterrows():
         image_name = row['image_name']
-        
-        if input_type == "ROI Summing Fit" or input_type == "SPCImage":
+        decay_path = row.get(f'{channel_name}_Decay', None)
+        if "Decay (3/4D)" in input_type:
             mask_path = row.get(f'{channel_name}_Mask', None)
             try:
                 mask = load_image(mask_path)
             except Exception as e:
-                return f"Error reading the mask file for image {image_name} at {mask_path}: {e}", None  
+                return f"Error reading the mask file for image {image_name} at {mask_path}: {e}", None, None  
             channel_no = row.get(f'{channel_name}_channel', None)
             if channel_no is None:
-                return f"Error: Channel number not found for image {image_name}", None
-            decay_path = row.get(f'{channel_name}_Decay', None)
+                return f"Error: Channel number not found for image {image_name}", None, None      
             try:
                 decay = read_sdt(decay_path, channel_no)
             except Exception as e:
-                return f"Error reading the decay file for image {image_name} at {decay_path}: {e}", None
+                return f"Error reading the decay file for image {image_name} at {decay_path}: {e}", None, None
             if len(decay.shape) != 3:
-                return f"Decay data mismatch. Expected 3D data (XYT), got {decay.shape}.", None
-            if decay.shape[2] != time_bins:
-                return f"Decay time bins mismatch. Decay time bins: {decay.shape[2]}, time bins: {time_bins}.", None
+                return f"Decay data mismatch. Expected 3D data (XYT), got {decay.shape}.", None, None
+            if decay.shape[-1] != time_bins:
+                return f"Decay time bins mismatch. Decay time bins: {decay.shape[2]}, time bins: {time_bins}.", None, None
             if len(mask.shape) != 2:
-                return f"Mask data mismatch. Expected 2D data, got {mask.shape}.", None
+                return f"Mask data mismatch. Expected 2D data, got {mask.shape}.", None, None
             if decay.shape[0] != mask.shape[0] or decay.shape[1] != mask.shape[1]:
-                return f"Dimension mismatch: Decay data {decay.shape[:2]} vs mask {mask.shape}", None
+                return f"Dimension mismatch: Decay data {decay.shape[:2]} vs mask {mask.shape}", None, None
              # binarize the mask
             binary_mask = np.where(mask > 0, 1, 0)
             # image_level ROI summing: sum the time axis of all non-zero pixels in the decay
             summed_decay_curve = np.sum(decay * binary_mask[:, :, np.newaxis], axis=(0, 1))
             decay_curves[image_name] = summed_decay_curve
-        elif input_type == "K-Flow":
-            histogram_path = row.get(f'{channel_name}_Histogram', None)
+        elif input_type == "Decay (2D)":
             try:
-                histograms = pd.read_csv(histogram_path)    
+                decays = pd.read_csv(decay_path)    
             except Exception as e:
-                return f"Error reading the histogram file for image {image_name} at {histogram_path}: {e}", None
-            if len(histograms.shape) != 2:
-                return f"Histogram data mismatch. Expected 2D data, got {histograms.shape}.", None
-            if histograms.shape[1] != time_bins:
-                return f"Histogram time bins mismatch. Histogram time bins: {histograms.shape[1]}, time bins: {time_bins}.", None
+                return f"Error reading the histogram file for image {image_name} at {decay_path}: {e}", None, None
+            if len(decays.shape) != 2:
+                return f"Decay data mismatch. Expected 2D data, got {decays.shape}.", None, None
+            if decays.shape[1] != time_bins:
+                return f"Decay time bins mismatch. Decay time bins: {decays.shape[1]}, time bins: {time_bins}.", None, None     
             # get sample decay curves from each kflow experiment, totoalling at 30 samples 
             # Use integer division to get number of samples per image, ensuring at least 1 sample
             samples_per_experiment = max(1, 30 // num_images)  # // operator performs integer division
-            sample_decays, top_indices = _get_sample_decay_curves(histograms, samples_per_experiment, 100000)
+            sample_decays, top_indices = _get_sample_decay_curves(decays, samples_per_experiment, 100000)
             # use the indices (essentially cell_number) to concatenate with image_name to form decay_id
             for i, index in enumerate(top_indices):
                 decay_curves[f"{image_name}_{index}"] = sample_decays[i]

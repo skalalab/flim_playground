@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 from skimage.measure import regionprops
-from src.feature_types import all_numerical_feature_groups
 from src.file_io import load_image
 from src.sdt_io import read_sdt
 from src.fit import fit_curves
@@ -368,7 +367,7 @@ def image_extraction(metadata, metadata_dict):
             if "fit" in metadata_dict["modules"][channel_name]["Lifetime"]:
                 num_components = metadata_dict[channel_name]["num_components"]
                 if input_type == "SPCImage":
-                    
+                    pass
             if "fit_free" in metadata_dict["modules"][channel_name]["Lifetime"]:
                 pass
 

@@ -1,20 +1,10 @@
-image_name_col = "image_name"
-available_input_types = [ "ROI Summing Fit", "SPCImage", "K-Flow",]
 num_channels = 2
 unique_cell_id_col = "cell_id"
-preferred_input_type = "ROI Summing Fit"
-k_flow_duration = 20.0
-k_flow_time_bins = 1024
-available_file_types = [ "Mask", "Decay", "IRF", "Histogram", "a1",]
-
-[channel_names]
-ch1 = "nadh"
-ch2 = "fad"
-ch3 = "red"
-
-[available_feature_extractors]
-Lifetime = [ "fit", "fit free",]
-Intensity = [ "morphology", "texture",]
+fov_name_col = "image_name"
+flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
+flim_decay_input_type = "Decay (3/4D)"
+all_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
+imaging_modality = "FLIM"
 
 [spc_output_suffix]
 a1 = "_a1[%].asc"
@@ -24,64 +14,83 @@ t2 = "_t2.asc"
 a3 = "_a3[%].asc"
 t3 = "_t3.asc"
 
-[num_components]
-nadh = 2
-fad = 2
-red = 0
+["Decay (3/4D)"]
+laser_rate = 0.8
+available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+file_types = [ "Decay", "IRF", "Mask",]
 
-[laser_rate]
-"ROI Summing Fit" = 0.8
-SPCImage = 0.8
-K-Flow = 0.5
+[ch1]
+input_type = "Decay (3/4D)"
+channel_name = "nadh"
+imaging_modality = "FLIM"
 
-[feature_extractors.nadh]
-Lifetime = [ "fit free", "fit",]
-Intensity = [ "morphology", "texture",]
+[ch2]
+input_type = "Decay (3/4D)"
+channel_name = "fad"
+imaging_modality = "FLIM"
 
-[feature_extractors.fad]
-Lifetime = [ "fit", "fit free",]
-Intensity = [ "texture", "morphology",]
+["Decay (3/4D) pixel-prefitted"]
+laser_rate = 0.8
+available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+file_types = [ "Decay", "IRF", "Mask", "a1",]
 
-[feature_extractors.red]
-Intensity = [ "morphology", "texture",]
+["Decay (2D)"]
+laser_rate = 0.5
+duration = 20.0
+time_bins = 1024
+available_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
+file_types = [ "Decay", "IRF",]
 
-[inputSuffixes.nadh."ROI Summing Fit"]
+[ch1."Decay (3/4D)"]
+num_components = 2
+selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+
+[ch1."Decay (3/4D) pixel-prefitted"]
+selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
+num_components = 2
+
+[ch1."Decay (2D)"]
+selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
+num_components = 2
+
+[ch2."Decay (3/4D)"]
+num_components = 2
+selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+
+[ch2."Decay (3/4D) pixel-prefitted"]
+selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+num_components = 2
+
+[ch2."Decay (2D)"]
+selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
+num_components = 1
+
+[ch1."Decay (3/4D)".input_suffixes]
 Mask = "n_photons_mask_cyto.tiff"
 Decay = "n.sdt"
 IRF = "NADH_IRF.txt"
 
-[inputSuffixes.nadh.SPCImage]
-a1 = "n.uncompressed_a1[%].asc"
-Mask = "n_photons_mask_cyto.tiff"
+[ch1."Decay (3/4D) pixel-prefitted".input_suffixes]
+Mask = "n_photons_cellpose.tiff"
 Decay = "n.sdt"
-IRF = "NADH_IRF.txt"
+a1 = "n_a1[%].asc"
+IRF = "nadh_irf.txt"
 
-[inputSuffixes.nadh.K-Flow]
-Histogram = "_ch1.csv"
-IRF = "NADH_IRF.txt"
+[ch1."Decay (2D)".input_suffixes]
+Decay = "_ch1.csv"
+IRF = "kflow_ch1.txt"
 
-[inputSuffixes.fad."ROI Summing Fit"]
+[ch2."Decay (3/4D)".input_suffixes]
 Mask = "n_photons_mask_cyto.tiff"
 Decay = "f.sdt"
 IRF = "FAD_IRF.txt"
 
-[inputSuffixes.fad.SPCImage]
-a1 = "f.uncompressed_a1[%].asc"
-Mask = "n_photons_mask_cyto.tiff"
-Decay = "f.sdt"
-IRF = "FAD_IRF.txt"
+[ch2."Decay (3/4D) pixel-prefitted".input_suffixes]
+Mask = "n_photons_cellpose.tiff"
+Decay = "n.sdt"
+a1 = "f_a1[%].asc"
+IRF = "fad_irf.txt"
 
-[inputSuffixes.fad.K-Flow]
-Histogram = "_ch2.csv"
-IRF = "FAD_IRF.txt"
-
-[inputSuffixes.red."ROI Summing Fit"]
-Mask = "n_photons_mask_cyto.tiff"
-Decay = "r.sdt"
-
-[inputSuffixes.red.SPCImage]
-Mask = "n_photons_mask_cyto.tiff"
-Decay = "r.sdt"
-
-[inputSuffixes.red.K-Flow]
-Histogram = ""
+[ch2."Decay (2D)".input_suffixes]
+Decay = "_ch2.csv"
+IRF = "kflow_ch2.txt"

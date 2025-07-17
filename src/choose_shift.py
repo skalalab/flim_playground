@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import streamlit as st
 from src.fit import fit_curves
 from src.fit_helper import create_progress_callback
@@ -14,8 +13,8 @@ def guess_shift(irf, curves, fit_free=False):
         shift = np.argmax(correlation) - (len(irf) - 1)
         return shift
     shifts = []
-    for i in range(len(curves)):
-        shift = align_irf(irf, curves[i])
+    for curve in curves:
+        shift = align_irf(irf, curve)
         shifts.append(shift)
     if fit_free:
         return shifts
@@ -28,10 +27,9 @@ def choose_shift_fit_free(metadata_df, time_bins, input_type, channel_name):
     if error_msg != "":
         return error_msg, None
 
-    shift_guess = guess_shift(irf, decay_curves, fit_free=True)
+    shift_guess = guess_shift(irf, decay_curves.values(), fit_free=True)
     results = {"shift": shift_guess, "decay_id": decay_curves.keys()}
-    return error_msg, results
-
+    return "", results
 
 @st.cache_data
 def choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, input_type, channel_name):
@@ -39,19 +37,24 @@ def choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_a
     if error_msg != "":
         return error_msg, None
     shift_guess = guess_shift(irf, decay_curves.values())
-    sample_decays = _floor_decay_curves(decay_curves.values())
+    # Create a separate copy for original display (also floored for consistent log plotting)
+    original_decays = [decay.copy() for decay in decay_curves.values()]
+  #   sample_decays = _floor_decay_curves(list(decay_curves.values()))
+    sample_decays = list(decay_curves.values())
     # get the shift progress bar
     st.info(f"Estimating shifts for {channel_name} channel using {len(decay_curves)} sample curves...")
     shift_progress = st.progress(0)
     shift_progress_callback = create_progress_callback(shift_progress)
-    results = fit_curves(duration, time_bins, sample_decays, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, _progress_callback=shift_progress_callback)
+    results = fit_curves(duration, time_bins, sample_decays, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, start=25, _progress_callback=shift_progress_callback)
     shift_progress.empty()  # Remove progress bar when done
     results["decay_curves"] = sample_decays
-    results["original_decay_curves"] = decay_curves.values()
-    results["decay_id"] = decay_curves.keys()
+    results["original_decay_curves"] = original_decays
+    results["decay_id"] = list(decay_curves.keys())
     results["irf"] = irf
+    return "", results
 
-def _floor_decay_curves(decay_curves):
+def _floor_decay_curves(decay_curves: list) -> list:
+    # floor the decay curves to be non-negative
     for i, decay_curve in enumerate(decay_curves):
         # find the minimum value non-zero value from the start of the decay curve
         try:

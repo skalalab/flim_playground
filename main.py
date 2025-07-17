@@ -45,166 +45,126 @@ def main():
     cfg = load_config()
     error_msg = ""
     max_num_channels = 4
-    available_feature_extractors = {"Lifetime": ["fit", "fit free"], "Intensity": ["morphology", "texture"]}
-    available_input_types = ["ROI Summing Fit", "SPCImage", "K-Flow"]
-    available_file_types = ["Mask", "Decay", "IRF", "Histogram", "a1"]
+    imaging_modalities = ["FLIM"]
+    all_flim_decay_input_types = ["Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)"]
+    # in the future it will be other lists, one for each imaging modality
     spc_output_suffix = {"a1": "_a1[%].asc", "t1": "_t1.asc", "a2": "_a2[%].asc", "t2": "_t2.asc", "a3": "_a3[%].asc", "t3": "_t3.asc"}
     
     # Initialization: 
-    # channel_names section if it doesn't exist
-    if "channel_names" not in cfg:
-        cfg["channel_names"] = {}
-    # feature extractor initialization
-    if "available_feature_extractors" not in cfg:
-        cfg["available_feature_extractors"] = available_feature_extractors
-
-    if "image_name_col" not in cfg:
-        cfg["image_name_col"] = "image_name"
-
-    if "laser_rate" not in cfg:
-        cfg["laser_rate"] = {}
-
-    if "available_input_types" not in cfg:
-        cfg["available_input_types"] = available_input_types
+    if "flim_decay_input_types" not in cfg:
+        cfg["flim_decay_input_types"] = all_flim_decay_input_types
 
     if "spc_output_suffix" not in cfg:
         cfg["spc_output_suffix"] = spc_output_suffix
 
-    if "available_file_types" not in cfg:
-        cfg["available_file_types"] = available_file_types
+    if "flim_decay_input_type" not in cfg:
+        cfg["flim_decay_input_type"] = all_flim_decay_input_types[0]
 
-    # input section initialization
-    if "inputSuffixes" not in cfg:
-        cfg["inputSuffixes"] = {}
-    # feature type for each channel initialization
-    if "feature_extractors" not in cfg:
-        cfg["feature_extractors"] = {}
-    # num_components for each channel initialization
-    if "num_components" not in cfg:
-        cfg["num_components"] = {}
+    cols = st.columns(4)
 
-    col1, col2, col3 = st.columns(3)
     # Ask for the number of channels user needs
-    with col1:
+    with cols[0]:
         cfg["num_channels"] = st.selectbox("Number of channels you have in your data", list(range(1, max_num_channels + 1)), index=cfg.get("num_channels", 1) - 1, help="Number of channels you have in your data")
-    with col2:
+    with cols[1]:
+        flim_decay_input_type = st.selectbox("FLIM Decay Input type", cfg["flim_decay_input_types"], index= cfg["flim_decay_input_types"].index(cfg["flim_decay_input_type"]))
+        cfg["flim_decay_input_type"] = flim_decay_input_type
+        if flim_decay_input_type not in cfg:
+            cfg[flim_decay_input_type] = {}
+        # later add input_type selection for other imaging modalities
+    with cols[2]:
         cfg["unique_cell_id_col"] = st.text_input("Unique cell identifier column name", value=cfg.get("unique_cell_id_col", "cell_id"), help="Unique cell identifier column name")
-    with col3:
-        prev_input_type = cfg.get("preferred_input_type", None)
-        if prev_input_type is None:
-            index = 0
+    with cols[3]:
+        laser_rate = st.number_input(f"Laser rate (GHz) for {flim_decay_input_type}", value=cfg.get(flim_decay_input_type, {}).get("laser_rate", 1.0), min_value=0.0, max_value=2.0, key=f"laser_rate_{flim_decay_input_type}")
+        cfg[flim_decay_input_type]["laser_rate"] = laser_rate
+        # feature extractor initialization
+    if "available_feature_extractors" not in cfg[flim_decay_input_type]:
+        if flim_decay_input_type == "Decay (2D)":
+            cfg[flim_decay_input_type]["available_feature_extractors"] = ["Lifetime fit", "Lifetime fit free"]
         else:
-            index = cfg["available_input_types"].index(prev_input_type)
-        cfg["preferred_input_type"] = st.selectbox("Preferred input type", cfg["available_input_types"], index=index, help="Preferred input type")
+            cfg[flim_decay_input_type]["available_feature_extractors"] = ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture"]
 
-    # Ask for the name for each channel
+    # init file types for each input type
+    for input_type in all_flim_decay_input_types:
+        if "file_types" not in cfg[input_type]:
+            if input_type == "Decay (3/4D)":
+                cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask"]
+            elif input_type == "Decay (3/4D) pixel-prefitted":
+                cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask", "a1"]
+            elif input_type == "Decay (2D)":
+                cfg[input_type]["file_types"] = ["Decay", "IRF"]
+    
+
+    if "fov_name_col" not in cfg:
+        if flim_decay_input_type == "Decay (2D)":
+            cfg["fov_name_col"] = "exp_name"
+        else:
+            cfg["fov_name_col"] = "image_name"
+   
     cols = st.columns(cfg["num_channels"])
+   
+     # check for duplicate channel names
+    channel_names = []
+
     for i, col in enumerate(cols):
         with col:
             channel_key = f"ch{i+1}"
-            default_name = cfg.get("channel_names", {}).get(channel_key, f"Channel {i+1}")
+            if channel_key not in cfg:
+                cfg[channel_key] = {}
+            imaging_modality = "FLIM"
+            if "imaging_modality" not in cfg[channel_key]:
+                cfg[channel_key]["imaging_modality"] = imaging_modality
+        #    imaging_modality = st.selectbox("Imaging modality", imaging_modalities, index=0, key=f"imaging_modality_{channel_key}")
+            # get input type for this channel
+            if imaging_modality == "FLIM":
+                input_type = flim_decay_input_type
+            cfg[channel_key]["input_type"] = input_type
+            if input_type not in cfg[channel_key]:
+                cfg[channel_key][input_type] = {}
+
+            # get custom channel name
+            default_name = cfg[channel_key].get("channel_name", f"Channel {i+1}")
             custom_channel_name = st.text_input(f"Channel {i+1} name", value=default_name)
-            cfg["channel_names"][channel_key] = custom_channel_name
-            
-            default_feature_extractors = cfg["feature_extractors"].get(custom_channel_name, [])
-            selected_feature_extractors = st.multiselect(f"Extract feature types from {custom_channel_name}", cfg["available_feature_extractors"].keys(), default=default_feature_extractors)
+            if custom_channel_name in channel_names:
+                error_msg = f"Duplicate channel names found. Please change the names to be unique."
+                st.error(error_msg)
+                continue
+            channel_names.append(custom_channel_name)
+            cfg[channel_key]["channel_name"] = custom_channel_name
+            # get selected feature extractors for this channel
+            available_feature_extractors = cfg[input_type]["available_feature_extractors"]
+            selected_feature_extractors = st.multiselect(f"Extract feature types from {custom_channel_name}", available_feature_extractors, default= cfg[channel_key][input_type].get("selected_feature_extractors", []), key=f"{input_type}_{channel_key}_feature_extractors")
+            cfg[channel_key][input_type]["selected_feature_extractors"] = selected_feature_extractors
             if len(selected_feature_extractors) == 0: 
                 error_msg = f"Please select at least one feature type for {custom_channel_name}. Or you can adjust the number of channels on the top. "
                 st.error(error_msg)
                 continue
-            if custom_channel_name not in cfg["feature_extractors"]:
-                cfg["feature_extractors"][custom_channel_name] = {}
-
-            cols = st.columns(len(selected_feature_extractors))
-            for i, col in enumerate(cols):
-                with col:
-                    feature_extractor = selected_feature_extractors[i]
-                    # get available modules for each feature extractor
-                    available_modules = cfg["available_feature_extractors"][feature_extractor]
-                    default_modules = cfg["feature_extractors"][custom_channel_name].get(feature_extractor, [])
-                    selected_modules = st.multiselect(f"Extract modules from {feature_extractor}", available_modules, default=default_modules, key=f"{custom_channel_name}_{feature_extractor}")
-                    if len(selected_modules) == 0:
-                        error_msg = f"Please select at least one module for {feature_extractor}. Or you can adjust the number of channels on the top. "
-                        st.error(error_msg)
-                        continue
-                    cfg["feature_extractors"][custom_channel_name][feature_extractor] = selected_modules
-            
-            # remove feature extractors that are not in selected_feature_extractors
-            for feature_extractor in list(cfg["feature_extractors"][custom_channel_name].keys()):
-                if feature_extractor not in selected_feature_extractors:
-                    cfg["feature_extractors"][custom_channel_name].pop(feature_extractor)
+              
             # get the number of components for each channel if Lifetime is in selected feature extractors and fit is in selected modules
-            if "Lifetime" in cfg["feature_extractors"][custom_channel_name] and "fit" in cfg["feature_extractors"][custom_channel_name]["Lifetime"]:
-                num_components = st.number_input(f"Number of components for {custom_channel_name}", value=cfg.get("num_components", {}).get(custom_channel_name, 1), min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis")
-                cfg["num_components"][custom_channel_name] = num_components
-            else:
-                cfg["num_components"][custom_channel_name] = 0
-
+            if "Lifetime fit" in selected_feature_extractors:
+                num_components = st.number_input(f"Number of components for {custom_channel_name}", value=cfg[channel_key][input_type].get("num_components", 1), min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis")
+                cfg[channel_key][input_type]["num_components"] = num_components
             # Initialize the input section for this channel if it doesn't exist
-            if custom_channel_name not in cfg["inputSuffixes"]:
-                cfg["inputSuffixes"][custom_channel_name] = {}
+            if "input_suffixes" not in cfg[channel_key][input_type]:
+                cfg[channel_key][input_type]["input_suffixes"] = {}
 
-            asked_file_types = {}
             st.subheader(f"File suffixes: {custom_channel_name}")
-            for input_type in cfg["available_input_types"]:
-                if input_type not in cfg["inputSuffixes"][custom_channel_name]:
-                    cfg["inputSuffixes"][custom_channel_name][input_type] = {}
-                if input_type == "ROI Summing Fit" or input_type == "SPCImage":
-                    if "Mask" not in asked_file_types:
-                        cfg["inputSuffixes"][custom_channel_name][input_type]["Mask"] = st.text_input(f"Mask", value=cfg["inputSuffixes"][custom_channel_name][input_type].get("Mask", ""), key=f"{custom_channel_name}_{input_type}_mask")
-                        asked_file_types["Mask"] = cfg["inputSuffixes"][custom_channel_name][input_type]["Mask"]
-                    else:
-                        cfg["inputSuffixes"][custom_channel_name][input_type]["Mask"] = asked_file_types["Mask"]
-                    if "Decay" not in asked_file_types:
-                        cfg["inputSuffixes"][custom_channel_name][input_type]["Decay"] = st.text_input(f"Decay", value=cfg["inputSuffixes"][custom_channel_name][input_type].get("Decay", ""), key=f"{custom_channel_name}_{input_type}_decay")
-                        asked_file_types["Decay"] = cfg["inputSuffixes"][custom_channel_name][input_type]["Decay"]
-                    else:
-                        cfg["inputSuffixes"][custom_channel_name][input_type]["Decay"] = asked_file_types["Decay"]
-                    if "Lifetime" in cfg["feature_extractors"][custom_channel_name]:
-                        if input_type == "SPCImage":
-                            if "a1" not in asked_file_types:
-                                cfg["inputSuffixes"][custom_channel_name][input_type]["a1"] = st.text_input(f"a1", value=cfg["inputSuffixes"][custom_channel_name][input_type].get("a1", ""), key=f"{custom_channel_name}_{input_type}_a1")
-                                asked_file_types["a1"] = cfg["inputSuffixes"][custom_channel_name][input_type]["a1"]
-                            else:
-                                cfg["inputSuffixes"][custom_channel_name][input_type]["a1"] = asked_file_types["a1"]
-                            if "fit free" in cfg["feature_extractors"][custom_channel_name]["Lifetime"]:
-                                if "IRF" not in asked_file_types:
-                                    cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"] = st.text_input(f"IRF", value=cfg["inputSuffixes"][custom_channel_name][input_type].get("IRF", ""), key=f"{custom_channel_name}_{input_type}_irf")
-                                    asked_file_types["IRF"] = cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"]
-                                else:
-                                    cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"] = asked_file_types["IRF"]
-                            # spc image fit only does not need irf
-                        else:
-                            if "IRF" not in asked_file_types:
-                                cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"] = st.text_input(f"IRF", value=cfg["inputSuffixes"][custom_channel_name][input_type].get("IRF", ""), key=f"{custom_channel_name}_{input_type}_irf")
-                                asked_file_types["IRF"] = cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"]
-                            else:
-                                cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"] = asked_file_types["IRF"]
+            for file_type in cfg[input_type]["file_types"]:
+                # Skip a1 if no Lifetime fit extractors are selected
+                if file_type == "a1" and not any("Lifetime fit" in extractor for extractor in selected_feature_extractors):
+                    continue
+                # Skip IRF if no Lifetime extractors OR if prefitted and no fit free extractors
+                if file_type == "IRF" and (not any("Lifetime" in extractor for extractor in selected_feature_extractors) or 
+                                          ("prefitted" in input_type and not any("fit free" in extractor for extractor in selected_feature_extractors))):
+                    continue
+                cfg[channel_key][input_type]["input_suffixes"][file_type] = st.text_input(f"{file_type}", value=cfg[channel_key][input_type]["input_suffixes"].get(file_type, ""), key=f"{channel_key}_{input_type}_{file_type}")
 
-                elif input_type == "K-Flow":
-                    if "Histogram" not in asked_file_types:
-                        cfg["inputSuffixes"][custom_channel_name][input_type]["Histogram"] = st.text_input(f"Histogram", value=cfg["inputSuffixes"][custom_channel_name][input_type].get("Histogram", ""), key=f"{custom_channel_name}_{input_type}_histogram")
-                        asked_file_types["Histogram"] = cfg["inputSuffixes"][custom_channel_name][input_type]["Histogram"]
-                    else:
-                        cfg["inputSuffixes"][custom_channel_name][input_type]["Histogram"] = asked_file_types["Histogram"]
-                    if "Lifetime" in cfg["feature_extractors"][custom_channel_name]:
-                        if "IRF" not in asked_file_types:
-                            cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"] = st.text_input(f"IRF", value=cfg["inputSuffixes"][custom_channel_name][input_type].get("IRF", ""), key=f"{custom_channel_name}_{input_type}_irf")
-                            asked_file_types["IRF"] = cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"]
-                        else:
-                            cfg["inputSuffixes"][custom_channel_name][input_type]["IRF"] = asked_file_types["IRF"]
-    # laser rate 
-    cols = st.columns(len(available_input_types))
-    for i, col in enumerate(cols):
-        with col:
-            input_type = available_input_types[i]   
-            cfg["laser_rate"][input_type] = st.number_input(f"Laser rate (GHz) for {input_type}", value=cfg.get("laser_rate", {}).get(input_type, 1.0), min_value=0.0, max_value=2.0, key=f"laser_rate_{input_type}")
-    cols = st.columns(2)
-    with cols[0]:
-        # ask for k_flow duration and time bins
-        cfg["k_flow_duration"] = st.number_input(f"K-Flow duration (s)", value=cfg.get("k_flow_duration", 20.0), min_value=0.0, max_value=100.0, key="k_flow_duration")
-    with cols[1]:
-        cfg["k_flow_time_bins"] = st.number_input(f"K-Flow time bins", value=cfg.get("k_flow_time_bins", 1024), min_value=256, max_value=2048, key="k_flow_time_bins")
+    if imaging_modality == "FLIM" and flim_decay_input_type == "Decay (2D)":
+        cols = st.columns(2)
+        with cols[0]:
+            # ask for k_flow duration and time bins
+            cfg[flim_decay_input_type]["duration"] = st.number_input(f"{flim_decay_input_type} duration (s)", value=cfg.get(flim_decay_input_type, {}).get("duration", 20.0), min_value=0.0, max_value=100.0, key=f"{flim_decay_input_type}_duration")
+        with cols[1]:
+            cfg[flim_decay_input_type]["time_bins"] = st.number_input(f"{flim_decay_input_type} time bins", value=cfg.get(flim_decay_input_type, {}).get("time_bins", 1024), min_value=256, max_value=2048, key=f"{flim_decay_input_type}_time_bins")
     if error_msg == "":
         update_config_button = st.button("Update Configuration")
         if update_config_button:
