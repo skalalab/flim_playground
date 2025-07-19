@@ -1,5 +1,5 @@
 from pathlib import Path
-from src.config import get_available_feature_extractors, get_file_types
+from src.config import get_available_feature_extractors, get_file_types, get_fov_name_col, get_unique_cell_id_col
 
 def get_ch_info(metadata_df):
     # get available channels in the metadata file
@@ -67,7 +67,10 @@ def get_ch_info(metadata_df):
                 metadata_dict["channels_shift"][channel_name] = "fit free"
         
         if "Decay (3/4D)" in input_type:
-            metadata_dict[channel_name]["channel_no"] = metadata_df[f"{channel_name}_channel"].iloc[0] 
+            metadata_dict[channel_name]["channel_no"] = metadata_df[f"{channel_name}_channel"].iloc[0]
+
+        metadata_dict["unique_cell_id_col"] = get_unique_cell_id_col()
+        metadata_dict["fov_name_col"] = get_fov_name_col()
 
     return "", metadata_dict
 

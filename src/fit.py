@@ -5,8 +5,6 @@ from src.fit_helper import objective
 
 def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode="hybrid", fit_shift=False, shift_guess=None, start=0, end=-1, _progress_callback=None):
     
-    # to make sure the irf is normalized
-    irf = irf / np.sum(irf)
     num_curves = len(decay_curves)
     params = Parameters()
     # initialize the parameters

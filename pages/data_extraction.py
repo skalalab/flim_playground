@@ -4,7 +4,7 @@ import pandas as pd
 import time
 from src.navigation import render_top_menu
 from src.dataset_io import happy_emoji, sad_emoji
-from src.widgets.numeric_extraction_widgets import image_extraction_widget
+from src.widgets.numeric_extraction_widgets import fov_extraction_widget
 from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, display_feature_groups_widget, check_assign_channel_widget, lifetime_data_config_widget
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.lifetime_widgets import fit_options_widget, choose_shift_widget
@@ -90,7 +90,6 @@ with col1:
                 if len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
                     st.info("Please specify the following fitting options.")
                     metadata_dict= fit_options_widget(decay_input_type, metadata_dict)
-                st.write(metadata_dict) 
                 if shift_needed:
                     if st.button("Start Finding Shifts"):
                         st.session_state["choosing_shift"] = True
@@ -176,7 +175,8 @@ with col2:
             st.rerun()
                 
     elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"] and metadata_df is not None:
-        single_cell_features = image_extraction_widget(metadata_df, metadata_dict)
+        st.write(metadata_dict) 
+        single_cell_features = fov_extraction_widget(metadata_df, metadata_dict)
         if not single_cell_features.empty:
             st.success(f"Image features with ✅ are extracted successfully {happy_emoji}! Images with ❌ (if any) are excluded. The first few rows of the features are shown below.")
             st.write(single_cell_features.head())

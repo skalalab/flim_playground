@@ -33,7 +33,8 @@ pyinstaller Flim-Playground.spec --clean
 
 # TODO
 - more rigorous classification 
-
+- data analysis (vis + classification) config
+- handle .ptu data
 
 ```bash
 streamlit run main.py # when in development

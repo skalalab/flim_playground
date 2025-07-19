@@ -158,11 +158,11 @@ def monitor_browser_windows(port, shutdown_event):
         print("Server failed to start, disabling monitoring")
         return
     
-    print("Browser monitoring active - app will close 30 seconds after all browser windows are closed")
+    print("Browser monitoring active - app will close 10 seconds after all browser windows are closed")
     
     # Monitor browser windows
     no_windows_count = 0
-    max_no_windows_checks = 6  # 6 checks * 5 seconds = 30 seconds
+    max_no_windows_checks = 2     # 2 checks * 5 seconds = 10 seconds
     
     # Wait for initial browser connection
     time.sleep(5)
@@ -182,7 +182,7 @@ def monitor_browser_windows(port, shutdown_event):
             
             # Shutdown if no windows for full duration
             if no_windows_count >= max_no_windows_checks:
-                print("All browser windows closed for 30+ seconds. Shutting down...")
+                print("All browser windows closed for 10+ seconds. Shutting down...")
                 shutdown_event.set()
                 aggressive_shutdown()
                 

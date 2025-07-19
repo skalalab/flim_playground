@@ -41,9 +41,14 @@ time_bins = 1024
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
 file_types = [ "Decay", "IRF",]
 
+[ch3]
+imaging_modality = "FLIM"
+input_type = "Decay (3/4D)"
+channel_name = "Channel 3"
+
 [ch1."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture", "Lifetime fit",]
 
 [ch1."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
@@ -55,7 +60,7 @@ num_components = 2
 
 [ch2."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture", "Lifetime fit",]
 
 [ch2."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
@@ -64,6 +69,9 @@ num_components = 2
 [ch2."Decay (2D)"]
 selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
 num_components = 1
+
+[ch3."Decay (3/4D)"]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
 [ch1."Decay (3/4D)".input_suffixes]
 Mask = "n_photons_mask_cyto.tiff"
@@ -94,3 +102,7 @@ IRF = "fad_irf.txt"
 [ch2."Decay (2D)".input_suffixes]
 Decay = "_ch2.csv"
 IRF = "kflow_ch2.txt"
+
+[ch3."Decay (3/4D)".input_suffixes]
+Decay = ""
+Mask = ""
