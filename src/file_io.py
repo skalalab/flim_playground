@@ -4,7 +4,7 @@ import pathlib
 from pathlib import Path
 import tifffile
 from typing import Union
-from src.sdt_io import read_sdt
+from src.decay_io import read_sdt
 from src.config import get_fov_name_col
 import pandas as pd
 

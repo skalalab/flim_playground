@@ -5,7 +5,7 @@ import pandas as pd
 from pathlib import Path
 from src.config import get_default_file_suffixes, get_spc_output_suffix, get_default_2D_decay_config, get_default_laser_rate
 from src.dataset_io import happy_emoji, sad_emoji
-from src.sdt_io import read_sdt, read_sdt_metadata
+from src.decay_io import read_decay, read_decay_metadata
 from collections import Counter
 def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_components, selected_feature_extractors):
     """
@@ -234,11 +234,11 @@ def check_raw_decay_data(images_df, channel_name):
     shape_list = []
     laser_rep_time_list = []
     for i, row in images_df.iterrows():
-        sdt_data = read_sdt(row[column_name])
-        shape_list.append(sdt_data.shape)
-        laser_rep_time = read_sdt_metadata(row[column_name])
+        decay_data = read_decay(row[column_name])
+        shape_list.append(decay_data.shape)
+        laser_rep_time = read_decay_metadata(row[column_name])
         laser_rep_time_list.append(laser_rep_time)
-        shape_list.append(sdt_data.shape)
+        shape_list.append(decay_data.shape)
 
     
     # check for the consistency of the shape, a tuple
@@ -264,7 +264,7 @@ def check_raw_decay_data(images_df, channel_name):
             # get all non-zero channels
             non_zero_channels = []
             for i in range(shape[0]):
-                if np.any(sdt_data[i]):
+                if np.any(decay_data[i]):
                     non_zero_channels.append(i)
             return "", non_zero_channels, time_bins, laser_rep_time
 
