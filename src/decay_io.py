@@ -3,6 +3,8 @@
 read data from sdt file
 """
 import sdtfile
+import ptufile
+from ptufile import PtuFile
 from sdtfile import SdtFile
 import numpy as np
 import zipfile
@@ -32,98 +34,88 @@ def visualize_timebin(timeBin):
     st.pyplot(fig)  
 
 def read_decay_metadata(filename):
-    
-    with SdtFile(filename) as sdt:
-        laser_rep_time = sdt.measure_info[0].rep_t
-    return laser_rep_time   
+    if filename.endswith(".ptu"):   
+        ptu = PtuFile(filename)
+        try:
+            laser_rep_rate = ptu.tags['TTResult_SyncRate']
+            # convert to GHz and then to get the period in ns
+            laser_rep_time = 1 / (laser_rep_rate * 1e-9)
+        except:
+            return f"Error: Cannot extract laser rep time from {filename}", None
+    elif filename.endswith(".sdt"):
+        sdt = SdtFile(filename)
+        try:        
+            laser_rep_time = sdt.measure_info[0].rep_t
+        except:
+            return f"Error: Cannot extract laser rep time from {filename}", None
+    else:
+        return f"Error reading decay metadata: {filename} is not a valid sdt or ptu file", None
+    return "", laser_rep_time   
 
-def read_sdt_info_brukerSDT(filename):
-    """ 
-    modified from CGohlke sdtfile.py to read bruker 150 card data
-    gives tarr, x.shape,y.shape,t.shape,c.shape
-    """
-    ## HEADER
-    measure_info = []
-    dtype = np.dtype(sdtfile.sdtfile.MEASURE_INFO)
-    with open(filename, 'rb') as fh:
-        ## HEADER
-        header = np.rec.fromfile(fh, dtype=sdtfile.sdtfile.FILE_HEADER, shape=1, byteorder='<')
-        fh.seek(header.meas_desc_block_offs[0])
-        for _ in range(header.no_of_meas_desc_blocks[0]):
-            measure_info.append(
-                np.rec.fromfile(fh, dtype=dtype, shape=1, byteorder='<'))
-            fh.seek(header.meas_desc_block_length[0] - dtype.itemsize, 1)
-    
-    times = []
-    block_headers = []
 
-    try:
-        routing_channels_x = measure_info[0]['image_rx'][0]
-    except:
-        routing_channels_x = 1
+def read_sdt(filename, channel=-1):
+    sdt = SdtFile(filename)
+    if len(sdt.data) != 1:
+        return f"Error: {filename} has multiple data blocks. It should be on one field of view", None
+    else:
+        # get the x, y, t, c
+        try:
+            x = sdt.measure_info[0].scan_x
+            y = sdt.measure_info[0].scan_y
+            t = sdt.measure_info[0].adc_re   
+        except:
+            return f"Error: {filename} has no scan_x, scan_y, or adc_re", None
+        decay_data = sdt.data[0]
+        try: 
+            c = sdt.measure_info[0].image_rx
+        except:
+            c = 1
+        
+        # checks if the data shape is consistent with the x, y, t, c
+        shape_multiplier = x * y * t * c
+        actual_shape_multiplier = np.prod(decay_data.shape)
+        if shape_multiplier != actual_shape_multiplier:
+            return f"Error: {filename} has inconsistent data shape with the metadata", None
+        else:
+            # reshpe the data to CYXT
+            if c == 1:
+                decay_data = decay_data.reshape(y, x, t)
+            else:
+                decay_data = decay_data.reshape(c, y, x, t)
+        if channel != -1:
+            decay_data = decay_data[channel]
 
-    offset = header.data_block_offs[0]
- 
-    with open(filename, 'rb') as fh:
-        for _ in range(header.no_of_data_blocks[0]): ## 
-            fh.seek(offset)
-            # read data block header
-            bh = np.rec.fromfile(fh, dtype=sdtfile.sdtfile.BLOCK_HEADER, shape=1,
-                                 byteorder='<')[0]
-            block_headers.append(bh)
-            # read data block
-            mi = measure_info[bh.meas_desc_block_no]
-            
-            dtype = sdtfile.sdtfile.BlockType(bh.block_type).dtype
-            dsize = bh.block_length // dtype.itemsize
-            
-            t = np.arange(mi.adc_re[0], dtype=np.float64)
-            t *= mi.tac_r / float(mi.tac_g * mi.adc_re)
-            times.append(t)
-            offset = bh.next_block_offs
-        return (header.data_block_offs[0], times, [mi.scan_x[0], mi.scan_y[0], mi.adc_re[0], routing_channels_x])
-    
-    
-def read_decay(filename, channel=-1):
-    """ sdt bruker uses data_block001 instead of data_block"""
-    import warnings
-    warnings.filterwarnings("ignore", category=DeprecationWarning)
-    offset, t, XYTC = read_sdt_info_brukerSDT(filename)
-    try: 
-        # if the input file is sdt_zipped
-        with zipfile.ZipFile(filename) as myzip:
-            z1 = myzip.infolist()[0]  # "data_block"
-            with myzip.open(z1.filename) as myfile:
-                dataspl = myfile.read()
-    except:
-        # if the input file is unzipped 
-        with open(filename, 'rb') as myfile:
-            myfile.seek(offset)
-            dataspl = myfile.read()
-            
-    dataSDT = np.fromstring(dataspl, np.uint16)
+        return "", decay_data
 
-    if XYTC[3] == 1:
-        # reduce the 4D data to 3d (CXYT to XYT)
-        dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2]].reshape([XYTC[0], XYTC[1], XYTC[2]])
+def read_ptu(filename, channel=-1):
    
-    elif XYTC[3] > 1:
-        # Check for empty channels and filter them out
-        actual_no_channels =  len(dataSDT) // (XYTC[0] * XYTC[1] * XYTC[2])
-        if actual_no_channels == 1:
-            # If only one channel is present, reshape to 3D
-            dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2]].reshape([XYTC[0], XYTC[1], XYTC[2]])
-        else:  # reshape XYTC to CXYT
-            dataSDT = dataSDT[:XYTC[0] * XYTC[1] * XYTC[2] * actual_no_channels].reshape([actual_no_channels, XYTC[0], XYTC[1], XYTC[2]])
-            if channel == -1: # return all channels
-                return dataSDT
-            try: 
-                dataSDT = dataSDT[channel]
-            except Exception as e:
-                return None, f"Error reading sdt data: {e}"
-    return dataSDT
-
-
+    ptu = PtuFile(filename)
+    if ptu.shape[0] != 1:
+        return f"Error: {filename} has multiple data blocks. It should be on one field of view", None
+    else:
+        try: 
+            c = ptu.shape[ptu.dims.index("C")]
+            y = ptu.shape[ptu.dims.index("Y")]
+            x = ptu.shape[ptu.dims.index("X")]
+            t = ptu.shape[ptu.dims.index("H")]
+        except:
+            return f"Error: {filename} has no C, Y, X, or H dimension", None
+        if c == 1:
+            decay_data = ptu.reshape(y, x, t)
+        else:
+            decay_data = ptu.reshape(c, y, x, t)
+        if channel != -1:
+            decay_data = decay_data[channel]
+        return "", decay_data
+ 
+def read_decay(filename, channel=-1):
+    if filename.endswith(".ptu"):
+        error_msg, decay_data = read_ptu(filename, channel)
+    elif filename.endswith(".sdt"):
+        error_msg, decay_data = read_sdt(filename, channel)
+    else:
+        return None, f"Error reading decay data: {filename} is not a valid sdt or ptu file"
+    return error_msg, decay_data
 def write_sdt(path_output, sdt_data, manufacturer="BH", resolution=256):
     
 
@@ -154,7 +146,7 @@ def sdt_convert(src, destination=""):
     Convert a sdt file to a numpy array
     """
     errormsg = ""
-    sdt_data = read_decay(src)
+    sdt_data = read_sdt(src)
     # the last dimension is time 
     if sdt_data.shape[-1] < 256:
         errormsg += f"{src} data should be at least 8-bit! "

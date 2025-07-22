@@ -234,9 +234,13 @@ def check_raw_decay_data(images_df, channel_name):
     shape_list = []
     laser_rep_time_list = []
     for i, row in images_df.iterrows():
-        decay_data = read_decay(row[column_name])
+        error_msg, decay_data = read_decay(row[column_name])
+        if error_msg != "":
+            return error_msg, [], None, None
         shape_list.append(decay_data.shape)
-        laser_rep_time = read_decay_metadata(row[column_name])
+        error_msg, laser_rep_time = read_decay_metadata(row[column_name])
+        if error_msg != "":
+            return error_msg, [], None, None
         laser_rep_time_list.append(laser_rep_time)
         shape_list.append(decay_data.shape)
 

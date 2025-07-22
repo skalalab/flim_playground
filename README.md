@@ -32,9 +32,14 @@ pyinstaller Flim-Playground.spec --clean
 
 
 # TODO
-- more rigorous classification 
+- add reference dye option for calibration phasor
+- fix the order issue in visualization
+- more rigorous classification
 - data analysis (vis + classification) config
-- handle .ptu data
+- generalize the shape/opacity/separate by to other plots 
+- fix the color order?
+- add line connection option in feature comparison
+- add confidence interval to effect size 
 
 ```bash
 streamlit run main.py # when in development
