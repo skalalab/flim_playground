@@ -41,7 +41,8 @@ def single_feature_select_widget(feature_cols_dict, n_per_row=2, key_prefix=""):
             feature_group = feature_groups[col_idx]
             menu_key = f"{key_prefix}_menu_{feature_group}"
             feature_list = feature_cols_dict[feature_group]
-            
+            # strip the extractor_channel from the feature_list
+            feature_list = [col.split(": ")[1] for col in feature_list] if "Uncategorized" not in feature_group else feature_list
             with cols[i]:
                 current_selection = st.selectbox(
                     f"{feature_group}", 
@@ -55,6 +56,7 @@ def single_feature_select_widget(feature_cols_dict, n_per_row=2, key_prefix=""):
                 # If this menu has a non-Select value, it becomes our selected_var
                 if current_selection != "Select":
                     selected_var = current_selection
+                    selected_var = f"{feature_group}: {selected_var}" if "Uncategorized" not in feature_group else selected_var
     
     return selected_var
 
@@ -97,6 +99,8 @@ def multi_feature_select_widget(feature_cols_dict, n_per_row=2):
         for i, col_idx in enumerate(range(start_idx, end_idx)):
             feature_group = feature_groups[col_idx]
             feature_list = feature_cols_dict[feature_group]
+            # strip the extractor_channel from the feature_list
+            feature_list = [col.split(": ")[1] for col in feature_list] if "Uncategorized" not in feature_group else feature_list
             key = f"ms_{feature_group}"
             
             with cols[i]:
@@ -120,8 +124,8 @@ def multi_feature_select_widget(feature_cols_dict, n_per_row=2):
                     help=f"Select one or more columns corresponding to {feature_group} features."
                 )
                 if "All" in selected:
-                    selected_features.extend(feature_list)
+                    selected_features.extend([f"{feature_group}: {col}" for col in feature_list]) if "Uncategorized" not in feature_group else selected_features.extend(feature_list)
                 else:
-                    selected_features.extend(selected)
+                    selected_features.extend([f"{feature_group}: {col}" for col in selected]) if "Uncategorized" not in feature_group else selected_features.extend(selected)
                
     return selected_features

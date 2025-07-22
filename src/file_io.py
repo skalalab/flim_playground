@@ -4,7 +4,7 @@ import pathlib
 from pathlib import Path
 import tifffile
 from typing import Union
-from src.decay_io import read_sdt
+from src.decay_io import read_decay
 from src.config import get_fov_name_col
 import pandas as pd
 
@@ -114,7 +114,9 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
             if channel_no is None:
                 return f"Error: Channel number not found for {fov_name_col} {fov_name}", None, None      
             try:
-                decay = read_sdt(decay_path, channel_no)
+                error_msg, decay = read_decay(decay_path, channel_no)
+                if error_msg != "":
+                    return error_msg, None, None
             except Exception as e:
                 return f"Error reading the decay file for {fov_name_col} {fov_name} at {decay_path}: {e}", None, None
             if len(decay.shape) != 3:

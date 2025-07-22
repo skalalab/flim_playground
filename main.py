@@ -49,6 +49,9 @@ def main():
     all_flim_decay_input_types = ["Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)"]
     # in the future it will be other lists, one for each imaging modality
     spc_output_suffix = {"a1": "_a1[%].asc", "t1": "_t1.asc", "a2": "_a2[%].asc", "t2": "_t2.asc", "a3": "_a3[%].asc", "t3": "_t3.asc"}
+    all_feature_extractors = ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture"]
+    if "all_feature_extractors" not in cfg:
+        cfg["all_feature_extractors"] = all_feature_extractors
     
     # Initialization: 
     if "flim_decay_input_types" not in cfg:

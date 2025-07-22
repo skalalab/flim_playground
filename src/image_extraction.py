@@ -153,7 +153,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
             # Calculate alpha values
             amp1, amp2 = results["amp1"][i], results["amp2"][i]
             total_amp = amp1 + amp2
-            single_cell_features_fov[cell_id][f"{fit_feature_prefix}_a1"] = (amp1 / total_amp) * 100
+            single_cell_features_fov[cell_id][f"{fit_feature_prefix}a1"] = (amp1 / total_amp) * 100
             # single_cell_features_fov[cell_id][f"{channel_name}_a2"] = (amp2 / total_amp) * 100
             # Calculate mean lifetime (in original units, not converted)
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm"] = ((amp1 / total_amp) * results["t1"][i] + (amp2 / total_amp) * results["t2"][i]) * 1000
@@ -166,8 +166,8 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
             # Calculate alpha values for 3 components
             amp1, amp2, amp3 = results["amp1"][i], results["amp2"][i], results["amp3"][i]
             total_amp = amp1 + amp2 + amp3
-            single_cell_features_fov[cell_id][f"{fit_feature_prefix}_a1"] = (amp1 / total_amp) * 100
-            single_cell_features_fov[cell_id][f"{fit_feature_prefix}_a2"] = (amp2 / total_amp) * 100
+            single_cell_features_fov[cell_id][f"{fit_feature_prefix}a1"] = (amp1 / total_amp) * 100
+            single_cell_features_fov[cell_id][f"{fit_feature_prefix}a2"] = (amp2 / total_amp) * 100
            # single_cell_features_fov[cell_id][f"{lifetime_feature_prefix}_a3"] = (amp3 / total_amp) * 100
             # Calculate mean lifetime for 3 components (in original units, not converted)
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm"] = ((amp1 / total_amp) * results["t1"][i] + (amp2 / total_amp) * results["t2"][i] + (amp3 / total_amp) * results["t3"][i]) * 1000
@@ -241,7 +241,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         single_cell_fit_features_fov = pd.DataFrame.from_dict(single_cell_fit_features_fov, orient='index')
     channel_container.empty()  # Remove both text and progress bar when done
     if fit_free:
-        laser_rate = metadata_dict[channel_name]["laser_rate"]
+        laser_rate = metadata_dict["laser_rate"]
         single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, shifted_irf, time_axis, laser_rate)
         single_cell_fit_free_features_fov = pd.DataFrame.from_dict(single_cell_fit_free_features_fov, orient='index')
     if fit and fit_free:
@@ -273,6 +273,7 @@ def fov_extraction(metadata, metadata_dict):
     # Combine all channel DataFrames in one operation
     single_cell_features_fov = pd.concat(fov_feature_dfs, axis=1) if fov_feature_dfs else pd.DataFrame()
     if not single_cell_features_fov.empty:
+        single_cell_features_fov[metadata_dict["fov_name_col"]] = fov_name
         single_cell_features_fov.index.name = unique_cell_id_colname
     else:
         return f"Error: No cells found in the {fov_name}", None

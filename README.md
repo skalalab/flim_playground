@@ -33,10 +33,13 @@ pyinstaller Flim-Playground.spec --clean
 
 # TODO
 - add reference dye option for calibration phasor
+- add flimlib
+- move config away?
 - fix the order issue in visualization
 - more rigorous classification
-- data analysis (vis + classification) config
+- finish morphology and texture
 - generalize the shape/opacity/separate by to other plots 
+- data analysis (vis + classification) config
 - fix the color order?
 - add line connection option in feature comparison
 - add confidence interval to effect size 

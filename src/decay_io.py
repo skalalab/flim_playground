@@ -1,13 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-read data from sdt file
+read data from raw decay file (sdt or ptu)
 """
-import sdtfile
-import ptufile
+
 from ptufile import PtuFile
 from sdtfile import SdtFile
 import numpy as np
-import zipfile
 from pathlib import Path
 import os
 
@@ -21,17 +19,6 @@ def visualize_sdt(sdt_data):
     plt.imshow(sdt_data.sum(axis=-1))
     plt.show()
     st.pyplot(fig)
-
-def visualize_timebin(timeBin):
-    """
-    Visualize the timebin
-    """
-    import matplotlib.pyplot as plt
-    import streamlit as st
-    fig, ax = plt.subplots()
-    plt.plot(timeBin)
-    plt.show()
-    st.pyplot(fig)  
 
 def read_decay_metadata(filename):
     if filename.endswith(".ptu"):   
@@ -116,6 +103,7 @@ def read_decay(filename, channel=-1):
     else:
         return None, f"Error reading decay data: {filename} is not a valid sdt or ptu file"
     return error_msg, decay_data
+
 def write_sdt(path_output, sdt_data, manufacturer="BH", resolution=256):
     
 

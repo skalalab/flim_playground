@@ -1,5 +1,5 @@
 import pandas as pd
-from src.feature_types import unique_cell_id_col, required_cols, categorical_cols
+from src.feature_types import unique_cell_id_col, fov_name_col, categorical_cols, all_feature_extractors
 import streamlit as st
 import random
 happy_celebratory_emojis = [
@@ -95,47 +95,50 @@ def match_col_name(col, col_list):
             return col_name
     return None
 
-
 def safe_split_with_logging(base_name):
     try:
         return base_name.rsplit('_', 1)[0]
     except Exception as e:   
         return "missing image name"
 
-def get_feature_cols(cols, weighted_cols = False):
+def get_feature_cols(cols):
     """
     feature_cols_dict: a dictionary. Keys are the names of the feature group and values are a list of columns that belong to the group.
     Only feature groups that have at least one column are included in the dictionary.
     """
     feature_cols_dict = {}
-    for feature_group in all_numerical_feature_groups:
-        # if the column is in the default list, add it to the group_cols
-        # or if the column starts with any of the prefixes in the prefix list, add it to the group_cols
-        group_cols = [c for c in cols if c.startswith(feature_group)]
-        # remove the stdev columns from the group_cols
-        # and remove the weighted columns if weighted_cols is False
-        group_cols = [c for c in group_cols if "stdev" not in c and (weighted_cols or "weighted" not in c) and "Unnamed" not in c]
-        # only add non-empty feature groups to the dictionary
-        if len(group_cols) > 0:
-            feature_cols_dict[feature_group] = group_cols
-    
+    for col in cols:
+        # column format: extractor_channelName:feature_name
+        # e.g. "Lifetime fit_Channel 1: G(1st)"
+        # first split by ":"
+        try:
+            extractor_channel, feature = col.split(": ")
+        except:
+            continue
+        try:
+            extractor, channel = extractor_channel.split("_")
+        except:
+            continue
+        if extractor in all_feature_extractors:
+            if extractor_channel not in feature_cols_dict:
+                feature_cols_dict[extractor_channel] = []
+            feature_cols_dict[extractor_channel].append(col)
     return feature_cols_dict
 
 def get_features(df):
     """
-    Extract all numeric features from the dataframe. Categorize them into:
-    - NADH fit variables 
-    - FAD fit variables
-    - morphology (mask morphology and feature distribution)
-    - fit-free variables (e.g. phasor coordinates)
-    
+    Extract all numeric features from the dataframe. Group them (by channel) based on the feature extractors:
+    - morphology (mask morphology)
+    - texture (texture features)
+    - lifetime fit variables
+    - lifetime fit free variables
     """
     warning_msg = error_msg = ""
     # convert 
     numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
     feature_cols_dict = get_feature_cols(numeric_cols)
     all_numerical_features_cols = []
-    for feature_group, cols in feature_cols_dict.items():
+    for extractor_channel, cols in feature_cols_dict.items():
         all_numerical_features_cols.extend(cols)
 
     if len(all_numerical_features_cols) == 0:
@@ -144,7 +147,7 @@ def get_features(df):
 
     # keep only the columns that are later used in downstream analysis
     avilable_categorical_cols = [col for col in categorical_cols if col in df.columns]
-    columns_to_keep = required_cols + avilable_categorical_cols + all_numerical_features_cols
+    columns_to_keep = [unique_cell_id_col, fov_name_col] + avilable_categorical_cols + all_numerical_features_cols
     df = df[columns_to_keep]  
    
     # Print columns that contain NaN values
@@ -162,7 +165,7 @@ def check_and_fix_df(df):
     """
     check for df's metadata: 
     - single-cell unique_identifier
-    - the image the cell comes from: `image_name`: base_name = {image_name}_{cell_label}
+    - the image the cell comes from: `fov_name`: unique_cell_id_col = {fov_name}_{cell_label}
     - fill in na values for categorical columns
     """
     warning_msg = error_msg = ""
@@ -211,10 +214,10 @@ def check_and_fix_df(df):
         rows_removed = original_row_count - len(df)
         if rows_removed > 0:
             warning_msg += f"{rows_removed} rows were removed."
-    if "image_name" not in df.columns:
-        df['image_name'] = df[unique_cell_id_col].apply(safe_split_with_logging)
+    if fov_name_col not in df.columns:
+        df[fov_name_col] = df[unique_cell_id_col].apply(safe_split_with_logging)
     else: 
-        df["image_name"] = df["image_name"].fillna("missing image name")
+        df[fov_name_col] = df[fov_name_col].fillna("missing image name")
 
     for col in df.columns:
         matched_categorical_col = match_col_name(col, categorical_cols)

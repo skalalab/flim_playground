@@ -5,7 +5,6 @@ from scipy.stats import gaussian_kde
 from scipy.stats import pearsonr
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 import streamlit as st
-from src.feature_types import feature_groups_prefix
 
 def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, plotly_axis_params):
     """Helper function to plot marginal densities."""
@@ -221,7 +220,7 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], margin
     return fig, table_md, df
 
 
-def phasor_plot(df, channel,color_by=[], f=0.08, harmonic=1):
+def phasor_plot(df, channel_name,color_by=[], f=0.08, harmonic=1):
 
     # Create the figure
     fig = go.Figure()
@@ -232,7 +231,7 @@ def phasor_plot(df, channel,color_by=[], f=0.08, harmonic=1):
     elif harmonic == 2:
         harmonic_str = "2nd"
     fig.update_layout(
-        title=f'{channel.capitalize()} {harmonic_str} Harmonic Phasor',
+        title=f'{channel_name} {harmonic_str} Harmonic Phasor',
         xaxis=dict(
             range=[-0.05, 1.05],
             title='g',
@@ -317,7 +316,7 @@ def phasor_plot(df, channel,color_by=[], f=0.08, harmonic=1):
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=True)
 
-    feature_prefix = feature_groups_prefix[f"Fit Free {channel.capitalize()}"]
+    feature_prefix = "Lifetime fit free_" + channel_name + ": "
     if harmonic == 1:
         g_feature = f"{feature_prefix}G(1st)"
         s_feature = f"{feature_prefix}S(1st)"

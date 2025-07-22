@@ -175,7 +175,7 @@ with col2:
             st.rerun()
                 
     elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"] and metadata_df is not None:
-        st.write(metadata_dict) 
+        #st.write(metadata_dict) 
         single_cell_features = fov_extraction_widget(metadata_df, metadata_dict)
         if not single_cell_features.empty:
             st.success(f"Image features with ✅ are extracted successfully {happy_emoji}! Images with ❌ (if any) are excluded. The first few rows of the features are shown below.")

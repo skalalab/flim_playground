@@ -1,6 +1,6 @@
 import streamlit as st
 import numpy as np
-from src.feature_types import feature_groups_prefix, categorical_cols
+from src.feature_types import all_feature_extractors, categorical_cols
 
 def visual_encoding_channels_widget(filtered_df, color_based=True, point_based=True):
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
@@ -102,40 +102,33 @@ def gmm_hyperParams_widget():
 
 def phasor_params_widget(feature_cols_dict):
 
-    available_harmonics = {}
-    if "Fit Free Nadh" in feature_cols_dict and len(feature_cols_dict["Fit Free Nadh"]) > 0:
-        nadh_fit_free_features_prefix = feature_groups_prefix["Fit Free Nadh"]
-        nadh_fit_free_features = feature_cols_dict["Fit Free Nadh"]
-        available_harmonics["Nadh"] = []
-        if f"{nadh_fit_free_features_prefix}G(1st)" in nadh_fit_free_features and f"{nadh_fit_free_features_prefix}S(1st)" in nadh_fit_free_features:
-            available_harmonics["Nadh"].append(1)
-        if f"{nadh_fit_free_features_prefix}G(2nd)" in nadh_fit_free_features and f"{nadh_fit_free_features_prefix}S(2nd)" in nadh_fit_free_features:
-            available_harmonics["Nadh"].append(2)
-    if "Fit Free Fad" in feature_cols_dict and len(feature_cols_dict["Fit Free Fad"]) > 0:
-
-        fad_fit_free_features_prefix = feature_groups_prefix["Fit Free Fad"]
-        fad_fit_free_features = feature_cols_dict["Fit Free Fad"]
-        available_harmonics["Fad"] = []
-        if f"{fad_fit_free_features_prefix}G(1st)" in fad_fit_free_features and f"{fad_fit_free_features_prefix}S(1st)" in fad_fit_free_features:
-            available_harmonics["Fad"].append(1)    
-        if f"{fad_fit_free_features_prefix}G(2nd)" in fad_fit_free_features and f"{fad_fit_free_features_prefix}S(2nd)" in fad_fit_free_features:
-            available_harmonics["Fad"].append(2)
+    channel_harmonics = {}
     
-    if len(available_harmonics.keys()) > 1:
-        selected_channel = st.selectbox("Select a channel", available_harmonics.keys())
-    elif len(available_harmonics.keys()) == 1:
-        selected_channel = list(available_harmonics.keys())[0]
+    for extractor_channel in feature_cols_dict.keys():
+        extractor, channel = extractor_channel.split("_")
+        if extractor == "Lifetime fit free":
+            channel_harmonics[channel] = []
+            for feature in feature_cols_dict[extractor_channel]:
+                if "G(1st)" in feature and "S(1st)" in feature:
+                    channel_harmonics[channel].append(1)
+                elif "G(2nd)" in feature and "S(2nd)" in feature:
+                    channel_harmonics[channel].append(2)
+                    
+    if len(channel_harmonics.keys()) > 1:
+        selected_channel = st.selectbox("Select a channel", channel_harmonics.keys())
+    elif len(channel_harmonics.keys()) == 1:
+        selected_channel = list(channel_harmonics.keys())[0]
     else:
         selected_channel = None
         st.warning("No available channels found for phasor plot")
     selected_harmonic = None
-    for channel in available_harmonics.keys():
-        if available_harmonics[channel] == []:
+    for channel in channel_harmonics.keys():
+        if channel_harmonics[channel] == []:
             st.warning(f"No available harmonics found for {channel}")     
-        elif len(available_harmonics[channel]) == 1:
-            selected_harmonic = available_harmonics[channel][0]
+        elif len(channel_harmonics[channel]) == 1:
+            selected_harmonic = channel_harmonics[channel][0]
         else:
-            selected_harmonic = st.selectbox(f"Select a harmonic for {channel}", available_harmonics[channel])
+            selected_harmonic = st.selectbox(f"Select a harmonic for {channel}", channel_harmonics[channel])
     f = None
     if selected_channel is not None and selected_harmonic is not None:
         if selected_harmonic == 1:

@@ -110,3 +110,7 @@ def get_available_feature_extractors(input_type: str) -> list:
 def get_file_types(input_type: str) -> list:
     cfg = load_config()
     return cfg.get(input_type, {}).get("file_types", [])
+
+def get_all_feature_extractors() -> list:
+    cfg = load_config()
+    return cfg.get("all_feature_extractors", [])
