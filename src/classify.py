@@ -2,19 +2,33 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_curve, auc, confusion_matrix, ConfusionMatrixDisplay, accuracy_score, classification_report
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.preprocessing import label_binarize, StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import train_test_split
+from imblearn.over_sampling import RandomOverSampler
+from imblearn.under_sampling import RandomUnderSampler
 import matplotlib.pyplot as plt
 
-def prepare_data(df, splits):
+def prepare_data(df, splits, sampling_method, random_state):
     X = df.iloc[:, :-1]
     y = df.iloc[:, -1]
-    # y = label_binarize(y, classes=np.unique(y))
-    X_train, X_test, y_train, y_test =  train_test_split(X, y, test_size=1-splits, random_state=42, stratify=y)
-    return X_train, X_test, y_train, y_test
+    try:
+        X_train, X_test, y_train, y_test =  train_test_split(X, y, test_size=1-splits, random_state=random_state, stratify=y)   # keeps original class fractions
+    except ValueError as e:
+        return f"Error splitting data: {e}", None, None, None, None
+    sampler = None
+    if sampling_method == "Undersampling":
+        sampler = RandomUnderSampler(random_state=random_state)
+    elif sampling_method == "Oversampling":
+        sampler = RandomOverSampler(random_state=random_state)
+
+    if sampler is not None:
+        X_train, y_train = sampler.fit_resample(X_train, y_train)
+    
+    return "", X_train, X_test, y_train, y_test
 
 def calculate_roc_curve(num_classes, y_test, y_score):
     y_test = label_binarize(y_test, classes=np.unique(y_test))
@@ -83,20 +97,24 @@ def plot_feature_importance(classifier, feature_names, axis_label_size=12, bar_l
     plt.tight_layout()
     return fig
 
-def run_classification(df, method, splits):
-    X_train, X_test, y_train, y_test = prepare_data(df, splits)
+def run_classification(df, method, splits, sampling_method, random_state=42):
+    error_msg, X_train, X_test, y_train, y_test = prepare_data(df, splits, sampling_method, random_state)
+    if error_msg:
+        return error_msg, None
     if method == "Random Forest":
-        classifier = RandomForestClassifier(random_state=42)
+        classifier = RandomForestClassifier(random_state=random_state)
+    elif method == "Gradient Boosting":
+        classifier = GradientBoostingClassifier(random_state=random_state)
     elif method == "SVM":
-        classifier = make_pipeline(StandardScaler(), SVC(kernel='linear', probability=True, random_state=42))
+        classifier = make_pipeline(StandardScaler(), SVC(kernel='linear', probability=True, random_state=random_state))
     elif method == "Logistic Regression":
-        classifier = make_pipeline(StandardScaler(), LogisticRegression(random_state=42, max_iter=1000))
+        classifier = make_pipeline(StandardScaler(), LogisticRegression(random_state=random_state, max_iter=1000))
     
     classifier.fit(X_train, y_train)
     y_score = classifier.predict_proba(X_test)
     y_pred = classifier.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)
-    return {
+    return "", {
         'classifier': classifier,
         'X_train': X_train,
         'X_test': X_test,

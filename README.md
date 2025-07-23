@@ -2,8 +2,8 @@
 
 Input Type, Channels, Extracted Feature Types
 - Lifetime 
-    - Fit
-    - Fit free (e.g. Phasor)
+    - fit
+    - fit free (e.g. Phasor)
 - Intensity
     - morphology
     - texture
@@ -34,14 +34,14 @@ pyinstaller Flim-Playground.spec --clean
 # TODO
 - add reference dye option for calibration phasor
 - add flimlib
-- move config away?
 - more rigorous classification
 - finish morphology and texture
 - generalize the shape/opacity/separate by to other plots 
 - data analysis (vis + classification) config
-- fix the color order?
 - add line connection option in feature comparison
 - add confidence interval to effect size 
+- move config away?
+- fix the color order?
 
 ```bash
 streamlit run main.py # when in development

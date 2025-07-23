@@ -14,6 +14,7 @@ dependencies = [
     "cycler==0.12.1",
     "fonttools==4.57.0",
     "idna==3.10",
+    "imblearn>=0.0",
     "jinja2==3.1.6",
     "joblib==1.4.2",
     "kiwisolver==1.4.8",

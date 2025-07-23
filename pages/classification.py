@@ -22,7 +22,7 @@ with col1:
     if upload_complete:
         cols = st.columns(2)
         with cols[0]:
-            classification_method = st.selectbox("Classifier", ["Random Forest", "SVM", "Logistic Regression"])
+            classification_method = st.selectbox("Classifier", ["Random Forest", "Gradient Boosting", "SVM", "Logistic Regression"])
         with cols[1]:
             splits = st.slider("Train size (percentage of training data)", 0.5, 0.9, 0.7, 0.1)
         selected_features = multi_feature_select_widget(feature_cols_dict, n_per_row=1)
@@ -32,10 +32,13 @@ with col2:
     if upload_complete:   
         filtered_df = filters_widget(df)
         classify_by_options = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
-        if len(classify_by_options) > 0:
-            classify_by_options = st.multiselect("Classify by", classify_by_options, default=classify_by_options[-1])
-        else:
-            classify_by_options = []
+        col1, col2 = st.columns(2)
+        with col1:
+            if len(classify_by_options) > 0:
+                classify_by_options = st.multiselect("Classify by", classify_by_options, default=classify_by_options[-1])
+        with col2:
+            sampling_method = st.selectbox("Sampling method", ["None", "Undersampling", "Oversampling"], help="Undersampling: Randomly remove samples from the majority class. Oversampling: Randomly duplicate samples from the minority class.")
+
         filtered_df['classes'] = filtered_df[classify_by_options].agg('_'.join, axis=1)
         classes = filtered_df['classes'].unique()
         if len(classes) <= 1 or len(selected_features) == 0:
@@ -69,7 +72,10 @@ with col2:
                 the_rest = [cls for cls in classes if cls != selected_option[0]]
                 selected_option_text = f"{selected_option[0]} VS {', '.join(the_rest)}"
             st.write(f"Running {classification_method} to classify between: {selected_option_text}, trained on {int(splits*100)}% of the data {happy_emoji}.")
-            results = run_classification(df_classify, classification_method, splits)
+            error_msg, results = run_classification(df_classify, classification_method, splits, sampling_method, random_state=42)
+            if error_msg:
+                st.error(error_msg)
+                st.stop()  # Stops execution of the Streamlit app if there was an error in classification
             st.markdown("---")  # Add a separator line
             st.subheader("📈 Performance Metrics")
             # Get current values from session state as defaults for the widgets
@@ -84,7 +90,7 @@ with col2:
                 fig2 = plot_roc_curve(results['y_test'], results['y_score'], axis_label_size=axis_label_size, legend_size=legend_size)
                 st.pyplot(fig2)
             st.write(f"Accuracy: {results['accuracy']:.2f}")
-            if classification_method == "Random Forest":
+            if classification_method in ["Random Forest", "Gradient Boosting"]:
                 fig3 = plot_feature_importance(results['classifier'], results['X_train'].columns, axis_label_size=axis_label_size, bar_label_size=legend_size)
                 st.pyplot(fig3)
             st.markdown("---")
