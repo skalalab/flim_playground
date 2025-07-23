@@ -6,8 +6,8 @@ import pandas as pd
 import umap
 import plotly.graph_objects as go
 import streamlit as st
-from .helpers import _prepare_group_data
-
+from .helpers import _prepare_group_data 
+import threading    
 @st.cache_data
 def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
     # Standardize features before PCA and umap
@@ -19,15 +19,18 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
         df = pd.DataFrame(principal_components, columns=["PC1", "PC2"])
         exp_var = pca.explained_variance_ratio_ * 100
     elif method == "UMAP":
-        umap_neighbors = 15  # Default value if n_neighbors is not provided
-        umap_min_dist = 0.1  # Default value if min_dist is not provided
-        # Safely access hyperparameters if they exist
-        if hyperParam_dict:
-            umap_neighbors = hyperParam_dict.get('n_neighbors', umap_neighbors)
-            umap_min_dist = hyperParam_dict.get('min_dist', umap_min_dist)
-        reducer = umap.UMAP(n_neighbors=umap_neighbors,min_dist=umap_min_dist,   
-               metric='euclidean', n_components=n_components)
-        df = pd.DataFrame(reducer.fit_transform(X_std), columns=["UMAP1", "UMAP2"])
+        if 'umap_lock' not in st.session_state:
+            st.session_state.umap_lock = threading.Lock()
+        with st.session_state.umap_lock:
+            umap_neighbors = 15  # Default value if n_neighbors is not provided
+            umap_min_dist = 0.1  # Default value if min_dist is not provided
+            # Safely access hyperparameters if they exist
+            if hyperParam_dict:
+                umap_neighbors = hyperParam_dict.get('n_neighbors', umap_neighbors)
+                umap_min_dist = hyperParam_dict.get('min_dist', umap_min_dist)
+            reducer = umap.UMAP(n_neighbors=umap_neighbors,min_dist=umap_min_dist,   
+                metric='euclidean', n_components=n_components)
+            df = pd.DataFrame(reducer.fit_transform(X_std), columns=["UMAP1", "UMAP2"])
     return df, exp_var
 
 def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_dict={}, colored_by=[], exp_var=None):

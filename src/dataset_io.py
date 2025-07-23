@@ -77,6 +77,7 @@ def load_csv(uploaded_csv):
                 st.write(f"Data uploaded successfully {happy_emoji}")
                 upload_complete = True
     return df, feature_cols_dict, upload_complete
+
 def match_col_name(col, col_list):
     """
     match_col_name: a function that takes a column name and a list of canonical column names and returns the first canonical column name that matches the column name
@@ -95,9 +96,12 @@ def match_col_name(col, col_list):
             return col_name
     return None
 
-def safe_split_with_logging(base_name):
+def safe_split_with_logging(cell_id):
     try:
-        return base_name.rsplit('_', 1)[0]
+        if "_" not in cell_id:
+            return "missing image name"
+        else:
+            return cell_id.rsplit('_', 1)[0]
     except Exception as e:   
         return "missing image name"
 
@@ -107,6 +111,7 @@ def get_feature_cols(cols):
     Only feature groups that have at least one column are included in the dictionary.
     """
     feature_cols_dict = {}
+    feature_cols_dict["Uncategorized Features"] = []
     for col in cols:
         # column format: extractor_channelName:feature_name
         # e.g. "Lifetime fit_Channel 1: G(1st)"
@@ -114,15 +119,19 @@ def get_feature_cols(cols):
         try:
             extractor_channel, feature = col.split(": ")
         except:
+            feature_cols_dict["Uncategorized Features"].append(col)
             continue
         try:
             extractor, channel = extractor_channel.split("_")
         except:
+            feature_cols_dict["Uncategorized Features"].append(col)
             continue
         if extractor in all_feature_extractors:
             if extractor_channel not in feature_cols_dict:
                 feature_cols_dict[extractor_channel] = []
             feature_cols_dict[extractor_channel].append(col)
+        else:
+            feature_cols_dict["Uncategorized Features"].append(col)
     return feature_cols_dict
 
 def get_features(df):
@@ -147,7 +156,7 @@ def get_features(df):
 
     # keep only the columns that are later used in downstream analysis
     avilable_categorical_cols = [col for col in categorical_cols if col in df.columns]
-    columns_to_keep = [unique_cell_id_col, fov_name_col] + avilable_categorical_cols + all_numerical_features_cols
+    columns_to_keep = [unique_cell_id_col] + avilable_categorical_cols + all_numerical_features_cols
     df = df[columns_to_keep]  
    
     # Print columns that contain NaN values
@@ -208,12 +217,14 @@ def check_and_fix_df(df):
         warning_msg += f"Warning: Duplicate values found in `{unique_cell_id_col}` column. First duplicate found with {unique_cell_id_col}: '{first_duplicate_value}' at row {first_duplicate_index}.\
             The duplicate rows will be dropped, only the first one will be kept.\n"
         # drop the duplicate rows, only keep the first one
-        df = df.drop_duplicates(subset=[unique_cell_id_col], keep="first")
-    
-    # after fixing the df, print out the number of rows removed
+        df = df.drop_duplicates(subset=[unique_cell_id_col], keep="first")    
+        # after fixing the df, print out the number of rows removed
         rows_removed = original_row_count - len(df)
         if rows_removed > 0:
             warning_msg += f"{rows_removed} rows were removed."
+        
+    # make sure unique_cell_id_col is of type str
+    df[unique_cell_id_col] = df[unique_cell_id_col].astype(str)
     if fov_name_col not in df.columns:
         df[fov_name_col] = df[unique_cell_id_col].apply(safe_split_with_logging)
     else: 

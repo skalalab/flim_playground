@@ -7,6 +7,7 @@ from scipy.optimize import brentq
 from sklearn.mixture import GaussianMixture
 import pandas as pd
 from src.widgets.visualization_widgets import stats_comparison_pair_widget
+import re
 
 
 def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
@@ -76,10 +77,9 @@ def _prepare_group_data(df, group_by_cols, new_group_col_name, overlap_point=Tru
         # Create a dummy group if no columns are provided for grouping
         df[new_group_col_name] = "all_data"
     else:
-        df[new_group_col_name] = df[group_by_cols].astype(str).agg('_'.join, axis=1)
-    
+        df[new_group_col_name] = df[group_by_cols].astype(str).agg('::'.join, axis=1)
     unique_groups = df[new_group_col_name].unique()
-    unique_groups = sorted(unique_groups, key=lambda x: tuple(x.split('_')))
+    unique_groups = natural_tuple_sort(unique_groups, delimiter='::')
     color_map = create_color_map(unique_groups, overlap_point=overlap_point)
     return unique_groups, color_map
 
@@ -341,6 +341,28 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
                 lowest_bic = bic
                 best_gmm = gmm
     return best_gmm
+
+def natural_key(s):
+    """Return a tuple for natural sorting: (is_number, number or string)"""
+    # Match decimal or integer numbers (including negative numbers)
+    match = re.search(r'([-+]?\d*\.\d+|\d+)', s)
+    if match:
+        return (0, float(match.group(1)), s)
+    else:
+        return (1, s)
+
+def tuple_natural_key(tup):
+    """Return a tuple of natural keys for each element in the tuple."""
+    return tuple(natural_key(str(x)) for x in tup)
+
+def natural_tuple_sort(strings, delimiter='::'):
+    """
+    Sort a list of delimited strings using natural sort for each column.
+    :param strings: list of strings to sort
+    :param delimiter: delimiter to split columns (default '::')
+    :return: sorted list of strings
+    """
+    return sorted(strings, key=lambda x: tuple_natural_key(x.split(delimiter)))
 
 # Function to apply plot styling to any figure
 def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
