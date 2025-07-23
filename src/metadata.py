@@ -107,22 +107,22 @@ def parse_metadata_file(metadata_df, fov_name_col):
     # check for time bins, duration, laser rate
     if "time_bins" in metadata_df.columns:
         if metadata_df["time_bins"].nunique() != 1:
-            return f"Time bins column {f"{channel_name}_time_bins"} is not consistent.", None
+            return f"Time bins column time_bins is not consistent.", None
         metadata_dict["time_bins"] = metadata_df["time_bins"].iloc[0]
     else:
-        return f"Time bins column {f"{channel_name}_time_bins"} not found in metadata file.", None
+        return f"Time bins column time_bins not found in metadata file.", None
     if "duration" in metadata_df.columns:
         if metadata_df["duration"].nunique() != 1:
-            return f"Duration column {f"{channel_name}_duration"} is not consistent.", None
+            return f"Duration column duration is not consistent.", None
         metadata_dict["duration"] = metadata_df["duration"].iloc[0]
     else:
-        return f"Duration column {f"{channel_name}_duration"} not found in metadata file.", None
+        return f"Duration column duration not found in metadata file.", None
     
     if "laser_rate" in metadata_df.columns:
         if metadata_df["laser_rate"].nunique() != 1:
-            return f"Laser rate column {f"{channel_name}_laser_rate"} is not consistent.", None
+            return f"Laser rate column laser_rate is not consistent.", None
         metadata_dict["laser_rate"] = metadata_df["laser_rate"].iloc[0]
     else:
-        return f"Laser rate column {f"{channel_name}_laser_rate"} not found in metadata file.", None
+        return f"Laser rate column laser_rate not found in metadata file.", None
 
     return error_msg, metadata_dict

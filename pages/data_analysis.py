@@ -39,19 +39,15 @@ univar_methods = ["Feature Comparison", "Feature Histogram (GMM optional)", "Ima
 bivar_methods = ["2D Feature Distribution", "Phasor Plot"]
 col1, col2 = st.columns([0.4, 1])
 with col1:
-    st.title("Visualizations")
-    col1_1, col1_2 = st.columns([1, 1])
-    with col1_1:
-        visualization_type = st.selectbox(
-            "Visualization types",
-            ["Univariate", "Bivariate", "Multivariate"],
-            help="Univariate: Visualize the distribution of a single feature. \
-            Bivariate: Visualize the relationship between two features. \
-            Multivariate: Visualize the relationship between multiple features."
+    analysis_type = st.selectbox(
+            "",
+            ["Univariate Analysis", "Bivariate Analysis", "Multivariate Analysis"],
+            # help="Univariate: Visualize the distribution of a single feature. \
+            # Bivariate: Visualize the relationship between two features. \
+            # Multivariate: Visualize the relationship between multiple features."
         )
-    available_methods = univar_methods if visualization_type == "Univariate" else bivar_methods if visualization_type == "Bivariate" else multivar_methods
-    with col1_2:
-        method = st.selectbox(
+    available_methods = univar_methods if "Univariate" in analysis_type else bivar_methods if "Bivariate" in analysis_type else multivar_methods
+    method = st.selectbox(
             "Methods",
             available_methods,
         )

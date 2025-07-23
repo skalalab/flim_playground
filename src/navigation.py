@@ -8,7 +8,7 @@ If new modules are added, they should be included in the `pages` list below.
 # page is the name of the playground python file without the .py extension
 # title is the name of the playground as it will appear in the menu
 page_1 = "data_extraction"
-page_2 = "visualization"
+page_2 = "data_analysis"
 page_3 = "classification"
 
 pages = [page_1, page_2, page_3]

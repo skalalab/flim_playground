@@ -1,5 +1,4 @@
 import seaborn as sns
-
 import streamlit as st
 import numpy as np
 from scipy.stats import norm
@@ -8,7 +7,6 @@ from sklearn.mixture import GaussianMixture
 import pandas as pd
 from src.widgets.visualization_widgets import stats_comparison_pair_widget
 import re
-
 
 def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
     """
