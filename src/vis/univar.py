@@ -4,30 +4,27 @@ from itertools import combinations
 import numpy as np
 
 from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, stats_comparison_pair_widget
+from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, natural_tuple_sort
 
-from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, create_opacity_mapping, create_shape_mapping, _calculate_effect_size, _annotate_single_effect_size
-
-def image_comparison_plot(df, selected_var):
-    if (df["image_name"] == "missing image name").any():
+def image_comparison_plot(df, fov_name_col, selected_var):
+    if (df[fov_name_col] == "missing image name").any():
         st.markdown("<h5 style='text-align: center; color: Red;'>Warning: We cannot infer some/all image names from you cell_id column. We assume that the image name is the cell_id without the cell number (which is found after the last underscore) </h5>", unsafe_allow_html=True)
     
     fig = go.Figure()
     
-    image_names = df['image_name'].unique()
+    image_names = df[fov_name_col].unique()
     
     for image_name in image_names:
-        image_df = df[df['image_name'] == image_name]
+        image_df = df[df[fov_name_col] == image_name]
         fig.add_trace(go.Box(
             y=image_df[selected_var],
             name=image_name, # Store image_name here to retrieve on click
             boxpoints=False, # Only show the box
-            # customdata=[image_name] * len(image_df), # Alternative if name doesn't work reliably
-            # hovertemplate=f"<b>Image:</b> {image_name}<br><b>{selected_var}:</b> %{{y}}<extra></extra>"
         ))
 
     fig.update_layout(
         title=f'Distribution of {selected_var} by Image',
-        xaxis_title='Image Name',
+        xaxis_title=fov_name_col,
         yaxis_title=selected_var,
         showlegend=False, # Hide legend if too many images
         hovermode='closest',
@@ -247,44 +244,24 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
 
     return fig, df
 
-
-def feature_comparison_plot(df, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None"):
+def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None"):
     fig = go.Figure()
-    GROUP_COL_NAME = 'compare_group'
-    compare_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False)
+    COLOR_GROUP_COL_NAME = 'compare_group'
+    # Use the new helper for color, shape, opacity
+    grouped_sep, color_map, shape_map, opacity_map, separate_groups = get_point_visual_mappings(
+        df,
+        color_by=color_by,
+        shape_by=shape_by,
+        opacity_by=opacity_by,
+        separate_by=separate_by,
+        group_col_name=COLOR_GROUP_COL_NAME,
+        overlap_point=False
+    )
+    grouped_list = list(grouped_sep)
+    group_keys = [group_key for group_key, _ in grouped_list]
+    compare_groups = list(color_map.keys())
     compare_pairs = list(combinations(compare_groups, 2))
-    jitter_amount = 1
-    point_size = 5
-    
-    # Handle separate_by grouping
-    separate_groups = None
-    if separate_by and separate_by.strip() != "" and separate_by in df.columns:
-        separate_groups = sorted(df[separate_by].dropna().unique())
-    
-    # Create opacity and shape mappings if provided
-    opacity_map = None
-    shape_map = None
-    
-    if opacity_by and opacity_by.strip() != "" and opacity_by in df.columns:
-        opacity_groups = df[opacity_by].dropna().unique()
-        opacity_map = create_opacity_mapping(opacity_groups)
-    
-    if shape_by and shape_by.strip() != "" and shape_by in df.columns:
-        shape_groups = df[shape_by].dropna().unique() 
-        shape_map = create_shape_mapping(shape_groups)
-
-    # --- 1. Create all unique combinations for separate traces ---
-    # Build grouping columns list
-    all_grouping_cols = [GROUP_COL_NAME]
-    if separate_by and separate_by.strip() != "" and separate_by in df.columns:
-        all_grouping_cols.append(separate_by)
-    if opacity_by and opacity_by.strip() != "" and opacity_by in df.columns:
-        all_grouping_cols.append(opacity_by)
-    if shape_by and shape_by.strip() != "" and shape_by in df.columns:
-        all_grouping_cols.append(shape_by)
-    
-    # Group by all visual encoding variables
-    grouped = df.groupby(all_grouping_cols, dropna=False)
+    point_size = 5   
     
     # Track legend entries to avoid duplicates
     legend_entries = set()
@@ -296,11 +273,10 @@ def feature_comparison_plot(df, selected_var, color_by, opacity_by=None, shape_b
         for separate_group in separate_groups:
             section_combinations = []
             for color_group in compare_groups:
-                # Check if this combination exists in the grouped data
                 combo_exists = any(
                     (separate_group in group_key if isinstance(group_key, tuple) else group_key == separate_group) and
                     (color_group in group_key if isinstance(group_key, tuple) else group_key == color_group)
-                    for group_key in grouped.groups.keys()
+                    for group_key in group_keys
                 )
                 if combo_exists:
                     section_combinations.append((separate_group, color_group))
@@ -342,28 +318,13 @@ def feature_comparison_plot(df, selected_var, color_by, opacity_by=None, shape_b
     else:
         # Standard x-positions when no separate_by
         x_positions = {color_group: idx for idx, color_group in enumerate(compare_groups)}
-    
-    for group_key, group_df in grouped:
-        # Extract group information from group_key
+
+    for group_key, group_df in grouped_list:
+        # Always unpack group_key by position
         color_group = group_key[0]
-        
-        # Handle separate_by, opacity_by, and shape_by extraction
-        separate_group = None
-        opacity_group = None  
-        shape_group = None
-        
-        key_idx = 1  # Start from index 1 (after color_group)
-        
-        if separate_by and separate_by.strip() != "" and separate_by in df.columns:
-            separate_group = group_key[key_idx] if len(group_key) > key_idx else None
-            key_idx += 1
-            
-        if opacity_by and opacity_by.strip() != "" and opacity_by in df.columns:
-            opacity_group = group_key[key_idx] if len(group_key) > key_idx else None
-            key_idx += 1
-            
-        if shape_by and shape_by.strip() != "" and shape_by in df.columns:
-            shape_group = group_key[key_idx] if len(group_key) > key_idx else None
+        shape_group = group_key[1]
+        opacity_group = group_key[2]
+        separate_group = group_key[3]
         
         # Skip if not in our color groups (shouldn't happen but safety check)
         if color_group not in compare_groups:
@@ -379,7 +340,7 @@ def feature_comparison_plot(df, selected_var, color_by, opacity_by=None, shape_b
             f"<b>{selected_var}:</b> %{{y:.3f}}<br>" # Display the Y value
         ]
         hovertemplate_parts.append("<b>Cell ID:</b> %{text}<br>")
-        point_customdata = group_df['image_name']
+        point_customdata = group_df[fov_name_col]
         # Add the corresponding part to the hovertemplate, referencing customdata
         hovertemplate_parts.append("<b>Image:</b> %{customdata}<br>")
         hovertemplate_parts.append("<extra></extra>") # Hide the default trace info box
@@ -407,17 +368,26 @@ def feature_comparison_plot(df, selected_var, color_by, opacity_by=None, shape_b
         
         trace_name = color_group
         
-        # --- Add the go.Box Trace ---
-        fig.add_trace(go.Box(
-            # Core data and category assignment
-            y=group_df[selected_var],
-            x=[x_position] * len(group_df),  # Custom x-position for this group
+        # --- Sina plot: density-based horizontal jitter ---
+        y_data = group_df[selected_var].values
+        kde = _estimate_density_1d(y_data)
+        densities = kde(y_data)
+        # Normalize densities to a reasonable jitter width
+        max_jitter = 0.35  # Controls the max horizontal spread
+        if len(densities) > 0 and np.max(densities) > 0:
+            norm_densities = densities / np.max(densities)
+        else:
+            norm_densities = np.zeros_like(densities)
+        # Randomly assign sign to spread points left/right
+        rng = np.random.default_rng(seed=42)
+        jitter_offsets = (rng.uniform(-1, 1, size=len(y_data))) * norm_densities * max_jitter
+        x_jittered = x_position + jitter_offsets
+        # Plot points (no violin, just sina)
+        fig.add_trace(go.Scatter(
+            x=x_jittered,
+            y=y_data,
+            mode='markers',
             name=trace_name,
-            # Point display settings
-            boxpoints='all',
-            jitter=jitter_amount,
-            pointpos=0,
-            # Styling for the individual points (marker)
             marker=dict(
                 color=marker_color,
                 size=point_size,
@@ -425,54 +395,15 @@ def feature_comparison_plot(df, selected_var, color_by, opacity_by=None, shape_b
                 symbol=marker_symbol,
                 line=dict(width=0.5, color='DarkSlateGrey')
             ),
-            # Make the actual box plot elements invisible
-            fillcolor='rgba(0,0,0,0)',
-            line_color='rgba(0,0,0,0)',
-            # Legend control
             showlegend=show_legend,
-            legendgroup=color_group,  # Group all traces with same color
-            # --- Hover Info for Points ---
-            text=group_df['cell_id'],
+            legendgroup=color_group,
+            text=group_df[cell_id_col],
             customdata=point_customdata,
             hovertemplate=final_hovertemplate
         ))
     
     # --- 2. Add legend traces for opacity and shape mappings ---
-    # Add opacity legend traces
-    if opacity_map:
-        for opacity_group, opacity_value in opacity_map.items():
-            fig.add_trace(go.Scatter(
-                x=[None], y=[None],  # No data points
-                mode='markers',
-                marker=dict(
-                    size=12,
-                    color='gray',
-                    opacity=opacity_value,
-                    symbol='circle'
-                ),
-                name=f'{opacity_by}: {opacity_group}',
-                legendgroup='opacity_legend',
-                showlegend=True,
-                hoverinfo='skip'
-            ))
-    
-    # Add shape legend traces  
-    if shape_map:
-        for shape_group, shape_symbol in shape_map.items():
-            fig.add_trace(go.Scatter(
-                x=[None], y=[None],  # No data points
-                mode='markers', 
-                marker=dict(
-                    size=12,
-                    color='gray',
-                    opacity=0.8,
-                    symbol=shape_symbol
-                ),
-                                name=f'{shape_by}: {shape_group}',
-                legendgroup='shape_legend', 
-                showlegend=True,
-                hoverinfo='skip'
-            ))
+    add_point_legend_traces(fig, shape_map, opacity_map, shape_by=shape_by, opacity_by=opacity_by)
      
     # --- 3. Add vertical dashed lines between separate sections ---
     if separate_groups and len(separate_groups) > 1:
@@ -540,11 +471,7 @@ def feature_comparison_plot(df, selected_var, color_by, opacity_by=None, shape_b
         yaxis_title=selected_var,
         showlegend=True, # Show legend entries based on the 'name' of each go.Box trace
         hovermode='closest', # Hover behavior
-      #  template='plotly_white',
         margin=dict(l=50, r=20, t=50, b=max(120, len(max(compare_groups, key=len, default=''))*5)), # Adjust bottom margin for section headers
-        # Ensure boxplot elements like mean lines or whiskers are not shown if they somehow sneak through
-        # (though transparent colors should be sufficient)
-       # boxmode='group' 
     )
 
     # --- 4. Add statistical annotations ---
@@ -596,7 +523,7 @@ def feature_comparison_plot(df, selected_var, color_by, opacity_by=None, shape_b
                                 df=section_df,
                                 selected_var=selected_var,
                                 compare_groups=section_color_groups,
-                                group_col_name=GROUP_COL_NAME,
+                                group_col_name=COLOR_GROUP_COL_NAME,
                                 all_possible_pairs=section_compare_pairs,
                                 effect_size_method=effect_size_method,
                                 position_map=section_position_map,
@@ -610,10 +537,10 @@ def feature_comparison_plot(df, selected_var, color_by, opacity_by=None, shape_b
                 df=df,
                 selected_var=selected_var,
                 compare_groups=compare_groups,
-                group_col_name=GROUP_COL_NAME,
+                group_col_name=COLOR_GROUP_COL_NAME,
                 all_possible_pairs=compare_pairs,
                 effect_size_method=effect_size_method
             )
 
-    df.drop(columns=[GROUP_COL_NAME], inplace=True)
+    df.drop(columns=[COLOR_GROUP_COL_NAME], inplace=True)
     return fig

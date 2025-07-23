@@ -1,12 +1,13 @@
 import seaborn as sns
 import streamlit as st
 import numpy as np
-from scipy.stats import norm
+from scipy.stats import norm, gaussian_kde
 from scipy.optimize import brentq
 from sklearn.mixture import GaussianMixture
 import pandas as pd
 from src.widgets.visualization_widgets import stats_comparison_pair_widget
 import re
+import plotly.graph_objects as go
 
 def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
     """
@@ -35,20 +36,21 @@ def cohens_d(group1, group2):
     return mean_diff / pooled_sd
 
 def create_opacity_mapping(groups, min_opacity=0.3, max_opacity=1.0):
-    """Create opacity mapping for groups with evenly spaced values"""
+    """Create opacity mapping for groups with evenly spaced values, preserving natural order"""
+    groups = list(groups)
+    groups = natural_tuple_sort(groups) if len(groups) > 1 else groups
     if len(groups) == 1:
         return {groups[0]: max_opacity}
-    
     opacity_values = np.linspace(min_opacity, max_opacity, len(groups))
-    return {group: opacity_values[i] for i, group in enumerate(sorted(groups))}
+    return {group: opacity_values[i] for i, group in enumerate(groups)}
 
 def create_shape_mapping(groups):
-    """Create shape mapping for groups using different plotly symbols"""
-    # Available plotly marker symbols
+    """Create shape mapping for groups using different plotly symbols, preserving natural order"""
+    groups = list(groups)
+    groups = natural_tuple_sort(groups) if len(groups) > 1 else groups
     symbols = ['circle', 'square', 'diamond', 'cross', 'x', 'triangle-up', 
                'triangle-down', 'pentagon', 'hexagon', 'octagon', 'star', 'diamond-tall']
-    
-    return {group: symbols[i % len(symbols)] for i, group in enumerate(sorted(groups))}
+    return {group: symbols[i % len(symbols)] for i, group in enumerate(groups)}
 
 def create_color_map(groups, overlap_point):
     # if points in the visulization is going to overlap, use a transparent color
@@ -305,7 +307,6 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
         # No explicit "else" for unsupported methods here as _calculate_effect_size handles the warning,
         # and effect_size_value would be None, thus skipping annotation.
 
-
 def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_state=42):
     """
     Finds the best Gaussian Mixture Model (GMM) based on BIC, subject to constraints.
@@ -362,6 +363,85 @@ def natural_tuple_sort(strings, delimiter='::'):
     """
     return sorted(strings, key=lambda x: tuple_natural_key(x.split(delimiter)))
 
+def create_opacity_groups_and_map(df, opacity_by_col):
+    """
+    Given a DataFrame and a column name, return sorted unique groups and an opacity map.
+    """
+    if opacity_by_col and opacity_by_col in df.columns:
+        groups = df[opacity_by_col].dropna().unique()
+        groups = natural_tuple_sort(groups)
+        opacity_map = create_opacity_mapping(groups)
+        return groups, opacity_map
+    else:
+        return [], None
+
+def create_shape_groups_and_map(df, shape_by_col):
+    """
+    Given a DataFrame and a column name, return sorted unique groups and a shape map.
+    """
+    if shape_by_col and shape_by_col in df.columns:
+        groups = df[shape_by_col].dropna().unique()
+        groups = natural_tuple_sort(groups)
+        shape_map = create_shape_mapping(groups)
+        return groups, shape_map
+    else:
+        return [], None
+
+def get_point_visual_mappings(
+    df,
+    color_by=None,
+    shape_by=None,
+    opacity_by=None,
+    separate_by=None,
+    group_col_name="group",
+    overlap_point=True
+):
+    """
+    General helper for point-based visualizations to handle color_by, shape_by, and opacity_by.
+    Returns grouped DataFrame, color_map, shape_map, opacity_map, and group keys.
+    """
+    # Prepare color grouping
+    color_by = color_by or []
+    if isinstance(color_by, str):
+        color_by = [color_by]
+    unique_color_groups, color_map = _prepare_group_data(df, color_by, group_col_name, overlap_point=overlap_point)
+    # Prepare shape mapping
+    shape_groups, shape_map = create_shape_groups_and_map(df, shape_by)
+    # Prepare opacity mapping
+    opacity_groups, opacity_map = create_opacity_groups_and_map(df, opacity_by)
+    if separate_by and separate_by.strip() != "" and separate_by in df.columns:
+        separate_groups = natural_tuple_sort(df[separate_by].dropna().unique())
+    else:
+        separate_groups = None
+
+    # Build ordered group keys from mapping dicts
+    from itertools import product
+    color_keys = list(color_map.keys())
+    shape_keys = list(shape_map.keys()) if shape_map else [None]
+    opacity_keys = list(opacity_map.keys()) if opacity_map else [None]
+    separate_keys = list(separate_groups) if separate_groups is not None else [None]
+
+    def ordered_group_iter():
+        for group_key in product(color_keys, shape_keys, opacity_keys, separate_keys):
+            # Build boolean mask for each group
+            mask = (
+                (df[group_col_name] == group_key[0])
+            )
+            if shape_by and shape_by in df.columns:
+                mask &= (df[shape_by] == group_key[1])
+            if opacity_by and opacity_by in df.columns:
+                mask &= (df[opacity_by] == group_key[2])
+            if separate_by and separate_by in df.columns:
+                mask &= (df[separate_by] == group_key[3])
+            group_df = df[mask]
+            if len(group_df) > 0:
+                yield group_key, group_df
+
+    # Return an iterable like a groupby object, but ordered as specified
+    grouped_ordered = ordered_group_iter()
+
+    return grouped_ordered, color_map, shape_map, opacity_map, separate_groups
+
 # Function to apply plot styling to any figure
 def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     """Apply consistent styling to plotly figures"""
@@ -395,4 +475,61 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
             font=dict(size=legend_size)
         )
     )
+    return fig
+
+def _estimate_density_1d(y_values, bw_method='scott'):
+    """
+    Estimate the density of y_values using KDE. Returns a function that maps y to density.
+    """
+
+    y_values = np.asarray(y_values)
+    if len(y_values) < 2:
+        return lambda y: np.zeros_like(np.asarray(y))
+    kde = gaussian_kde(y_values, bw_method=bw_method)
+    return kde
+
+def add_point_legend_traces(fig, shape_map, opacity_map, shape_by=None, opacity_by=None):
+    """
+    Adds legend traces for shape and opacity visual channels to the given figure.
+    """
+    # Add opacity legend traces
+    if opacity_map:
+        for i, (opacity_group, opacity_value) in enumerate(opacity_map.items()):
+            fig.add_trace(
+                go.Scatter(
+                    x=[None], y=[None],
+                    mode='markers',
+                    marker=dict(
+                        size=12,
+                        color='gray',
+                        opacity=opacity_value,
+                        symbol='circle'
+                    ),
+                    name=f'{opacity_group}',
+                    legendgroup='opacity_legend',
+                    showlegend=True,
+                    legendrank=100 + i,
+                    hoverinfo='skip'
+                )
+            )
+    # Add shape legend traces
+    if shape_map:
+        for i, (shape_group, shape_symbol) in enumerate(shape_map.items()):
+            fig.add_trace(
+                go.Scatter(
+                    x=[None], y=[None],
+                    mode='markers',
+                    marker=dict(
+                        size=12,
+                        color='gray',
+                        opacity=0.8,
+                        symbol=shape_symbol
+                    ),
+                    name=f'{shape_group}',
+                    legendgroup='shape_legend',
+                    showlegend=True,
+                    legendrank=200 + i,
+                    hoverinfo='skip'
+                )
+            )
     return fig

@@ -6,7 +6,7 @@ import pandas as pd
 import umap
 import plotly.graph_objects as go
 import streamlit as st
-from .helpers import _prepare_group_data 
+from .helpers import get_point_visual_mappings, add_point_legend_traces
 import threading    
 @st.cache_data
 def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
@@ -33,11 +33,10 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
             df = pd.DataFrame(reducer.fit_transform(X_std), columns=["UMAP1", "UMAP2"])
     return df, exp_var
 
-def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_dict={}, colored_by=[], exp_var=None):
-    """create a plotly plot to visualize the dimension-reduced data
-    """
+def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_dict={}, colored_by=[], opacity_by=None, shape_by=None, exp_var=None):
+    """create a plotly plot to visualize the dimension-reduced data"""
     X = df[selected_features]
-                    # perform dimension reduction
+    # perform dimension reduction
     df_reduced, exp_var = dimension_reduction(X, n_components=2, method=method, hyperParam_dict=hyperParam_dict)
     # augment df_reduced with required columns and categorical columns used for coloring
     df_reduced["cell_id"] = df["cell_id"].values
@@ -45,6 +44,10 @@ def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_di
     # Add all color columns at once if there are any
     if len(colored_by) > 0:
         df_reduced[colored_by] = df[colored_by].values
+    if shape_by:
+        df_reduced[shape_by] = df[shape_by].values
+    if opacity_by:
+        df_reduced[opacity_by] = df[opacity_by].values
     # plot the reduced data
     fig = go.Figure()
     if method == "Principal Component Analysis":
@@ -54,26 +57,36 @@ def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_di
     else:
         axis_labels = ["dim1", "dim2"]
 
-    # colored by unique combinations of the selected categorical columns
     GROUP_COL_NAME = 'unique_color_group'
-    unique_color_groups, color_map = _prepare_group_data(df_reduced, colored_by, GROUP_COL_NAME, overlap_point=True)
-
-    # plot scatter plot iteratively, once for each color group
-    for g in unique_color_groups:
-        g_df =  df_reduced[df_reduced[GROUP_COL_NAME] == g]
+    grouped, color_map, shape_map, opacity_map, _ = get_point_visual_mappings(
+        df_reduced,
+        color_by=colored_by,
+        shape_by=shape_by,
+        opacity_by=opacity_by,
+        group_col_name=GROUP_COL_NAME,
+        overlap_point=True
+    )
+    for group_key, group_df in grouped:
+        color_group = group_key[0]
+        shape_group = group_key[1] if shape_by else None
+        opacity_group = group_key[2] if shape_by and opacity_by else (group_key[1] if opacity_by else None)
+        marker_color = color_map[color_group]
+        marker_symbol = shape_map[shape_group] if shape_group is not None and shape_map else 'circle'
+        marker_opacity = opacity_map[opacity_group] if opacity_group is not None and opacity_map else 0.8
         fig.add_trace(
             go.Scatter(
-                x=g_df[axis_labels[0]],
-                y=g_df[axis_labels[1]],
+                x=group_df[axis_labels[0]],
+                y=group_df[axis_labels[1]],
                 mode='markers',
-                name=f'{g}',
-                text=g_df["cell_id"],   
-                customdata=g_df["image_name"],
+                name=f'{color_group}',
+                text=group_df["cell_id"],
+                customdata=group_df["image_name"],
                 hovertemplate="<b>%{text}</b>",
-                marker=dict(color=color_map[g])
+                marker=dict(color=marker_color, symbol=marker_symbol, opacity=marker_opacity)
             ),
-    )               
-        
+        )
+    # Add shape/opacity legends if needed
+    add_point_legend_traces(fig, shape_map, opacity_map, shape_by=shape_by, opacity_by=opacity_by)
     fig.update_layout(
         hovermode='closest'
     )

@@ -11,6 +11,7 @@ from src.vis.multivar import dimension_reduction_plot
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
 from src.vis.univar import image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
 from src.vis.helpers import apply_plot_styling
+from src.feature_types import unique_cell_id_col, fov_name_col
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
@@ -83,8 +84,9 @@ with col2:
         point_based = method not in ["Image Comparison", "Feature Histogram (GMM optional)"]
         color_based = method not in ["Image Comparison"]
         image_based = method in ["Image Comparison"]
+        separate_by_available = method in ["Feature Comparison"]
         fig = None
-        color_by, opacity_by, shape_by, separate_by = visual_encoding_channels_widget(filtered_df, color_based=color_based, point_based=point_based)
+        color_by, opacity_by, shape_by, separate_by = visual_encoding_channels_widget(filtered_df, color_based=color_based, point_based=point_based, separate_by_available=separate_by_available)
         # check if the df is empty after filtering
         if not filtered_df.empty:
             if method in univar_methods and selected_var != "Select":
@@ -93,9 +95,9 @@ with col2:
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        fig = feature_comparison_plot(filtered_df, selected_var, color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method)
+                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_cell_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method)
                     elif method == "Image Comparison":
-                        fig = image_comparison_plot(filtered_df, selected_var)
+                        fig = image_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var)
                     elif method == "Feature Histogram (GMM optional)":
                         # create a switch to select between GMM and histogram
                         apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, help="Fit Gaussian Mixture Models\
@@ -113,13 +115,13 @@ with col2:
                     # drop rows with NaN values in the selected_x and selected_y columns
                     filtered_df = filtered_df[filtered_df[selected_x].notna() & filtered_df[selected_y].notna()]
                     if len(filtered_df) > 0:
-                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by)
+                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by, shape_by, opacity_by)
                         data_export_ready = True
                     else:
                         st.write("No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Phasor Plot":
                     if selected_channel is not None and selected_harmonic is not None and f is not None:
-                        fig = phasor_plot(filtered_df, selected_channel, color_by=color_by, f=f, harmonic=selected_harmonic)
+                        fig = phasor_plot(filtered_df, selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, f=f, harmonic=selected_harmonic)
                     else:
                         st.write("Your data does not contain the required features for phasor plot.")
                                    
@@ -132,7 +134,7 @@ with col2:
                     
                     if len(filtered_df) > 0:
                         # plot the reduced data
-                        fig = dimension_reduction_plot(filtered_df, selected_features, method=method, hyperParam_dict=hyperParam_dict, colored_by=color_by)
+                        fig = dimension_reduction_plot(filtered_df, selected_features, method=method, hyperParam_dict=hyperParam_dict, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by)
                     else:
                         st.write(f"No data available after removing rows with missing values {sad_emoji}")
             

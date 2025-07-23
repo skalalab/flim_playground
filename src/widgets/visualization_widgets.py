@@ -2,7 +2,7 @@ import streamlit as st
 import numpy as np
 from src.feature_types import all_feature_extractors, categorical_cols
 
-def visual_encoding_channels_widget(filtered_df, color_based=True, point_based=True):
+def visual_encoding_channels_widget(filtered_df, color_based=True, point_based=True, separate_by_available=False):
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
     color_by = []
     opacity_by = shape_by = separate_by = None
@@ -13,31 +13,33 @@ def visual_encoding_channels_widget(filtered_df, color_based=True, point_based=T
     if not color_based:
         return color_by, opacity_by, shape_by, separate_by
     
-    # Create columns based on what widgets we need
-    if point_based:
-        col1, col2, col3, col4 = st.columns(4)
-        cols = [col1, col2, col3, col4]
-    else:
-        col1, col2 = st.columns(2)
-        cols = [col1, col2]
-    
+    # Determine number of columns
+    num_cols = 4 if point_based and separate_by_available else 3 if point_based else 1
+    cols = st.columns(num_cols)
+
     # Separate by widget
-    with cols[0]:
-        separate_by = st.selectbox("Separate by", available_categories, index=None, placeholder="Choose an option...")
-    
+    if separate_by_available and point_based:
+        with cols[0]:
+            separate_by = st.selectbox("Separate by", available_categories, index=None, placeholder="Choose an option...")
+
     # Color by widget (exclude separate_by option)
-    available_for_color = [cat for cat in available_categories if cat != separate_by]
-    with cols[1]:
-        if available_for_color:
-            color_by = st.multiselect("Color by", available_for_color, default=[available_for_color[-1]])
-    
+        available_for_color = [cat for cat in available_categories if cat != separate_by]
+        with cols[1]:
+            color_by = st.multiselect("Color by", available_for_color, default=[available_for_color[-1]] if available_for_color else [])
+    else: 
+        with cols[0]:
+            color_by = st.multiselect("Color by", available_categories, default=[available_categories[-1]] if available_categories else [])
+
+    # Initialize defaults
+    opacity_by = shape_by = None
+
     # Point-based widgets (opacity and shape)
     if point_based:
-        with cols[2]:
+        with cols[2 if separate_by_available else 1]:
             opacity_by = st.selectbox("Opacity by", available_categories, index=None, placeholder="Choose an option...")
-        with cols[3]:
+        with cols[3 if separate_by_available else 2]:
             shape_by = st.selectbox("Shape by", available_categories, index=None, placeholder="Choose an option...")
-      
+
     return color_by, opacity_by, shape_by, separate_by
 
 def umap_hyperParams_widget():
@@ -105,7 +107,10 @@ def phasor_params_widget(feature_cols_dict):
     channel_harmonics = {}
     
     for extractor_channel in feature_cols_dict.keys():
-        extractor, channel = extractor_channel.split("_")
+        try:
+            extractor, channel = extractor_channel.split("_")
+        except Exception as e:
+            continue
         if extractor == "Lifetime fit free":
             channel_harmonics[channel] = []
             for feature in feature_cols_dict[extractor_channel]:
@@ -120,11 +125,11 @@ def phasor_params_widget(feature_cols_dict):
         selected_channel = list(channel_harmonics.keys())[0]
     else:
         selected_channel = None
-        st.warning("No available channels found for phasor plot")
+        st.error("No available channels found for phasor plot")
     selected_harmonic = None
     for channel in channel_harmonics.keys():
         if channel_harmonics[channel] == []:
-            st.warning(f"No available harmonics found for {channel}")     
+            st.error(f"No available harmonics found for {channel}")     
         elif len(channel_harmonics[channel]) == 1:
             selected_harmonic = channel_harmonics[channel][0]
         else:
