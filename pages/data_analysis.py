@@ -1,11 +1,9 @@
 import streamlit as st
-from streamlit_plotly_events import plotly_events
 
 from src.dataset_io import load_csv, happy_emoji, sad_emoji
 from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget, twod_single_feature_select_widget
 from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget, visual_encoding_channels_widget, plot_config_widget
 from src.widgets.filter_widgets import filters_widget
-from src.widgets.click_plot_widgets import add_image_or_cell_widget, add_img_cell_widget, display_infoList_widget, reset_widget, add_img_widget
 from src.navigation import render_top_menu
 from src.vis.multivar import dimension_reduction_plot
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
@@ -19,14 +17,6 @@ render_top_menu()
 # initialize session_states
 if "vis_df" not in st.session_state:
     st.session_state.vis_df = None
-if "added_images" not in st.session_state:
-    st.session_state["added_images"] = []
-if "added_cells" not in st.session_state:
-    st.session_state["added_cells"] = []
-if "last_processed_click" not in st.session_state:
-    st.session_state.last_processed_click = None
-if "last_processed_click_img" not in st.session_state:
-    st.session_state.last_processed_click_img = None
 if "plot_point_size" not in st.session_state:
     st.session_state.plot_point_size = 5
 if "plot_axis_label_size" not in st.session_state:
@@ -153,59 +143,16 @@ with col2:
             
             if fig is not None: 
                 fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
-                if not point_based and not image_based:
-                    st.plotly_chart(fig, use_container_width=True)
-                elif image_based:
-                    current_clicked_points_img = plotly_events(
-                        fig, click_event=True, hover_event=False, select_event=False, key="image_removal_only")                                 
-                    # --- Specific logic for Image Comparison outlier removal ---
-                    # Process only if it's a new, non-empty click
-                    if current_clicked_points_img and current_clicked_points_img != st.session_state.last_processed_click_img:
-                        add_img_widget(current_clicked_points_img, fig)
-                       
-                    # Reset if the current event is empty (no click)
-                    elif not current_clicked_points_img:
-                         st.session_state.last_processed_click_img = None
-                    st.markdown(f"<h5 style='text-align: center;'>Click on a boxplot to show the detailed info of the selected image {happy_emoji}</h5>", unsafe_allow_html=True)
-                else: # point_based
-                    if method == "2D Feature Distribution":
-                        col2_1, col2_2 = st.columns([1, 1])
-                        with col2_1:
-                            current_clicked_points = plotly_events(
-                                fig, click_event=True, hover_event=False, select_event=False, key="2d_distribution_removal")
-                        with col2_2:
-                            if table_md != []:
-                                st.markdown(table_md)
-                    else:   
-                        current_clicked_points = plotly_events(
-                            fig, click_event=True, hover_event=False, select_event=False, key="image_and_cell_removal" # Use a unique key
-                        )
-                    image_removal, cell_removal = add_image_or_cell_widget()
                 
-                    # Process only if it's a new, non-empty click
-                    if current_clicked_points and current_clicked_points != st.session_state.last_processed_click:
-                        # Standard outlier removal widget call
-                        add_img_cell_widget(current_clicked_points, fig) 
-
-                    # Reset if the current event is empty (no click)
-                    elif not current_clicked_points:
-                         st.session_state.last_processed_click = None
-
-                    st.markdown(f"<h5 style='text-align: center;'>Click on a point to show the detailed info of the selected image or cell {happy_emoji}</h5>", unsafe_allow_html=True)
-                
-                # Widgets after the plot is displayed      
-                # 1. Display added items and reset options
-                if len(st.session_state["added_images"]) > 0 or len(st.session_state["added_cells"]) > 0:
-                    display_infoList_widget()
-                    reset_widget()
-                # 2. Data export (if applicable)
+                st.plotly_chart(fig, use_container_width=True)
+                # 1. Data export (if applicable)
                 if data_export_ready:
                     # available for download
                     if method == "2D Feature Distribution" and "2D_GMM_group" in gmm_df.columns:
                         st.download_button(label="Download 2D GMM data", data=gmm_df.to_csv(index=False), file_name="2D_gmm_data.csv")
                     elif method == "Feature Histogram" and "GMM_group" in df.columns:
                         st.download_button(label="Download GMM Grouped Data", data=df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
-                # 3. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots 
+                # 2. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots 
                 st.markdown("---")  # Add a separator line
                 st.subheader("📊 Plot Styling")
                 # Get current values from session state as defaults for the widgets

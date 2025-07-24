@@ -1,6 +1,6 @@
 import streamlit as st
 from src.feature_types import categorical_cols
-
+from src.vis.helpers import natural_tuple_sort
 # Generic callback function to handle "All" logic
 def update_multiselect(key, options):
     current_selection = st.session_state[key]
@@ -10,48 +10,58 @@ def update_multiselect(key, options):
         else:
             st.session_state[key] = [option for option in current_selection if option != "All"]
 
-
 def filters_widget(df):
-    filtered_df = df.copy()
     categories_to_filter = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1]
-    if len(categories_to_filter) > 0:
-        cols = st.columns(len(categories_to_filter))
+    
+    if not categories_to_filter:
+        return df.copy()
 
-    # Track selections for each filter
+    cols = st.columns(len(categories_to_filter))
+    
+    # This dataframe is progressively filtered to determine the options for subsequent filters.
+    options_df = df.copy()
+    
+    # This dataframe is filtered at the end based on all selections.
+    final_filtered_df = df.copy()
+
     for i, category in enumerate(categories_to_filter):
         with cols[i]:
-            unique_values = filtered_df[category].unique().tolist()
-            try:
-                unique_values = sorted(unique_values, key=lambda x: float(x) if isinstance(x, str) and x.replace('.', '', 1).isdigit() else x)
-            except Exception:
-                unique_values = sorted(unique_values)
-            unique_values.append("All")
+            # Use the progressively filtered dataframe to get unique values for the current filter
+            unique_values_for_current_filter = options_df[category].unique().tolist()
+            unique_values_for_current_filter = natural_tuple_sort(unique_values_for_current_filter, delimiter='_')
+            unique_values_for_current_filter.append("All")
 
             key = f"{category}_multiselect"
-            # If current selection is not in new options, reset to first available
-            current_selection = st.session_state.get(key, [unique_values[0]])
-            # Remove any values not in unique_values
-            valid_selection = [v for v in current_selection if v in unique_values]
+            
+            # Get current selection from session state, defaulting to "All"
+            current_selection = st.session_state.get(key, ["All"])
+
+            # Ensure that the current selection is valid given the available options
+            valid_selection = [v for v in current_selection if v in unique_values_for_current_filter]
             if not valid_selection:
-                valid_selection = [unique_values[0]]
-            # If "All" is in options and nothing is selected, default to "All"
-            if "All" in unique_values and not valid_selection:
                 valid_selection = ["All"]
-            # Update session state if needed
+            
+            # If the selection in the session state is not valid, update it before rendering the widget.
             if st.session_state.get(key) != valid_selection:
                 st.session_state[key] = valid_selection
 
             selected_values = st.multiselect(
                 f"Select {category}(s)",
-                unique_values,
+                unique_values_for_current_filter,
                 key=key,
                 on_change=update_multiselect,
-                args=(key, unique_values),
+                args=(key, unique_values_for_current_filter),
             )
 
-            # Filter the dataframe based on the selected values
-            if "All" in selected_values:
-                pass
-            else:
-                filtered_df = filtered_df[filtered_df[category].isin(selected_values)]
-    return filtered_df
+            # Progressively filter the dataframe for determining the next filter's options.
+            if "All" not in selected_values:
+                options_df = options_df[options_df[category].isin(selected_values)]
+
+    # After creating all widgets, filter the original dataframe based on all selections.
+    for category in categories_to_filter:
+        key = f"{category}_multiselect"
+        selected_values = st.session_state.get(key, ["All"])
+        if "All" not in selected_values:
+            final_filtered_df = final_filtered_df[final_filtered_df[category].isin(selected_values)]
+            
+    return final_filtered_df

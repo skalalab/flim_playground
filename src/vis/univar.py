@@ -293,7 +293,6 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             if section_idx > 0:
                 current_x += section_spacing  # Add spacing between sections
             
-            section_start_x = current_x
             for local_idx, (separate_group, color_group) in enumerate(section_combinations):
                 x_positions[(separate_group, color_group)] = current_x
                 x_tick_positions_actual.append(current_x)
@@ -458,19 +457,21 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         
         xaxis_config = dict(
             tickvals=x_tick_positions_actual,
-            ticktext=x_tick_labels_actual
+            ticktext=x_tick_labels_actual,
+            zeroline=False,
         )
     else:
         # Standard x-axis configuration
         xaxis_config = dict(
             tickvals=list(range(len(compare_groups))),
-            ticktext=compare_groups
+            ticktext=compare_groups,
+            zeroline=False,
         )
     
     fig.update_layout(
         title=full_title,
         xaxis=xaxis_config,
-        yaxis_title=selected_var,
+        yaxis=dict(title=selected_var, showline=False),
         showlegend=True, # Show legend entries based on the 'name' of each go.Box trace
         hovermode='closest', # Hover behavior
         margin=dict(l=50, r=20, t=50, b=max(120, len(max(compare_groups, key=len, default=''))*5)), # Adjust bottom margin for section headers

@@ -9,10 +9,12 @@ fov_name_col = get_fov_name_col()
 required_cols = [unique_cell_id_col, fov_name_col]
 
 # customizable categorical columns
-categorical_cols = [ "experiment", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "patient_id", "replicate", "GMM_group", "2D_GMM_group", fov_name_col]
+categorical_cols = [ "experiment", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "patient_id", "replicate", "GMM_group", "2D_GMM_group"]
 
 
 # Numerical Feature prefixes
 # group by extractor_channelName
 
 all_feature_extractors = get_all_feature_extractors()
+
+intensity_morphology_features = ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length", "circularity"]

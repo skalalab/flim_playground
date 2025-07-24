@@ -197,13 +197,13 @@ def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_g
     fig.add_shape(
         type="line", x0=x_start_new, y0=final_y_bracket_top,
         x1=x_end_new, y1=final_y_bracket_top,
-        line=dict(color="black", width=1.5)
+        line=dict(width=1.5, color='gray')
     )
     for x_pos_single in [x_start_new, x_end_new]:
         fig.add_shape(
             type="line", x0=x_pos_single, y0=final_y_bracket_top,
             x1=x_pos_single, y1=final_y_bracket_top - bracket_vertical_length_abs,
-            line=dict(color="black", width=1.5)
+            line=dict(width=1.5, color='gray')
         )
     # Add effect size text
     fig.add_annotation(
