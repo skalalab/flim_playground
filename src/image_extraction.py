@@ -35,24 +35,28 @@ def get_offset(decay_curve):
 def get_intensity_morphology_features(metadata, channel_name, fov_col_name):
     # get mask morphology features
     mask_morphology_features = ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length", "circularity"]
-    mask = load_image(metadata[f"{channel_name}_Mask"])
+    try:
+        mask = load_image(metadata[f"{channel_name}_Mask"])
+    except Exception as e:
+        return f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}", None
     mask_props = regionprops(label_image=mask)
     fov_name = metadata[fov_col_name]
-    single_cell_features_fov = {}
+    single_cell_morph_features_fov = {}
     for region in mask_props:
         cell_id = f"{fov_name}_{region.label}"
-        if cell_id not in single_cell_features_fov:
-            single_cell_features_fov[cell_id] = {}
+        if cell_id not in single_cell_morph_features_fov:
+            single_cell_morph_features_fov[cell_id] = {}
         # Add centroid x and y: image data is indexed in NumPy and most image processing libraries in "reverse"
-        single_cell_features_fov[cell_id]['centroid_x'] = region.centroid[1]
-        single_cell_features_fov[cell_id]['centroid_y'] = region.centroid[0]
+        single_cell_morph_features_fov[cell_id]['centroid_x'] = region.centroid[1]
+        single_cell_morph_features_fov[cell_id]['centroid_y'] = region.centroid[0]
         for feature in mask_morphology_features:
             feature_name = f"{feature}"
             if feature in region:
-                single_cell_features_fov[cell_id][feature_name] = region[feature]
+                single_cell_morph_features_fov[cell_id][feature_name] = region[feature]
             elif feature == "circularity":
-                single_cell_features_fov[cell_id][feature_name] = 4 * np.pi * region.area / region.perimeter**2 if region.perimeter > 0 else 0
-    return single_cell_features_fov
+                single_cell_morph_features_fov[cell_id][feature_name] = 4 * np.pi * region.area / region.perimeter**2 if region.perimeter > 0 else 0
+    single_cell_morph_features_fov = pd.DataFrame.from_dict(single_cell_morph_features_fov, orient='index')
+    return "", single_cell_morph_features_fov
 
 def spcimage_fit_extraction(metadata, channel_name, num_components, fov_colname):
     fit_feature_prefix = f"Lifetime fit_{channel_name}: "
@@ -273,6 +277,14 @@ def fov_extraction(metadata, metadata_dict):
             if fit or fit_free:
                 single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, metadata_dict)
                 fov_feature_dfs.append(single_cell_lifetime_features)
+            int_morph = "Intensity morphology" in selected_feature_extractors
+            if int_morph:
+                error_msg, single_cell_morph_features_fov = get_intensity_morphology_features(metadata, channel_name, metadata_dict["fov_name_col"])
+                if error_msg != "":
+                    st.error(error_msg)
+                else:   
+                    fov_feature_dfs.append(single_cell_morph_features_fov)
+            int_texture = "Intensity texture" in selected_feature_extractors
     
     # Combine all channel DataFrames in one operation
     single_cell_features_fov = pd.concat(fov_feature_dfs, axis=1) if fov_feature_dfs else pd.DataFrame()
