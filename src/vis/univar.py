@@ -245,6 +245,7 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
     return fig, df
 
 def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None"):
+    connect_means = st.checkbox("Connect means", value=False, key=f"connect_means_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
     fig = go.Figure()
     COLOR_GROUP_COL_NAME = 'compare_group'
     # Use the new helper for color, shape, opacity
@@ -401,6 +402,74 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             hovertemplate=final_hovertemplate
         ))
     
+    if connect_means:
+        if separate_groups:
+            # Create a line for each separate group
+            for section_info in separate_sections_info:
+                section_group_name = section_info['group']
+                
+                # These are the color groups that exist in this section
+                section_color_groups = [combo[1] for combo in section_info['combinations']]
+                
+                # Get the relevant data for this section
+                section_df = df[df[separate_by] == section_group_name]
+                
+                means_to_plot = []
+                for color_group in section_color_groups:
+                    # Get x position
+                    x_pos = x_positions.get((section_group_name, color_group))
+                    if x_pos is None: continue
+
+                    # Calculate mean
+                    group_data = section_df[section_df[COLOR_GROUP_COL_NAME] == color_group]
+                    if not group_data.empty:
+                        mean_y = group_data[selected_var].mean()
+                        means_to_plot.append({'x': x_pos, 'y': mean_y})
+                
+                # Sort by x position to draw line correctly
+                if len(means_to_plot) > 1:
+                    means_to_plot.sort(key=lambda p: p['x'])
+                    x_coords = [p['x'] for p in means_to_plot]
+                    y_coords = [p['y'] for p in means_to_plot]
+                    
+                    fig.add_trace(go.Scatter(
+                        x=x_coords,
+                        y=y_coords,
+                        mode='lines+markers',
+                        name=f'Mean ({section_group_name})',
+                        line=dict(color='gray', width=1, dash='solid'),
+                        marker=dict(size=8, color='gray', symbol='x'),
+                        showlegend=True
+                    ))
+        else: # No separate_by
+            means_to_plot = []
+            for color_group in compare_groups:
+                # Get x position
+                x_pos = x_positions.get(color_group)
+                if x_pos is None: continue
+
+                # Calculate mean
+                group_data = df[df[COLOR_GROUP_COL_NAME] == color_group]
+                if not group_data.empty:
+                    mean_y = group_data[selected_var].mean()
+                    means_to_plot.append({'x': x_pos, 'y': mean_y})
+            
+            # Sort by x position to draw line correctly
+            if len(means_to_plot) > 1:
+                means_to_plot.sort(key=lambda p: p['x'])
+                x_coords = [p['x'] for p in means_to_plot]
+                y_coords = [p['y'] for p in means_to_plot]
+
+                fig.add_trace(go.Scatter(
+                    x=x_coords,
+                    y=y_coords,
+                    mode='lines+markers',
+                    name='Mean',
+                    line=dict(color='gray', width=2, dash='solid'),
+                    marker=dict(size=8, color='black', symbol='x'),
+                    showlegend=False
+                ))
+
     # --- 2. Add legend traces for opacity and shape mappings ---
     add_point_legend_traces(fig, shape_map, opacity_map, shape_by=shape_by, opacity_by=opacity_by)
      

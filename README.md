@@ -36,7 +36,6 @@ pyinstaller Flim-Playground.spec --clean
 - add flimlib
 - finish morphology and texture
 - data analysis (vis + classification) config
-- add line connection option in feature comparison
 - add confidence interval to effect size 
 - move config away?
 - fix the color order?

@@ -153,7 +153,6 @@ with col2:
                     elif method == "Feature Histogram" and "GMM_group" in df.columns:
                         st.download_button(label="Download GMM Grouped Data", data=df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
                 # 2. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots 
-                st.markdown("---")  # Add a separator line
                 st.subheader("📊 Plot Styling")
                 # Get current values from session state as defaults for the widgets
                 new_point_size, new_axis_label_size, new_legend_size = plot_config_widget(point_based=point_based)
