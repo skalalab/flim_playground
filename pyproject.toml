@@ -42,7 +42,6 @@ dependencies = [
     "seaborn==0.13.2",
     "six==1.17.0",
     "streamlit==1.44.1",
-    "streamlit-plotly-events==0.0.6",
     "threadpoolctl==3.6.0",
     "tifffile==2025.3.30",
     "toml==0.10.2",

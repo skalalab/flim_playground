@@ -18,7 +18,7 @@ def image_comparison_plot(df, fov_name_col, selected_var):
         image_df = df[df[fov_name_col] == image_name]
         fig.add_trace(go.Box(
             y=image_df[selected_var],
-            name=image_name, # Store image_name here to retrieve on click
+            name=image_name, 
             boxpoints=False, # Only show the box
         ))
 

@@ -3,10 +3,10 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('src', 'src'), ('pages', 'pages'), ('main.py', '.'), ('launcher.py', '.'), ('config.toml', '.'), ('logo.png', '.')]
 binaries = []
-hiddenimports = ['pages.classification', 'pages.visualization', 'pages.data_extraction', 'psutil']
+hiddenimports = ['pages.data_analysis', 'pages.data_extraction', 'pages.classification', 'psutil']
 tmp_ret = collect_all('streamlit')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-tmp_ret = collect_all('streamlit_plotly_events')
+tmp_ret = collect_all('imblearn')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
