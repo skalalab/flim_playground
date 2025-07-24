@@ -297,7 +297,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             for local_idx, (separate_group, color_group) in enumerate(section_combinations):
                 x_positions[(separate_group, color_group)] = current_x
                 x_tick_positions_actual.append(current_x)
-                x_tick_labels_actual.append(color_group)
+                x_tick_labels_actual.append("" if color_group == "all_data" else color_group)
                 current_x += 1
         
         # Store for later use in x-axis configuration
@@ -458,12 +458,14 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         
         xaxis_config = dict(
             tickvals=x_tick_positions_actual,
-            ticktext=x_tick_labels_actual,
-            title=f'{", ".join(color_by)}'
+            ticktext=x_tick_labels_actual
         )
     else:
         # Standard x-axis configuration
-        xaxis_config = dict(title=', '.join(color_by))
+        xaxis_config = dict(
+            tickvals=list(range(len(compare_groups))),
+            ticktext=compare_groups
+        )
     
     fig.update_layout(
         title=full_title,

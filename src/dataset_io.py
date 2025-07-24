@@ -132,6 +132,13 @@ def get_feature_cols(cols):
             feature_cols_dict[extractor_channel].append(col)
         else:
             feature_cols_dict["Uncategorized Features"].append(col)
+            
+    # Move "Uncategorized Features" to the end of the dictionary
+    if "Uncategorized Features" in feature_cols_dict:
+        uncategorized = feature_cols_dict.pop("Uncategorized Features")
+        if uncategorized:
+            feature_cols_dict["Uncategorized Features"] = uncategorized
+            
     return feature_cols_dict
 
 def get_features(df):

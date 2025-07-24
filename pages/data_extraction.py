@@ -37,8 +37,12 @@ selected_ch_feature_extractors = get_selected_feature_extractors(input_types, ch
 fov_name_col = get_fov_name_col()
 with col1:
     # first select the step to perform
-    selected_step = st.selectbox("Select a step to perform", steps, index=0, help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: \
-    Extracts numeric features from the images. Categorical Feature Extraction: Extracts categorical features from the images. \n ")
+    selected_step = st.radio(
+        "Select a step to perform",
+        steps,
+        index=0,
+        help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: Extracts single cell numeric features from the images. Categorical Feature Extraction: Extracts single cell categorical features from the images. \n ",
+    )
     if selected_step == "Image Metadata Extraction":
         #config_summary_msg = st.info()
         checkbox_cols = st.columns(len(channel_names))

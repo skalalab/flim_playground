@@ -44,9 +44,10 @@ def filters_widget(df):
             selected_values = st.multiselect(
                 f"Select {category}(s)",
                 unique_values,
-                default=st.session_state[key],
                 key=key,
-                on_change=update_multiselect, args=(key, unique_values))
+                on_change=update_multiselect,
+                args=(key, unique_values),
+            )
 
             # Filter the dataframe based on the selected values
             if "All" in selected_values:

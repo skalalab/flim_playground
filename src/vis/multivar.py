@@ -50,7 +50,7 @@ def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_di
         df_reduced[opacity_by] = df[opacity_by].values
     # plot the reduced data
     fig = go.Figure()
-    if method == "Principal Component Analysis":
+    if method == "PCA":
         axis_labels = ["PC1", "PC2"]
     elif method == "UMAP":
         axis_labels = ["UMAP1", "UMAP2"]

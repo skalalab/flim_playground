@@ -34,25 +34,38 @@ if "plot_axis_label_size" not in st.session_state:
 if "plot_legend_size" not in st.session_state:
     st.session_state.plot_legend_size = 16
 
-multivar_methods = ["UMAP", "Principal Component Analysis"]
+multivar_methods = ["UMAP", "PCA"]
 # methods to visualize based on a single feature
-univar_methods = ["Feature Comparison", "Feature Histogram (GMM optional)", "Image Comparison"]
+univar_methods = ["Feature Comparison", "Feature Histogram", "Image Comparison"]
 bivar_methods = ["2D Feature Distribution", "Phasor Plot"]
 col1, col2 = st.columns([0.4, 1])
 with col1:
-    analysis_type = st.selectbox(
-            "",
-            ["Univariate Analysis", "Bivariate Analysis", "Multivariate Analysis"],
-            # help="Univariate: Visualize the distribution of a single feature. \
-            # Bivariate: Visualize the relationship between two features. \
-            # Multivariate: Visualize the relationship between multiple features."
+    cols = st.columns([0.6, 1])
+    with cols[0]:
+        analysis_type = st.radio(
+            "### **Data Analysis**",
+            [
+            "### **Univariate**",
+            "### **Bivariate**",
+            "### **Multivariate**",
+            ],
         )
-    available_methods = univar_methods if "Univariate" in analysis_type else bivar_methods if "Bivariate" in analysis_type else multivar_methods
-    method = st.selectbox(
+    with cols[1]:
+        available_methods = (
+            univar_methods
+            if "Univariate" in analysis_type
+            else bivar_methods
+            if "Bivariate" in analysis_type
+            else multivar_methods
+        )
+        method = st.radio(
             "Methods",
             available_methods,
         )
-    uploaded_csv = st.file_uploader("Upload the CSV file obtained from [Data Extraction](/data_extraction)", type=["csv"])
+    uploaded_csv = st.file_uploader(
+        "Upload the CSV file obtained from [Data Extraction](/data_extraction)",
+        type=["csv"],
+    )
     df, feature_cols_dict, upload_complete = load_csv(uploaded_csv)
     st.session_state.vis_df = df
 
@@ -81,7 +94,7 @@ with col2:
         data_export_ready = False
         filtered_df = filters_widget(st.session_state.vis_df)
         # for visualization that are point-based, provides the options for other visual encoding channels: opacity, shape, and separate by
-        point_based = method not in ["Image Comparison", "Feature Histogram (GMM optional)"]
+        point_based = method not in ["Image Comparison", "Feature Histogram"]
         color_based = method not in ["Image Comparison"]
         image_based = method in ["Image Comparison"]
         separate_by_available = method in ["Feature Comparison"]
@@ -98,7 +111,7 @@ with col2:
                         fig = feature_comparison_plot(filtered_df, cell_id_col=unique_cell_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method)
                     elif method == "Image Comparison":
                         fig = image_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var)
-                    elif method == "Feature Histogram (GMM optional)":
+                    elif method == "Feature Histogram":
                         # create a switch to select between GMM and histogram
                         apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, help="Fit Gaussian Mixture Models\
                         for each color group on the selected feature with 1, 2, and 3 components (fit on raw distribution, not on the histograms). \
@@ -190,7 +203,7 @@ with col2:
                     # available for download
                     if method == "2D Feature Distribution" and "2D_GMM_group" in gmm_df.columns:
                         st.download_button(label="Download 2D GMM data", data=gmm_df.to_csv(index=False), file_name="2D_gmm_data.csv")
-                    elif method == "Feature Histogram (GMM optional)" and "GMM_group" in df.columns:
+                    elif method == "Feature Histogram" and "GMM_group" in df.columns:
                         st.download_button(label="Download GMM Grouped Data", data=df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
                 # 3. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots 
                 st.markdown("---")  # Add a separator line
