@@ -195,9 +195,11 @@ def choose_shift_widget(metadata_df, metadata_dict, channel_name, log_y=True):
             fitting_algo = metadata_dict["fitting_algo"]
             fitting_mode =  metadata_dict["fitting_mode"]
             num_components = metadata_dict[channel_name]["num_components"]
+            start = metadata_dict[channel_name]["start"]
+            end = metadata_dict[channel_name]["end"]
         except:
             return "Error: Fitting algorithm or mode or number of components not found for channel: " + channel_name, None
-        error_msg, results = choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, input_type, channel_name)
+        error_msg, results = choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, input_type, channel_name, start=start, end=end)
     if error_msg != "":
         return error_msg, None
     
