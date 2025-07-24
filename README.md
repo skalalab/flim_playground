@@ -34,11 +34,10 @@ pyinstaller Flim-Playground.spec --clean
 # TODO
 - add reference dye option for calibration phasor
 - add flimlib
-- finish morphology and texture
+- finish texture
 - data analysis (vis + classification) config
 - add confidence interval to effect size 
 - move config away?
-- fix the color order?
 
 ```bash
 streamlit run main.py # when in development

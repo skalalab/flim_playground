@@ -108,11 +108,11 @@ def find_available_dfs_widget(df_folder_path, delimiter):
             continue
         if unique_cell_id_col in df.columns:
             if df[unique_cell_id_col].duplicated().any():
-                st.warning(f"The cell_id/base_name column in {file} has duplicate values. Please check the cell_id/base_name column.")
+                st.warning(f"The {unique_cell_id_col} column in {file} has duplicate values. Please check the {unique_cell_id_col} column.")
                 continue
             # check if the unique_cell_id_col has value in all rows
             if df[unique_cell_id_col].isna().any():
-                st.warning(f"The cell_id/base_name column in {file} has NaN values. Please check the cell_id/base_name column.")
+                st.warning(f"The {unique_cell_id_col} column in {file} has NaN values. Please check the {unique_cell_id_col} column.")
                 continue
             # check if all rows of this column can be split by the delimiter in equal number of parts
             # reject if not
@@ -120,27 +120,27 @@ def find_available_dfs_widget(df_folder_path, delimiter):
             # check if every cell_id is not in existing_cell_ids
             for cell_id in cell_ids:
                 if cell_id in existing_cell_ids:
-                    st.warning(f"The cell_id/base_name column in {file} has duplicate values. Please check the cell_id/base_name column.")
+                    st.warning(f"The {unique_cell_id_col} column in {file} has duplicate values. Please check the {unique_cell_id_col} column.")
                     continue
             existing_cell_ids.extend(cell_ids)
 
             cell_ids_parts = [len(cell_id.split(delimiter)) for cell_id in cell_ids]
             if cell_ids_parts == []:
-                st.warning(f"The cell_id/base_name column in {file} is empty.")
+                st.warning(f"The {unique_cell_id_col} column in {file} is empty.")
                 continue
             elif len(set(cell_ids_parts)) > 1:
                 # find the first row that has different number of parts
                 first_row_with_different_parts = cell_ids_parts.index(max(cell_ids_parts))
                 first_row_with_different_parts_cell_id = cell_ids[first_row_with_different_parts]
-                st.warning(f"The cell_id/base_name column in {file} has different number of parts. For example, check cell_id: {first_row_with_different_parts_cell_id}.")
+                st.warning(f"The {unique_cell_id_col} column in {file} has different number of parts. For example, check cell_id: {first_row_with_different_parts_cell_id}.")
                 continue
             elif cell_ids_parts[0] == 1:
-                st.warning(f"Playground failed to parse the cell_id/base_name column based on the delimiter: {delimiter}. For example, check cell_id: {cell_ids[0]}.")
+                st.warning(f"Playground failed to parse the {unique_cell_id_col} column based on the delimiter: {delimiter}. For example, check cell_id: {cell_ids[0]}.")
                 continue
             if prev_num_parts == 0:
                 prev_num_parts = cell_ids_parts[0]
             elif prev_num_parts != cell_ids_parts[0]:
-                st.warning(f"The cell_id/base_name column in {file} has different number of parts. For example, check cell_id: {cell_ids[0]}.")
+                st.warning(f"The {unique_cell_id_col} column in {file} has different number of parts. For example, check cell_id: {cell_ids[0]}.")
                 continue
 
             available_csv_files.append(file)

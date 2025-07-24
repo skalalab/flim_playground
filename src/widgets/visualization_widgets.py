@@ -25,10 +25,10 @@ def visual_encoding_channels_widget(filtered_df, color_based=True, point_based=T
     # Color by widget (exclude separate_by option)
         available_for_color = [cat for cat in available_categories if cat != separate_by]
         with cols[1]:
-            color_by = st.multiselect("Color by", available_for_color, default=[available_for_color[-1]] if available_for_color else [])
+            color_by = st.multiselect("Color by", available_for_color, default=[available_for_color[0]] if available_for_color else [])
     else: 
         with cols[0]:
-            color_by = st.multiselect("Color by", available_categories, default=[available_categories[-1]] if available_categories else [])
+            color_by = st.multiselect("Color by", available_categories, default=[available_categories[0]] if available_categories else [])
 
     # Initialize defaults
     opacity_by = shape_by = None

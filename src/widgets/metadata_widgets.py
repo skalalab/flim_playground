@@ -165,7 +165,7 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
             # create the card 
             with cols[col_idx]:
                 with st.container(border=True):
-                    st.markdown(f"Image name: **{image_name}**")
+                    st.markdown(f"Field of view name: **{image_name}**")
                     if missing_keys or duplicate_keys:
                         st.write("❌ Missing or duplicate files:")
                         for key in missing_keys:

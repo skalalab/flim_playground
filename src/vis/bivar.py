@@ -6,6 +6,7 @@ from scipy.stats import pearsonr
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 import streamlit as st
 from src.vis.helpers import get_point_visual_mappings, add_point_legend_traces
+from src.feature_types import unique_cell_id_col, fov_name_col
 
 def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, plotly_axis_params):
     """Helper function to plot marginal densities."""
@@ -156,8 +157,8 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], shape_
             y=group_df[selected_y],
             mode='markers',
             name=color_group,
-            text=group_df["cell_id"],
-            customdata=group_df["image_name"],
+            text=group_df[unique_cell_id_col],
+            customdata=group_df[fov_name_col],
             marker=dict(
                 color=color_map.get(color_group, 'gray'),
                 size=5,
@@ -393,8 +394,8 @@ def phasor_plot(df, channel_name,color_by=[], shape_by=None, opacity_by=None, f=
                             y=sub_df[s_feature],
                             mode='markers',
                             name=f'{g}',
-                            text=sub_df["cell_id"],
-                            customdata=sub_df["image_name"],
+                            text=sub_df[unique_cell_id_col],
+                            customdata=sub_df[fov_name_col],
                             hovertemplate="<b>%{text}</b>",
                             marker=dict(color=color_map[g], size=5, symbol=marker_symbol, opacity=marker_opacity)
                         ),
@@ -406,8 +407,8 @@ def phasor_plot(df, channel_name,color_by=[], shape_by=None, opacity_by=None, f=
                     y=g_df[s_feature],
                     mode='markers',
                     name=f'{g}',
-                    text=g_df["cell_id"],
-                    customdata=g_df["image_name"],
+                    text=g_df[unique_cell_id_col],
+                    customdata=g_df[fov_name_col],
                     hovertemplate="<b>%{text}</b>",
                     marker=dict(color=color_map[g],size=5)
                 ),

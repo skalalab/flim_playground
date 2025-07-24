@@ -7,13 +7,14 @@ import umap
 import plotly.graph_objects as go
 import streamlit as st
 from .helpers import get_point_visual_mappings, add_point_legend_traces
+from src.feature_types import unique_cell_id_col, fov_name_col
 import threading    
 @st.cache_data
 def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
     # Standardize features before PCA and umap
     exp_var = None
     X_std = StandardScaler().fit_transform(X)
-    if method == "Principal Component Analysis":
+    if method == "PCA":
         pca = PCA(n_components=n_components)
         principal_components = pca.fit_transform(X_std)
         df = pd.DataFrame(principal_components, columns=["PC1", "PC2"])
@@ -39,8 +40,8 @@ def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_di
     # perform dimension reduction
     df_reduced, exp_var = dimension_reduction(X, n_components=2, method=method, hyperParam_dict=hyperParam_dict)
     # augment df_reduced with required columns and categorical columns used for coloring
-    df_reduced["cell_id"] = df["cell_id"].values
-    df_reduced["image_name"] = df["image_name"].values
+    df_reduced[unique_cell_id_col] = df[unique_cell_id_col].values
+    df_reduced[fov_name_col] = df[fov_name_col].values
     # Add all color columns at once if there are any
     if len(colored_by) > 0:
         df_reduced[colored_by] = df[colored_by].values
@@ -79,8 +80,8 @@ def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_di
                 y=group_df[axis_labels[1]],
                 mode='markers',
                 name=f'{color_group}',
-                text=group_df["cell_id"],
-                customdata=group_df["image_name"],
+                text=group_df[unique_cell_id_col],
+                customdata=group_df[fov_name_col],
                 hovertemplate="<b>%{text}</b>",
                 marker=dict(color=marker_color, symbol=marker_symbol, opacity=marker_opacity)
             ),

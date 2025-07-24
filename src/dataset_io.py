@@ -191,9 +191,9 @@ def check_and_fix_df(df):
     empty_cols = df.columns[df.isnull().all()]
     if len(empty_cols) > 0:
         if len(empty_cols) <= 5:
-            warning_msg += f"Warning: {empty_cols} columns are all empty. They will be removed.\n"
+            warning_msg += f"Warning: {empty_cols} columns are all empty. They were removed.\n"
         else:
-            warning_msg += f"Warning: {empty_cols[:5]} columns and {len(empty_cols) - 5} more are all empty. They will be removed.\n"
+            warning_msg += f"Warning: {empty_cols[:5]} columns and {len(empty_cols) - 5} more are all empty. They were removed.\n"
         df.drop(columns=empty_cols, inplace=True)
         if df.empty:
             error_msg += "Error: No data available after removing empty columns.\n"
@@ -203,10 +203,10 @@ def check_and_fix_df(df):
     duplicate_cols = df.columns[df.columns.duplicated()]
     if len(duplicate_cols) > 0:
         if len(duplicate_cols) <= 5:
-            warning_msg += f"Warning: {duplicate_cols} columns are duplicated. "
+            warning_msg += f"Warning: {duplicate_cols} columns were duplicated. "
         else:
-            warning_msg += f"Warning: {duplicate_cols[:5]} columns and {len(duplicate_cols) - 5} more are duplicated. "
-        warning_msg += "The duplicate columns will be dropped, only the first one will be kept.\n"
+            warning_msg += f"Warning: {duplicate_cols[:5]} columns and {len(duplicate_cols) - 5} more were duplicated. "
+        warning_msg += "The duplicate columns were dropped, only the first was kept.\n"
         # drop the duplicate columns, only keep the first one
         df = df.loc[:, ~df.columns.duplicated(keep='first')]
         
@@ -222,7 +222,7 @@ def check_and_fix_df(df):
         first_duplicate_value = df[unique_cell_id_col][first_duplicate].iloc[0]
         first_duplicate_index = df.loc[first_duplicate].index[0]
         warning_msg += f"Warning: Duplicate values found in `{unique_cell_id_col}` column. First duplicate found with {unique_cell_id_col}: '{first_duplicate_value}' at row {first_duplicate_index}.\
-            The duplicate rows will be dropped, only the first one will be kept.\n"
+            The duplicate rows were dropped, only the first was kept.\n"
         # drop the duplicate rows, only keep the first one
         df = df.drop_duplicates(subset=[unique_cell_id_col], keep="first")    
         # after fixing the df, print out the number of rows removed

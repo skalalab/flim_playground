@@ -34,6 +34,7 @@ def get_offset(decay_curve):
 
 def get_intensity_morphology_features(metadata, channel_name, fov_col_name):
     # get mask morphology features
+    feature_prefix = f"Intensity morphology_{channel_name}: "
     mask_morphology_features = ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length", "circularity"]
     try:
         mask = load_image(metadata[f"{channel_name}_Mask"])
@@ -47,14 +48,14 @@ def get_intensity_morphology_features(metadata, channel_name, fov_col_name):
         if cell_id not in single_cell_morph_features_fov:
             single_cell_morph_features_fov[cell_id] = {}
         # Add centroid x and y: image data is indexed in NumPy and most image processing libraries in "reverse"
-        single_cell_morph_features_fov[cell_id]['centroid_x'] = region.centroid[1]
-        single_cell_morph_features_fov[cell_id]['centroid_y'] = region.centroid[0]
+        single_cell_morph_features_fov[cell_id][f'{channel_name}_centroid_x'] = region.centroid[1]
+        single_cell_morph_features_fov[cell_id][f'{channel_name}_centroid_y'] = region.centroid[0]
         for feature in mask_morphology_features:
             feature_name = f"{feature}"
             if feature in region:
-                single_cell_morph_features_fov[cell_id][feature_name] = region[feature]
+                single_cell_morph_features_fov[cell_id][f"{feature_prefix}{feature_name}"] = region[feature]
             elif feature == "circularity":
-                single_cell_morph_features_fov[cell_id][feature_name] = 4 * np.pi * region.area / region.perimeter**2 if region.perimeter > 0 else 0
+                single_cell_morph_features_fov[cell_id][f"{feature_prefix}{feature_name}"] = 4 * np.pi * region.area / region.perimeter**2 if region.perimeter > 0 else 0
     single_cell_morph_features_fov = pd.DataFrame.from_dict(single_cell_morph_features_fov, orient='index')
     return "", single_cell_morph_features_fov
 
@@ -268,6 +269,7 @@ def fov_extraction(metadata, metadata_dict):
     unique_cell_id_colname = metadata_dict["unique_cell_id_col"]
     # Collect DataFrames from each channel
     fov_feature_dfs = []
+    mask_file_names = []
     for channel_name in metadata_dict["channel_names"]:
         input_type = metadata_dict[channel_name]["input_type"]
         selected_feature_extractors = metadata_dict[channel_name]["selected_feature_extractors"]
@@ -279,6 +281,10 @@ def fov_extraction(metadata, metadata_dict):
                 fov_feature_dfs.append(single_cell_lifetime_features)
             int_morph = "Intensity morphology" in selected_feature_extractors
             if int_morph:
+                if metadata[f"{channel_name}_Mask"] not in mask_file_names:
+                    mask_file_names.append(metadata[f"{channel_name}_Mask"])
+                else:
+                    continue # this channel has the same mask as another channel
                 error_msg, single_cell_morph_features_fov = get_intensity_morphology_features(metadata, channel_name, metadata_dict["fov_name_col"])
                 if error_msg != "":
                     st.error(error_msg)
