@@ -32,24 +32,27 @@ def get_offset(decay_curve):
     # Return the minimum of the two medians
     return min(head_median, tail_median)
 
-def get_mask_morphology_features(mask, image_name, cell_dict):
-        # get mask morphology features
+def get_intensity_morphology_features(metadata, channel_name, fov_col_name):
+    # get mask morphology features
     mask_morphology_features = ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length", "circularity"]
+    mask = load_image(metadata[f"{channel_name}_Mask"])
     mask_props = regionprops(label_image=mask)
+    fov_name = metadata[fov_col_name]
+    single_cell_features_fov = {}
     for region in mask_props:
-        cell_id = f"{image_name}_{region.label}"
-        if cell_id not in cell_dict:
-            cell_dict[cell_id] = {}
+        cell_id = f"{fov_name}_{region.label}"
+        if cell_id not in single_cell_features_fov:
+            single_cell_features_fov[cell_id] = {}
         # Add centroid x and y: image data is indexed in NumPy and most image processing libraries in "reverse"
-        cell_dict[cell_id]['centroid_x'] = region.centroid[1]
-        cell_dict[cell_id]['centroid_y'] = region.centroid[0]
+        single_cell_features_fov[cell_id]['centroid_x'] = region.centroid[1]
+        single_cell_features_fov[cell_id]['centroid_y'] = region.centroid[0]
         for feature in mask_morphology_features:
             feature_name = f"{feature}"
             if feature in region:
-                cell_dict[cell_id][feature_name] = region[feature]
+                single_cell_features_fov[cell_id][feature_name] = region[feature]
             elif feature == "circularity":
-                cell_dict[cell_id][feature_name] = 4 * np.pi * region.area / region.perimeter**2 if region.perimeter > 0 else 0
-    return cell_dict
+                single_cell_features_fov[cell_id][feature_name] = 4 * np.pi * region.area / region.perimeter**2 if region.perimeter > 0 else 0
+    return single_cell_features_fov
 
 def spcimage_fit_extraction(metadata, channel_name, num_components, fov_colname):
     fit_feature_prefix = f"Lifetime fit_{channel_name}: "
@@ -173,6 +176,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm"] = ((amp1 / total_amp) * results["t1"][i] + (amp2 / total_amp) * results["t2"][i] + (amp3 / total_amp) * results["t3"][i]) * 1000
 
     return single_cell_features_fov
+
 def extract_fit_free_results(channel_name, decay_curves, shifted_irf, time_axis, laser_rate):
     """
     Extract fit free results for a specific channel and store them in single_cell_features_img (for now, only phasor is implemented)

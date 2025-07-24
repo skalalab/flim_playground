@@ -41,7 +41,7 @@ with col1:
         "Select a step to perform",
         steps,
         index=0,
-        help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: Extracts single cell numeric features from the images. Categorical Feature Extraction: Extracts single cell categorical features from the images. \n ",
+        help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: Extracts single cell numeric features from the images. Categorical Feature Extraction: Extracts categorical features from the images. \n ",
     )
     if selected_step == "Image Metadata Extraction":
         #config_summary_msg = st.info()
@@ -94,15 +94,31 @@ with col1:
                 if len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
                     st.info("Please specify the following fitting options.")
                     metadata_dict= fit_options_widget(decay_input_type, metadata_dict)
-                if shift_needed:
+                
+                shifts_are_present = all(f"{ch}_shift" in metadata_df.columns for ch in metadata_dict["channels_shift"])
+                if shift_needed and not shifts_are_present:
                     if st.button("Start Finding Shifts"):
                         st.session_state["choosing_shift"] = True
                         st.session_state["shift_ready"] = False
                 else:
-                    if st.button("Confirm and Start Analysis"):
-                        st.session_state["choosing_shift"] = False
-                        st.session_state["shift_ready"] = True
-                        st.rerun()
+                    col1_1, col1_2 = st.columns(2)
+                    with col1_1:
+                        if st.button("Confirm and Start Analysis", use_container_width=True):
+                            st.session_state["choosing_shift"] = False
+                            st.session_state["shift_ready"] = True
+                            st.rerun()
+                    
+                    if shift_needed and shifts_are_present:
+                        with col1_2:
+                            if st.button("Go back and find shift", use_container_width=True):
+                                st.session_state["choosing_shift"] = True
+                                st.session_state["shift_ready"] = False
+                                # remove shift columns from metadata_df in session state
+                                for ch in metadata_dict["channels_shift"]:
+                                    if f"{ch}_shift" in metadata_df.columns:
+                                        metadata_df = metadata_df.drop(columns=[f"{ch}_shift"])
+                                st.session_state["last_extracted_metadata"] = metadata_df
+                                st.rerun()
             else:
                 st.error(f"Error: {error_msg}")
 
@@ -167,7 +183,7 @@ with col2:
                 st.error(error_msg)
             else:
                 channel_shifts[channel_name] = shifts
-        shift_finished = st.button("Confirm the Shift and Start the Analysis")
+        shift_finished = st.button("Confirm Shift and Choose Time Gates (if applicable) for each channel")
         if shift_finished:
             # write the shift to the metadata file
             for channel_name in channel_shifts:
@@ -175,11 +191,10 @@ with col2:
             # Store the updated metadata_df in session state so it persists across rerun
             st.session_state["last_extracted_metadata"] = metadata_df
             st.session_state["choosing_shift"] = False
-            st.session_state["shift_ready"] = True
+            st.session_state["shift_ready"] = False
             st.rerun()
                 
     elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"] and metadata_df is not None:
-        #st.write(metadata_dict) 
         single_cell_features = fov_extraction_widget(metadata_df, metadata_dict)
         if not single_cell_features.empty:
             st.success(f"Image features with ✅ are extracted successfully {happy_emoji}! Images with ❌ (if any) are excluded. The first few rows of the features are shown below.")

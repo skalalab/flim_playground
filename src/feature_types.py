@@ -16,5 +16,3 @@ categorical_cols = [ "experiment", "day", "hour", "cell_type", "media", "dish", 
 # group by extractor_channelName
 
 all_feature_extractors = get_all_feature_extractors()
-
-intensity_morphology_features = ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length", "circularity"]

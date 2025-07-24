@@ -7,13 +7,15 @@ from src.config import get_default_file_suffixes, get_spc_output_suffix, get_def
 from src.dataset_io import happy_emoji, sad_emoji
 from src.decay_io import read_decay, read_decay_metadata
 from collections import Counter
+from datetime import datetime
+
 def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_components, selected_feature_extractors):
     """
     """
     actual_file_suffix = {}
     error_msg = ""
     a1_suffix_list = []
-
+    mask_suffix_list = {}
     if "Decay (3/4D) pixel-prefitted" in input_types.values():
         spc_output_suffix = get_spc_output_suffix()
     for i, (channel_key, channel_name) in enumerate(selected_channels.items()):
@@ -31,6 +33,8 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
         for j, (file_type, default_suffix) in enumerate(actual_file_suffix[channel_name].items()):
             if file_type == "a1":
                 a1_suffix_list.append(default_suffix)
+            elif file_type == "Mask":
+                mask_suffix_list[channel_name] = default_suffix
             col = cols[j % num_cols]
             with col:
                 # only show the help message for the first file type of the first channel
@@ -60,6 +64,17 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
     # check for duplicates in a1_suffix_list
     if len(set(a1_suffix_list)) != len(a1_suffix_list):
         error_msg += f"Duplicate a1 suffixes found: {a1_suffix_list} {sad_emoji}"
+
+    # output info message for channels that share the same mask suffix
+    mask_suffix_seen = {}
+    for channel_name, mask_suffix in mask_suffix_list.items():
+        if mask_suffix not in mask_suffix_seen:
+            mask_suffix_seen[mask_suffix] = [channel_name]
+        else:
+            mask_suffix_seen[mask_suffix].append(channel_name)
+    for mask_suffix, channel_names in mask_suffix_seen.items():
+        if len(channel_names) > 1:
+            st.info(f"Channels {channel_names} share the same mask suffix: {mask_suffix}")
 
     # flatten the actual_file_suffix dictionary
     actual_file_suffix_dict = {}
@@ -212,7 +227,8 @@ def export_metadata_widget(images_df, folder_path):
     if confirm_export:
         # convert the dictionary to a dataframe     
         # save the dataframe to a csv file
-        csv_file_path = os.path.join(folder_path, "image_metadata.csv")
+        time_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        csv_file_path = os.path.join(folder_path, f"image_metadata_{time_stamp}.csv")
         try:
             images_df.to_csv(csv_file_path) # Save the DataFrame
         except Exception as e:
