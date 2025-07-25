@@ -2,7 +2,7 @@ import streamlit as st
 
 from src.dataset_io import load_csv, happy_emoji, sad_emoji
 from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget, twod_single_feature_select_widget
-from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget, visual_encoding_channels_widget, plot_config_widget
+from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget, visual_encoding_channels_widget, plot_config_widget, tsne_hyperParams_widget
 from src.widgets.filter_widgets import filters_widget
 from src.navigation import render_top_menu
 from src.vis.multivar import dimension_reduction_plot
@@ -24,7 +24,7 @@ if "plot_axis_label_size" not in st.session_state:
 if "plot_legend_size" not in st.session_state:
     st.session_state.plot_legend_size = 16
 
-multivar_methods = ["UMAP", "PCA"]
+multivar_methods = ["Dimension Reduction", "Align Modalities"]
 # methods to visualize based on a single feature
 univar_methods = ["Feature Comparison", "Feature Histogram", "Image Comparison"]
 bivar_methods = ["2D Feature Distribution", "Phasor Plot"]
@@ -70,13 +70,14 @@ with col1:
             elif method == "Phasor Plot":
                 selected_channel, selected_harmonic, f = phasor_params_widget(feature_cols_dict)
         elif method in multivar_methods:
-            hyperParam_dict = {}
-            # multiple features selection widget 
-            selected_features = multi_feature_select_widget(feature_cols_dict, n_per_row=2)
-            if method == "UMAP":
-                n_neighbors, min_dist = umap_hyperParams_widget()
-                hyperParam_dict["n_neighbors"] = n_neighbors
-                hyperParam_dict["min_dist"] = min_dist
+            if method == "Dimension Reduction":
+                # multiple features selection widget 
+                selected_features = multi_feature_select_widget(feature_cols_dict, n_per_row=2)
+                dr_method = st.selectbox("Dimension Reduction Method", ["UMAP", "PCA", "t-SNE"])
+                if dr_method == "UMAP":
+                    hyperParam_dict = umap_hyperParams_widget()
+                elif dr_method == "t-SNE":
+                    hyperParam_dict = tsne_hyperParams_widget()
 
 with col2:
     if upload_complete:
@@ -129,17 +130,18 @@ with col2:
                         st.write("Your data does not contain the required features for phasor plot.")
                                    
             elif method in multivar_methods:
-                if len(selected_features) < 2:
-                    st.write("Please select at least two features for dimension reduction methods like PCA or UMAP.")
-                else: 
-                    # drop rows with NaN values in the selected_features columns
-                    filtered_df = filtered_df[filtered_df[selected_features].notna().all(axis=1)]
-                    
-                    if len(filtered_df) > 0:
-                        # plot the reduced data
-                        fig = dimension_reduction_plot(filtered_df, selected_features, method=method, hyperParam_dict=hyperParam_dict, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by)
-                    else:
-                        st.write(f"No data available after removing rows with missing values {sad_emoji}")
+                if method == "Dimension Reduction":
+                    if len(selected_features) < 2:
+                        st.write("Please select at least two features for dimension reduction methods like PCA or UMAP.")
+                    else: 
+                        # drop rows with NaN values in the selected_features columns
+                        filtered_df = filtered_df[filtered_df[selected_features].notna().all(axis=1)]
+                        
+                        if len(filtered_df) > 0:
+                            # plot the reduced data
+                            fig = dimension_reduction_plot(filtered_df, selected_features, method=dr_method, hyperParam_dict=hyperParam_dict, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by)
+                        else:
+                            st.write(f"No data available after removing rows with missing values {sad_emoji}")
             
             if fig is not None: 
                 fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)

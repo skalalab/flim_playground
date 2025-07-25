@@ -2,6 +2,7 @@ from sklearn.preprocessing import StandardScaler
 import warnings
 warnings.filterwarnings(action='ignore', category=FutureWarning, module='sklearn.utils.deprecation')
 from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 import pandas as pd
 import umap
 import plotly.graph_objects as go
@@ -11,27 +12,28 @@ from src.feature_types import unique_cell_id_col, fov_name_col
 import threading    
 @st.cache_data
 def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
-    # Standardize features before PCA and umap
     exp_var = None
-    X_std = StandardScaler().fit_transform(X)
-    if method == "PCA":
-        pca = PCA(n_components=n_components)
-        principal_components = pca.fit_transform(X_std)
-        df = pd.DataFrame(principal_components, columns=["PC1", "PC2"])
-        exp_var = pca.explained_variance_ratio_ * 100
-    elif method == "UMAP":
-        if 'umap_lock' not in st.session_state:
-            st.session_state.umap_lock = threading.Lock()
-        with st.session_state.umap_lock:
-            umap_neighbors = 15  # Default value if n_neighbors is not provided
-            umap_min_dist = 0.1  # Default value if min_dist is not provided
-            # Safely access hyperparameters if they exist
-            if hyperParam_dict:
-                umap_neighbors = hyperParam_dict.get('n_neighbors', umap_neighbors)
-                umap_min_dist = hyperParam_dict.get('min_dist', umap_min_dist)
+    if 'dr_lock' not in st.session_state:
+        st.session_state.dr_lock = threading.Lock()
+    with st.session_state.dr_lock:
+        # Standardize features before PCA and umap
+        X_std = StandardScaler().fit_transform(X)
+        if method == "PCA":
+            pca = PCA(n_components=n_components)
+            principal_components = pca.fit_transform(X_std)
+            df = pd.DataFrame(principal_components, columns=["PC1", "PC2"])
+            exp_var = pca.explained_variance_ratio_ * 100
+        elif method == "UMAP":
+            umap_neighbors = hyperParam_dict.get('n_neighbors', 15)
+            umap_min_dist = hyperParam_dict.get('min_dist', 0.1)
             reducer = umap.UMAP(n_neighbors=umap_neighbors,min_dist=umap_min_dist,   
                 metric='euclidean', n_components=n_components)
             df = pd.DataFrame(reducer.fit_transform(X_std), columns=["UMAP1", "UMAP2"])
+        elif method == "t-SNE":
+            perplexity = hyperParam_dict.get('perplexity', 15)
+            early_exaggeration = hyperParam_dict.get('early_exaggeration', 1)
+            tsne = TSNE(n_components=n_components, perplexity=perplexity, early_exaggeration=early_exaggeration)
+            df = pd.DataFrame(tsne.fit_transform(X_std), columns=["t-SNE1", "t-SNE2"])
     return df, exp_var
 
 def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_dict={}, colored_by=[], opacity_by=None, shape_by=None, exp_var=None):
@@ -55,6 +57,8 @@ def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_di
         axis_labels = ["PC1", "PC2"]
     elif method == "UMAP":
         axis_labels = ["UMAP1", "UMAP2"]
+    elif method == "t-SNE":
+        axis_labels = ["t-SNE1", "t-SNE2"]
     else:
         axis_labels = ["dim1", "dim2"]
 

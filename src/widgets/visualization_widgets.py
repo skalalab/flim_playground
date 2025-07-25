@@ -45,6 +45,7 @@ def visual_encoding_channels_widget(filtered_df, color_based=True, point_based=T
 def umap_hyperParams_widget():
     col1, col2 = st.columns(2)
     # First number incrementor in the first column
+    umap_hyperParams_dict = {}
     with col1:
         n_neighbors = st.number_input(
             "n_neighbors",
@@ -52,7 +53,7 @@ def umap_hyperParams_widget():
             step=5,             # Increment/Decrement step
             format="%d"            # Integer format
         )
-
+        umap_hyperParams_dict["n_neighbors"] = n_neighbors
     # Second number incrementor in the second column
     with col2:
         min_dist = st.number_input(
@@ -60,8 +61,20 @@ def umap_hyperParams_widget():
             value=0.1,  # Initial value
             step=0.1,            
         )
+        umap_hyperParams_dict["min_dist"] = min_dist
 
-    return n_neighbors, min_dist
+    return umap_hyperParams_dict
+
+def tsne_hyperParams_widget():
+    col1, col2 = st.columns(2)
+    tsne_hyperParams_dict = {}
+    with col1:
+        perplexity = st.number_input("perplexity", value=15, step=5, min_value=5, max_value=100)
+        tsne_hyperParams_dict["perplexity"] = perplexity
+    with col2:
+        early_exaggeration = st.number_input("early_exaggeration", value=1, step=1, min_value=1, max_value=15)
+        tsne_hyperParams_dict["early_exaggeration"] = early_exaggeration
+    return tsne_hyperParams_dict
 
 def stats_comparison_pair_widget(available_pairs):
     selected_pairs = st.multiselect(

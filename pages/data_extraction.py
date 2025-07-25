@@ -122,11 +122,11 @@ with col1:
                                 st.rerun()
                         # have a download button to download the metadata file
                         if st.session_state["last_extracted_metadata_filepath"] is not None:
-                            download = st.button("Download updated metadata", use_container_width=True)
+                            download = st.button("Download updated metadata", use_container_width=True, help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
                             if download:
                                 metadata_df.to_csv(st.session_state["last_extracted_metadata_filepath"], index=False)
                         else:
-                            st.download_button(label="Download updated metadata", data=metadata_df.to_csv(index=False), file_name=f"metadata_{time.strftime('%Y%m%d_%H%M%S')}.csv", key=f"download_metadata_{time.time()}", use_container_width=True, help="Download the metadata with the calculated shifts and time gates as a CSV file.")
+                            st.download_button(label="Download updated metadata", data=metadata_df.to_csv(index=False), file_name=f"metadata_{time.strftime('%Y%m%d_%H%M%S')}.csv", key=f"download_metadata_{time.time()}", use_container_width=True, help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
             else:
                 st.error(f"Error: {error_msg}")
 
