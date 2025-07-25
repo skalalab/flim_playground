@@ -50,13 +50,14 @@ with col1:
         selected_channels = {}
         selected_ch_num_components = {}
         for index, (channel_key, channel_name) in enumerate(channel_names.items()):       
-
             with checkbox_cols[index]:
                 has_channel = st.checkbox(f"has {channel_name}", value=True, key=f"has_channel_{channel_key}")
                 if has_channel:
                     selected_channels[channel_key] = channel_name
-                    if ch_num_components[channel_key] != 0: # if equals to 0, it means this channel does not have any lifetime fit/fit free analysis
-                        selected_ch_num_components[channel_key] = st.number_input(f"No. component", value=ch_num_components[channel_key], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_key}")
+                    if ch_num_components[channel_key] != 0 and "prefitted" in input_types[channel_key]: # if equals to 0, it means this channel does not have any lifetime fit analysis; only prefitted needs to be specified to get all the files. 
+                        selected_ch_num_components[channel_name] = st.number_input(f"No. component", value=ch_num_components[channel_key], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_name}")
+                    elif ch_num_components[channel_key] != 0: # do not ask now, will ask later when fitting
+                        selected_ch_num_components[channel_name] = ch_num_components[channel_key]
         if len(selected_channels) == 0:
             st.error(f"Please check at least one of the channels {sad_emoji}")
         else:
@@ -119,6 +120,13 @@ with col1:
                                         metadata_df = metadata_df.drop(columns=[f"{ch}_shift"])
                                 st.session_state["last_extracted_metadata"] = metadata_df
                                 st.rerun()
+                        # have a download button to download the metadata file
+                        if st.session_state["last_extracted_metadata_filepath"] is not None:
+                            download = st.button("Download updated metadata", use_container_width=True)
+                            if download:
+                                metadata_df.to_csv(st.session_state["last_extracted_metadata_filepath"], index=False)
+                        else:
+                            st.download_button(label="Download updated metadata", data=metadata_df.to_csv(index=False), file_name=f"metadata_{time.strftime('%Y%m%d_%H%M%S')}.csv", key=f"download_metadata_{time.time()}", use_container_width=True, help="Download the metadata with the calculated shifts and time gates as a CSV file.")
             else:
                 st.error(f"Error: {error_msg}")
 
@@ -155,8 +163,8 @@ with col2:
                     for feature_extractor in selected_ch_feature_extractors[channel_key]:
                         images_df[f"{channel_name}_{feature_extractor}"] = True
                     if has_flim:
-                        if selected_ch_num_components[channel_key] != 0: # if equals to 0, it means this channel does not care about lifetime analysis at all
-                            images_df[f"{channel_name}_num_components"] = selected_ch_num_components[channel_key]
+                        if channel_name in selected_ch_num_components: 
+                            images_df[f"{channel_name}_num_components"] = selected_ch_num_components[channel_name]
                     # ROI Summing Fit and SPCImage takes in raw decay that maybe multiple channels. need to assign data channel to each image channel
                     # K-flow already knows the duration and time bins and do not need to assign channel
                 
@@ -168,7 +176,7 @@ with col2:
                     if laser_rate is not None:
                         images_df["laser_rate"] = laser_rate
                     display_feature_groups_widget(images_df)
-                    export_metadata_widget(images_df=images_df, folder_path=folder_path)
+                    export_metadata_widget(metadata_df=images_df, folder_path=folder_path)
             else: 
                 st.warning("No data found in the folder. Please check the path and the file suffixes.")
         elif folder_path != "":
@@ -187,7 +195,10 @@ with col2:
         if shift_finished:
             # write the shift to the metadata file
             for channel_name in channel_shifts:
-                metadata_df[f"{channel_name}_shift"] = channel_shifts[channel_name]        
+                metadata_df[f"{channel_name}_shift"] = channel_shifts[channel_name]
+                metadata_df[f"{channel_name}_start"] = metadata_dict[channel_name]["start"]
+                metadata_df[f"{channel_name}_end"] = metadata_dict[channel_name]["end"]
+ 
             # Store the updated metadata_df in session state so it persists across rerun
             st.session_state["last_extracted_metadata"] = metadata_df
             st.session_state["choosing_shift"] = False

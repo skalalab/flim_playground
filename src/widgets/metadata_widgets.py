@@ -16,7 +16,7 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
     error_msg = ""
     a1_suffix_list = []
     mask_suffix_list = {}
-    if "Decay (3/4D) pixel-prefitted" in input_types.values():
+    if "prefitted" in input_types.values():
         spc_output_suffix = get_spc_output_suffix()
     for i, (channel_key, channel_name) in enumerate(selected_channels.items()):
         input_type = input_types[channel_key]
@@ -40,7 +40,7 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
                 # only show the help message for the first file type of the first channel
                 if i == 0 and j == 0:
                     help_msg = "The filenames are expected to have *exactly* two parts: *image_name + suffix*. All files from the same image should share the **same** image_name, with the only difference being the suffix."
-                elif i == 0 and input_type == "Decay (3/4D) pixel-prefitted" and file_type == "a1":
+                elif i == 0 and "prefitted" in input_type and file_type == "a1":
                     help_msg = f"For other SPCImage output files (e.g. t1, t2), the suffixes are automatically generated based on the provided a1 suffix by replacing {spc_output_suffix['a1']} to get the others."
                 else:
                     help_msg = None
@@ -49,7 +49,7 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
                     error_msg += f"Please provide a suffix for {file_type}! "
                 else:
                     actual_file_suffix[channel_name][file_type] = suffix
-        if input_type == "Decay (3/4D) pixel-prefitted" and error_msg == "": # write the spc outputs' suffixes for this channel
+        if "prefitted" in input_type and error_msg == "": # write the spc outputs' suffixes for this channel
             if channel_name in selected_ch_num_components and selected_ch_num_components[channel_name] != 0:
                 num_components = selected_ch_num_components[channel_name]
                 if num_components == 1:
@@ -198,44 +198,20 @@ def display_feature_groups_widget(metadata_df, num_cols=3):
     else:
         st.write(metadata_df)
 
-    # cols = st.columns(num_cols)
-    # keys = list(selected_feature_types.keys())
-    # chunk_size = (len(keys) + num_cols - 1) // num_cols  # split into 3 roughly equal parts
-
-    # for i, col in enumerate(cols):
-    #     for key in keys[i * chunk_size : (i + 1) * chunk_size]:
-    #         values = selected_feature_types[key]
-    #         # Option 1: use a Markdown newline
-    #         col.markdown(
-    #             f"""
-    #             <div style="
-    #                 border:1px solid #ccc;
-    #                 padding:8px;
-    #                 border-radius:4px;
-    #                 margin-bottom:8px;
-    #             ">
-    #                 <strong style="color: orange;">{key}</strong><br>
-    #                 { ', '.join(values) }
-    #             </div>
-    #             """,
-    #             unsafe_allow_html=True
-    #         )
-
-def export_metadata_widget(images_df, folder_path):
+def export_metadata_widget(metadata_df, folder_path):
     # use a botton to export the images as one csv file (one image per row) to the folder_path 
-    confirm_export = st.button("Export Image Metadata as CSV", help=f"Export the image meta as one csv file (one image per row) to {folder_path}")
+    confirm_export = st.button("Export Image Metadata as CSV", help=f"Export the image meta as one csv file (one image per row) to {folder_path}", key=f"export_metadata_button")
     if confirm_export:
         # convert the dictionary to a dataframe     
         # save the dataframe to a csv file
         time_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         csv_file_path = os.path.join(folder_path, f"image_metadata_{time_stamp}.csv")
         try:
-            images_df.to_csv(csv_file_path) # Save the DataFrame
+            metadata_df.to_csv(csv_file_path) # Save the DataFrame
         except Exception as e:
             st.error(f"Error exporting the image metadata: {e}. Is the previous metadata file open in another program?")
             return
         st.success(f"Image metadata exported successfully to {csv_file_path} {happy_emoji}")
-        st.session_state["last_extracted_metadata"] = images_df
         st.session_state["last_extracted_metadata_filepath"] = csv_file_path
 
 @st.cache_data
