@@ -9,9 +9,8 @@ If new modules are added, they should be included in the `pages` list below.
 # title is the name of the playground as it will appear in the menu
 page_1 = "data_extraction"
 page_2 = "data_analysis"
-page_3 = "classification"
 
-pages = [page_1, page_2, page_3]
+pages = [page_1, page_2]
 def link_2_name(link):    
     return link.replace("_", " ").title()
 
@@ -31,7 +30,7 @@ def render_top_menu():
 
     menu_html = f"""
     <div style='background-color:#f0f0f0; padding:10px; border-bottom:1px solid #ccc;'>
-    <a href='/' style='margin-right:20px; text-decoration:none; font-weight:bold;'>Index</a>"""
+    <a href='/' style='margin-right:20px; text-decoration:none; font-weight:bold;'>Home</a>"""
 
     for page in pages:
         menu_html += f"""

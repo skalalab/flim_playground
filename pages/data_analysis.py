@@ -10,6 +10,8 @@ from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
 from src.vis.univar import image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
 from src.vis.helpers import apply_plot_styling
 from src.feature_types import unique_cell_id_col, fov_name_col
+from src.widgets.classfication_widgets import classifier_options_widget, classification_plot_widget
+from src.classify import run_classification
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
@@ -24,7 +26,7 @@ if "plot_axis_label_size" not in st.session_state:
 if "plot_legend_size" not in st.session_state:
     st.session_state.plot_legend_size = 16
 
-multivar_methods = ["Dimension Reduction", "Align Modalities"]
+multivar_methods = ["Dimension Reduction", "Classification"] #"Align Modalities"]
 # methods to visualize based on a single feature
 univar_methods = ["Feature Comparison", "Feature Histogram", "Image Comparison"]
 bivar_methods = ["2D Feature Distribution", "Phasor Plot"]
@@ -70,29 +72,34 @@ with col1:
             elif method == "Phasor Plot":
                 selected_channel, selected_harmonic, f = phasor_params_widget(feature_cols_dict)
         elif method in multivar_methods:
-            if method == "Dimension Reduction":
-                # multiple features selection widget 
-                selected_features = multi_feature_select_widget(feature_cols_dict, n_per_row=2)
-                dr_method = st.selectbox("Dimension Reduction Method", ["UMAP", "PCA", "t-SNE"])
+            selected_features = multi_feature_select_widget(feature_cols_dict, n_per_row=2)
+            if method == "Dimension Reduction":                
+                dr_method = st.radio("Dimension Reduction Method", ["UMAP", "PCA", "t-SNE"], horizontal=True)
                 if dr_method == "UMAP":
                     hyperParam_dict = umap_hyperParams_widget()
                 elif dr_method == "t-SNE":
                     hyperParam_dict = tsne_hyperParams_widget()
-
+            elif method == "Classification":
+                cols = st.columns(2)
+                with cols[0]:
+                    classification_method = st.radio("Classifier", ["Random Forest", "Gradient Boosting", "SVM", "Logistic Regression"])
+                with cols[1]:
+                    splits = st.slider("Train size (percentage of training data)", 0.5, 0.9, 0.7, 0.1)
+    
 with col2:
     if upload_complete:
         # click_ready: boolean to check if the plot is ready for click events
         data_export_ready = False
         filtered_df = filters_widget(st.session_state.vis_df)
         # for visualization that are point-based, provides the options for other visual encoding channels: opacity, shape, and separate by
-        point_based = method not in ["Image Comparison", "Feature Histogram"]
-        color_based = method not in ["Image Comparison"]
+        point_based = method not in ["Image Comparison", "Feature Histogram", "Classification"]
+        color_based = method not in ["Image Comparison", "Classification"]
         image_based = method in ["Image Comparison"]
         separate_by_available = method in ["Feature Comparison"]
         fig = None
-        color_by, opacity_by, shape_by, separate_by = visual_encoding_channels_widget(filtered_df, color_based=color_based, point_based=point_based, separate_by_available=separate_by_available)
         # check if the df is empty after filtering
         if not filtered_df.empty:
+            color_by, opacity_by, shape_by, separate_by = visual_encoding_channels_widget(filtered_df, color_based=color_based, point_based=point_based, separate_by_available=separate_by_available)
             if method in univar_methods and selected_var != "Select":
                 # drop rows with NaN values in the selected_var column
                 filtered_df = filtered_df[filtered_df[selected_var].notna()]
@@ -142,10 +149,19 @@ with col2:
                             fig = dimension_reduction_plot(filtered_df, selected_features, method=dr_method, hyperParam_dict=hyperParam_dict, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by)
                         else:
                             st.write(f"No data available after removing rows with missing values {sad_emoji}")
-            
+                elif method == "Classification":
+                    error_msg, df_classify, sampling_method = classifier_options_widget(filtered_df, selected_features, classification_method, splits)
+                    if error_msg:
+                        st.error(error_msg)
+                    else:
+                        error_msg, results = run_classification(df_classify, classification_method, splits, sampling_method, random_state=42)
+                        if error_msg:
+                            st.error(error_msg)
+                        else:
+                            classification_plot_widget(results, classification_method)
+                    
             if fig is not None: 
-                fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
-                
+                fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)      
                 st.plotly_chart(fig, use_container_width=True)
                 # 1. Data export (if applicable)
                 if data_export_ready:
