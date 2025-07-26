@@ -1,5 +1,5 @@
 import streamlit as st
-from src.feature_types import categorical_cols
+from src.widgets.analysis_config_widgets import categorical_cols
 from src.vis.helpers import natural_tuple_sort
 # Generic callback function to handle "All" logic
 def update_multiselect(key, options):

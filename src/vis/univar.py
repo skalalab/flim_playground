@@ -2,7 +2,6 @@ import streamlit as st
 import plotly.graph_objects as go
 from itertools import combinations
 import numpy as np
-
 from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, stats_comparison_pair_widget
 from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, natural_tuple_sort
 

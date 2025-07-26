@@ -1,25 +1,28 @@
 import toml
 from pathlib import Path
+from typing import Optional
 
 # Absolute path to the project-level config file (../config.toml)
 _CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.toml"
 
-def load_config() -> dict:
+def load_config(config_path: Optional[Path] = None) -> dict:
     """Load and return the TOML configuration as a dict.
 
     Returns an empty dict if the file is missing or unparsable so that the
     calling code can supply sensible fall-backs.
     """
+    path_to_load = _CONFIG_PATH if config_path is None else config_path
     try:
-        return toml.load(_CONFIG_PATH)
+        return toml.load(path_to_load)
     except (FileNotFoundError, toml.TomlDecodeError):
         return {}
 
-def save_config(cfg: dict) -> None:
-    """Persist *cfg* to disk, overwriting the previous *config.toml*."""
+def save_config(cfg: dict, config_path: Optional[Path] = None) -> None:
+    """Persist *cfg* to disk, overwriting the previous config file."""
+    path_to_save = _CONFIG_PATH if config_path is None else config_path
     # Ensure the parent directory exists (helpful when running tests, etc.)
-    _CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with _CONFIG_PATH.open("w", encoding="utf-8") as fh:
+    path_to_save.parent.mkdir(parents=True, exist_ok=True)
+    with path_to_save.open("w", encoding="utf-8") as fh:
         toml.dump(cfg, fh)
 
 def get_unique_cell_id_col() -> str:
@@ -114,3 +117,7 @@ def get_file_types(input_type: str) -> list:
 def get_all_feature_extractors() -> list:
     cfg = load_config()
     return cfg.get("all_feature_extractors", [])
+
+def get_categorical_cols() -> list:
+    cfg = load_config()
+    return cfg.get("categorical_cols", [])

@@ -1,0 +1,4 @@
+unique_row_id_col = "cell_id"
+fov_name_col = "image_name"
+categorical_cols = [ "patient_id", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "replicate", "image_name",]
+all_numeric_col_groups = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]

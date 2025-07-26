@@ -1,6 +1,6 @@
 import streamlit as st
 import numpy as np
-from src.feature_types import all_feature_extractors, categorical_cols
+from src.widgets.analysis_config_widgets import categorical_cols
 
 def visual_encoding_channels_widget(filtered_df, color_based=True, point_based=True, separate_by_available=False):
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]

@@ -12,10 +12,9 @@ from src.vis.multivar import dimension_reduction_plot
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
 from src.vis.univar import image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
 from src.vis.helpers import apply_plot_styling
-from src.feature_types import unique_cell_id_col, fov_name_col
+from src.widgets.analysis_config_widgets import unique_row_id_col, fov_name_col, dataset_config_widget
 from src.widgets.classfication_widgets import classifier_options_widget, classification_plot_widget
 from src.classify import run_classification
-
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 render_top_menu()
 
@@ -57,11 +56,13 @@ with col1:
             "Methods",
             available_methods,
         )
+    use_data_extraction = st.checkbox("Use Dataset from Data Extraction", value=True)
+    instruction_text = "Upload the CSV file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "Use the right panel to configure so that your data is properly loaded."
     uploaded_csv = st.file_uploader(
-        "Upload the CSV file obtained from [Data Extraction](/data_extraction)",
+        instruction_text,
         type=["csv"],
     )
-    df, feature_cols_dict, upload_complete = load_csv(uploaded_csv)
+    df, feature_cols_dict, upload_complete = load_csv(uploaded_csv, use_data_extraction=use_data_extraction)
     st.session_state.vis_df = df
 
     if upload_complete:
@@ -109,7 +110,7 @@ with col2:
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_cell_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method)
+                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method)
                     elif method == "Image Comparison":
                         fig = image_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var)
                     elif method == "Feature Histogram":
@@ -164,8 +165,16 @@ with col2:
                             classification_plot_widget(results, classification_method)
                     
             if fig is not None: 
-                fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)      
-                st.plotly_chart(fig, use_container_width=True)
+                fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size) 
+                if method == "2D Feature Distribution":
+                    col2_1, col2_2 = st.columns([1, 1])
+                    with col2_1:
+                       st.plotly_chart(fig, use_container_width=True)
+                    with col2_2:
+                        if table_md != []:
+                            st.markdown(table_md, unsafe_allow_html=True)
+                else:
+                    st.plotly_chart(fig, use_container_width=True)
                 # 1. Data export (if applicable)
                 if data_export_ready:
                     # available for download
@@ -194,4 +203,6 @@ with col2:
             st.markdown(f"<h5 style='text-align: center; color: red'>No data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)
 
     else:
-        st.write("Please upload a file to begin.")
+        
+        dataset_config_widget(use_data_extraction=use_data_extraction)
+

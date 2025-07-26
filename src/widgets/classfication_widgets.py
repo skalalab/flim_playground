@@ -1,6 +1,6 @@
 import streamlit as st
 from itertools import combinations
-from src.feature_types import categorical_cols
+from src.widgets.analysis_config_widgets import categorical_cols
 from src.dataset_io import happy_emoji, sad_emoji
 from src.classify import plot_confusion_matrix, plot_roc_curve, plot_feature_importance
 from src.widgets.visualization_widgets import plot_config_widget

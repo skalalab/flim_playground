@@ -35,7 +35,7 @@ pyinstaller Flim-Playground.spec --clean
 - add reference dye option for calibration phasor
 - add flimlib
 - finish texture
-- data analysis (vis + classification) config
+- data analysis config
 - add confidence interval to effect size 
 - move config away?
 

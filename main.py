@@ -47,6 +47,7 @@ def main():
     max_num_channels = 4
     imaging_modalities = ["FLIM"]
     all_flim_decay_input_types = ["Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)"]
+    all_available_categorical_cols = ["experiment", "patient_id", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "replicate"]
     # in the future it will be other lists, one for each imaging modality
     spc_output_suffix = {"a1": "_a1[%].asc", "t1": "_t1.asc", "a2": "_a2[%].asc", "t2": "_t2.asc", "a3": "_a3[%].asc", "t3": "_t3.asc"}
     all_feature_extractors = ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture"]
@@ -56,6 +57,9 @@ def main():
     # Initialization: 
     if "flim_decay_input_types" not in cfg:
         cfg["flim_decay_input_types"] = all_flim_decay_input_types
+
+    if "categorical_cols" not in cfg:
+        cfg["categorical_cols"] = all_available_categorical_cols
 
     if "spc_output_suffix" not in cfg:
         cfg["spc_output_suffix"] = spc_output_suffix
@@ -168,6 +172,11 @@ def main():
             cfg[flim_decay_input_type]["duration"] = st.number_input(f"{flim_decay_input_type} duration (s)", value=cfg.get(flim_decay_input_type, {}).get("duration", 20.0), min_value=0.0, max_value=100.0, key=f"{flim_decay_input_type}_duration")
         with cols[1]:
             cfg[flim_decay_input_type]["time_bins"] = st.number_input(f"{flim_decay_input_type} time bins", value=cfg.get(flim_decay_input_type, {}).get("time_bins", 1024), min_value=256, max_value=2048, key=f"{flim_decay_input_type}_time_bins")
+
+    # render a multiselect for categorical columns
+    categorical_cols = st.multiselect("Categorical columns", all_available_categorical_cols, default=cfg.get("categorical_cols", []))
+    cfg["categorical_cols"] = categorical_cols
+
     if error_msg == "":
         update_config_button = st.button("Update Configuration")
         if update_config_button:
