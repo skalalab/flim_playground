@@ -2,7 +2,6 @@
 headless = false
 enableStaticServing = false
 runOnSave = true
-port = 8501
 fileWatcherType = "poll"
 
 [browser]
