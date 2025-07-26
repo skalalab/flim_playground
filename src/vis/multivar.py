@@ -10,7 +10,7 @@ import streamlit as st
 from .helpers import get_point_visual_mappings, add_point_legend_traces
 from src.feature_types import unique_cell_id_col, fov_name_col
 import threading    
-@st.cache_data
+@st.cache_data(ttl="1h", max_entries=4)
 def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
     exp_var = None
     if 'dr_lock' not in st.session_state:
