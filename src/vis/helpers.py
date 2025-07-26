@@ -464,11 +464,11 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     # Update layout with axis and legend font sizes
     fig.update_layout(
         xaxis=dict(
-            titlefont=dict(size=axis_label_size),
+            title=dict(font=dict(size=axis_label_size)),
             tickfont=dict(size=axis_label_size-2)
         ),
         yaxis=dict(
-            titlefont=dict(size=axis_label_size),
+            title=dict(font=dict(size=axis_label_size)),
             tickfont=dict(size=axis_label_size-2)
         ),
         legend=dict(
