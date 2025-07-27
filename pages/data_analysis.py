@@ -85,6 +85,8 @@ with col1:
                     hyperParam_dict = umap_hyperParams_widget()
                 elif dr_method == "t-SNE":
                     hyperParam_dict = tsne_hyperParams_widget()
+                else:
+                    hyperParam_dict = {}
             elif method == "Classification":
                 cols = st.columns(2)
                 with cols[0]:
@@ -156,7 +158,7 @@ with col2:
                         else:
                             st.write(f"No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Classification":
-                    error_msg, df_classify, sampling_method = classifier_options_widget(filtered_df, selected_features, classification_method, splits)
+                    error_msg, df_classify, sampling_method = classifier_options_widget(filtered_df, fov_name_col=fov_name_col, selected_features=selected_features, classifier=classification_method, splits=splits)
                     if error_msg:
                         st.error(error_msg)
                     else:

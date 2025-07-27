@@ -32,6 +32,9 @@ def get_offset(decay_curve):
     # Return the minimum of the two medians
     return min(head_median, tail_median)
 
+def get_intensity_texture_features(metadata, channel_name, fov_col_name):
+    pass
+
 def get_intensity_morphology_features(metadata, channel_name, fov_col_name):
     # get mask morphology features
     feature_prefix = f"Intensity morphology_{channel_name}: "

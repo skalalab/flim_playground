@@ -36,7 +36,6 @@ pyinstaller Flim-Playground.spec --clean
 - add modality alignment
 - add flimlib
 - finish texture
-- data analysis config
 - add confidence interval to effect size 
 - move config away?
 

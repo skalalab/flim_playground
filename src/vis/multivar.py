@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from .helpers import get_point_visual_mappings, add_point_legend_traces
 import threading    
-@st.cache_data(ttl="1h", max_entries=4)
+@st.cache_data()
 def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
     exp_var = None
     if 'dr_lock' not in st.session_state:

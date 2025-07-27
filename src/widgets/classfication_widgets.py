@@ -5,8 +5,8 @@ from src.dataset_io import happy_emoji, sad_emoji
 from src.classify import plot_confusion_matrix, plot_roc_curve, plot_feature_importance
 from src.widgets.visualization_widgets import plot_config_widget
 
-def classifier_options_widget(df, selected_features, classifier, splits):
-    classify_by_options = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1]
+def classifier_options_widget(df, fov_name_col, selected_features, classifier, splits):
+    classify_by_options = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1 and category != fov_name_col]
     col1, col2 = st.columns(2)
     with col1:
         if len(classify_by_options) > 0:
@@ -21,6 +21,13 @@ def classifier_options_widget(df, selected_features, classifier, splits):
     elif len(selected_features) == 0:
         return "Please select features.", None, None
     else: 
+        # Check if the number of classes would generate too many combinations
+        max_combinations = 2000  # Reasonable limit for UI performance
+        total_combinations = 2 ** len(classes) - 1  # Total possible non-empty combinations
+        
+        if total_combinations > max_combinations:
+            return f"Too many classes ({len(classes)}) would generate {total_combinations:,} combinations, which exceeds the limit of {max_combinations:,}. Please reduce the number of classes or group some categories together {sad_emoji}.", None, None
+        
         classification_options = []
         for i in range(len(classes)+1, 1, -1):
             classification_option = list(combinations(classes, i))
