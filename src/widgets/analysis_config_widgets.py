@@ -1,5 +1,5 @@
 import streamlit as st
-import toml
+from streamlit_sortables import sort_items
 from pathlib import Path
 from src.config import load_config, save_config, get_unique_cell_id_col, get_fov_name_col, get_all_feature_extractors, get_categorical_cols
 # Absolute path to the analysis config file (../../analysis_config.toml)
@@ -7,20 +7,19 @@ _ANALYSIS_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "analysi
 
 def dataset_config_widget(use_data_extraction=True):
     # read from the data_extraction configuration and modify based on the use_data_extraction flag
-    unique_row_id_col = get_unique_cell_id_col()
+    unique_cell_id_col = get_unique_cell_id_col()
     fov_name_col = get_fov_name_col()
     categorical_cols = get_categorical_cols()
     categorical_cols.extend([fov_name_col])
-    all_numeric_col_groups = get_all_feature_extractors()
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
+   
     if "unique_row_id_col" not in cfg:
-        cfg["unique_row_id_col"] = unique_row_id_col
+        cfg["unique_row_id_col"] = unique_cell_id_col
     if "fov_name_col" not in cfg:
         cfg["fov_name_col"] = fov_name_col
     if "categorical_cols" not in cfg:
         cfg["categorical_cols"] = categorical_cols
-    if "all_numeric_col_groups" not in cfg:
-        cfg["all_numeric_col_groups"] = all_numeric_col_groups
+        
     if use_data_extraction:
         # do nothing 
         save_config(cfg, _ANALYSIS_CONFIG_PATH)
@@ -31,51 +30,257 @@ def dataset_config_widget(use_data_extraction=True):
         cfg["unique_row_id_col"] = st.text_input("Unique Row ID", value= cfg["unique_row_id_col"], help="The column name that uniquely identifies each row in the dataset.")
     with cols[1]:
         cfg["fov_name_col"] = st.text_input("FOV Name (if available)", value= cfg["fov_name_col"])
-
-    # Initialize session state for selected categorical columns if not exists
-    if "selected_categorical_cols" not in st.session_state:
-        st.session_state.selected_categorical_cols = cfg.get("categorical_cols", categorical_cols)
     
-    # interactively let user add new categorical columns
-    col1, col2 = st.columns(2)
-    with col1:
-        with st.form("add_categorical_col_form", clear_on_submit=True):
-            new_categorical_col = st.text_input("Add categorical column to available categorical columns", placeholder="e.g., experiment")
-            submitted = st.form_submit_button("Add")
-            if submitted:
-                if new_categorical_col not in categorical_cols:
-                    categorical_cols.append(new_categorical_col)
-                    cfg["categorical_cols"] = categorical_cols
-                    # Add the new column to selected columns (user likely wants it selected)
-                    if new_categorical_col not in st.session_state.selected_categorical_cols:
-                        st.session_state.selected_categorical_cols.append(new_categorical_col)
-    with col2:
-        # render a multiselect for existing categorical columns
-        # Use cfg["categorical_cols"] to ensure we get the most up-to-date list
-        current_categorical_cols = cfg.get("categorical_cols", categorical_cols)
-        
-        # Filter session state to only include columns that still exist in current options
-        valid_selected_cols = [col for col in st.session_state.selected_categorical_cols 
-                              if col in current_categorical_cols]
-        
-        selected_categorical_cols = st.multiselect(
-            "Select Categorical Columns", 
-            current_categorical_cols, 
-            default=valid_selected_cols,
-            key="categorical_cols_multiselect"
-        )
-        # Update session state with current selection
-        st.session_state.selected_categorical_cols = selected_categorical_cols
+    selected_categorical_cols = st.multiselect(
+        "Select Categorical Columns", 
+        cfg.get("categorical_cols", categorical_cols), 
+        default=cfg.get("categorical_cols", categorical_cols),
+        key="categorical_cols_multiselect",
+        accept_new_options=True
+    )
+  
+    # now let user define feature groups
+    feature_groups_widget()
 
     if st.button("Save Configuration"):
+        cfg["categorical_cols"] = selected_categorical_cols
+        # Also save feature groups if they exist in session state
+        if "feature_groups" in st.session_state:
+            cfg["feature_groups"] = st.session_state.feature_groups
+        # Save selected numerical features
+        if "all_numerical_features_multiselect" in st.session_state:
+            cfg["all_numerical_features"] = st.session_state.all_numerical_features_multiselect
         save_config(cfg, _ANALYSIS_CONFIG_PATH)
+        st.success("Configuration saved successfully!")
+
+def feature_groups_widget():
+    cfg = load_config(_ANALYSIS_CONFIG_PATH)
+    all_feature_extractors = get_all_feature_extractors()
+    
+    # Initialize feature groups in config if not exists
+    if "feature_groups" not in cfg:
+        cfg["feature_groups"] = {}
+        
+    # step 1: use text area to let user copy and paste all the features
+    raw = st.text_area(
+        "Paste numerical features (comma, semicolon, or whitespace separated)",
+        placeholder="feat1, feat2; feat3\nfeat4 feat5",
+        key="paste_box",
+    )
+    
+    # Parse features from raw text
+    parsed_features = parse_features(raw)
+    
+    # Get features from config if available
+    config_features = cfg.get("all_numerical_features", [])
+    
+    # Determine available features based on logic:
+    # If config has all_numerical_features, use union of paste + config
+    # If no config, use parsed features from paste area
+    if config_features:
+        available_features = list(set(parsed_features + config_features))
+    else:
+        available_features = parsed_features
+    
+    # Show multiselect for all numerical features
+    if available_features:
+        st.subheader("📊 Select Numerical Features")
+        selected_features = st.multiselect(
+            "Choose which features to use for analysis",
+            options=available_features,
+            default=config_features if config_features else available_features,
+            help="Select the numerical features you want to organize into groups",
+            key="all_numerical_features_multiselect"
+        )
+        
+        # Use selected features as the main features list
+        features = selected_features
+        
+        # Initialize session state for feature groups
+        if "feature_groups" not in st.session_state:
+            st.session_state.feature_groups = cfg.get("feature_groups", {})
+        
+        # Ensure feature_groups is a dictionary
+        if not isinstance(st.session_state.feature_groups, dict):
+            st.session_state.feature_groups = {}
+        
+        # Initialize sortable refresh counter
+        if "sortable_refresh_key" not in st.session_state:
+            st.session_state.sortable_refresh_key = 0
+        
+        # Track previous multiselect selection to detect changes
+        if "previous_features" not in st.session_state:
+            st.session_state.previous_features = features
+        
+        # Sync feature groups with multiselect selection
+        # Remove features that are no longer selected from all groups
+        features_set = set(features)
+        previous_features_set = set(st.session_state.previous_features)
+        
+        # If selection changed, update groups and refresh sortable
+        if features_set != previous_features_set:
+            for group_name in st.session_state.feature_groups:
+                # Filter out deselected features from each group
+                st.session_state.feature_groups[group_name] = [
+                    f for f in st.session_state.feature_groups[group_name] 
+                    if f in features_set
+                ]
+            # Force sortable refresh when multiselect changes
+            st.session_state.sortable_refresh_key += 1
+            st.session_state.previous_features = features
+    else:
+        features = []
+        # Initialize session state even when no features
+        if "feature_groups" not in st.session_state:
+            st.session_state.feature_groups = cfg.get("feature_groups", {})
+        if "sortable_refresh_key" not in st.session_state:
+            st.session_state.sortable_refresh_key = 0
+        if "previous_features" not in st.session_state:
+            st.session_state.previous_features = []
+    
+    if not features:
+        st.info("Please paste some features above and select them to start creating feature groups.")
+        return
+    
+    st.subheader("Feature Groups Management")
+    
+    # Create and Delete forms side by side
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Form to create new feature groups
+        with st.form("create_feature_group_form", clear_on_submit=True):
+            st.write("**Create New Feature Group**")
+            new_group_name = st.text_input(
+                "Group Name", 
+                placeholder="e.g., morphology, intensity, texture",
+                help="Enter a name for the new feature group"
+            )
+            submitted = st.form_submit_button("Create Group")
+            
+            if submitted and new_group_name:
+                if new_group_name not in st.session_state.feature_groups:
+                    st.session_state.feature_groups[new_group_name] = []
+                    st.session_state.sortable_refresh_key += 1  # Force sortable refresh
+                    st.success(f"Created feature group: '{new_group_name}'")
+                    st.rerun()
+                else:
+                    st.error(f"Group '{new_group_name}' already exists!")
+    
+    with col2:
+        # Delete feature groups
+        if st.session_state.feature_groups:
+            with st.form("delete_feature_group_form", clear_on_submit=True):
+                st.write("**Delete Feature Group**")
+                group_to_delete = st.selectbox(
+                    "Select group to delete",
+                    options=list(st.session_state.feature_groups.keys()),
+                    help="Select a feature group to remove. Features will be moved back to available pool."
+                )
+                delete_submitted = st.form_submit_button("🗑️ Delete Group", type="secondary")
+                
+                if delete_submitted and group_to_delete:
+                    # Remove the group from session state
+                    del st.session_state.feature_groups[group_to_delete]
+                    st.session_state.sortable_refresh_key += 1  # Force sortable refresh
+                    st.success(f"Deleted feature group: '{group_to_delete}'")
+                    st.rerun()
+        else:
+            st.info("Create some feature groups first to enable deletion.")
+    
+    # Drag and Drop Interface  
+    if features or st.session_state.feature_groups:
+        st.subheader("📋 Drag & Drop Feature Assignment")
+        
+        # Show helpful message when no features selected but groups exist
+        if not features and st.session_state.feature_groups:
+            st.warning("⚠️ No features selected in multiselect above. Your feature groups are now empty. Select features to populate groups again.")
+        
+        # Calculate uncategorized features
+        categorized_features = set()
+        for group_name, group_features in st.session_state.feature_groups.items():
+            if isinstance(group_features, list):
+                categorized_features.update(group_features)
+        uncategorized_features = [f for f in features if f not in categorized_features]
+        
+        # Prepare containers for sortables (correct format for multi_containers)
+        container_list = [
+            {
+                "header": "🔄 Available Features",
+                "items": uncategorized_features
+            }
+        ]
+        
+        # Add feature group containers
+        for group_name, group_features in st.session_state.feature_groups.items():
+            container_list.append({
+                "header": f"📁 {group_name}",
+                "items": group_features
+            })
+        
+        # Create the sortable interface
+        try:
+            sorted_items = sort_items(
+                container_list,
+                multi_containers=True,
+                direction="vertical",
+                key=f"feature_groups_sortable_{st.session_state.sortable_refresh_key}"
+            )
+            
+            # Update session state with new assignments
+            if sorted_items:
+                # Check if there were actual changes by comparing the content
+                has_changes = False
+                new_assignments = {}
+                
+                for container in sorted_items:
+                    header = container["header"]
+                    items = container["items"]
+                    
+                    # Extract group name from header (remove emoji and spaces)
+                    if header.startswith("📁 "):
+                        group_name = header[2:].strip()  # Remove "📁 " prefix
+                        if group_name in st.session_state.feature_groups:
+                            new_assignments[group_name] = items
+                            # Check if this group's items actually changed
+                            if st.session_state.feature_groups[group_name] != items:
+                                has_changes = True
+                
+                # Only update and rerun if there were actual changes
+                if has_changes:
+                    for group_name, items in new_assignments.items():
+                        st.session_state.feature_groups[group_name] = items
+                    st.rerun()
+        except Exception as e:
+            st.error(f"Error with drag and drop interface: {str(e)}")
+            st.info("Please try refreshing the page or recreating your feature groups.")
    
-def get_unique_row_id_col():
+    
+def parse_features(text: str):
+    if not text:
+        return []
+    # Normalize separators to newline, then split on any whitespace
+    norm = text.replace(",", "\n").replace(";", "\n")
+    toks = [t.strip() for t in norm.split()]
+    # de-duplicate, keep first occurrence order
+    out, seen = [], set()
+    for t in toks:
+        if t and t not in seen:
+            seen.add(t); out.append(t)
+    return out
+
+def get_unique_row_id_col(use_data_extraction=True):
+    if use_data_extraction:
+        return get_unique_cell_id_col()
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
     return cfg.get("unique_row_id_col", "")
-def get_fov_name_col_analysis():
+
+def get_fov_name_col_analysis(use_data_extraction=True):
+    if use_data_extraction:
+        return get_fov_name_col()
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
     return cfg.get("fov_name_col", "")
+
 def get_categorical_cols_analysis():
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
     categorical_cols = cfg.get("categorical_cols", [])
@@ -86,15 +291,15 @@ def get_categorical_cols_analysis():
     if "2D_GMM_group" not in categorical_cols:
         categorical_cols.append("2D_GMM_group")
     return categorical_cols
-def get_all_numeric_col_groups():
+def get_all_feature_groups():
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
-    return cfg.get("all_numeric_col_groups", [])
+    return cfg.get("feature_groups", {})
 
-unique_row_id_col = get_unique_row_id_col()
-fov_name_col = get_fov_name_col_analysis()
+def get_all_numerical_features():
+    cfg = load_config(_ANALYSIS_CONFIG_PATH)
+    return cfg.get("all_numerical_features", [])
+
 categorical_cols = get_categorical_cols_analysis()
-all_numeric_col_groups = get_all_numeric_col_groups()
-
 
 
 

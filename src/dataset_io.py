@@ -1,5 +1,5 @@
 import pandas as pd
-from src.widgets.analysis_config_widgets import unique_row_id_col, fov_name_col, categorical_cols, all_numeric_col_groups
+from src.widgets.analysis_config_widgets import get_all_feature_groups, get_all_feature_extractors, get_unique_row_id_col, get_fov_name_col_analysis, categorical_cols   
 import streamlit as st
 import random
 happy_celebratory_emojis = [
@@ -22,8 +22,6 @@ happy_celebratory_emojis = [
     "👍",  # Thumbs Up
     "😉",
 ]
-
-# List of sad, regretful, and remorseful emojis
 sad_regretful_emojis = [
     "😥",  # Sad but Relieved Face
     "😢",  # Crying Face
@@ -53,12 +51,12 @@ def load_csv(uploaded_csv, use_data_extraction=True):
     Load a CSV file and check its validity.
     """
     upload_complete = False
-    df = feature_cols_dict = None
+    df = feature_groups_dict = None
         # check and fix the uploaded csv 
     if uploaded_csv is not None:
         # Read the uploaded data, explicitly preventing the first column from being used as the index
         df = pd.read_csv(uploaded_csv, index_col=False)
-        df, warning_msg, error_msg = check_and_fix_df(df)
+        df, warning_msg, error_msg = check_and_fix_df(df, use_data_extraction=use_data_extraction)
 
         if error_msg != "":
             st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)
@@ -66,8 +64,8 @@ def load_csv(uploaded_csv, use_data_extraction=True):
         else:
             if warning_msg != "":
                 st.markdown(f"<h5 style='text-align: center; color: orange'>{warning_msg}</h5>", unsafe_allow_html=True)
-            # then we can extract the single cell features
-            df, feature_cols_dict, warning_msg, error_msg = get_features(df, use_data_extraction=True)
+            # then we can extract the numeric features
+            df, feature_groups_dict, warning_msg, error_msg = get_features(df, use_data_extraction=use_data_extraction)
             if error_msg != "":
                 st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)
                 st.write(f"Therefore, we cannot extract data from your uploaded file {sad_emoji}")
@@ -76,7 +74,7 @@ def load_csv(uploaded_csv, use_data_extraction=True):
                     st.markdown(f"<h5 style='text-align: center; color: orange'>{warning_msg}</h5>", unsafe_allow_html=True)
                 st.write(f"Data uploaded successfully {happy_emoji}")
                 upload_complete = True
-    return df, feature_cols_dict, upload_complete
+    return df, feature_groups_dict, upload_complete
 
 def match_col_name(col, col_list):
     """
@@ -105,43 +103,61 @@ def safe_split_with_logging(cell_id):
     except Exception as e:   
         return "missing image name"
 
-def get_feature_cols(cols, use_data_extraction=True):
+def get_feature_groups_data_extraction(cols):
     """
-    feature_cols_dict: a dictionary. Keys are the names of the feature group and values are a list of columns that belong to the group.
+    feature_groups_dict: a dictionary. Keys are the names of the feature group and values are a list of columns that belong to the group.
     Only feature groups that have at least one column are included in the dictionary.
     """
-    feature_cols_dict = {}
-    feature_cols_dict["Uncategorized Features"] = []
+    all_feature_extractors = get_all_feature_extractors()
+    feature_groups_dict = {}
+    feature_groups_dict["Uncategorized Features"] = []
     for col in cols:
-        if use_data_extraction:
         # column format: extractor_channelName:feature_name
         # e.g. "Lifetime fit_Channel 1: G(1st)"
         # first split by ":"
-            try:
-                extractor_channel, feature = col.split(": ")
-            except:
-                feature_cols_dict["Uncategorized Features"].append(col)
-                continue
-            try:
-                extractor, channel = extractor_channel.split("_")
-            except:
-                feature_cols_dict["Uncategorized Features"].append(col)
-                continue
-            if extractor in all_numeric_col_groups:
-                if extractor_channel not in feature_cols_dict:
-                    feature_cols_dict[extractor_channel] = []
-                feature_cols_dict[extractor_channel].append(col)
-            else:
-                feature_cols_dict["Uncategorized Features"].append(col)
+        try:
+            extractor_channel, feature = col.split(": ")
+        except:
+            feature_groups_dict["Uncategorized Features"].append(col)
+            continue
+        try:
+            extractor, channel = extractor_channel.split("_")
+        except:
+            feature_groups_dict["Uncategorized Features"].append(col)
+            continue
+        if extractor in all_feature_extractors:
+            if extractor_channel not in feature_groups_dict:
+                feature_groups_dict[extractor_channel] = []
+            feature_groups_dict[extractor_channel].append(col)
         else:
-            pass
+            feature_groups_dict["Uncategorized Features"].append(col)
     # Move "Uncategorized Features" to the end of the dictionary
-    if "Uncategorized Features" in feature_cols_dict:
-        uncategorized = feature_cols_dict.pop("Uncategorized Features")
+    if "Uncategorized Features" in feature_groups_dict:
+        uncategorized = feature_groups_dict.pop("Uncategorized Features")
         if uncategorized:
-            feature_cols_dict["Uncategorized Features"] = uncategorized
+            feature_groups_dict["Uncategorized Features"] = uncategorized
             
-    return feature_cols_dict
+    return feature_groups_dict
+
+def get_feature_groups_user_defined(cols):
+    all_feature_groups = get_all_feature_groups()
+    feature_groups_dict = {}
+    feature_groups_dict["Uncategorized Features"] = []
+    for feature_group in all_feature_groups:
+        cols_in_group = all_feature_groups[feature_group]
+        for col in cols:
+            if col in cols_in_group:
+                if feature_group not in feature_groups_dict:
+                    feature_groups_dict[feature_group] = []
+                feature_groups_dict[feature_group].append(col)
+            else:
+                feature_groups_dict["Uncategorized Features"].append(col)
+    # Move "Uncategorized Features" to the end of the dictionary
+    if "Uncategorized Features" in feature_groups_dict:
+        uncategorized = feature_groups_dict.pop("Uncategorized Features")
+        if uncategorized:
+            feature_groups_dict["Uncategorized Features"] = uncategorized
+    return feature_groups_dict
 
 def get_features(df, use_data_extraction=True):
     """
@@ -151,12 +167,17 @@ def get_features(df, use_data_extraction=True):
     - lifetime fit variables
     - lifetime fit free variables
     """
+    unique_row_id_col = get_unique_row_id_col(use_data_extraction)
+    fov_name_col = get_fov_name_col_analysis(use_data_extraction)
     warning_msg = error_msg = ""
     # convert 
     numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
-    feature_cols_dict = get_feature_cols(numeric_cols, use_data_extraction)
+    if use_data_extraction:
+        feature_groups_dict = get_feature_groups_data_extraction(numeric_cols)
+    else:
+        feature_groups_dict = get_feature_groups_user_defined(numeric_cols)
     all_numerical_features_cols = []
-    for extractor_channel, cols in feature_cols_dict.items():
+    for feature_group, cols in feature_groups_dict.items():
         all_numerical_features_cols.extend(cols)
 
     if len(all_numerical_features_cols) == 0:
@@ -178,9 +199,9 @@ def get_features(df, use_data_extraction=True):
         else:
             warning_msg += f"Warning: {', '.join(columns_with_na[:5])} and {num_na_columns - 5} more columns contain NaN values. "
     
-    return df, feature_cols_dict, warning_msg, error_msg
+    return df, feature_groups_dict, warning_msg, error_msg
 
-def check_and_fix_df(df):
+def check_and_fix_df(df, use_data_extraction=True):
     """
     check for df's metadata: 
     - single-cell unique_identifier
@@ -214,7 +235,7 @@ def check_and_fix_df(df):
         df = df.loc[:, ~df.columns.duplicated(keep='first')]
         
     # handle the required unique cell identifier column
-
+    unique_row_id_col = get_unique_row_id_col(use_data_extraction)
     if unique_row_id_col not in df.columns:
         error_msg += f"Error: {unique_row_id_col} column is missing in the uploaded file. It is required. \n"
         return None, warning_msg, error_msg
@@ -235,6 +256,7 @@ def check_and_fix_df(df):
         
     # make sure unique_row_id_col is of type str
     df[unique_row_id_col] = df[unique_row_id_col].astype(str)
+    fov_name_col = get_fov_name_col_analysis(use_data_extraction)
     if fov_name_col not in df.columns:
         df[fov_name_col] = df[unique_row_id_col].apply(safe_split_with_logging)
     else: 

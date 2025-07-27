@@ -12,7 +12,7 @@ from src.vis.multivar import dimension_reduction_plot
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
 from src.vis.univar import image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
 from src.vis.helpers import apply_plot_styling
-from src.widgets.analysis_config_widgets import unique_row_id_col, fov_name_col, dataset_config_widget
+from src.widgets.analysis_config_widgets import dataset_config_widget, get_fov_name_col_analysis, get_unique_row_id_col
 from src.widgets.classfication_widgets import classifier_options_widget, classification_plot_widget
 from src.classify import run_classification
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -57,26 +57,28 @@ with col1:
             available_methods,
         )
     use_data_extraction = st.checkbox("Use Dataset from Data Extraction", value=True)
+    unique_row_id_col = get_unique_row_id_col(use_data_extraction)
+    fov_name_col = get_fov_name_col_analysis(use_data_extraction)
     instruction_text = "Upload the CSV file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "Use the right panel to configure so that your data is properly loaded."
     uploaded_csv = st.file_uploader(
         instruction_text,
         type=["csv"],
     )
-    df, feature_cols_dict, upload_complete = load_csv(uploaded_csv, use_data_extraction=use_data_extraction)
+    df, feature_groups_dict, upload_complete = load_csv(uploaded_csv, use_data_extraction=use_data_extraction)
     st.session_state.vis_df = df
 
     if upload_complete:
         if method in univar_methods:
-            selected_var = single_feature_select_widget(feature_cols_dict, n_per_row=2)
+            selected_var = single_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
             if method == "Feature Comparison":
                 selected_effect_size_method = st.selectbox("Effect size method", ["None", "Glass's Delta", "Cohen's Distance"], index=0)
         elif method in bivar_methods:
             if "2D" in method:
-                selected_x, selected_y = twod_single_feature_select_widget(feature_cols_dict, n_per_row=2)
+                selected_x, selected_y = twod_single_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
             elif method == "Phasor Plot":
-                selected_channel, selected_harmonic, f = phasor_params_widget(feature_cols_dict)
+                selected_channel, selected_harmonic, f = phasor_params_widget(feature_groups_dict)
         elif method in multivar_methods:
-            selected_features = multi_feature_select_widget(feature_cols_dict, n_per_row=2)
+            selected_features = multi_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
             if method == "Dimension Reduction":                
                 dr_method = st.radio("Dimension Reduction Method", ["UMAP", "PCA", "t-SNE"], horizontal=True)
                 if dr_method == "UMAP":
@@ -130,13 +132,13 @@ with col2:
                     # drop rows with NaN values in the selected_x and selected_y columns
                     filtered_df = filtered_df[filtered_df[selected_x].notna() & filtered_df[selected_y].notna()]
                     if len(filtered_df) > 0:
-                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, selected_x, selected_y, color_by, shape_by, opacity_by)
+                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_x=selected_x, selected_y=selected_y, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by)
                         data_export_ready = True
                     else:
                         st.write("No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Phasor Plot":
                     if selected_channel is not None and selected_harmonic is not None and f is not None:
-                        fig = phasor_plot(filtered_df, selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, f=f, harmonic=selected_harmonic)
+                        fig = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, f=f, harmonic=selected_harmonic)
                     else:
                         st.write("Your data does not contain the required features for phasor plot.")
                                    
@@ -150,7 +152,7 @@ with col2:
                         
                         if len(filtered_df) > 0:
                             # plot the reduced data
-                            fig = dimension_reduction_plot(filtered_df, selected_features, method=dr_method, hyperParam_dict=hyperParam_dict, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by)
+                            fig = dimension_reduction_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_features=selected_features, method=dr_method, hyperParam_dict=hyperParam_dict, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by)
                         else:
                             st.write(f"No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Classification":
@@ -203,6 +205,6 @@ with col2:
             st.markdown(f"<h5 style='text-align: center; color: red'>No data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)
 
     else:
-        
         dataset_config_widget(use_data_extraction=use_data_extraction)
+
 

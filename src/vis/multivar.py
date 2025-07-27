@@ -8,7 +8,6 @@ import umap
 import plotly.graph_objects as go
 import streamlit as st
 from .helpers import get_point_visual_mappings, add_point_legend_traces
-from src.widgets.analysis_config_widgets import unique_row_id_col, fov_name_col
 import threading    
 @st.cache_data(ttl="1h", max_entries=4)
 def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
@@ -36,7 +35,7 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
             df = pd.DataFrame(tsne.fit_transform(X_std), columns=["t-SNE1", "t-SNE2"])
     return df, exp_var
 
-def dimension_reduction_plot(df, selected_features, method="UMAP", hyperParam_dict={}, colored_by=[], opacity_by=None, shape_by=None, exp_var=None):
+def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_features, method="UMAP", hyperParam_dict={}, colored_by=[], opacity_by=None, shape_by=None, exp_var=None):
     """create a plotly plot to visualize the dimension-reduced data"""
     X = df[selected_features]
     # perform dimension reduction

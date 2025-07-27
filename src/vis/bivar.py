@@ -6,7 +6,6 @@ from scipy.stats import pearsonr
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 import streamlit as st
 from src.vis.helpers import get_point_visual_mappings, add_point_legend_traces
-from src.widgets.analysis_config_widgets import unique_row_id_col, fov_name_col
 
 def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, plotly_axis_params):
     """Helper function to plot marginal densities."""
@@ -109,7 +108,7 @@ def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i):
     ))
 
 
-def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], shape_by=None, opacity_by=None, marginal_plot_type='gaussian fit'):
+def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x, selected_y, color_by=[], shape_by=None, opacity_by=None, marginal_plot_type='gaussian fit'):
     GROUP_COL_NAME = 'unique_color_group'
     # Use the new helper for color, shape, opacity
     grouped, color_map, shape_map, opacity_map, group_keys = get_point_visual_mappings(
@@ -245,7 +244,7 @@ def feature_2d_distribution_plot(df, selected_x, selected_y, color_by=[], shape_
     return fig, table_md, df
 
 
-def phasor_plot(df, channel_name,color_by=[], shape_by=None, opacity_by=None, f=0.08, harmonic=1):
+def phasor_plot(df, unique_row_id_col, fov_name_col, channel_name,color_by=[], shape_by=None, opacity_by=None, f=0.08, harmonic=1):
 
     # Create the figure
     fig = go.Figure()

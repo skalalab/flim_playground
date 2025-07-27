@@ -33,6 +33,7 @@ pyinstaller Flim-Playground.spec --clean
 
 # TODO
 - add reference dye option for calibration phasor
+- add modality alignment
 - add flimlib
 - finish texture
 - data analysis config

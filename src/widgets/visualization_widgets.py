@@ -115,18 +115,18 @@ def gmm_hyperParams_widget():
         fit_gmm_min_weight_threshold = st.slider("Min Weight Threshold", min_value=0.0, max_value=0.3, value=0.1, step=0.1)
     return fit_gmm_max_components, fit_gmm_min_weight_threshold
 
-def phasor_params_widget(feature_cols_dict):
+def phasor_params_widget(feature_groups_dict):
 
     channel_harmonics = {}
     
-    for extractor_channel in feature_cols_dict.keys():
+    for extractor_channel in feature_groups_dict.keys():
         try:
             extractor, channel = extractor_channel.split("_")
         except Exception as e:
             continue
         if extractor == "Lifetime fit free":
             channel_harmonics[channel] = []
-            for feature in feature_cols_dict[extractor_channel]:
+            for feature in feature_groups_dict[extractor_channel]:
                 if "G(1st)" in feature and "S(1st)" in feature:
                     channel_harmonics[channel].append(1)
                 elif "G(2nd)" in feature and "S(2nd)" in feature:
