@@ -56,10 +56,10 @@ with col1:
             "Methods",
             available_methods,
         )
-    use_data_extraction = st.checkbox("Use Dataset from Data Extraction", value=True)
+    use_data_extraction = st.checkbox("**Use Dataset from Data Extraction**", value=True)
     unique_row_id_col = get_unique_row_id_col(use_data_extraction)
     fov_name_col = get_fov_name_col_analysis(use_data_extraction)
-    instruction_text = "Upload the CSV file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "Use the right panel to configure so that your data is properly loaded."
+    instruction_text = "Upload the CSV file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "**Use the right panel to configure so that your data is properly loaded ===>**"
     uploaded_csv = st.file_uploader(
         instruction_text,
         type=["csv"],

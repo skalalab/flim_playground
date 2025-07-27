@@ -25,33 +25,49 @@ def dataset_config_widget(use_data_extraction=True):
         save_config(cfg, _ANALYSIS_CONFIG_PATH)
         return
     
+    st.header("Tell me about ur data")
     cols = st.columns(2)
     with cols[0]:
         cfg["unique_row_id_col"] = st.text_input("Unique Row ID", value= cfg["unique_row_id_col"], help="The column name that uniquely identifies each row in the dataset.")
     with cols[1]:
-        cfg["fov_name_col"] = st.text_input("FOV Name (if available)", value= cfg["fov_name_col"])
+        cfg["fov_name_col"] = st.text_input("FOV Name (if available)", value= cfg["fov_name_col"], help="The column name that uniquely identifies each field of view in the dataset. Your dataset maynot have this. It is ok.")
     
     selected_categorical_cols = st.multiselect(
         "Select Categorical Columns", 
         cfg.get("categorical_cols", categorical_cols), 
         default=cfg.get("categorical_cols", categorical_cols),
+        help="Select the categorical columns you may have in this or future datasets.",
         key="categorical_cols_multiselect",
         accept_new_options=True
     )
   
     # now let user define feature groups
     feature_groups_widget()
-
-    if st.button("Save Configuration"):
-        cfg["categorical_cols"] = selected_categorical_cols
-        # Also save feature groups if they exist in session state
-        if "feature_groups" in st.session_state:
-            cfg["feature_groups"] = st.session_state.feature_groups
-        # Save selected numerical features
-        if "all_numerical_features_multiselect" in st.session_state:
-            cfg["all_numerical_features"] = st.session_state.all_numerical_features_multiselect
-        save_config(cfg, _ANALYSIS_CONFIG_PATH)
-        st.success("Configuration saved successfully!")
+    col1, col2 = st.columns(2)
+   
+    with col1:
+        if st.button("Save Configuration"):
+            cfg["categorical_cols"] = selected_categorical_cols
+            # Also save feature groups if they exist in session state
+            if "feature_groups" in st.session_state:
+                cfg["feature_groups"] = st.session_state.feature_groups
+            # Save selected numerical features
+            if "all_numerical_features_multiselect" in st.session_state:
+                cfg["all_numerical_features"] = st.session_state.all_numerical_features_multiselect
+            save_config(cfg, _ANALYSIS_CONFIG_PATH)
+            st.success("Configuration saved successfully!")
+            st.rerun()
+    with col2:
+        if st.button("Reset Configuration"):
+            cfg = load_config(_ANALYSIS_CONFIG_PATH)
+            cfg["unique_row_id_col"] = unique_cell_id_col
+            cfg["fov_name_col"] = fov_name_col
+            cfg["categorical_cols"] = categorical_cols
+            cfg["feature_groups"] = {}
+            cfg["all_numerical_features"] = []
+            save_config(cfg, _ANALYSIS_CONFIG_PATH)
+            st.success("Configuration reset successfully!")
+            st.rerun()
 
 def feature_groups_widget():
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
@@ -89,7 +105,7 @@ def feature_groups_widget():
             "Choose which features to use for analysis",
             options=available_features,
             default=config_features if config_features else available_features,
-            help="Select the numerical features you want to organize into groups",
+            help="Include the numerical features you want to organize into groups",
             key="all_numerical_features_multiselect"
         )
         
@@ -153,7 +169,7 @@ def feature_groups_widget():
             st.write("**Create New Feature Group**")
             new_group_name = st.text_input(
                 "Group Name", 
-                placeholder="e.g., morphology, intensity, texture",
+                placeholder="e.g. lifetime, morphology, texture",
                 help="Enter a name for the new feature group"
             )
             submitted = st.form_submit_button("Create Group")

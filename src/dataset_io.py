@@ -45,7 +45,6 @@ happy_emoji = random.choice(happy_celebratory_emojis)
 # Choose a random sad/regretful emoji
 sad_emoji = random.choice(sad_regretful_emojis)
 
-@st.cache_data
 def load_csv(uploaded_csv, use_data_extraction=True):
     """
     Load a CSV file and check its validity.

@@ -1,8 +1,8 @@
 unique_row_id_col = "base_name"
 fov_name_col = "image_name"
-categorical_cols = [ "day", "patient_id", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "replicate", "image_name",]
-all_numerical_features = [ "nadh_a1_mean", "area", "solidity", "axis_minor_length", "nadh_t2_mean", "nadh_t1_mean", "perimeter", "nadh_tau_mean_mean", "axis_major_length", "eccentricity",]
+categorical_cols = [ "patient_id", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "replicate", "image_name",]
+all_numerical_features = [ "nadh_a1_mean", "nadh_a1_stdev", "nadh_a2_mean", "nadh_a2_stdev", "nadh_t1_mean", "nadh_t1_stdev", "nadh_t2_mean", "nadh_t2_stdev", "nadh_tau_mean_mean", "nadh_tau_mean_stdev", "area", "eccentricity", "perimeter", "solidity", "axis_major_length", "axis_minor_length",]
 
 [feature_groups]
-"nadh lifetime" = [ "nadh_a1_mean", "nadh_tau_mean_mean", "nadh_t1_mean", "nadh_t2_mean",]
-morphology = [ "area", "eccentricity", "axis_major_length", "perimeter", "solidity", "axis_minor_length",]
+"nadh lifetime" = [ "nadh_t1_mean", "nadh_tau_mean_mean", "nadh_t2_mean", "nadh_a1_mean",]
+morphology = [ "perimeter", "solidity", "axis_major_length", "axis_minor_length", "eccentricity", "area",]
