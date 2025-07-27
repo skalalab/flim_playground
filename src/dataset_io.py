@@ -143,15 +143,22 @@ def get_feature_groups_user_defined(cols):
     all_feature_groups = get_all_feature_groups()
     feature_groups_dict = {}
     feature_groups_dict["Uncategorized Features"] = []
-    for feature_group in all_feature_groups:
-        cols_in_group = all_feature_groups[feature_group]
-        for col in cols:
+    
+    for col in cols:
+        found_group = False
+        for feature_group in all_feature_groups:
+            cols_in_group = all_feature_groups[feature_group]
             if col in cols_in_group:
                 if feature_group not in feature_groups_dict:
                     feature_groups_dict[feature_group] = []
                 feature_groups_dict[feature_group].append(col)
-            else:
-                feature_groups_dict["Uncategorized Features"].append(col)
+                found_group = True
+                break  # Column found in this group, no need to check other groups
+        
+        # Only add to uncategorized if it wasn't found in any group
+        if not found_group:
+            feature_groups_dict["Uncategorized Features"].append(col)
+    
     # Move "Uncategorized Features" to the end of the dictionary
     if "Uncategorized Features" in feature_groups_dict:
         uncategorized = feature_groups_dict.pop("Uncategorized Features")
