@@ -60,7 +60,7 @@ with col1:
     unique_row_id_col = get_unique_row_id_col(use_data_extraction)
     fov_name_col = get_fov_name_col_analysis(use_data_extraction)
     categorical_cols = get_categorical_cols_analysis(use_data_extraction)
-    instruction_text = "Upload the CSV file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "**Use the right panel to configure so that your data is properly loaded ===>**"
+    instruction_text = "Upload the CSV file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "**Use the right panel to configure before loading your data ===>**"
     uploaded_csv = st.file_uploader(
         instruction_text,
         type=["csv"],

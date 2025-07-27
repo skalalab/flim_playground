@@ -1,14 +1,29 @@
 # -*- mode: python ; coding: utf-8 -*-
 from PyInstaller.utils.hooks import collect_all
+import streamlit_sortables
+import os
 
-datas = [('src', 'src'), ('pages', 'pages'), ('main.py', '.'), ('launcher.py', '.'), ('config.toml', '.'), ('logo.png', '.')]
+datas = [('src', 'src'), ('pages', 'pages'), ('main.py', '.'), ('launcher.py', '.'), ('config.toml', '.'), ('analysis_config.toml', '.'), ('logo.png', '.')]
 binaries = []
 hiddenimports = ['pages.data_analysis', 'pages.data_extraction', 'pages.classification', 'psutil']
+
+# Add streamlit
 tmp_ret = collect_all('streamlit')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+# Add imblearn
 tmp_ret = collect_all('imblearn')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
+# Add streamlit-sortables with explicit frontend build directory
+tmp_ret = collect_all('streamlit-sortables')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+
+# Manually add streamlit-sortables frontend build directory
+sortables_path = os.path.dirname(streamlit_sortables.__file__)
+frontend_build_path = os.path.join(sortables_path, 'frontend', 'build')
+if os.path.exists(frontend_build_path):
+    datas.append((frontend_build_path, 'streamlit_sortables/frontend/build'))
 
 a = Analysis(
     ['launcher.py'],

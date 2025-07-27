@@ -3,9 +3,10 @@ import os
 from pathlib import Path
 import pandas as pd
 from datetime import datetime
-from src.feature_types import categorical_cols, unique_row_id_col
+from src.config import get_categorical_cols, get_unique_row_id_col
 
 def map_categories_to_labels_widget(available_categories, combined_df, delimiter, df_folder_path):
+    unique_row_id_col = get_unique_row_id_col()
     exp_cell_id = combined_df.iloc[0][unique_row_id_col]
     slots = exp_cell_id.split(delimiter)
     st.write("--------------------------------")
@@ -83,6 +84,7 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
     return cat_label_map
 
 def find_available_dfs_widget(df_folder_path, delimiter):
+    unique_row_id_col = get_unique_row_id_col()
     # use glob to recursively find all the csv files in the folder that does end with _merged.csv and _metadata.csv
     if not os.path.isdir(df_folder_path):
         st.warning("Please provide a valid folder path.")
@@ -175,6 +177,7 @@ def check_and_merge_df_widget(available_dfs):
             join="inner"                           # redundant but explicit
         )
     st.write(f"Finished combining all datasets and got {len(combined)} cells!")
+    categorical_cols = get_categorical_cols()
     available_categories = [category for category in categorical_cols if category not in combined.columns]
     return combined, available_categories
 
