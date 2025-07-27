@@ -1,11 +1,10 @@
 import streamlit as st
 from itertools import combinations
-from src.widgets.analysis_config_widgets import categorical_cols
 from src.dataset_io import happy_emoji, sad_emoji
 from src.classify import plot_confusion_matrix, plot_roc_curve, plot_feature_importance
 from src.widgets.visualization_widgets import plot_config_widget
 
-def classifier_options_widget(df, fov_name_col, selected_features, classifier, splits):
+def classifier_options_widget(df, categorical_cols, fov_name_col, selected_features, classifier, splits):
     classify_by_options = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1 and category != fov_name_col]
     col1, col2 = st.columns(2)
     with col1:

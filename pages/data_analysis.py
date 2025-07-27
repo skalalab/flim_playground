@@ -12,7 +12,7 @@ from src.vis.multivar import dimension_reduction_plot
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
 from src.vis.univar import image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
 from src.vis.helpers import apply_plot_styling
-from src.widgets.analysis_config_widgets import dataset_config_widget, get_fov_name_col_analysis, get_unique_row_id_col
+from src.widgets.analysis_config_widgets import dataset_config_widget, get_fov_name_col_analysis, get_unique_row_id_col, get_categorical_cols_analysis
 from src.widgets.classfication_widgets import classifier_options_widget, classification_plot_widget
 from src.classify import run_classification
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
@@ -59,12 +59,13 @@ with col1:
     use_data_extraction = st.checkbox("**Use Dataset from Data Extraction**", value=True)
     unique_row_id_col = get_unique_row_id_col(use_data_extraction)
     fov_name_col = get_fov_name_col_analysis(use_data_extraction)
+    categorical_cols = get_categorical_cols_analysis(use_data_extraction)
     instruction_text = "Upload the CSV file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "**Use the right panel to configure so that your data is properly loaded ===>**"
     uploaded_csv = st.file_uploader(
         instruction_text,
         type=["csv"],
     )
-    df, feature_groups_dict, upload_complete = load_csv(uploaded_csv, use_data_extraction=use_data_extraction)
+    df, feature_groups_dict, upload_complete = load_csv(uploaded_csv, categorical_cols, use_data_extraction=use_data_extraction)
     st.session_state.vis_df = df
 
     if upload_complete:
@@ -98,7 +99,7 @@ with col2:
     if upload_complete:
         # click_ready: boolean to check if the plot is ready for click events
         data_export_ready = False
-        filtered_df = filters_widget(st.session_state.vis_df)
+        filtered_df = filters_widget(st.session_state.vis_df, categorical_cols)
         # for visualization that are point-based, provides the options for other visual encoding channels: opacity, shape, and separate by
         point_based = method not in ["Image Comparison", "Feature Histogram", "Classification"]
         color_based = method not in ["Image Comparison", "Classification"]
@@ -107,7 +108,7 @@ with col2:
         fig = None
         # check if the df is empty after filtering
         if not filtered_df.empty:
-            color_by, opacity_by, shape_by, separate_by = visual_encoding_channels_widget(filtered_df, color_based=color_based, point_based=point_based, separate_by_available=separate_by_available)
+            color_by, opacity_by, shape_by, separate_by = visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=color_based, point_based=point_based, separate_by_available=separate_by_available)
             if method in univar_methods and selected_var != "Select":
                 # drop rows with NaN values in the selected_var column
                 filtered_df = filtered_df[filtered_df[selected_var].notna()]
@@ -134,7 +135,7 @@ with col2:
                     # drop rows with NaN values in the selected_x and selected_y columns
                     filtered_df = filtered_df[filtered_df[selected_x].notna() & filtered_df[selected_y].notna()]
                     if len(filtered_df) > 0:
-                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_x=selected_x, selected_y=selected_y, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by)
+                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_x=selected_x, selected_y=selected_y, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by)
                         data_export_ready = True
                     else:
                         st.write("No data available after removing rows with missing values {sad_emoji}")
@@ -158,7 +159,7 @@ with col2:
                         else:
                             st.write(f"No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Classification":
-                    error_msg, df_classify, sampling_method = classifier_options_widget(filtered_df, fov_name_col=fov_name_col, selected_features=selected_features, classifier=classification_method, splits=splits)
+                    error_msg, df_classify, sampling_method = classifier_options_widget(filtered_df, categorical_cols, fov_name_col=fov_name_col, selected_features=selected_features, classifier=classification_method, splits=splits)
                     if error_msg:
                         st.error(error_msg)
                     else:

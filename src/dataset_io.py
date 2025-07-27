@@ -1,5 +1,5 @@
 import pandas as pd
-from src.widgets.analysis_config_widgets import get_all_feature_groups, get_all_feature_extractors, get_unique_row_id_col, get_fov_name_col_analysis, categorical_cols   
+from src.widgets.analysis_config_widgets import get_all_feature_groups, get_all_feature_extractors, get_unique_row_id_col, get_fov_name_col_analysis 
 import streamlit as st
 import random
 happy_celebratory_emojis = [
@@ -45,7 +45,7 @@ happy_emoji = random.choice(happy_celebratory_emojis)
 # Choose a random sad/regretful emoji
 sad_emoji = random.choice(sad_regretful_emojis)
 
-def load_csv(uploaded_csv, use_data_extraction=True):
+def load_csv(uploaded_csv, categorical_cols, use_data_extraction=True):
     """
     Load a CSV file and check its validity.
     """
@@ -55,7 +55,7 @@ def load_csv(uploaded_csv, use_data_extraction=True):
     if uploaded_csv is not None:
         # Read the uploaded data, explicitly preventing the first column from being used as the index
         df = pd.read_csv(uploaded_csv, index_col=False)
-        df, warning_msg, error_msg = check_and_fix_df(df, use_data_extraction=use_data_extraction)
+        df, warning_msg, error_msg = check_and_fix_df(df, categorical_cols, use_data_extraction=use_data_extraction)
 
         if error_msg != "":
             st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)
@@ -64,7 +64,7 @@ def load_csv(uploaded_csv, use_data_extraction=True):
             if warning_msg != "":
                 st.markdown(f"<h5 style='text-align: center; color: orange'>{warning_msg}</h5>", unsafe_allow_html=True)
             # then we can extract the numeric features
-            df, feature_groups_dict, warning_msg, error_msg = get_features(df, use_data_extraction=use_data_extraction)
+            df, feature_groups_dict, warning_msg, error_msg = get_features(df, categorical_cols, use_data_extraction=use_data_extraction)
             if error_msg != "":
                 st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)
                 st.write(f"Therefore, we cannot extract data from your uploaded file {sad_emoji}")
@@ -165,7 +165,7 @@ def get_feature_groups_user_defined(cols):
             feature_groups_dict["Uncategorized Features"] = uncategorized
     return feature_groups_dict
 
-def get_features(df, use_data_extraction=True):
+def get_features(df, categorical_cols, use_data_extraction=True):
     """
     Extract all numeric features from the dataframe. Group them (by channel) based on the feature extractors:
     - morphology (mask morphology)
@@ -207,7 +207,7 @@ def get_features(df, use_data_extraction=True):
     
     return df, feature_groups_dict, warning_msg, error_msg
 
-def check_and_fix_df(df, use_data_extraction=True):
+def check_and_fix_df(df, categorical_cols, use_data_extraction=True):
     """
     check for df's metadata: 
     - single-cell unique_identifier

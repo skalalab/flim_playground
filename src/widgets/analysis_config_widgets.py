@@ -297,7 +297,11 @@ def get_fov_name_col_analysis(use_data_extraction=True):
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
     return cfg.get("fov_name_col", "")
 
-def get_categorical_cols_analysis():
+def get_categorical_cols_analysis(use_data_extraction=True):
+    if use_data_extraction:
+        data_extraction_categorical_cols = get_categorical_cols()
+        fov_name_col = get_fov_name_col()
+        return data_extraction_categorical_cols + [fov_name_col, "GMM_group", "2D_GMM_group"]
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
     categorical_cols = cfg.get("categorical_cols", [])
 
@@ -315,7 +319,6 @@ def get_all_numerical_features():
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
     return cfg.get("all_numerical_features", [])
 
-categorical_cols = get_categorical_cols_analysis()
 
 
 

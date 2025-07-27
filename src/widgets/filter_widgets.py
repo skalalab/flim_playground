@@ -1,5 +1,4 @@
 import streamlit as st
-from src.widgets.analysis_config_widgets import categorical_cols
 from src.vis.helpers import natural_tuple_sort
 # Generic callback function to handle "All" logic
 def update_multiselect(key, options):
@@ -10,7 +9,7 @@ def update_multiselect(key, options):
         else:
             st.session_state[key] = [option for option in current_selection if option != "All"]
 
-def filters_widget(df):
+def filters_widget(df, categorical_cols):
     categories_to_filter = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1]
     
     if not categories_to_filter:
