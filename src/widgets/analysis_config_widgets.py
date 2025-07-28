@@ -155,7 +155,7 @@ def feature_groups_widget():
             st.session_state.previous_features = []
     
     if not features:
-        st.info("Please paste some features above and select them to start creating feature groups.")
+        st.info("Please paste numerical features above and we will help you organize them into groups.")
         return
     
     st.subheader("Feature Groups Management")
