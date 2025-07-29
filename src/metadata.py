@@ -12,6 +12,7 @@ def get_ch_info(metadata_df):
     metadata_dict = {}
     metadata_dict["channels_shift"] = {}
     metadata_dict["channel_names"] = []
+    fit_free = False
     for channel_name in available_channels:
         if channel_name not in metadata_dict:
             metadata_dict[channel_name] = {}
@@ -62,6 +63,7 @@ def get_ch_info(metadata_df):
                 # use fitting to find the shift, if it is already fitted, then do not use fitting to find shift (if needed)
                 metadata_dict["channels_shift"][channel_name] = "fit"
         if "Lifetime fit free" in selected_feature_extractors:
+            fit_free = True
             if channel_name not in metadata_dict["channels_shift"]:
                 # if not using fitting to find the shift, then use fit free to find the shift
                 metadata_dict["channels_shift"][channel_name] = "fit free"
@@ -69,8 +71,15 @@ def get_ch_info(metadata_df):
         if "Decay (3/4D)" in input_type:
             metadata_dict[channel_name]["channel_no"] = metadata_df[f"{channel_name}_channel"].iloc[0]
 
-        metadata_dict["unique_cell_id_col"] = get_unique_cell_id_col()
-        metadata_dict["fov_name_col"] = get_fov_name_col()
+    metadata_dict["unique_cell_id_col"] = get_unique_cell_id_col()
+    metadata_dict["fov_name_col"] = get_fov_name_col()
+    if fit_free:    # laser rate is only needed when fit free 
+        if "laser_rate" in metadata_df.columns:
+            if metadata_df["laser_rate"].nunique() != 1:
+                return f"Laser rate column laser_rate is not consistent.", None
+            metadata_dict["laser_rate"] = metadata_df["laser_rate"].iloc[0]
+        else:
+            return f"Laser rate column laser_rate not found in metadata file.", None
 
     return "", metadata_dict
 
@@ -117,12 +126,5 @@ def parse_metadata_file(metadata_df, fov_name_col):
         metadata_dict["duration"] = metadata_df["duration"].iloc[0]
     else:
         return f"Duration column duration not found in metadata file.", None
-    
-    if "laser_rate" in metadata_df.columns:
-        if metadata_df["laser_rate"].nunique() != 1:
-            return f"Laser rate column laser_rate is not consistent.", None
-        metadata_dict["laser_rate"] = metadata_df["laser_rate"].iloc[0]
-    else:
-        return f"Laser rate column laser_rate not found in metadata file.", None
 
     return error_msg, metadata_dict

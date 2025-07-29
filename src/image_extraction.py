@@ -50,12 +50,12 @@ def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask):
         channel_no = metadata[f"{channel_name}_channel"]
         error_msg, decay = read_decay(decay_path, channel_no)
         if error_msg != "":
-            return error_msg, None
+            return error_msg, pd.DataFrame()
         if len(decay.shape) != 3:
-            return f"Error: {channel_name} decay file is not a 3D array", None
+            return f"Error: {channel_name} decay file is not a 3D array", pd.DataFrame()
         image = decay[0]
     except Exception as e:
-        return f"Error reading the {channel_name} decay file: {metadata[f'{channel_name}_Decay']}: {e}", None
+        return f"Error reading the {channel_name} decay file: {metadata[f'{channel_name}_Decay']}: {e}", pd.DataFrame()
     intensity_image = np.sum(decay, axis=-1)
     for mask_id in mask_ids:
         cell_id = f"{fov_name}_{mask_id}"
@@ -73,13 +73,18 @@ def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask):
                 single_cell_texture_features_fov[cell_id][f"{feature_prefix}{feature}"] = mass_displacement(cell_image)
     single_cell_texture_features_fov = pd.DataFrame.from_dict(single_cell_texture_features_fov, orient='index')
     return "", single_cell_texture_features_fov
-
-    
+ 
 def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask):
     # get mask morphology features
     feature_prefix = f"Intensity morphology_{channel_name}: "
     mask_morphology_features = ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length", "circularity"]
-    mask_props = regionprops(label_image=mask)
+    
+    try:
+        mask_props = regionprops(label_image=mask)
+    except TypeError as e:
+        error_msg = f"Error processing mask for {channel_name}: Mask appears to be in boolean format. Please ensure the mask is properly labeled with integer values for different regions. Original error: {str(e)}"
+        return error_msg, pd.DataFrame()
+    
     fov_name = metadata[fov_col_name]
     single_cell_morph_features_fov = {}
     for region in mask_props:
@@ -106,55 +111,70 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
         # SPC image will output 0 for the thresholded pixels (background), so we need to mask them
         a1 = np.ma.masked_array(a1, mask=a1==0, fill_value=np.nan)
     except Exception as e:
-        return f"Error reading the {channel_name} a1 file: {metadata[f'{channel_name}_a1']}: {e}", None
+        return f"Error reading the {channel_name} a1 file: {metadata[f'{channel_name}_a1']}: {e}", pd.DataFrame()
     try:
         mask = load_image(metadata[f"{channel_name}_Mask"])
     except Exception as e:
-        return f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}", None
+        return f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}", pd.DataFrame()
     if mask.shape != a1.shape:
-        return f"Error: {channel_name} a1 file has a different shape than the mask file: {a1.shape} != {mask.shape}", None
+        return f"Error: {channel_name} a1 file has a different shape than the mask file: {a1.shape} != {mask.shape}", pd.DataFrame()
     try:
         t1 = load_image(metadata[f"{channel_name}_t1"])
         t1 = np.ma.masked_array(t1, mask=t1==0, fill_value=np.nan)
     except Exception as e:
-        return f"Error reading the {channel_name} t1 file: {metadata[f'{channel_name}_t1']}: {e}", None
+        return f"Error reading the {channel_name} t1 file: {metadata[f'{channel_name}_t1']}: {e}", pd.DataFrame()
     if mask.shape != t1.shape:
-        return f"Error: {channel_name} t1 file has a different shape than the mask file: {t1.shape} != {mask.shape}", None
+        return f"Error: {channel_name} t1 file has a different shape than the mask file: {t1.shape} != {mask.shape}", pd.DataFrame()
     
-    image_props[f"{fit_feature_prefix}a1"] = regionprops(label_image=mask, intensity_image=a1)
-    image_props[f"{fit_feature_prefix}t1"] = regionprops(label_image=mask, intensity_image=t1)
-    tm = a1 * t1
+    try:
+        image_props[f"{fit_feature_prefix}a1"] = regionprops(label_image=mask, intensity_image=a1)
+        image_props[f"{fit_feature_prefix}t1"] = regionprops(label_image=mask, intensity_image=t1)
+        tm = a1 * t1
+    except Exception as e:
+        return f"Error: {channel_name} a1 or t1 file is not valid: {e}", pd.DataFrame()
 
     if num_components == 2:
         try:
             t2 = load_image(metadata[f"{channel_name}_t2"])
             t2 = np.ma.masked_array(t2, mask=t2==0, fill_value=np.nan)
         except Exception as e:
-            return f"Error reading the {channel_name} t2 file: {metadata[f'{channel_name}_t2']}: {e}", None
+            return f"Error reading the {channel_name} t2 file: {metadata[f'{channel_name}_t2']}: {e}", pd.DataFrame()
         if mask.shape != t2.shape:
-            return f"Error: {channel_name} t2 file has a different shape than the mask file: {t2.shape} != {mask.shape}", None
+            return f"Error: {channel_name} t2 file has a different shape than the mask file: {t2.shape} != {mask.shape}", pd.DataFrame()
         tm= (a1 / 100 * t1) + ((100 - a1) / 100 * t2)
-        image_props[f"{fit_feature_prefix}t2"] = regionprops(label_image=mask, intensity_image=t2)
+        try:
+            image_props[f"{fit_feature_prefix}t2"] = regionprops(label_image=mask, intensity_image=t2)
+        except Exception as e:
+            return f"Error: {channel_name} t2 file is not valid: {e}", pd.DataFrame()
     
     elif num_components == 3:
         try:
             a2 = load_image(metadata[f"{channel_name}_a2"])
             a2 = np.ma.masked_array(a2, mask=a2==0, fill_value=np.nan)
         except Exception as e:
-            return f"Error reading the {channel_name} a2 file: {metadata[f'{channel_name}_a2']}: {e}", None
+            return f"Error reading the {channel_name} a2 file: {metadata[f'{channel_name}_a2']}: {e}", pd.DataFrame()
         if mask.shape != a2.shape:
-            return f"Error: {channel_name} a2 file has a different shape than the mask file: {a2.shape} != {mask.shape}", None
+            return f"Error: {channel_name} a2 file has a different shape than the mask file: {a2.shape} != {mask.shape}", pd.DataFrame()
         try:
             t3 = load_image(metadata[f"{channel_name}_t3"])
             t3 = np.ma.masked_array(t3, mask=t3==0, fill_value=np.nan)
         except Exception as e:
-            return f"Error reading the {channel_name} t3 file: {metadata[f'{channel_name}_t3']}: {e}", None
+            return f"Error reading the {channel_name} t3 file: {metadata[f'{channel_name}_t3']}: {e}", pd.DataFrame()
         if mask.shape != t3.shape:
-            return f"Error: {channel_name} t3 file has a different shape than the mask file: {t3.shape} != {mask.shape}", None
+            return f"Error: {channel_name} t3 file has a different shape than the mask file: {t3.shape} != {mask.shape}", pd.DataFrame()
         tm= (a1 / 100 * t1) + ((100 - a1) / 100 * t2) + ((100 - a1 - a2) / 100 * t3)
-        image_props[f"{fit_feature_prefix}a2"] = regionprops(label_image=mask, intensity_image=a2)
-        image_props[f"{fit_feature_prefix}t3"] = regionprops(label_image=mask, intensity_image=t3)
-    image_props[f"{fit_feature_prefix}tm"] = regionprops(label_image=mask, intensity_image=tm)
+        try:
+            image_props[f"{fit_feature_prefix}a2"] = regionprops(label_image=mask, intensity_image=a2)
+        except Exception as e:
+            return f"Error: {channel_name} a2 file is not valid: {e}", pd.DataFrame()
+        try:
+            image_props[f"{fit_feature_prefix}t3"] = regionprops(label_image=mask, intensity_image=t3)
+        except Exception as e:
+            return f"Error: {channel_name} t3 file is not valid: {e}", pd.DataFrame()
+    try:
+        image_props[f"{fit_feature_prefix}tm"] = regionprops(label_image=mask, intensity_image=tm)
+    except Exception as e:
+        return f"Error: {channel_name} tm file is not valid: {e}", pd.DataFrame()
 
     image_name = metadata[fov_colname]
     single_cell_features_img = {}
@@ -169,7 +189,7 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
    # convert single_cell_features_img to a dataframe
     single_cell_fit_features_fov = pd.DataFrame(single_cell_features_img).T
     if single_cell_fit_features_fov.empty:
-        return "Error: No cells found in the mask", None
+        return "Error: No cells found in the mask", pd.DataFrame()
    
     return "", single_cell_fit_features_fov
 
@@ -264,7 +284,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         shift = metadata[f"{channel_name}_shift"]
         shifted_irf = irf_shift(irf, shift)
         if error_msg != "":
-            return error_msg, None
+            return error_msg, pd.DataFrame()
     if fit:
         num_components = metadata_dict[channel_name]["num_components"]
         if "prefitted" not in input_type:
@@ -274,11 +294,14 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
             end = metadata_dict[channel_name]["end"]
             need_to_fit = True
         else: # prefitted
-            single_cell_fit_features_fov = extract_spcimage_fit_results(metadata, channel_name, num_components, metadata_dict["fov_name_col"])
+            error_msg, single_cell_fit_features_fov = extract_spcimage_fit_results(metadata, channel_name, num_components, metadata_dict["fov_name_col"])
+            if error_msg != "":
+                return error_msg, pd.DataFrame()
 
     channel_container = st.empty()
     with channel_container.container():
-        st.info(f"Extracting Lifetime Features (fitting/fit free) for {channel_name}: for {len(decay_curves)} cells...")
+        if "prefitted" not in input_type or fit_free:
+            st.info(f"Extracting Lifetime Features (fitting/fit free) for {channel_name}: for {len(decay_curves)} cells...")
         channel_progress = st.progress(0)
     
     channel_progress_callback = create_progress_callback(channel_progress)
@@ -351,7 +374,7 @@ def fov_extraction(metadata, metadata_dict):
         single_cell_features_fov[metadata_dict["fov_name_col"]] = fov_name
         single_cell_features_fov.index.name = unique_cell_id_colname
     else:
-        return f"Error: No cells found in the {fov_name}", None
+        return f"Error: No cells found in the {fov_name}", pd.DataFrame()
 
     return "", single_cell_features_fov
             

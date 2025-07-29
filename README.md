@@ -34,8 +34,7 @@ pyinstaller Flim-Playground.spec --clean
 - add reference dye option for calibration phasor (phasorpy data)
 - fit validation (sensitivity with ground truth of 2 component solution, Alek)
 - add flimlib 
-- finish texture
-- move config away(while waiting)
+- move config away (while waiting)
 - add modality alignment (later)
 - add confidence interval to effect size (later)
 

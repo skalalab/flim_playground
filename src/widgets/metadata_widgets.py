@@ -16,7 +16,7 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
     error_msg = ""
     a1_suffix_list = []
     mask_suffix_list = {}
-    if "prefitted" in input_types.values():
+    if any("prefitted" in input_type for input_type in input_types.values()):
         spc_output_suffix = get_spc_output_suffix()
     for i, (channel_key, channel_name) in enumerate(selected_channels.items()):
         input_type = input_types[channel_key]

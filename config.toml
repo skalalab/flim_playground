@@ -1,8 +1,8 @@
-num_channels = 2
+num_channels = 3
 unique_cell_id_col = "cell_id"
 fov_name_col = "image_name"
 flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
-flim_decay_input_type = "Decay (3/4D)"
+flim_decay_input_type = "Decay (3/4D) pixel-prefitted"
 all_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
 imaging_modality = "FLIM"
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
@@ -22,12 +22,12 @@ available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity
 file_types = [ "Decay", "IRF", "Mask",]
 
 [ch1]
-input_type = "Decay (3/4D)"
+input_type = "Decay (3/4D) pixel-prefitted"
 channel_name = "nadh"
 imaging_modality = "FLIM"
 
 [ch2]
-input_type = "Decay (3/4D)"
+input_type = "Decay (3/4D) pixel-prefitted"
 channel_name = "fad"
 imaging_modality = "FLIM"
 
@@ -45,8 +45,8 @@ file_types = [ "Decay", "IRF",]
 
 [ch3]
 imaging_modality = "FLIM"
-input_type = "Decay (3/4D)"
-channel_name = "Channel 3"
+input_type = "Decay (3/4D) pixel-prefitted"
+channel_name = "crypto"
 
 [ch1."Decay (3/4D)"]
 num_components = 2
@@ -65,7 +65,7 @@ num_components = 2
 selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 
 [ch2."Decay (3/4D) pixel-prefitted"]
-selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
 num_components = 2
 
 [ch2."Decay (2D)"]
@@ -75,15 +75,18 @@ num_components = 1
 [ch3."Decay (3/4D)"]
 selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
+[ch3."Decay (3/4D) pixel-prefitted"]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
+
 [ch1."Decay (3/4D)".input_suffixes]
 Mask = "n_photons_mask_cyto.tiff"
 Decay = "n.sdt"
 IRF = "NADH_IRF.txt"
 
 [ch1."Decay (3/4D) pixel-prefitted".input_suffixes]
-Mask = "n_photons_cellpose.tiff"
-Decay = "n.sdt"
-a1 = "n_a1[%].asc"
+Mask = "_C_nadh_mask_crypto_removed.tif"
+Decay = "_N.uncompressed.sdt"
+a1 = "_N.uncompressed_a1[%].asc"
 IRF = "nadh_irf.txt"
 
 [ch1."Decay (2D)".input_suffixes]
@@ -96,9 +99,9 @@ Decay = "f.sdt"
 IRF = "FAD_IRF.txt"
 
 [ch2."Decay (3/4D) pixel-prefitted".input_suffixes]
-Mask = "n_photons_cellpose.tiff"
-Decay = "n.sdt"
-a1 = "f_a1[%].asc"
+Mask = "_C_nadh_mask_crypto_removed.tif"
+Decay = "_F.uncompressed.sdt"
+a1 = "_F.uncompressed_a1[%].asc"
 IRF = "fad_irf.txt"
 
 [ch2."Decay (2D)".input_suffixes]
@@ -108,3 +111,7 @@ IRF = "kflow_ch2.txt"
 [ch3."Decay (3/4D)".input_suffixes]
 Decay = ""
 Mask = ""
+
+[ch3."Decay (3/4D) pixel-prefitted".input_suffixes]
+Decay = "_C.uncompressed.sdt"
+Mask = "_C_crypto_mask.tif"
