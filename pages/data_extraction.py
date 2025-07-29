@@ -44,7 +44,6 @@ with col1:
         help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: Extracts single cell numeric features from the images. Categorical Feature Extraction: Extracts categorical features from the images. \n ",
     )
     if selected_step == "Image Metadata Extraction":
-        #config_summary_msg = st.info()
         checkbox_cols = st.columns(len(channel_names))
         actual_file_suffix = None
         selected_channels = {}
@@ -53,6 +52,9 @@ with col1:
             with checkbox_cols[index]:
                 has_channel = st.checkbox(f"has {channel_name}", value=True, key=f"has_channel_{channel_key}")
                 if has_channel:
+                    # have a help text to show the planned features to be extracted
+                    with st.expander(f"Feature extractors for {channel_name}", expanded=False):
+                        st.write(selected_ch_feature_extractors[channel_key])
                     selected_channels[channel_key] = channel_name
                     if ch_num_components[channel_key] != 0 and "prefitted" in input_types[channel_key]: # if equals to 0, it means this channel does not have any lifetime fit analysis; only prefitted needs to be specified to get all the files. 
                         selected_ch_num_components[channel_name] = st.number_input(f"No. component", value=ch_num_components[channel_key], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_name}")
@@ -92,7 +94,7 @@ with col1:
                 decay_input_type = metadata_dict["decay_input_type"]
                 shift_needed = len(metadata_dict["channels_shift"]) > 0
                 # if there are channels to be fitted, show the fitting options: spcimage is already fitted
-                if len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
+                if "Lifetime fit" in metadata_dict and len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
                     st.info("Please specify the following fitting options.")
                     metadata_dict= fit_options_widget(decay_input_type, metadata_dict)
                 
@@ -196,8 +198,10 @@ with col2:
             # write the shift to the metadata file
             for channel_name in channel_shifts:
                 metadata_df[f"{channel_name}_shift"] = channel_shifts[channel_name]
-                metadata_df[f"{channel_name}_start"] = metadata_dict[channel_name]["start"]
-                metadata_df[f"{channel_name}_end"] = metadata_dict[channel_name]["end"]
+                if "start" in metadata_dict[channel_name]:
+                    metadata_df[f"{channel_name}_start"] = metadata_dict[channel_name]["start"]
+                if "end" in metadata_dict[channel_name]:
+                    metadata_df[f"{channel_name}_end"] = metadata_dict[channel_name]["end"]
  
             # Store the updated metadata_df in session state so it persists across rerun
             st.session_state["last_extracted_metadata"] = metadata_df

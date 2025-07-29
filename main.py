@@ -177,11 +177,19 @@ def main():
     categorical_cols = st.multiselect("Categorical columns", all_available_categorical_cols, default=cfg.get("categorical_cols", []))
     cfg["categorical_cols"] = categorical_cols
 
+    # Check if we should show a success message from previous update
+    if st.session_state.get("config_updated", False):
+        st.success("Configuration updated!")
+        # Clear the flag so message doesn't persist indefinitely
+        st.session_state.config_updated = False
+
     if error_msg == "":
         update_config_button = st.button("Update Configuration")
         if update_config_button:
             save_config(cfg)
-            st.success("Configuration updated!")
+            # Set flag to show success message after rerun
+            st.session_state.config_updated = True
+            st.rerun()
 
 if __name__ == "__main__":
     main()

@@ -56,7 +56,7 @@ def read_asc(path):
 def _get_sample_decay_curves(decays, n_samples, max_intensity):
     # use the top n_samples that have the highest intensity less than max_intensity
     # return the decay curves
-    decay_intensity = np.sum(decays, axis=1)
+    decay_intensity = np.sum(decays, axis=-1)
     sorted_indices = np.argsort(decay_intensity)[::-1]
     filtered_indices = [idx for idx in sorted_indices if decay_intensity[idx] < max_intensity]
 

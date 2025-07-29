@@ -50,7 +50,7 @@ channel_name = "Channel 3"
 
 [ch1."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture", "Lifetime fit",]
+selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 
 [ch1."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
@@ -62,7 +62,7 @@ num_components = 2
 
 [ch2."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture", "Lifetime fit",]
+selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 
 [ch2."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]

@@ -2,10 +2,12 @@ import pandas as pd
 import numpy as np
 from skimage.measure import regionprops
 from src.file_io import get_decay_curves, load_image
+from src.decay_io import read_decay
 from src.fit import fit_curves
 from src.fit_helper import create_progress_callback, irf_shift
 from src.fit_free import get_phasor_features
 import streamlit as st
+from src.cell_texture import granularity, radial_distribution, mass_displacement
 
 def get_offset(decay_curve):
     """
@@ -32,17 +34,51 @@ def get_offset(decay_curve):
     # Return the minimum of the two medians
     return min(head_median, tail_median)
 
-def get_intensity_texture_features(metadata, channel_name, fov_col_name):
-    pass
+def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask):
+    feature_prefix = f"Intensity texture_{channel_name}: "
+    intensity_texture_features = ["granularity", "radial_distribution", "mass_displacement"]
+    granularity_values = [1,3,5,7]
+    radial_distribution_values = [1,2,3,4]
+    fov_name = metadata[fov_col_name]
+    single_cell_texture_features_fov = {}
+    # get cell ids from the mask
+    mask_ids = np.unique(mask)
+    mask_ids = mask_ids[mask_ids != 0]
+    # get the intensity image from the metadata
+    try:
+        decay_path = metadata[f"{channel_name}_Decay"]
+        channel_no = metadata[f"{channel_name}_channel"]
+        error_msg, decay = read_decay(decay_path, channel_no)
+        if error_msg != "":
+            return error_msg, None
+        if len(decay.shape) != 3:
+            return f"Error: {channel_name} decay file is not a 3D array", None
+        image = decay[0]
+    except Exception as e:
+        return f"Error reading the {channel_name} decay file: {metadata[f'{channel_name}_Decay']}: {e}", None
+    intensity_image = np.sum(decay, axis=-1)
+    for mask_id in mask_ids:
+        cell_id = f"{fov_name}_{mask_id}"
+        single_cell_texture_features_fov[cell_id] = {}
+        cell_mask = mask == mask_id
+        cell_image = intensity_image * cell_mask
+        for feature in intensity_texture_features:
+            if feature == "granularity":
+                for n in granularity_values:
+                    single_cell_texture_features_fov[cell_id][f"{feature_prefix}{feature}_{n}"] = granularity(cell_image, n)
+            elif feature == "radial_distribution":
+                for ring_number in radial_distribution_values:
+                    single_cell_texture_features_fov[cell_id][f"{feature_prefix}{feature}_ring{ring_number}"] = radial_distribution(cell_image, ring_number)
+            elif feature == "mass_displacement":
+                single_cell_texture_features_fov[cell_id][f"{feature_prefix}{feature}"] = mass_displacement(cell_image)
+    single_cell_texture_features_fov = pd.DataFrame.from_dict(single_cell_texture_features_fov, orient='index')
+    return "", single_cell_texture_features_fov
 
-def get_intensity_morphology_features(metadata, channel_name, fov_col_name):
+    
+def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask):
     # get mask morphology features
     feature_prefix = f"Intensity morphology_{channel_name}: "
     mask_morphology_features = ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length", "circularity"]
-    try:
-        mask = load_image(metadata[f"{channel_name}_Mask"])
-    except Exception as e:
-        return f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}", None
     mask_props = regionprops(label_image=mask)
     fov_name = metadata[fov_col_name]
     single_cell_morph_features_fov = {}
@@ -62,7 +98,7 @@ def get_intensity_morphology_features(metadata, channel_name, fov_col_name):
     single_cell_morph_features_fov = pd.DataFrame.from_dict(single_cell_morph_features_fov, orient='index')
     return "", single_cell_morph_features_fov
 
-def spcimage_fit_extraction(metadata, channel_name, num_components, fov_colname):
+def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_colname):
     fit_feature_prefix = f"Lifetime fit_{channel_name}: "
     image_props = {}
     try:
@@ -238,7 +274,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
             end = metadata_dict[channel_name]["end"]
             need_to_fit = True
         else: # prefitted
-            single_cell_fit_features_fov = spcimage_fit_extraction(metadata, channel_name, num_components, metadata_dict["fov_name_col"])
+            single_cell_fit_features_fov = extract_spcimage_fit_results(metadata, channel_name, num_components, metadata_dict["fov_name_col"])
 
     channel_container = st.empty()
     with channel_container.container():
@@ -257,11 +293,11 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, shifted_irf, time_axis, laser_rate)
         single_cell_fit_free_features_fov = pd.DataFrame.from_dict(single_cell_fit_free_features_fov, orient='index')
     if fit and fit_free:
-        return pd.concat([single_cell_fit_features_fov, single_cell_fit_free_features_fov], axis=1)
+        return "", pd.concat([single_cell_fit_features_fov, single_cell_fit_free_features_fov], axis=1)
     elif fit:
-        return single_cell_fit_features_fov
+        return "", single_cell_fit_features_fov
     elif fit_free:
-        return single_cell_fit_free_features_fov
+        return "", single_cell_fit_free_features_fov
 
 def fov_extraction(metadata, metadata_dict):
     """
@@ -272,7 +308,7 @@ def fov_extraction(metadata, metadata_dict):
     unique_cell_id_colname = metadata_dict["unique_cell_id_col"]
     # Collect DataFrames from each channel
     fov_feature_dfs = []
-    mask_file_names = []
+    extracted_morphology_masks = []
     for channel_name in metadata_dict["channel_names"]:
         input_type = metadata_dict[channel_name]["input_type"]
         selected_feature_extractors = metadata_dict[channel_name]["selected_feature_extractors"]
@@ -280,20 +316,34 @@ def fov_extraction(metadata, metadata_dict):
             fit = "Lifetime fit" in selected_feature_extractors
             fit_free = "Lifetime fit free" in selected_feature_extractors
             if fit or fit_free:
-                single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, metadata_dict)
-                fov_feature_dfs.append(single_cell_lifetime_features)
-            int_morph = "Intensity morphology" in selected_feature_extractors
-            if int_morph:
-                if metadata[f"{channel_name}_Mask"] not in mask_file_names:
-                    mask_file_names.append(metadata[f"{channel_name}_Mask"])
-                else:
-                    continue # this channel has the same mask as another channel
-                error_msg, single_cell_morph_features_fov = get_intensity_morphology_features(metadata, channel_name, metadata_dict["fov_name_col"])
+                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, metadata_dict)
                 if error_msg != "":
                     st.error(error_msg)
-                else:   
-                    fov_feature_dfs.append(single_cell_morph_features_fov)
+                    continue
+                fov_feature_dfs.append(single_cell_lifetime_features)
+            int_morph = "Intensity morphology" in selected_feature_extractors
             int_texture = "Intensity texture" in selected_feature_extractors
+            if int_morph or int_texture:
+                try:
+                    mask = load_image(metadata[f"{channel_name}_Mask"])
+                except Exception as e:
+                    st.error(f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}")
+                    continue
+                if int_morph:
+                    # check if the morphology features are already extracted for this mask
+                    if metadata[f"{channel_name}_Mask"] not in extracted_morphology_masks:
+                        extracted_morphology_masks.append(metadata[f"{channel_name}_Mask"])
+                        error_msg, single_cell_morph_features_fov = get_intensity_morphology_features(metadata, channel_name, metadata_dict["fov_name_col"], mask)
+                        if error_msg != "":
+                            st.error(error_msg)
+                        else:
+                            fov_feature_dfs.append(single_cell_morph_features_fov)
+                if int_texture:
+                        error_msg, single_cell_texture_features_fov = get_intensity_texture_features(metadata, channel_name, metadata_dict["fov_name_col"], mask)
+                        if error_msg != "":
+                            st.error(error_msg)
+                        else:
+                            fov_feature_dfs.append(single_cell_texture_features_fov)
     
     # Combine all channel DataFrames in one operation
     single_cell_features_fov = pd.concat(fov_feature_dfs, axis=1) if fov_feature_dfs else pd.DataFrame()

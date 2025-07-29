@@ -6,6 +6,11 @@ from src.config import load_config, save_config, get_unique_cell_id_col, get_fov
 _ANALYSIS_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "analysis_config.toml"
 
 def dataset_config_widget(use_data_extraction=True):
+    if "config_saved" not in st.session_state:
+        st.session_state.config_saved = False
+    if "config_reset" not in st.session_state:
+        st.session_state.config_reset = False
+
     # read from the data_extraction configuration and modify based on the use_data_extraction flag
     unique_cell_id_col = get_unique_cell_id_col()
     fov_name_col = get_fov_name_col()
@@ -55,8 +60,13 @@ def dataset_config_widget(use_data_extraction=True):
             if "all_numerical_features_multiselect" in st.session_state:
                 cfg["all_numerical_features"] = st.session_state.all_numerical_features_multiselect
             save_config(cfg, _ANALYSIS_CONFIG_PATH)
-            st.success("Configuration saved successfully!")
+            st.session_state.config_saved = True  # Set flag for success message
             st.rerun()
+        
+        # Display success message if flag is set
+        if st.session_state.get("config_saved", False):
+            st.success("Configuration saved successfully!")
+            st.session_state.config_saved = False  # Clear the flag
     with col2:
         if st.button("Reset Configuration"):
             cfg = load_config(_ANALYSIS_CONFIG_PATH)
@@ -66,8 +76,13 @@ def dataset_config_widget(use_data_extraction=True):
             cfg["feature_groups"] = {}
             cfg["all_numerical_features"] = []
             save_config(cfg, _ANALYSIS_CONFIG_PATH)
-            st.success("Configuration reset successfully!")
+            st.session_state.config_reset = True  # Set flag for success message
             st.rerun()
+        
+        # Display success message if flag is set
+        if st.session_state.get("config_reset", False):
+            st.success("Configuration reset successfully!")
+            st.session_state.config_reset = False  # Clear the flag
 
 def feature_groups_widget():
     cfg = load_config(_ANALYSIS_CONFIG_PATH)

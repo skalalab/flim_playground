@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from src.image_extraction import fov_extraction
+import numpy as np
 
 def check_fov_features(single_fov_cell_features, fov_name, fov_name_col):
     """
@@ -18,10 +19,9 @@ def check_fov_features(single_fov_cell_features, fov_name, fov_name_col):
     if invalid_cells > 0:
         st.warning(
             f"The {fov_name_col} {fov_name} has **{invalid_cells}** cell(s) with '--' or NaN values out of {total_cells} cell(s). "
-            "They are removed from the data because **all** of the pixels of those cells are masked by SPC image output files."
         )
-        # Filter out invalid cells using the combined mask
-        single_fov_cell_features = single_fov_cell_features[~invalid_mask]
+        # replace '--' with NaN
+        single_fov_cell_features = single_fov_cell_features.replace("--", np.nan)
     
     return single_fov_cell_features
             
