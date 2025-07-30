@@ -304,12 +304,19 @@ def check_assign_channel_widget(images_df, selected_channels, flim_decay_input_t
                     if error_msg == "":
                         if len(available_channels) == 1:
                             images_df[f"{channel_name}_channel"] = available_channels[0]
-                            time_bins_list.append(time_bins)
-                            laser_rep_time_list.append(laser_rep_time)
+                        else:
+                            images_df[f"{channel_name}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels)
+                        time_bins_list.append(time_bins)
+                        laser_rep_time_list.append(laser_rep_time)
                     else:
-                        images_df[f"{channel_name}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels)
-                    time_bins_list.append(time_bins)
-                    laser_rep_time_list.append(laser_rep_time)
+                        return error_msg, None
+                # in 2d decay, the laser rep time is given by the user, so no way to check it here
+                if len(set(laser_rep_time_list)) > 1:
+                    return "Inconsistent laser rep time found for the selected channels. Please check the data.", None
+                elif len(laser_rep_time_list) == 0:
+                    return "No laser rep time found for the selected channels. Please check the data.", None
+                else:
+                    images_df["duration"] = laser_rep_time_list[0]
             
     if len(set(time_bins_list)) > 1:
         return "Inconsistent time bins found for the selected channels. Please check the data.", None
@@ -317,13 +324,6 @@ def check_assign_channel_widget(images_df, selected_channels, flim_decay_input_t
         return "No time bins found for the selected channels. Please check the data.", None
     else:
         images_df["time_bins"] = time_bins_list[0]
-
-    if len(set(laser_rep_time_list)) > 1:
-        return "Inconsistent laser rep time found for the selected channels. Please check the data.", None
-    elif len(laser_rep_time_list) == 0:
-        return "No laser rep time found for the selected channels. Please check the data.", None
-    else:
-        images_df["duration"] = laser_rep_time_list[0]
 
     return error_msg, images_df
 
