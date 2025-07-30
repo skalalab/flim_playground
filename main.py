@@ -81,8 +81,27 @@ def main():
     with cols[2]:
         cfg["unique_cell_id_col"] = st.text_input("Unique cell identifier column name", value=cfg.get("unique_cell_id_col", "cell_id"), help="Unique cell identifier column name")
     with cols[3]:
+        cfg["fov_name_col"] = st.text_input("FOV column name", value=cfg.get("fov_name_col", "image_name"))
+
+    cols = st.columns(4)
+    with cols[0]:
         laser_rate = st.number_input(f"Laser rate (GHz) for {flim_decay_input_type}", value=cfg.get(flim_decay_input_type, {}).get("laser_rate", 1.0), min_value=0.0, max_value=2.0, key=f"laser_rate_{flim_decay_input_type}")
         cfg[flim_decay_input_type]["laser_rate"] = laser_rate
+    with cols[1]:
+        # Get default value from config and find its index
+        options = ["IRF", "Reference Dye"]
+        default_value = cfg.get(flim_decay_input_type, {}).get("fit_free_calibration", "IRF")
+        default_index = options.index(default_value) if default_value in options else 0
+        fit_free_calibration = st.radio("Fit free calibration method", options, index=default_index, key=f"fit_free_calibration_{flim_decay_input_type}")
+        cfg[flim_decay_input_type]["fit_free_calibration"] = fit_free_calibration
+        if fit_free_calibration == "Reference Dye":
+            with cols[2]:
+                # get the reference dye file
+                cfg[flim_decay_input_type]["reference_dye_file"] = st.file_uploader(f"Reference dye file", type=["tiff", "tif"], key=f"reference_dye_file_{flim_decay_input_type}")
+            with cols[3]:
+                # get the reference dye lifetime
+                cfg[flim_decay_input_type]["reference_dye_lifetime"] = st.number_input(f"Reference dye lifetime (ns)", value=cfg.get(flim_decay_input_type, {}).get("reference_dye_lifetime", 1.0), min_value=0.1, max_value=20.0, key=f"reference_dye_lifetime_{flim_decay_input_type}")
+       
         # feature extractor initialization
     if "available_feature_extractors" not in cfg[flim_decay_input_type]:
         if flim_decay_input_type == "Decay (2D)":
@@ -100,18 +119,10 @@ def main():
             elif input_type == "Decay (2D)":
                 cfg[input_type]["file_types"] = ["Decay", "IRF"]
     
-
-    if "fov_name_col" not in cfg:
-        if flim_decay_input_type == "Decay (2D)":
-            cfg["fov_name_col"] = "exp_name"
-        else:
-            cfg["fov_name_col"] = "image_name"
-   
     cols = st.columns(cfg["num_channels"])
    
      # check for duplicate channel names
     channel_names = []
-
     for i, col in enumerate(cols):
         with col:
             channel_key = f"ch{i+1}"
@@ -157,11 +168,11 @@ def main():
             st.subheader(f"File suffixes: {custom_channel_name}")
             for file_type in cfg[input_type]["file_types"]:
                 # Skip a1 if no Lifetime fit extractors are selected
-                if file_type == "a1" and not any("Lifetime fit" in extractor for extractor in selected_feature_extractors):
+                if file_type == "a1" and not "Lifetime fit" in selected_feature_extractors:
                     continue
                 # Skip IRF if no Lifetime extractors OR if prefitted and no fit free extractors
                 if file_type == "IRF" and (not any("Lifetime" in extractor for extractor in selected_feature_extractors) or 
-                                          ("prefitted" in input_type and not any("fit free" in extractor for extractor in selected_feature_extractors))):
+                                          ("prefitted" in input_type and not "Lifetime fit free" in selected_feature_extractors)):
                     continue
                 cfg[channel_key][input_type]["input_suffixes"][file_type] = st.text_input(f"{file_type}", value=cfg[channel_key][input_type]["input_suffixes"].get(file_type, ""), key=f"{channel_key}_{input_type}_{file_type}")
 
@@ -172,7 +183,8 @@ def main():
             cfg[flim_decay_input_type]["duration"] = st.number_input(f"{flim_decay_input_type} duration (s)", value=cfg.get(flim_decay_input_type, {}).get("duration", 20.0), min_value=0.0, max_value=100.0, key=f"{flim_decay_input_type}_duration")
         with cols[1]:
             cfg[flim_decay_input_type]["time_bins"] = st.number_input(f"{flim_decay_input_type} time bins", value=cfg.get(flim_decay_input_type, {}).get("time_bins", 1024), min_value=256, max_value=2048, key=f"{flim_decay_input_type}_time_bins")
-
+      
+       
     # render a multiselect for categorical columns
     categorical_cols = st.multiselect("Categorical columns", all_available_categorical_cols, default=cfg.get("categorical_cols", []))
     cfg["categorical_cols"] = categorical_cols

@@ -42,6 +42,8 @@ duration = 20.0
 time_bins = 1024
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
 file_types = [ "Decay", "IRF",]
+fit_free_calibration = "Reference Dye"
+reference_dye_lifetime = 4.2
 
 [ch3]
 imaging_modality = "FLIM"
@@ -57,7 +59,7 @@ selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensi
 num_components = 2
 
 [ch1."Decay (2D)"]
-selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
+selected_feature_extractors = [ "Lifetime fit free",]
 num_components = 2
 
 [ch2."Decay (3/4D)"]

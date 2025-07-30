@@ -244,7 +244,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     return fig, table_md, df
 
 
-def phasor_plot(df, unique_row_id_col, fov_name_col, channel_name,color_by=[], shape_by=None, opacity_by=None, f=0.08, harmonic=1):
+def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, f=0.08, harmonic=1):
 
     # Create the figure
     fig = go.Figure()
@@ -255,7 +255,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, channel_name,color_by=[], s
     elif harmonic == 2:
         harmonic_str = "2nd"
     fig.update_layout(
-        title=f'{channel_name} {harmonic_str} Harmonic Phasor',
+        title=f'{selected_channel} {harmonic_str} Harmonic Phasor',
         xaxis=dict(
             range=[-0.05, 1.05],
             title='g',
@@ -354,7 +354,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, channel_name,color_by=[], s
         opacities = np.linspace(0.4, 1.0, num=len(opacity_groups))
         opacity_map = {group: opacities[i] for i, group in enumerate(opacity_groups)}
 
-    feature_prefix = "Lifetime fit free_" + channel_name + ": "
+    feature_prefix = "Lifetime fit free_" + selected_channel + ": "
     if harmonic == 1:
         g_feature = f"{feature_prefix}G(1st)"
         s_feature = f"{feature_prefix}S(1st)"

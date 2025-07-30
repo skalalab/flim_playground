@@ -126,11 +126,15 @@ def phasor_params_widget(feature_groups_dict):
             continue
         if extractor == "Lifetime fit free":
             channel_harmonics[channel] = []
-            for feature in feature_groups_dict[extractor_channel]:
-                if "G(1st)" in feature and "S(1st)" in feature:
-                    channel_harmonics[channel].append(1)
-                elif "G(2nd)" in feature and "S(2nd)" in feature:
-                    channel_harmonics[channel].append(2)
+            features = feature_groups_dict[extractor_channel]
+            
+            # Check if any feature contains G(1st) AND any feature contains S(1st)
+            if any("G(1st)" in feature for feature in features) and any("S(1st)" in feature for feature in features):
+                channel_harmonics[channel].append(1)
+            
+            # Check if any feature contains G(2nd) AND any feature contains S(2nd)
+            if any("G(2nd)" in feature for feature in features) and any("S(2nd)" in feature for feature in features):
+                channel_harmonics[channel].append(2)
                     
     if len(channel_harmonics.keys()) > 1:
         selected_channel = st.selectbox("Select a channel", channel_harmonics.keys())
