@@ -36,7 +36,7 @@ def get_offset(decay_curve):
 
 def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask):
     feature_prefix = f"Intensity texture_{channel_name}: "
-    intensity_texture_features = ["granularity", "radial_distribution", "mass_displacement"]
+    intensity_texture_features = ["intensity_sum", "granularity", "radial_distribution", "mass_displacement"]
     granularity_values = [1,3,5,7]
     radial_distribution_values = [1,2,3,4]
     fov_name = metadata[fov_col_name]
@@ -53,7 +53,6 @@ def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask):
             return error_msg, pd.DataFrame()
         if len(decay.shape) != 3:
             return f"Error: {channel_name} decay file is not a 3D array", pd.DataFrame()
-        image = decay[0]
     except Exception as e:
         return f"Error reading the {channel_name} decay file: {metadata[f'{channel_name}_Decay']}: {e}", pd.DataFrame()
     intensity_image = np.sum(decay, axis=-1)
@@ -63,7 +62,9 @@ def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask):
         cell_mask = mask == mask_id
         cell_image = intensity_image * cell_mask
         for feature in intensity_texture_features:
-            if feature == "granularity":
+            if feature == "intensity_sum":
+                single_cell_texture_features_fov[cell_id][f"{feature_prefix}{feature}"] = np.sum(cell_image)
+            elif feature == "granularity":
                 for n in granularity_values:
                     single_cell_texture_features_fov[cell_id][f"{feature_prefix}{feature}_{n}"] = granularity(cell_image, n)
             elif feature == "radial_distribution":
@@ -82,7 +83,7 @@ def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask
     try:
         mask_props = regionprops(label_image=mask)
     except TypeError as e:
-        error_msg = f"Error processing mask for {channel_name}: Mask appears to be in boolean format. Please ensure the mask is properly labeled with integer values for different regions. Original error: {str(e)}"
+        error_msg = f"Error processing mask for {channel_name}: Mask appears to be in boolean format. Please ensure the mask is properly labeled with integer values for different regions."
         return error_msg, pd.DataFrame()
     
     fov_name = metadata[fov_col_name]
@@ -271,7 +272,6 @@ def extract_fit_free_results(channel_name, decay_curves, shifted_irf, time_axis,
 
     return single_cell_features_fov
 
-@st.cache_data
 def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, metadata_dict):
     need_to_fit = False
     time_bins = metadata["time_bins"]
@@ -322,6 +322,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
     elif fit_free:
         return "", single_cell_fit_free_features_fov
 
+@st.cache_data
 def fov_extraction(metadata, metadata_dict):
     """
     Extract single cell features from one fov
