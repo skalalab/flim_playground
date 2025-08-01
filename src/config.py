@@ -121,3 +121,13 @@ def get_all_feature_extractors() -> list:
 def get_categorical_cols() -> list:
     cfg = load_config()
     return cfg.get("categorical_cols", [])
+
+def get_fit_free_calibration_method(input_type: str) -> str:
+    cfg = load_config()
+    method = cfg.get(input_type, {}).get("fit_free_calibration", "")
+    if method == "Reference Dye":
+        dye_file = cfg.get(input_type, {}).get("reference_dye_file", "")
+        reference_dye_lifetime = cfg.get(input_type, {}).get("reference_dye_lifetime", "")
+        return method, dye_file, reference_dye_lifetime
+    else:
+        return method, "", ""

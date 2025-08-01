@@ -97,7 +97,10 @@ def main():
         if fit_free_calibration == "Reference Dye":
             with cols[2]:
                 # get the reference dye file
-                cfg[flim_decay_input_type]["reference_dye_file"] = st.file_uploader(f"Reference dye file", type=["tiff", "tif"], key=f"reference_dye_file_{flim_decay_input_type}")
+                cfg[flim_decay_input_type]["reference_dye_file"] = st.text_input(f"Reference dye file suffix", value=cfg.get(flim_decay_input_type, {}).get("reference_dye_file", ""), key=f"reference_dye_file_{flim_decay_input_type}")
+                if cfg[flim_decay_input_type]["reference_dye_file"] == "":
+                    error_msg = f"Please enter a valid reference dye file suffix."
+                    st.error(error_msg)
             with cols[3]:
                 # get the reference dye lifetime
                 cfg[flim_decay_input_type]["reference_dye_lifetime"] = st.number_input(f"Reference dye lifetime (ns)", value=cfg.get(flim_decay_input_type, {}).get("reference_dye_lifetime", 1.0), min_value=0.1, max_value=20.0, key=f"reference_dye_lifetime_{flim_decay_input_type}")
@@ -113,7 +116,7 @@ def main():
     for input_type in all_flim_decay_input_types:
         if "file_types" not in cfg[input_type]:
             if input_type == "Decay (3/4D)":
-                cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask"]
+                cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask",]
             elif input_type == "Decay (3/4D) pixel-prefitted":
                 cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask", "a1"]
             elif input_type == "Decay (2D)":
@@ -174,6 +177,10 @@ def main():
                 if file_type == "IRF" and (not any("Lifetime" in extractor for extractor in selected_feature_extractors) or 
                                           ("prefitted" in input_type and not "Lifetime fit free" in selected_feature_extractors)):
                     continue
+
+                if file_type == "IRF" and "Lifetime fit" not in selected_feature_extractors and fit_free_calibration == "Reference Dye":
+                    continue
+
                 cfg[channel_key][input_type]["input_suffixes"][file_type] = st.text_input(f"{file_type}", value=cfg[channel_key][input_type]["input_suffixes"].get(file_type, ""), key=f"{channel_key}_{input_type}_{file_type}")
 
     if imaging_modality == "FLIM" and flim_decay_input_type == "Decay (2D)":

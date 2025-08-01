@@ -42,7 +42,7 @@ duration = 20.0
 time_bins = 1024
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
 file_types = [ "Decay", "IRF",]
-fit_free_calibration = "Reference Dye"
+fit_free_calibration = "IRF"
 reference_dye_lifetime = 4.2
 
 [ch3]
@@ -93,7 +93,7 @@ IRF = "nadh_irf.txt"
 
 [ch1."Decay (2D)".input_suffixes]
 Decay = "_ch1.csv"
-IRF = "kflow.txt"
+IRF = "kflow_irf.txt"
 
 [ch2."Decay (3/4D)".input_suffixes]
 Mask = "n_photons_mask_cyto.tiff"
