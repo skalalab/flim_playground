@@ -33,9 +33,9 @@ def image_comparison_plot(df, fov_name_col, selected_var):
     
     return fig
 
-def feature_histogram_plot(df, selected_var, color_by=[]):
+def feature_histogram_plot(df, selected_var, color_by=[], colormap="colorblind"):
     GROUP_COL_NAME = 'unique_color_group'
-    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False)
+    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
    
     fig = go.Figure()
 
@@ -83,10 +83,10 @@ def feature_histogram_plot(df, selected_var, color_by=[]):
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
     return fig
 
-def feature_gmm_plot(df, selected_var, color_by=[]):
+def feature_gmm_plot(df, selected_var, color_by=[], colormap="colorblind"):
     h_index_msg = ""    
     GROUP_COL_NAME = 'unique_color_group'
-    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False)
+    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
     fit_gmm_max_components, fit_gmm_min_weight_threshold = gmm_hyperParams_widget()
     # add the choice to do "hard thresholding" or "soft thresholding"
     hard_thresholding = st.checkbox("Use hard thresholding", value=False, key="hard_thresholding", help="If checked, the point where the two Gaussian distributions intersect will be used as the threshold. If not checked, each data will be assigned to the component with the highest posterior probability.")
@@ -247,7 +247,7 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
 
     return fig, df
 
-def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None", mean_or_median=None):
+def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None", mean_or_median=None, colormap="colorblind"):
     connect_means = st.checkbox("Connect means", value=False, key=f"connect_means_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
     fig = go.Figure()
     COLOR_GROUP_COL_NAME = 'compare_group'
@@ -259,7 +259,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         opacity_by=opacity_by,
         separate_by=separate_by,
         group_col_name=COLOR_GROUP_COL_NAME,
-        overlap_point=False
+        overlap_point=False,
+        colormap=colormap
     )
     grouped_list = list(grouped_sep)
     group_keys = [group_key for group_key, _ in grouped_list]

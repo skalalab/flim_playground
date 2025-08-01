@@ -27,6 +27,8 @@ if "plot_axis_label_size" not in st.session_state:
     st.session_state.plot_axis_label_size = 18
 if "plot_legend_size" not in st.session_state:
     st.session_state.plot_legend_size = 16
+if "plot_colormap" not in st.session_state:
+    st.session_state.plot_colormap = "colorblind"
 
 multivar_methods = ["Dimension Reduction", "Classification"] #"Align Modalities"]
 # methods to visualize based on a single feature
@@ -122,7 +124,7 @@ with col2:
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median)
+                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, colormap=st.session_state.plot_colormap)
                     elif method == "Image Comparison":
                         fig = image_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var)
                     elif method == "Feature Histogram":
@@ -131,10 +133,10 @@ with col2:
                         for each color group on the selected feature with 1, 2, and 3 components (fit on raw distribution, not on the histograms). \
                         Choose the one in which all the components are at least of 10% weight and has the lowest BIC score.")
                         if apply_gmm:
-                            fig, gmm_df = feature_gmm_plot(filtered_df, selected_var, color_by)
+                            fig, gmm_df = feature_gmm_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap)
                             data_export_ready = True
                         else: 
-                            fig = feature_histogram_plot(filtered_df, selected_var, color_by)    
+                            fig = feature_histogram_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap)    
                 else:
                     st.write("No data available after removing rows with missing values {sad_emoji}")
             elif method in bivar_methods:
@@ -142,13 +144,13 @@ with col2:
                     # drop rows with NaN values in the selected_x and selected_y columns
                     filtered_df = filtered_df[filtered_df[selected_x].notna() & filtered_df[selected_y].notna()]
                     if len(filtered_df) > 0:
-                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_x=selected_x, selected_y=selected_y, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by)
+                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_x=selected_x, selected_y=selected_y, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap)
                         data_export_ready = True
                     else:
                         st.write("No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Phasor Plot":
                     if selected_channel is not None and selected_harmonic is not None and f is not None:
-                        fig = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, f=f, harmonic=selected_harmonic)
+                        fig = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, f=f, harmonic=selected_harmonic, colormap=st.session_state.plot_colormap)
                     else:
                         st.write("Your data does not contain the required features for phasor plot.")
                                    
@@ -162,7 +164,7 @@ with col2:
                         
                         if len(filtered_df) > 0:
                             # plot the reduced data
-                            fig = dimension_reduction_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_features=selected_features, method=dr_method, hyperParam_dict=hyperParam_dict, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by)
+                            fig = dimension_reduction_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_features=selected_features, method=dr_method, hyperParam_dict=hyperParam_dict, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by, colormap=st.session_state.plot_colormap)
                         else:
                             st.write(f"No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Classification":
@@ -197,7 +199,8 @@ with col2:
                 # 2. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots 
                 st.subheader("📊 Plot Styling")
                 # Get current values from session state as defaults for the widgets
-                new_point_size, new_axis_label_size, new_legend_size = plot_config_widget(point_based=point_based)
+                show_colormap = len(color_by) > 0  # Show colormap only when color_by is not empty
+                new_point_size, new_axis_label_size, new_legend_size, new_colormap = plot_config_widget(point_based=point_based, show_colormap=show_colormap)
                 style_changed = False
                 if new_point_size != st.session_state.plot_point_size:
                     st.session_state.plot_point_size = new_point_size
@@ -208,6 +211,9 @@ with col2:
                 if new_legend_size != st.session_state.plot_legend_size:
                     st.session_state.plot_legend_size = new_legend_size
                     style_changed = True   
+                if new_colormap != st.session_state.plot_colormap:
+                    st.session_state.plot_colormap = new_colormap
+                    style_changed = True
                 if style_changed:
                     st.rerun()
                                

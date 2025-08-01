@@ -160,26 +160,54 @@ def phasor_params_widget(feature_groups_dict):
         f = st.number_input(f"Enter the laser repetition rate in GHz for {selected_channel} {harmonic_str} harmonic", value=0.08, min_value=0.0, step=0.01)
     return selected_channel, selected_harmonic, f
 
-def plot_config_widget(point_based=True):
+def plot_config_widget(point_based=True, show_colormap=False):
     """
-    widgets to change point, axis label font, legend font size
+    widgets to change point, axis label font, legend font size, and colormap
     """
     # Get current values from session state or use defaults
     current_point_size = st.session_state.get("plot_point_size", 5)
     current_axis_label_size = st.session_state.get("plot_axis_label_size", 14)
     current_legend_size = st.session_state.get("plot_legend_size", 12)
+    current_colormap = st.session_state.get("plot_colormap", "colorblind")
     
+    # Determine number of columns based on what widgets to show
+    num_cols = 0
     if point_based:
-        num_cols = 3
-    else: # not rendering the point size widget for non-point based plots
-        num_cols = 2
+        num_cols += 1  # point size
+    num_cols += 2  # axis label size and legend size
+    if show_colormap:
+        num_cols += 1  # colormap
+    
     cols = st.columns(num_cols)
+    col_idx = 0
+    
+    # Point size widget
     point_size = current_point_size
     if point_based:
-        with cols[0]:
+        with cols[col_idx]:
             point_size = st.number_input("Point Size", value=current_point_size, min_value=1, step=1)
-    with cols[1 if point_based else 0]:
+        col_idx += 1
+    
+    # Axis label size widget
+    with cols[col_idx]:
         axis_label_size = st.number_input("Axis Label Font Size", value=current_axis_label_size, min_value=8, step=1)
-    with cols[2 if point_based else 1]:
+    col_idx += 1
+    
+    # Legend size widget
+    with cols[col_idx]:
         legend_size = st.number_input("Legend Font Size", value=current_legend_size, min_value=8, step=1)
-    return point_size, axis_label_size, legend_size
+    col_idx += 1
+    
+    # Colormap widget (only shown when color_by is not empty)
+    colormap = current_colormap
+    if show_colormap:
+        colormap_options = [
+            "colorblind", "tab10", "Set1", "Set2", "Set3", "Pastel1", "Pastel2", 
+            "Accent", "viridis", "plasma", "inferno", "magma", "cividis"
+        ]
+        with cols[col_idx]:
+            colormap = st.selectbox("Color Map", colormap_options, 
+                                  index=colormap_options.index(current_colormap) if current_colormap in colormap_options else 0,
+                                  help="Choose color palette for categorical data")
+    
+    return point_size, axis_label_size, legend_size, colormap

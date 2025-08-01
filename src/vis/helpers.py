@@ -59,18 +59,36 @@ def create_shape_mapping(groups):
                'triangle-down', 'pentagon', 'hexagon', 'octagon', 'star', 'diamond-tall']
     return {group: symbols[i % len(symbols)] for i, group in enumerate(groups)}
 
-def create_color_map(groups, overlap_point):
+def create_color_map(groups, overlap_point, colormap="colorblind"):
     # if points in the visulization is going to overlap, use a transparent color
     if overlap_point: 
         alpha = 0.6 if len(groups) > 1 else 1.0
     else:
         alpha = 1.0
-    palette = sns.color_palette("tab10", n_colors=len(groups))
+    
+    # Handle different colormap types
+    try:
+        if colormap in ["viridis", "plasma", "inferno", "magma", "cividis"]:
+            # Use matplotlib colormaps for these
+            import matplotlib.pyplot as plt
+            cmap = plt.cm.get_cmap(colormap)
+            if len(groups) == 1:
+                colors = [cmap(0.5)]
+            else:
+                colors = [cmap(i / (len(groups) - 1)) for i in range(len(groups))]
+            palette = [(color[0], color[1], color[2]) for color in colors]
+        else:
+            # Use seaborn for all other colormap names
+            palette = sns.color_palette(colormap, n_colors=len(groups))
+    except (ValueError, ImportError):
+        # Fallback to colorblind if colormap is not available
+        palette = sns.color_palette("colorblind", n_colors=len(groups))
+    
     color_sequence = [f"rgba({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)}, {alpha})" for color in palette]
     color_map = {t: color_sequence[i] for i, t in enumerate(groups)}
     return color_map
 
-def _prepare_group_data(df, group_by_cols, new_group_col_name, overlap_point=True):
+def _prepare_group_data(df, group_by_cols, new_group_col_name, overlap_point=True, colormap="colorblind"):
     """
     Prepares group data by creating a new group column, sorting unique groups,
     and generating a color map.
@@ -87,7 +105,7 @@ def _prepare_group_data(df, group_by_cols, new_group_col_name, overlap_point=Tru
         df[new_group_col_name] = df[group_by_cols].astype(str).agg('::'.join, axis=1)
     unique_groups = df[new_group_col_name].unique()
     unique_groups = natural_tuple_sort(unique_groups, delimiter='::')
-    color_map = create_color_map(unique_groups, overlap_point=overlap_point)
+    color_map = create_color_map(unique_groups, overlap_point=overlap_point, colormap=colormap)
     return unique_groups, color_map
 
 def _calculate_effect_size(group1_data, group2_data, method: str, mean_or_median):
@@ -399,7 +417,8 @@ def get_point_visual_mappings(
     opacity_by=None,
     separate_by=None,
     group_col_name="group",
-    overlap_point=True
+    overlap_point=True,
+    colormap="colorblind"
 ):
     """
     General helper for point-based visualizations to handle color_by, shape_by, and opacity_by.
@@ -409,7 +428,7 @@ def get_point_visual_mappings(
     color_by = color_by or []
     if isinstance(color_by, str):
         color_by = [color_by]
-    unique_color_groups, color_map = _prepare_group_data(df, color_by, group_col_name, overlap_point=overlap_point)
+    unique_color_groups, color_map = _prepare_group_data(df, color_by, group_col_name, overlap_point=overlap_point, colormap=colormap)
     # Prepare shape mapping
     shape_groups, shape_map = create_shape_groups_and_map(df, shape_by)
     # Prepare opacity mapping

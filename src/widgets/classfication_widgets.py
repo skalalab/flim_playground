@@ -58,7 +58,7 @@ def classification_plot_widget(results, classification_method):
     st.markdown("---")  # Add a separator line
     st.subheader("📈 Performance Metrics")
     # Get current values from session state as defaults for the widgets
-    point_size, axis_label_size, legend_size = plot_config_widget(point_based=False)
+    point_size, axis_label_size, legend_size, _ = plot_config_widget(point_based=False)
 
     # Now generate the plots with the selected styles
     cols = st.columns(2)
