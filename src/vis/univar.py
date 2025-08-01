@@ -44,6 +44,10 @@ def feature_histogram_plot(df, selected_var, color_by=[]):
     for color_group in unique_color_groups:
         group_df = df[df[GROUP_COL_NAME] == color_group]
         x_data = group_df[selected_var].dropna()
+        x_data_skewness = x_data.skew()  
+        direction = "right-skewed" if x_data_skewness > 0 else "left-skewed" if x_data_skewness < 0 else "roughly symmetric"
+        # Color the text using the same color as the plot
+        st.markdown(f'<span style="color: {color_map[color_group]}"><strong>{color_group}</strong> skewness: {x_data_skewness:.3f} → {direction}</span>', unsafe_allow_html=True)
 
         if x_data.empty:
             continue # Skip empty groups
