@@ -1,5 +1,5 @@
 [server]
-headless = false
+headless = true
 enableStaticServing = false
 runOnSave = true
 fileWatcherType = "poll"
