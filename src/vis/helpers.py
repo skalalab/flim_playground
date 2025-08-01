@@ -18,12 +18,16 @@ def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
     # The root must lie between the two means
     return brentq(f, min(mu1, mu2), max(mu1, mu2))
 
-def glass_delta(group1, group2):
-    mean_diff = np.mean(group1) - np.mean(group2)
+def glass_delta(group1, group2, mean_or_median):
+    if mean_or_median == "Mean": 
+        diff = np.mean(group1) - np.mean(group2)
+    else:
+        diff = np.median(group1) - np.median(group2)
+    # group2 should be the control
     group2_sd = np.std(group2, ddof=1)  # Using Bessel's correction with ddof=1
-    return mean_diff / group2_sd
+    return diff / group2_sd
 
-def cohens_d(group1, group2):
+def cohens_d(group1, group2, mean_or_median):
     """Compute Cohen's d for two independent samples."""
     # sample sizes
     n1, n2 = len(group1), len(group2)
@@ -31,9 +35,12 @@ def cohens_d(group1, group2):
     s1, s2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
     # pooled standard deviation
     pooled_sd = np.sqrt(((n1 - 1)*s1 + (n2 - 1)*s2) / (n1 + n2 - 2))
-    # mean difference
-    mean_diff = np.mean(group1) - np.mean(group2)
-    return mean_diff / pooled_sd
+    if mean_or_median == "Mean": 
+        # mean difference
+        diff = np.mean(group1) - np.mean(group2)
+    else:
+        diff = np.median(group1) - np.median(group2)
+    return diff / pooled_sd
 
 def create_opacity_mapping(groups, min_opacity=0.3, max_opacity=1.0):
     """Create opacity mapping for groups with evenly spaced values, preserving natural order"""
@@ -83,18 +90,17 @@ def _prepare_group_data(df, group_by_cols, new_group_col_name, overlap_point=Tru
     color_map = create_color_map(unique_groups, overlap_point=overlap_point)
     return unique_groups, color_map
 
-def _calculate_effect_size(group1_data, group2_data, method: str):
+def _calculate_effect_size(group1_data, group2_data, method: str, mean_or_median):
     """
     Calculates the effect size between two groups using the specified method.
     """
     if group1_data.empty or group2_data.empty:
         return None
-
     if method == "Glass's Delta":
-        return glass_delta(group1_data, group2_data)
+        return glass_delta(group1_data, group2_data, mean_or_median)
     elif method == "Cohen's Distance":
         # Ensure cohens_d function is available and handles data appropriately
-        return cohens_d(group1_data, group2_data)
+        return cohens_d(group1_data, group2_data, mean_or_median)
     else:
         st.warning(f"Unsupported effect size method: {method}")
         return None
@@ -212,7 +218,7 @@ def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_g
         align="center"
     )
 
-def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, effect_size_method="None", position_map=None, selected_pairs=None, threshold=None):
+def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None):
     """
     Adds effect size annotations to the figure.
     Manages selection of pairs, calculation of effect sizes, and calls annotation plotting.
@@ -284,8 +290,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
             if group1_data.empty or group2_data.empty:
                 st.debug(f"Skipping pair {pair} due to empty data for one or both groups.")
                 continue
-
-            effect_size_value = _calculate_effect_size(group1_data, group2_data, effect_size_method)
+            effect_size_value = _calculate_effect_size(group1_data, group2_data, effect_size_method, mean_or_median)
 
             if effect_size_value is not None and abs(effect_size_value) >= threshold:
                 _annotate_single_effect_size(

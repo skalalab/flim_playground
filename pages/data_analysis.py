@@ -72,7 +72,14 @@ with col1:
         if method in univar_methods:
             selected_var = single_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
             if method == "Feature Comparison":
-                selected_effect_size_method = st.selectbox("Effect size method", ["None", "Glass's Delta", "Cohen's Distance"], index=0)
+                ef_col1, ef_col2 = st.columns(2)
+                mean_or_median = None
+                with ef_col1:
+                    selected_effect_size_method = st.radio("Effect size method", ["None", "Glass's Delta", "Cohen's Distance"], index=0)
+                with ef_col2:
+                    if selected_effect_size_method != "None":
+                        mean_or_median = st.radio("Mean or Median", ["Mean", "Median"])
+               
         elif method in bivar_methods:
             if "2D" in method:
                 selected_x, selected_y = twod_single_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
@@ -115,7 +122,7 @@ with col2:
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method)
+                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median)
                     elif method == "Image Comparison":
                         fig = image_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var)
                     elif method == "Feature Histogram":
@@ -124,7 +131,7 @@ with col2:
                         for each color group on the selected feature with 1, 2, and 3 components (fit on raw distribution, not on the histograms). \
                         Choose the one in which all the components are at least of 10% weight and has the lowest BIC score.")
                         if apply_gmm:
-                            fig, df = feature_gmm_plot(filtered_df, selected_var, color_by)
+                            fig, gmm_df = feature_gmm_plot(filtered_df, selected_var, color_by)
                             data_export_ready = True
                         else: 
                             fig = feature_histogram_plot(filtered_df, selected_var, color_by)    
@@ -185,8 +192,8 @@ with col2:
                     # available for download
                     if method == "2D Feature Distribution" and "2D_GMM_group" in gmm_df.columns:
                         st.download_button(label="Download 2D GMM data", data=gmm_df.to_csv(index=False), file_name="2D_gmm_data.csv")
-                    elif method == "Feature Histogram" and "GMM_group" in df.columns:
-                        st.download_button(label="Download GMM Grouped Data", data=df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
+                    elif method == "Feature Histogram" and "GMM_group" in gmm_df.columns:
+                        st.download_button(label="Download GMM Grouped Data", data=gmm_df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
                 # 2. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots 
                 st.subheader("📊 Plot Styling")
                 # Get current values from session state as defaults for the widgets

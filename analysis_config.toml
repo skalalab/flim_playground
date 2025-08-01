@@ -1,6 +1,8 @@
-unique_row_id_col = "cell_id"
-fov_name_col = "image_name"
-categorical_cols = [ "patient_id", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "replicate", "image_name",]
-all_numerical_features = []
+unique_row_id_col = "flower_id"
+fov_name_col = ""
+categorical_cols = [ "species",]
+all_numerical_features = [ "sepal_length", "sepal_width", "petal_length", "petal_width",]
 
 [feature_groups]
+sepal = [ "sepal_length", "sepal_width",]
+petal = [ "petal_width", "petal_length",]

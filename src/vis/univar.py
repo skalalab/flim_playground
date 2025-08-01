@@ -243,7 +243,7 @@ def feature_gmm_plot(df, selected_var, color_by=[]):
 
     return fig, df
 
-def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None"):
+def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None", mean_or_median=None):
     connect_means = st.checkbox("Connect means", value=False, key=f"connect_means_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
     fig = go.Figure()
     COLOR_GROUP_COL_NAME = 'compare_group'
@@ -544,9 +544,9 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         hovermode='closest', # Hover behavior
         margin=dict(l=50, r=20, t=50, b=max(120, len(max(compare_groups, key=len, default=''))*5)), # Adjust bottom margin for section headers
     )
-
     # --- 4. Add statistical annotations ---
-    if compare_pairs != [] and effect_size_method != "None":
+
+    if compare_pairs != [] and effect_size_method != "None" and mean_or_median is not None:
         if separate_groups:
             # Get user selection for statistical comparisons once (to avoid duplicate widget keys)
             selected_pairs = stats_comparison_pair_widget(compare_pairs)
@@ -597,6 +597,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                                 group_col_name=COLOR_GROUP_COL_NAME,
                                 all_possible_pairs=section_compare_pairs,
                                 effect_size_method=effect_size_method,
+                                mean_or_median=mean_or_median,
                                 position_map=section_position_map,
                                 selected_pairs=filtered_section_pairs,
                                 threshold=threshold
@@ -610,7 +611,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 compare_groups=compare_groups,
                 group_col_name=COLOR_GROUP_COL_NAME,
                 all_possible_pairs=compare_pairs,
-                effect_size_method=effect_size_method
+                effect_size_method=effect_size_method,
+                mean_or_median=mean_or_median
             )
 
     df.drop(columns=[COLOR_GROUP_COL_NAME], inplace=True)
