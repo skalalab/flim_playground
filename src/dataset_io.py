@@ -96,11 +96,11 @@ def match_col_name(col, col_list):
 def safe_split_with_logging(cell_id):
     try:
         if "_" not in cell_id:
-            return "missing image name"
+            return "missing fov name"
         else:
             return cell_id.rsplit('_', 1)[0]
     except Exception as e:   
-        return "missing image name"
+        return "missing fov name"
 
 def get_feature_groups_data_extraction(cols):
     """
@@ -211,7 +211,6 @@ def check_and_fix_df(df, categorical_cols, use_data_extraction=True):
     """
     check for df's metadata: 
     - single-cell unique_identifier
-    - the image the cell comes from: `fov_name`: unique_row_id_col = {fov_name}_{cell_label}
     - fill in na values for categorical columns
     """
     warning_msg = error_msg = ""
@@ -266,7 +265,7 @@ def check_and_fix_df(df, categorical_cols, use_data_extraction=True):
     if fov_name_col not in df.columns:
         df[fov_name_col] = df[unique_row_id_col].apply(safe_split_with_logging)
     else: 
-        df[fov_name_col] = df[fov_name_col].fillna("missing image name")
+        df[fov_name_col] = df[fov_name_col].fillna("missing fov name")
 
     for col in df.columns:
         matched_categorical_col = match_col_name(col, categorical_cols)

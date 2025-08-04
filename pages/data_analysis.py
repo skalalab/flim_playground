@@ -10,7 +10,7 @@ from src.widgets.filter_widgets import filters_widget
 from src.navigation import render_top_menu
 from src.vis.multivar import dimension_reduction_plot
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
-from src.vis.univar import image_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
+from src.vis.univar import fov_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
 from src.vis.helpers import apply_plot_styling
 from src.widgets.analysis_config_widgets import dataset_config_widget, get_fov_name_col_analysis, get_unique_row_id_col, get_categorical_cols_analysis
 from src.widgets.classfication_widgets import classifier_options_widget, classification_plot_widget
@@ -32,7 +32,7 @@ if "plot_colormap" not in st.session_state:
 
 multivar_methods = ["Dimension Reduction", "Classification"] #"Align Modalities"]
 # methods to visualize based on a single feature
-univar_methods = ["Feature Comparison", "Feature Histogram", "Image Comparison"]
+univar_methods = ["Feature Comparison", "Feature Histogram", "FOV Comparison"]
 bivar_methods = ["2D Feature Distribution", "Phasor Plot"]
 col1, col2 = st.columns([0.4, 1])
 with col1:
@@ -110,9 +110,9 @@ with col2:
         data_export_ready = False
         filtered_df = filters_widget(st.session_state.vis_df, categorical_cols)
         # for visualization that are point-based, provides the options for other visual encoding channels: opacity, shape, and separate by
-        point_based = method not in ["Image Comparison", "Feature Histogram", "Classification"]
-        color_based = method not in ["Image Comparison", "Classification"]
-        image_based = method in ["Image Comparison"]
+        point_based = method not in ["FOV Comparison", "Feature Histogram", "Classification"]
+        color_based = method not in [ "Classification"]
+        image_based = method in ["FOV Comparison"]
         separate_by_available = method in ["Feature Comparison"]
         fig = None
         # check if the df is empty after filtering
@@ -125,8 +125,8 @@ with col2:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
                         fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, colormap=st.session_state.plot_colormap)
-                    elif method == "Image Comparison":
-                        fig = image_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var)
+                    elif method == "FOV Comparison":
+                        fig = fov_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var)
                     elif method == "Feature Histogram":
                         # create a switch to select between GMM and histogram
                         apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, help="Fit Gaussian Mixture Models\
