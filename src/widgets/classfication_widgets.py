@@ -71,7 +71,7 @@ def classification_plot_widget(results, classification_method):
     
     # Display metrics table
     metrics = results['metrics']
-    metrics_table = create_metrics_table(metrics, classification_method)
+    metrics_table = create_metrics_table(metrics)
     st.markdown(metrics_table)
     
     if classification_method in ["Random Forest", "Gradient Boosting"]:
