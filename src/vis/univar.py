@@ -5,30 +5,30 @@ import numpy as np
 from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, stats_comparison_pair_widget
 from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, natural_tuple_sort
 
-def image_comparison_plot(df, fov_name_col, selected_var):
-    if (df[fov_name_col] == "missing image name").any():
-        st.markdown("<h5 style='text-align: center; color: Orange;'>Warning: we cannot find/infer field of view names from your dataset.</h5>", unsafe_allow_html=True)
+def fov_comparison_plot(df, fov_name_col, selected_var):
+    if (df[fov_name_col] == "missing fov name").any():
+        st.markdown("<h5 style='text-align: center; color: Red;'>Warning: We cannot infer some/all fov names from you cell_id column. We assume that the fov name is the cell_id without the cell number (which is found after the last underscore) </h5>", unsafe_allow_html=True)
     
     fig = go.Figure()
     
-    image_names = df[fov_name_col].unique()
+    fov_names = df[fov_name_col].unique()
     
-    for image_name in image_names:
-        image_df = df[df[fov_name_col] == image_name]
+    for fov_name in fov_names:
+        fov_df = df[df[fov_name_col] == fov_name]
         fig.add_trace(go.Box(
-            y=image_df[selected_var],
-            name=image_name, 
+            y=fov_df[selected_var],
+            name=fov_name, 
             boxpoints=False, # Only show the box
         ))
 
     fig.update_layout(
-        title=f'Distribution of {selected_var} by Image',
+        title=f'Distribution of {selected_var} by Field of View',
         xaxis_title=fov_name_col,
         yaxis_title=selected_var,
-        showlegend=False, # Hide legend if too many images
+        showlegend=False, # Hide legend if too many FOVs
         hovermode='closest',
-        xaxis={'categoryorder':'array', 'categoryarray': sorted(image_names)}, # Sort boxes by name
-        margin=dict(l=50, r=20, t=50, b=max(80, len(max(image_names, key=len, default=''))*5)) # Adjust bottom margin for long names
+        xaxis={'categoryorder':'array', 'categoryarray': sorted(fov_names)}, # Sort boxes by name
+        margin=dict(l=50, r=20, t=50, b=max(80, len(max(fov_names, key=len, default=''))*5)) # Adjust bottom margin for long names
     )
     
     return fig
@@ -346,7 +346,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         hovertemplate_parts.append("<b>Cell ID:</b> %{text}<br>")
         point_customdata = group_df[fov_name_col]
         # Add the corresponding part to the hovertemplate, referencing customdata
-        hovertemplate_parts.append("<b>Image:</b> %{customdata}<br>")
+        hovertemplate_parts.append("<b>fov:</b> %{customdata}<br>")
         hovertemplate_parts.append("<extra></extra>") # Hide the default trace info box
         final_hovertemplate = "".join(hovertemplate_parts)
         
