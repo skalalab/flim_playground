@@ -1,8 +1,8 @@
-unique_row_id_col = "flower_id"
+unique_row_id_col = "base_name"
 fov_name_col = ""
-categorical_cols = [ "species",]
-all_numerical_features = [ "sepal_length", "sepal_width", "petal_length", "petal_width",]
+categorical_cols = [ "experiment", "media", "cell_line", "treatment",]
+all_numerical_features = [ "na1", "fa1", "ft1", "nt2", "ft2", "ntm", "ftm", "nt1", "normrr",]
 
 [feature_groups]
-sepal = [ "sepal_length", "sepal_width",]
-petal = [ "petal_width", "petal_length",]
+"nadh lifetime" = [ "nt2", "nt1", "ntm", "na1", "normrr",]
+"fad lifetime" = [ "ftm", "ft2", "ft1", "fa1",]

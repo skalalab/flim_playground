@@ -1,7 +1,7 @@
 import streamlit as st
 from itertools import combinations
 from src.dataset_io import happy_emoji, sad_emoji
-from src.classify import plot_confusion_matrix, plot_roc_curve, plot_feature_importance
+from src.classify import plot_confusion_matrix, plot_roc_curve, plot_feature_importance, create_metrics_table
 from src.widgets.visualization_widgets import plot_config_widget
 
 def classifier_options_widget(df, categorical_cols, fov_name_col, selected_features, classifier, splits):
@@ -68,7 +68,12 @@ def classification_plot_widget(results, classification_method):
     with cols[1]:
         fig2 = plot_roc_curve(results['y_test'], results['y_score'], axis_label_size=axis_label_size, legend_size=legend_size)
         st.pyplot(fig2)
-    st.write(f"Accuracy: {results['accuracy']:.2f}")
+    
+    # Display metrics table
+    metrics = results['metrics']
+    metrics_table = create_metrics_table(metrics, classification_method)
+    st.markdown(metrics_table)
+    
     if classification_method in ["Random Forest", "Gradient Boosting"]:
         fig3 = plot_feature_importance(results['classifier'], results['X_train'].columns, axis_label_size=axis_label_size, bar_label_size=legend_size)
         st.pyplot(fig3)

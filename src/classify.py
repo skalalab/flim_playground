@@ -1,6 +1,6 @@
 import numpy as np 
 import pandas as pd
-from sklearn.metrics import roc_curve, auc, confusion_matrix, ConfusionMatrixDisplay, accuracy_score, classification_report
+from sklearn.metrics import roc_curve, auc, confusion_matrix, ConfusionMatrixDisplay, accuracy_score, classification_report, precision_score, recall_score, f1_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
@@ -97,6 +97,50 @@ def plot_feature_importance(classifier, feature_names, axis_label_size=12, bar_l
     plt.tight_layout()
     return fig
 
+def calculate_metrics(y_test, y_pred, y_score=None):
+    """
+    Calculate comprehensive classification metrics including accuracy, precision, recall, specificity, and F1 score.
+    
+    Args:
+        y_test: True labels
+        y_pred: Predicted labels
+        y_score: Prediction probabilities (optional, for ROC calculations)
+    
+    Returns:
+        dict: Dictionary containing all calculated metrics
+    """
+    # Basic metrics
+    accuracy = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
+    recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
+    f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+    
+    return {
+        'accuracy': accuracy,
+        'precision': precision,
+        'recall': recall,
+        'f1_score': f1
+    }
+
+def create_metrics_table(metrics_dict):
+    """
+    Create a markdown table with classification metrics in two rows.
+    
+    Args:
+        metrics_dict: Dictionary containing metrics (from calculate_metrics)
+    
+    Returns:
+        str: Markdown formatted table
+    """
+    table = f"""
+
+| Accuracy | Recall | Precision | F1 Score |
+|----------|--------|-----------|----------|
+| {metrics_dict['accuracy']:.4f} | {metrics_dict['recall']:.4f} | {metrics_dict['precision']:.4f} | {metrics_dict['f1_score']:.4f} |
+
+    """
+    return table
+
 def run_classification(df, method, splits, sampling_method, random_state=42):
     error_msg, X_train, X_test, y_train, y_test = prepare_data(df, splits, sampling_method, random_state)
     if error_msg:
@@ -113,7 +157,10 @@ def run_classification(df, method, splits, sampling_method, random_state=42):
     classifier.fit(X_train, y_train)
     y_score = classifier.predict_proba(X_test)
     y_pred = classifier.predict(X_test)
-    accuracy = accuracy_score(y_test, y_pred)
+    
+    # Calculate comprehensive metrics
+    metrics = calculate_metrics(y_test, y_pred, y_score)
+    
     return "", {
         'classifier': classifier,
         'X_train': X_train,
@@ -122,6 +169,6 @@ def run_classification(df, method, splits, sampling_method, random_state=42):
         'y_test': y_test,
         'y_pred': y_pred,
         'y_score': y_score,
-        'accuracy': accuracy
+        'metrics': metrics,
     }
         

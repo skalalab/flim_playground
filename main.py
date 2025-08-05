@@ -193,7 +193,7 @@ def main():
       
        
     # render a multiselect for categorical columns
-    categorical_cols = st.multiselect("Categorical columns", all_available_categorical_cols, default=cfg.get("categorical_cols", []))
+    categorical_cols = st.multiselect("Categorical columns (type to add more)", cfg.get("categorical_cols", []), default=cfg.get("categorical_cols", []),  accept_new_options=True)
     cfg["categorical_cols"] = categorical_cols
 
     # Check if we should show a success message from previous update
