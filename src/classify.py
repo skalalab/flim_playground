@@ -1,6 +1,6 @@
 import numpy as np 
 import pandas as pd
-from sklearn.metrics import roc_curve, auc, confusion_matrix, ConfusionMatrixDisplay, accuracy_score, classification_report, precision_score, recall_score, f1_score
+from sklearn.metrics import roc_curve, auc, confusion_matrix, ConfusionMatrixDisplay, accuracy_score, precision_score, recall_score, f1_score
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
@@ -97,7 +97,7 @@ def plot_feature_importance(classifier, feature_names, axis_label_size=12, bar_l
     plt.tight_layout()
     return fig
 
-def calculate_metrics(y_test, y_pred, y_score=None):
+def calculate_metrics(y_test, y_pred):
     """
     Calculate comprehensive classification metrics including accuracy, precision, recall, specificity, and F1 score.
     
@@ -159,7 +159,7 @@ def run_classification(df, method, splits, sampling_method, random_state=42):
     y_pred = classifier.predict(X_test)
     
     # Calculate comprehensive metrics
-    metrics = calculate_metrics(y_test, y_pred, y_score)
+    metrics = calculate_metrics(y_test, y_pred)
     
     return "", {
         'classifier': classifier,

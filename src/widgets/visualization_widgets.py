@@ -68,7 +68,7 @@ def tsne_hyperParams_widget():
     col1, col2 = st.columns(2)
     tsne_hyperParams_dict = {}
     with col1:
-        perplexity = st.number_input("perplexity", value=15, step=5, min_value=5, max_value=100)
+        perplexity = st.number_input("perplexity", value=15, step=10, min_value=5, max_value=1000)
         tsne_hyperParams_dict["perplexity"] = perplexity
     with col2:
         early_exaggeration = st.number_input("early_exaggeration", value=1, step=1, min_value=1, max_value=15)
