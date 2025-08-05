@@ -108,7 +108,7 @@ def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i):
     ))
 
 
-def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x, selected_y, color_by=[], shape_by=None, opacity_by=None, marginal_plot_type='gaussian fit', colormap="colorblind"):
+def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x, selected_y, color_by=[], shape_by=None, opacity_by=None, marginal_plot_type='gaussian fit', colormap="tab10"):
     GROUP_COL_NAME = 'unique_color_group'
     # Use the new helper for color, shape, opacity
     grouped, color_map, shape_map, opacity_map, group_keys = get_point_visual_mappings(
@@ -245,7 +245,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     return fig, table_md, df
 
 
-def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, f=0.08, harmonic=1, colormap="colorblind"):
+def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, f=0.08, harmonic=1, colormap="tab10"):
 
     # Create the figure
     fig = go.Figure()

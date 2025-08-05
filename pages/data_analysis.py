@@ -28,7 +28,7 @@ if "plot_axis_label_size" not in st.session_state:
 if "plot_legend_size" not in st.session_state:
     st.session_state.plot_legend_size = 16
 if "plot_colormap" not in st.session_state:
-    st.session_state.plot_colormap = "colorblind"
+    st.session_state.plot_colormap = "tab10"
 
 multivar_methods = ["Dimension Reduction", "Classification"] #"Align Modalities"]
 # methods to visualize based on a single feature

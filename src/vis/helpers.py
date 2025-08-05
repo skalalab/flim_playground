@@ -59,7 +59,7 @@ def create_shape_mapping(groups):
                'triangle-down', 'pentagon', 'hexagon', 'octagon', 'star', 'diamond-tall']
     return {group: symbols[i % len(symbols)] for i, group in enumerate(groups)}
 
-def create_color_map(groups, overlap_point, colormap="colorblind"):
+def create_color_map(groups, overlap_point, colormap="tab10"):
     # if points in the visulization is going to overlap, use a transparent color
     if overlap_point: 
         alpha = 0.6 if len(groups) > 1 else 1.0
@@ -81,14 +81,14 @@ def create_color_map(groups, overlap_point, colormap="colorblind"):
             # Use seaborn for all other colormap names
             palette = sns.color_palette(colormap, n_colors=len(groups))
     except (ValueError, ImportError):
-        # Fallback to colorblind if colormap is not available
-        palette = sns.color_palette("colorblind", n_colors=len(groups))
+        # Fallback to tab10 if colormap is not available
+        palette = sns.color_palette("tab10", n_colors=len(groups))
     
     color_sequence = [f"rgba({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)}, {alpha})" for color in palette]
     color_map = {t: color_sequence[i] for i, t in enumerate(groups)}
     return color_map
 
-def _prepare_group_data(df, group_by_cols, new_group_col_name, overlap_point=True, colormap="colorblind"):
+def _prepare_group_data(df, group_by_cols, new_group_col_name, overlap_point=True, colormap="tab10"):
     """
     Prepares group data by creating a new group column, sorting unique groups,
     and generating a color map.
@@ -418,7 +418,7 @@ def get_point_visual_mappings(
     separate_by=None,
     group_col_name="group",
     overlap_point=True,
-    colormap="colorblind"
+    colormap="tab10"
 ):
     """
     General helper for point-based visualizations to handle color_by, shape_by, and opacity_by.

@@ -35,7 +35,7 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
             df = pd.DataFrame(tsne.fit_transform(X_std), columns=["t-SNE1", "t-SNE2"])
     return df, exp_var
 
-def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_features, method="UMAP", hyperParam_dict={}, colored_by=[], opacity_by=None, shape_by=None, exp_var=None, colormap="colorblind"):
+def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_features, method="UMAP", hyperParam_dict={}, colored_by=[], opacity_by=None, shape_by=None, exp_var=None, colormap="tab10"):
     """create a plotly plot to visualize the dimension-reduced data"""
     X = df[selected_features]
     # perform dimension reduction

@@ -7,7 +7,7 @@ from .helpers import _prepare_group_data, find_intersection, _add_effect_size_an
 
 def image_comparison_plot(df, fov_name_col, selected_var):
     if (df[fov_name_col] == "missing image name").any():
-        st.markdown("<h5 style='text-align: center; color: Red;'>Warning: We cannot infer some/all image names from you cell_id column. We assume that the image name is the cell_id without the cell number (which is found after the last underscore) </h5>", unsafe_allow_html=True)
+        st.markdown("<h5 style='text-align: center; color: Orange;'>Warning: we cannot find/infer field of view names from your dataset.</h5>", unsafe_allow_html=True)
     
     fig = go.Figure()
     
@@ -33,7 +33,7 @@ def image_comparison_plot(df, fov_name_col, selected_var):
     
     return fig
 
-def feature_histogram_plot(df, selected_var, color_by=[], colormap="colorblind"):
+def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10"):
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
    
@@ -83,7 +83,7 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="colorblind")
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
     return fig
 
-def feature_gmm_plot(df, selected_var, color_by=[], colormap="colorblind"):
+def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
     h_index_msg = ""    
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
@@ -247,7 +247,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="colorblind"):
 
     return fig, df
 
-def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None", mean_or_median=None, colormap="colorblind"):
+def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None", mean_or_median=None, colormap="tab10"):
     connect_means = st.checkbox("Connect means", value=False, key=f"connect_means_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
     fig = go.Figure()
     COLOR_GROUP_COL_NAME = 'compare_group'

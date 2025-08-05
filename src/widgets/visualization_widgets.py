@@ -1,6 +1,5 @@
 import streamlit as st
 import numpy as np
-from src.widgets.analysis_config_widgets import get_categorical_cols_analysis
 
 def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False):
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
@@ -168,7 +167,7 @@ def plot_config_widget(point_based=True, show_colormap=False):
     current_point_size = st.session_state.get("plot_point_size", 5)
     current_axis_label_size = st.session_state.get("plot_axis_label_size", 14)
     current_legend_size = st.session_state.get("plot_legend_size", 12)
-    current_colormap = st.session_state.get("plot_colormap", "colorblind")
+    current_colormap = st.session_state.get("plot_colormap", "tab10")
     
     # Determine number of columns based on what widgets to show
     num_cols = 0
@@ -202,12 +201,12 @@ def plot_config_widget(point_based=True, show_colormap=False):
     colormap = current_colormap
     if show_colormap:
         colormap_options = [
-            "colorblind", "tab10", "Set1", "Set2", "Set3", "Pastel1", "Pastel2", 
+            "tab10", "tab20", "colorblind", "Set1", "Set2", "Set3", "Pastel1", "Pastel2", 
             "Accent", "viridis", "plasma", "inferno", "magma", "cividis"
         ]
         with cols[col_idx]:
             colormap = st.selectbox("Color Map", colormap_options, 
-                                  index=colormap_options.index(current_colormap) if current_colormap in colormap_options else 0,
+                                  index=colormap_options.index(current_colormap) if current_colormap in colormap_options else 1,
                                   help="Choose color palette for categorical data")
     
     return point_size, axis_label_size, legend_size, colormap
