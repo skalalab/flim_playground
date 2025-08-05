@@ -10,7 +10,7 @@ import streamlit as st
 from .helpers import get_point_visual_mappings, add_point_legend_traces
 import threading    
 @st.cache_data()
-def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
+def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, random_state=42):
     exp_var = None
     if 'dr_lock' not in st.session_state:
         st.session_state.dr_lock = threading.Lock()
@@ -26,12 +26,12 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}):
             umap_neighbors = hyperParam_dict.get('n_neighbors', 15)
             umap_min_dist = hyperParam_dict.get('min_dist', 0.1)
             reducer = umap.UMAP(n_neighbors=umap_neighbors,min_dist=umap_min_dist,   
-                metric='euclidean', n_components=n_components)
+                metric='euclidean', n_components=n_components, random_state=random_state)
             df = pd.DataFrame(reducer.fit_transform(X_std), columns=["UMAP1", "UMAP2"])
         elif method == "t-SNE":
             perplexity = hyperParam_dict.get('perplexity', 15)
             early_exaggeration = hyperParam_dict.get('early_exaggeration', 1)
-            tsne = TSNE(n_components=n_components, perplexity=perplexity, early_exaggeration=early_exaggeration)
+            tsne = TSNE(n_components=n_components, perplexity=perplexity, early_exaggeration=early_exaggeration, random_state=random_state)
             df = pd.DataFrame(tsne.fit_transform(X_std), columns=["t-SNE1", "t-SNE2"])
     return df, exp_var
 
