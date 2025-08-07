@@ -76,12 +76,29 @@ def tsne_hyperParams_widget():
     return tsne_hyperParams_dict
 
 def effect_size_pair_widget(available_pairs):
-    selected_pairs = st.multiselect(
+    # Create more descriptive labels for each pair
+    pair_labels = []
+    for pair in available_pairs:
+        if isinstance(pair, tuple) and len(pair) == 2:
+            # Format as "Group1 vs Group2"
+            label = f"{pair[0]} vs {pair[1]}"
+        else:
+            # Fallback for other formats
+            label = str(pair)
+        pair_labels.append(label)
+    
+    # Create a mapping from labels back to original pairs
+    label_to_pair = dict(zip(pair_labels, available_pairs))
+    
+    selected_labels = st.multiselect(
         "Select effect size calculation pairs",
-        available_pairs,
-        default=available_pairs,
+        pair_labels,
+        default=pair_labels,
         key="compare_pairs"
     )
+    
+    # Convert selected labels back to original pairs
+    selected_pairs = [label_to_pair[label] for label in selected_labels]
     return selected_pairs
 
 
