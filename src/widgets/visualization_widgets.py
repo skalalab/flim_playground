@@ -75,9 +75,9 @@ def tsne_hyperParams_widget():
         tsne_hyperParams_dict["early_exaggeration"] = early_exaggeration
     return tsne_hyperParams_dict
 
-def stats_comparison_pair_widget(available_pairs):
+def effect_size_pair_widget(available_pairs):
     selected_pairs = st.multiselect(
-        "Select statistical tests compare pairs",
+        "Select effect size calculation pairs",
         available_pairs,
         default=available_pairs,
         key="compare_pairs"

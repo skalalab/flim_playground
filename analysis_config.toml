@@ -1,8 +1,8 @@
 unique_row_id_col = "base_name"
-fov_name_col = ""
-categorical_cols = [ "experiment", "media", "cell_line", "treatment",]
-all_numerical_features = [ "na1", "fa1", "ft1", "nt2", "ft2", "ntm", "ftm", "nt1", "normrr",]
+fov_name_col = "image_name"
+categorical_cols = [ "experiment", "cell_line", "treatment", "image_name",]
+all_numerical_features = [ "na1", "nt1", "nt2", "ntm", "fa1", "ft1", "ft2", "ftm", "normrr",]
 
 [feature_groups]
-"nadh lifetime" = [ "nt2", "nt1", "ntm", "na1", "normrr",]
+"nadh lifetime" = [ "nt2", "ntm", "nt1", "na1", "normrr",]
 "fad lifetime" = [ "ftm", "ft2", "ft1", "fa1",]

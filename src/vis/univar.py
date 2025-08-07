@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 from itertools import combinations
 import numpy as np
-from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, stats_comparison_pair_widget
+from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, effect_size_pair_widget
 from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces
 
 def fov_comparison_plot(df, fov_name_col, selected_var):
@@ -554,7 +554,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
     if compare_pairs != [] and effect_size_method != "None" and mean_or_median is not None:
         if separate_groups:
             # Get user selection for statistical comparisons once (to avoid duplicate widget keys)
-            selected_pairs = stats_comparison_pair_widget(compare_pairs)
+            selected_pairs = effect_size_pair_widget(compare_pairs)
             
             # Get threshold once to avoid duplicate widgets across sections
             threshold = 0.0

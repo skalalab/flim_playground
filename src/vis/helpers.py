@@ -5,7 +5,7 @@ from scipy.stats import norm, gaussian_kde, median_abs_deviation
 from scipy.optimize import brentq
 from sklearn.mixture import GaussianMixture
 import pandas as pd
-from src.widgets.visualization_widgets import stats_comparison_pair_widget
+from src.widgets.visualization_widgets import effect_size_pair_widget
 import re
 import plotly.graph_objects as go
 
@@ -259,7 +259,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
 
     # Only show widget if pairs aren't pre-selected
     if selected_pairs is None:
-        selected_pairs = stats_comparison_pair_widget(all_possible_pairs)
+        selected_pairs = effect_size_pair_widget(all_possible_pairs)
 
     if selected_pairs and effect_size_method != "None":
         drawn_annotations = []  # List to store details of drawn annotations for collision detection
