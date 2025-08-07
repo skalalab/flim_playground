@@ -3,11 +3,11 @@ import plotly.graph_objects as go
 from itertools import combinations
 import numpy as np
 from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, stats_comparison_pair_widget
-from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, natural_tuple_sort
+from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces
 
 def fov_comparison_plot(df, fov_name_col, selected_var):
     if (df[fov_name_col] == "missing fov name").any():
-        st.markdown("<h5 style='text-align: center; color: Red;'>Warning: We cannot infer some/all fov names from you cell_id column. We assume that the fov name is the cell_id without the cell number (which is found after the last underscore) </h5>", unsafe_allow_html=True)
+        st.markdown("<h5 style='text-align: center; color: Orange;'>Warning: We cannot find the fov column from your dataset.  </h5>", unsafe_allow_html=True)
     
     fig = go.Figure()
     

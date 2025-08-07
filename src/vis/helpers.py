@@ -1,7 +1,7 @@
 import seaborn as sns
 import streamlit as st
 import numpy as np
-from scipy.stats import norm, gaussian_kde
+from scipy.stats import norm, gaussian_kde, median_abs_deviation
 from scipy.optimize import brentq
 from sklearn.mixture import GaussianMixture
 import pandas as pd
@@ -21,25 +21,33 @@ def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
 def glass_delta(group1, group2, mean_or_median):
     if mean_or_median == "Mean": 
         diff = np.mean(group1) - np.mean(group2)
+        # group2 should be the control
+        group2_sd = np.std(group2, ddof=1)  # Using Bessel's correction with ddof=1
     else:
         diff = np.median(group1) - np.median(group2)
-    # group2 should be the control
-    group2_sd = np.std(group2, ddof=1)  # Using Bessel's correction with ddof=1
+        # use MAD (median_absolute_deviation) 
+        # scale: normal: divides by 0.67449 → multiplies by 1.4826 internally
+        group2_sd = median_abs_deviation(group2, scale='normal') 
+    
     return diff / group2_sd
 
 def cohens_d(group1, group2, mean_or_median):
     """Compute Cohen's d for two independent samples."""
     # sample sizes
     n1, n2 = len(group1), len(group2)
-    # unbiased sample variances
-    s1, s2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
-    # pooled standard deviation
-    pooled_sd = np.sqrt(((n1 - 1)*s1 + (n2 - 1)*s2) / (n1 + n2 - 2))
+   
     if mean_or_median == "Mean": 
         # mean difference
         diff = np.mean(group1) - np.mean(group2)
+         # unbiased sample variances
+        s1_2, s2_2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
+        # pooled standard deviation
+        pooled_sd = np.sqrt(((n1 - 1)*s1_2 + (n2 - 1)*s2_2) / (n1 + n2 - 2))
     else:
         diff = np.median(group1) - np.median(group2)
+        mad_1, mad_2 = median_abs_deviation(group1, scale="normal"), median_abs_deviation(group2, scale="normal")
+        pooled_sd = np.sqrt(((n1 - 1) * mad_1**2 + (n2 - 1) * mad_2**2) /
+                     (n1 + n2 - 2))
     return diff / pooled_sd
 
 def create_opacity_mapping(groups, min_opacity=0.3, max_opacity=1.0):
@@ -298,7 +306,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
                 threshold = st.number_input("Glass's Delta Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05, 
                                             key=f"glass_delta_thresh_{threshold_key_suffix}")
             elif effect_size_method == "Cohen's Distance":
-                threshold = st.number_input("Cohen's Distance Threshold", value=0.5, min_value=0.0, max_value=3.0, step=0.05,
+                threshold = st.number_input("Cohen's Distance Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05,
                                             key=f"cohens_d_thresh_{threshold_key_suffix}")
 
         for pair in sorted_pairs:
