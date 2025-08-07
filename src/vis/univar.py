@@ -164,7 +164,9 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
             gmm_tables.append("\n".join(table_md))
 
             h_index = 0
-            dash_styles = ['dash', 'dot', 'dashdot']
+            # Calculate standard deviation of component means once before the loop
+            means_std = np.std([best_gmm.means_[j][0] for j in range(best_gmm.n_components)], ddof=1)
+            dash_styles = ['dash', 'dot', 'dashdot', 'longdash', 'longdashdot']
             for rank, i in enumerate(sorted_indices):
                 fig.add_trace(go.Scatter(
                     x=x.flatten(),
@@ -177,7 +179,12 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
                     )
                 ))
                 # Calculate H-index for this subpopulation
-                h_index += -best_gmm.weights_[i] * np.log(best_gmm.weights_[i]) * np.abs(best_gmm.means_[i][0] - gmm_overall_mean)
+                # Calculate entropy term for this component
+                entropy_term = -best_gmm.weights_[i] * np.log(best_gmm.weights_[i])
+                # Calculate normalized distance from overall mean
+                distance_term = np.abs(best_gmm.means_[i][0] - gmm_overall_mean) / means_std
+                # Combine terms to get component contribution to H-index
+                h_index += entropy_term * distance_term
             # Add H-index message
             h_index_msg += f"H-index for {color_group}: {h_index:.3f}. "
             data_indices = x_data.index
