@@ -103,8 +103,8 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
     fit_gmm_max_components, fit_gmm_min_weight_threshold = gmm_hyperParams_widget()
-    # add the choice to do "hard thresholding" or "soft thresholding"
-    hard_thresholding = st.checkbox("Use hard thresholding", value=False, key="hard_thresholding", help="If checked, the point where the two Gaussian distributions intersect will be used as the threshold. If not checked, each data will be assigned to the component with the highest posterior probability.")
+    # add the choice to do "intersection thresholding" or "hard assignment"
+    intersection_threshold = st.checkbox("Use intersection as threshold", value=False, key="intersection_threshold", help="If checked, the point where the two Gaussian distributions intersect will be used as the threshold. If not checked, each data will be assigned to the component with the highest posterior probability.")
     fig = go.Figure()
     # fit a Gaussian Mixture Model (GMM) to each color group
     
@@ -203,9 +203,9 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
             # Add H-index message
             h_index_msg += f"H-index for {color_group}: {h_index:.3f}. "
             data_indices = x_data.index
-            hard_thresholding_possible = hard_thresholding
-            if hard_thresholding:
-                # predict the component membership for each point (hard thresholding)
+            intersection_threshold_possible = intersection_threshold
+            if intersection_threshold:
+                # predict the component membership for each point (intersection thresholding)
                 # find the intersection point of the component distributions
                 # Sort components by mean to ensure that the intersection is calculated between the correct pairs
                 pi, mu, sigma = pi[sorted_indices], mu[sorted_indices], sigma[sorted_indices]
@@ -217,11 +217,11 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
                         thresholds.append(t)
                     except Exception as e:
                         st.error(f"Error finding intersection between {color_group} component {sorted_indices[i]+1} and component {sorted_indices[i+1]+1}: either there is no intersection or there are more than one intersection.")
-                        st.warning("Hard thresholding is not possible, so we resort to soft thresholding in this group.")
-                        hard_thresholding_possible = False
+                        st.warning("Intersection threshold is not possible, so we resort to hard assignment in this group.")
+                        intersection_threshold_possible = False
                         break
 
-                if hard_thresholding_possible:
+                if intersection_threshold_possible:
                     thresholds = np.sort(thresholds)
                     # plot the thresholds
                     for i, threshold in enumerate(thresholds):
@@ -241,7 +241,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
                     subpopulation_labels = np.digitize(x_data, bins=thresholds)
                     # restore the original order of the labels
                     subpopulation_labels = sorted_indices[subpopulation_labels]
-            if not hard_thresholding_possible:
+            if not intersection_threshold_possible:
                 # Predict the component membership for each point (soft thresholding)
                 data_2d = x_data.values.reshape(-1, 1)
                 subpopulation_labels = best_gmm.predict(data_2d)
