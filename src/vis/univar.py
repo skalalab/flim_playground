@@ -45,7 +45,22 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10"):
         group_df = df[df[GROUP_COL_NAME] == color_group]
         x_data = group_df[selected_var].dropna()
         x_data_skewness = x_data.skew()  
-        direction = "right-skewed" if x_data_skewness > 0 else "left-skewed" if x_data_skewness < 0 else "roughly symmetric"
+        # Determine skewness interpretation based on rule of thumb
+        if x_data_skewness < -1:
+            direction = "strongly left-skewed"
+        elif -1 <= x_data_skewness < -0.5:
+            direction = "moderately left-skewed"
+        elif -0.5 <= x_data_skewness < -0.25:
+            direction = "approximately symmetric"
+        elif -0.25 <= x_data_skewness <= 0.25:
+            direction = "almost symmetric"
+        elif 0.25 < x_data_skewness <= 0.5:
+            direction = "approximately symmetric"
+        elif 0.5 < x_data_skewness <= 1:
+            direction = "moderately right-skewed"
+        else:  # x_data_skewness > 1
+            direction = "strongly right-skewed"
+        
         # Color the text using the same color as the plot
         st.markdown(f'<span style="color: {color_map[color_group]}"><strong>{color_group}</strong> skewness: {x_data_skewness:.3f} → {direction}</span>', unsafe_allow_html=True)
 
