@@ -5,31 +5,57 @@ import numpy as np
 from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, effect_size_pair_widget
 from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces
 
-def fov_comparison_plot(df, fov_name_col, selected_var):
+def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab10"):
     if (df[fov_name_col] == "missing fov name").any():
         st.markdown("<h5 style='text-align: center; color: Orange;'>Warning: We cannot find the fov column from your dataset.  </h5>", unsafe_allow_html=True)
     
     fig = go.Figure()
+    GROUP_COL_NAME = 'unique_color_group'
+    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
     
     fov_names = df[fov_name_col].unique()
     
-    for fov_name in fov_names:
-        fov_df = df[df[fov_name_col] == fov_name]
-        fig.add_trace(go.Box(
-            y=fov_df[selected_var],
-            name=fov_name, 
-            boxpoints=False, # Only show the box
-        ))
-
+    legend_added = set()
+    
+    # Group by color first, then by FOV within each color group
+    for color_group in unique_color_groups:
+        group_df = df[df[GROUP_COL_NAME] == color_group]
+        for fov_name in fov_names:
+            fov_group_df = group_df[group_df[fov_name_col] == fov_name]
+            if fov_group_df.empty:
+                continue
+            
+            # Show legend only for the first occurrence of each color group
+            show_legend = color_group not in legend_added
+            if show_legend:
+                legend_added.add(color_group)
+            
+            fig.add_trace(go.Box(
+                y=fov_group_df[selected_var],
+                name=color_group,  # Use color group name for legend
+                x=[fov_name] * len(fov_group_df),  # Explicitly set x values for grouping
+                boxpoints=False, # Only show the box
+                marker_color=color_map[color_group],
+                showlegend=show_legend,  # Show legend only once per color group
+                legendgroup=color_group,  # Group legend entries by color
+                hovertemplate=(
+                    f"<b>FOV:</b> {fov_name}<br>"
+                    f"<b>Group:</b> {color_group}<br>"
+                    f"<b>Count:</b> %{{y}}<extra></extra>"
+                )
+            ))
+    
     fig.update_layout(
         title=f'Distribution of {selected_var} by Field of View',
         xaxis_title=fov_name_col,
         yaxis_title=selected_var,
-        showlegend=False, # Hide legend if too many FOVs
+        showlegend=True, # Hide legend 
         hovermode='closest',
-        xaxis={'categoryorder':'array', 'categoryarray': sorted(fov_names)}, # Sort boxes by name
+       # xaxis={'categoryorder':'array', 'categoryarray': sorted(fov_names)}, # Sort boxes by name
         margin=dict(l=50, r=20, t=50, b=max(80, len(max(fov_names, key=len, default=''))*5)) # Adjust bottom margin for long names
     )
+    # remove the column after plotting
+    df.drop(columns=[GROUP_COL_NAME], inplace=True) 
     
     return fig
 

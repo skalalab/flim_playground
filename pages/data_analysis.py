@@ -126,7 +126,7 @@ with col2:
                     if method == "Feature Comparison":
                         fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, colormap=st.session_state.plot_colormap)
                     elif method == "FOV Comparison":
-                        fig = fov_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var)
+                        fig = fov_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, colormap=st.session_state.plot_colormap)
                     elif method == "Feature Histogram":
                         # create a switch to select between GMM and histogram
                         apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, help="Fit Gaussian Mixture Models\
