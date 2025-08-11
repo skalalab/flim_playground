@@ -35,7 +35,7 @@ def dataset_config_widget(use_data_extraction=True):
     with cols[0]:
         cfg["unique_row_id_col"] = st.text_input("Unique Row ID", value= cfg["unique_row_id_col"], help="The column name that uniquely identifies each row in the dataset.")
     with cols[1]:
-        cfg["fov_name_col"] = st.text_input("FOV Name (if applicable)", value= cfg["fov_name_col"], help="The column name that uniquely identifies each field of view in the dataset. Your dataset maynot have this. It is ok.")
+        cfg["fov_name_col"] = st.text_input("FOV column name (if applicable)", value= cfg["fov_name_col"], help="The column name that uniquely identifies each field of view in the dataset. Your dataset maynot have this. It is ok.")
     
     selected_categorical_cols = st.multiselect(
         "Select Categorical Columns", 

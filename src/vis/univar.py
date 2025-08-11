@@ -610,8 +610,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             if effect_size_method == "Glass's Delta":
                 threshold = st.number_input("Glass's Delta Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05, 
                                             key=f"glass_delta_thresh_{threshold_key_suffix}")
-            elif effect_size_method == "Cohen's Distance":
-                threshold = st.number_input("Cohen's Distance Threshold", value=0.5, min_value=0.0, max_value=3.0, step=0.05,
+            elif effect_size_method == "Cohen's d":
+                threshold = st.number_input("Cohen's d Threshold", value=0.5, min_value=0.0, max_value=3.0, step=0.05,
                                             key=f"cohens_d_thresh_{threshold_key_suffix}")
             
             if selected_pairs:  # Only proceed if user selected some pairs

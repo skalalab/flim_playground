@@ -124,7 +124,7 @@ def _calculate_effect_size(group1_data, group2_data, method: str, mean_or_median
         return None
     if method == "Glass's Delta":
         return glass_delta(group1_data, group2_data, mean_or_median)
-    elif method == "Cohen's Distance":
+    elif method == "Cohen's d":
         # Ensure cohens_d function is available and handles data appropriately
         return cohens_d(group1_data, group2_data, mean_or_median)
     else:
@@ -305,8 +305,8 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
             if effect_size_method == "Glass's Delta":
                 threshold = st.number_input("Glass's Delta Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05, 
                                             key=f"glass_delta_thresh_{threshold_key_suffix}")
-            elif effect_size_method == "Cohen's Distance":
-                threshold = st.number_input("Cohen's Distance Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05,
+            elif effect_size_method == "Cohen's d":
+                threshold = st.number_input("Cohen's d Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05,
                                             key=f"cohens_d_thresh_{threshold_key_suffix}")
 
         for pair in sorted_pairs:

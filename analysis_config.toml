@@ -1,8 +1,8 @@
 unique_row_id_col = "base_name"
-fov_name_col = "image_name"
-categorical_cols = [ "experiment", "cell_line", "treatment", "image_name",]
-all_numerical_features = [ "na1", "nt1", "nt2", "ntm", "fa1", "ft1", "ft2", "ftm", "normrr",]
+fov_name_col = "Im_num"
+categorical_cols = [ "Activation", "PBM", "condition",]
+all_numerical_features = [ "n.p.mean", "n.t1.mean", "n.t2.mean", "n.a1.mean", "n.a2.mean", "n.chi.mean", "f.p.mean", "f.t1.mean", "f.t2.mean", "f.a1.mean", "f.a2.mean", "f.chi.mean", "f.p.mean.1", "f.a1.mean.1", "rr.mean", "n.tm.mean", "f.tm.mean",]
 
 [feature_groups]
-"nadh lifetime" = [ "nt2", "ntm", "nt1", "na1", "normrr",]
-"fad lifetime" = [ "ftm", "ft2", "ft1", "fa1",]
+"nadh lifetime" = [ "n.p.mean", "n.t1.mean", "n.a1.mean", "n.t2.mean", "n.tm.mean", "rr.mean",]
+"fad lifetime" = [ "f.a1.mean.1",]
