@@ -1,11 +1,11 @@
-from .helpers import _prepare_group_data, _find_best_gmm
+from .helpers import _prepare_group_data, _find_best_gmm, get_point_visual_mappings, add_point_legend_traces
 import plotly.graph_objects as go
 import numpy as np
-from scipy.stats import gaussian_kde
-from scipy.stats import pearsonr
+from scipy.stats import gaussian_kde, pearsonr
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 import streamlit as st
-from src.vis.helpers import get_point_visual_mappings, add_point_legend_traces
 
 def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, plotly_axis_params):
     """Helper function to plot marginal densities."""
@@ -122,7 +122,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     )
     fig = go.Figure()
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         selected_marginal_plot_type = st.selectbox(
             'Marginal Plot Type',
@@ -134,6 +134,11 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         st.write("")
         st.write("")
         fit_gmm = st.checkbox("Fit a 2D Gaussian Mixture Model", value=True)
+    with col3:  
+        st.write("")
+        st.write("")
+        fit_regression = st.checkbox("Fit a regression line", value=False)
+
     if fit_gmm:
         fit_gmm_max_components, fit_gmm_min_weight_threshold = gmm_hyperParams_widget()
 
@@ -177,8 +182,42 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         # annotate the correlation coefficient and p-value of the current group
         corr_coef, p_value = pearsonr(group_df[selected_x], group_df[selected_y])
         table_md += [f"\n**{color_group}:**"]
-        table_md.append(f"Correlation Coefficient b/w {selected_x} and {selected_y}: **{corr_coef:.2f}** (p-value: {p_value:.2f})")
+        table_md.append(f"Correlation Coefficient b/w {selected_x} and {selected_y}: **{corr_coef:.2f}** (p-value: {p_value:.2f}).\n")
+        x_data = group_df[selected_x].dropna()
+        y_data = group_df[selected_y].dropna()
+            
+        if len(x_data) >= 2 and len(y_data) >= 2:
+            # Ensure x_data and y_data have the same indices (both drop NaN)
+            valid_indices = x_data.index.intersection(y_data.index)
+            x_clean = x_data.loc[valid_indices].values.reshape(-1, 1)
+            y_clean = y_data.loc[valid_indices].values
 
+        if fit_regression:              
+            if len(x_clean) >= 2:  # Need at least 2 points for regression
+                # Fit linear regression
+                reg_model = LinearRegression()
+                reg_model.fit(x_clean, y_clean)
+                
+                # Calculate R²
+                y_pred = reg_model.predict(x_clean)
+                r2 = r2_score(y_clean, y_pred)
+                
+                # Create regression line points for plotting
+                x_range = np.linspace(x_clean.min(), x_clean.max(), 100)
+                y_range = reg_model.predict(x_range.reshape(-1, 1))
+                
+                # Add regression line to plot
+                fig.add_trace(go.Scatter(
+                    x=x_range,
+                    y=y_range,
+                    mode='lines',
+                    line=dict(color=color_map.get(color_group, 'black'), width=2),
+                    showlegend=False,
+                    hovertemplate=f'<b>Regression Line</b><br>R² = {r2:.3f}<br>Slope = {reg_model.coef_[0]:.3f}<br>Intercept = {reg_model.intercept_:.3f}<extra></extra>'
+                ))
+                
+                # Add R² to the table
+                table_md.append(f"**Regression R²:** {r2:.3f} (Slope: {reg_model.coef_[0]:.3f}, Intercept: {reg_model.intercept_:.3f})")
         if fit_gmm: 
             # Fit GMM for the current group
             group_data_2d = group_df[[selected_x, selected_y]]
@@ -215,11 +254,9 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                 st.write(f"\nSkipping GMM for group: {color_group} due to insufficient data (points: {len(group_data_2d)})")
 
         # Marginal density for X-axis
-        x_data = group_df[selected_x].dropna()
         _plot_marginal_density(fig, x_data, 'x', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'yaxis': 'y2'})
 
         # Marginal density for Y-axis
-        y_data = group_df[selected_y].dropna()
         _plot_marginal_density(fig, y_data, 'y', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'xaxis': 'x2'})
 
     # Add legend traces for opacity and shape
