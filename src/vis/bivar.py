@@ -1,7 +1,7 @@
 from .helpers import _prepare_group_data, _find_best_gmm, get_point_visual_mappings, add_point_legend_traces
 import plotly.graph_objects as go
 import numpy as np
-from scipy.stats import gaussian_kde, pearsonr
+from scipy.stats import gaussian_kde, pearsonr, chi2
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
@@ -79,18 +79,17 @@ def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i):
    # Calculate eigenvalues and eigenvectors for ellipse orientation
     eigenvals, eigenvecs = np.linalg.eigh(cov)
     angle = np.degrees(np.arctan2(eigenvecs[1, 0], eigenvecs[0, 0]))
-
     # Create confidence ellipse (e.g., 2-sigma ~ 95% confidence)
-    confidence_level = 2  # 2-sigma
-    width = 2 * confidence_level * np.sqrt(eigenvals[0])
-    height = 2 * confidence_level * np.sqrt(eigenvals[1])
+    r = np.sqrt(chi2.ppf(0.95, df=2)) 
+    width = 2 * r * np.sqrt(eigenvals[0])
+    height = 2 * r * np.sqrt(eigenvals[1])
 
     # Generate ellipse points
     theta = np.linspace(0, 2*np.pi, 100)
     ellipse_x = (width/2) * np.cos(theta)
     ellipse_y = (height/2) * np.sin(theta)
 
-    # Rotate ellipse
+    # Rotate and center ellipse
     cos_angle = np.cos(np.radians(angle))
     sin_angle = np.sin(np.radians(angle))
     ellipse_x_rot = ellipse_x * cos_angle - ellipse_y * sin_angle + mean_x
