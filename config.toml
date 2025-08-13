@@ -2,7 +2,7 @@ num_channels = 1
 unique_cell_id_col = "cell_id"
 fov_name_col = "image_name"
 flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
-flim_decay_input_type = "Decay (2D)"
+flim_decay_input_type = "Decay (3/4D)"
 all_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
 imaging_modality = "FLIM"
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
@@ -20,9 +20,10 @@ t3 = "_t3.asc"
 laser_rate = 0.8
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 file_types = [ "Decay", "IRF", "Mask",]
+fit_free_calibration = "IRF"
 
 [ch1]
-input_type = "Decay (2D)"
+input_type = "Decay (3/4D)"
 channel_name = "nadh"
 imaging_modality = "FLIM"
 
@@ -52,7 +53,7 @@ channel_name = "crypto"
 
 [ch1."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture", "Lifetime fit",]
 
 [ch1."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]

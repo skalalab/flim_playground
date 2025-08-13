@@ -322,7 +322,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
     elif fit_free:
         return "", single_cell_fit_free_features_fov
 
-#@st.cache_data
+@st.cache_data
 def fov_extraction(metadata, metadata_dict):
     """
     Extract single cell features from one fov

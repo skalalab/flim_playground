@@ -23,6 +23,8 @@ if "choosing_shift" not in st.session_state:
     st.session_state["choosing_shift"] = False
 if "shift_ready" not in st.session_state:
     st.session_state["shift_ready"] = False
+if "show_time_gates" not in st.session_state:
+    st.session_state["show_time_gates"] = True
 st.title("Data Extraction")
 
 col1, col2 = st.columns([0.4, 1])
@@ -96,13 +98,14 @@ with col1:
                 # if there are channels to be fitted, show the fitting options: spcimage is already fitted
                 if "Lifetime fit" in metadata_dict and len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
                     st.info("Please specify the following fitting options.")
-                    metadata_dict= fit_options_widget(decay_input_type, metadata_dict)
+                    metadata_dict= fit_options_widget(decay_input_type, metadata_dict, show_time_gates=st.session_state["show_time_gates"])
                 
                 shifts_are_present = all(f"{ch}_shift" in metadata_df.columns for ch in metadata_dict["channels_shift"])
                 if shift_needed and not shifts_are_present:
                     if st.button("Start Finding Shifts"):
                         st.session_state["choosing_shift"] = True
                         st.session_state["shift_ready"] = False
+                        st.session_state["show_time_gates"] = True  # Show time gates during shift finding
                 else:
                     col1_1, col1_2 = st.columns(2)
                     with col1_1:
@@ -116,6 +119,7 @@ with col1:
                             if st.button("Go back and find shift", use_container_width=True):
                                 st.session_state["choosing_shift"] = True
                                 st.session_state["shift_ready"] = False
+                                st.session_state["show_time_gates"] = True  # Show time gates again when going back
                                 # remove shift columns from metadata_df in session state
                                 for ch in metadata_dict["channels_shift"]:
                                     if f"{ch}_shift" in metadata_df.columns:
@@ -126,7 +130,21 @@ with col1:
                         if st.session_state["last_extracted_metadata_filepath"] is not None:
                             download = st.button("Download updated metadata", use_container_width=True, help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
                             if download:
-                                metadata_df.to_csv(st.session_state["last_extracted_metadata_filepath"], index=False)
+                                try:
+                                    metadata_df.to_csv(st.session_state["last_extracted_metadata_filepath"], index=False)
+                                    st.success(f"✅ Metadata updated successfully at {st.session_state['last_extracted_metadata_filepath']}")
+                                except PermissionError:
+                                    st.error(f"❌ Cannot save file - it may be open in another program (like Excel). Please close the file and try again.")
+                                except Exception as e:
+                                    st.error(f"❌ Error saving file: {str(e)}")
+                                    # Provide fallback download option
+                                    st.download_button(
+                                        label="Download as new file instead", 
+                                        data=metadata_df.to_csv(index=False), 
+                                        file_name=f"metadata_updated_{time.strftime('%Y%m%d_%H%M%S')}.csv",
+                                        key=f"fallback_download_{time.time()}",
+                                        help="Download the updated metadata as a new CSV file since the original couldn't be overwritten."
+                                    )
                         else:
                             st.download_button(label="Download updated metadata", data=metadata_df.to_csv(index=False), file_name=f"metadata_{time.strftime('%Y%m%d_%H%M%S')}.csv", key=f"download_metadata_{time.time()}", use_container_width=True, help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
             else:
@@ -193,7 +211,7 @@ with col2:
                 st.error(error_msg)
             else:
                 channel_shifts[channel_name] = shifts
-        shift_finished = st.button("Confirm Shift and Choose Time Gates (if applicable) for each channel")
+        shift_finished = st.button("Confirm Time Gates (if applicable) and Shift for each channel")
         if shift_finished:
             # write the shift to the metadata file
             for channel_name in channel_shifts:
@@ -207,6 +225,7 @@ with col2:
             st.session_state["last_extracted_metadata"] = metadata_df
             st.session_state["choosing_shift"] = False
             st.session_state["shift_ready"] = False
+            st.session_state["show_time_gates"] = False  # Hide time gates after shift is finished
             st.rerun()
                 
     elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"] and metadata_df is not None:
@@ -226,9 +245,9 @@ with col2:
                 if confirm_export:
                     try:
                         single_cell_features.to_csv(csv_path) # Save the DataFrame
+                        st.success(f"✅ Single cell features exported successfully to {csv_path} {happy_emoji}")
                     except Exception as e:
-                        st.error(f"Error exporting the image metadata: {e}. Is the previous metadata file open in another program?")
-                    st.success(f"Image metadata exported successfully to {csv_path} {happy_emoji}")
+                        st.error(f"❌ Error exporting the single cell features: {str(e)}")
             else:
                 st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name= f"single_cell_features_{timestamp}.csv")
     elif selected_step == "Categorical Feature Extraction" and df_folder_path != "" and len(available_dfs) > 0:
