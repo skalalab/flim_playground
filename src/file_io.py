@@ -90,7 +90,7 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
     try:
         irf = np.loadtxt(irf_path)
     except Exception as e:
-        return f"Error: IRF file not found for {fov_name_col} {fov_name}", None, None
+        return f"Error: IRF file not found for {channel_name}.", None, None
     if len(irf) != time_bins:
         return f"IRF length mismatch with specified time bins. IRF length: {len(irf)}, time bins: {time_bins}.", None, None
     # Handle iteration for both DataFrame and Series cases
