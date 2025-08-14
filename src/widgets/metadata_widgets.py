@@ -135,6 +135,10 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
     num_cols = min(num_cols, num_images)
     rows = (num_images + num_cols - 1) // num_cols
 
+    if  num_images > 0:
+        st.markdown("Field of views: \n")
+
+
     for row in range(rows):
         cols = st.columns(num_cols)
         for col_idx in range(num_cols):
@@ -162,10 +166,11 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
                 else:
                     image_group[key] = matched_files[0]
 
+         
             # create the card 
             with cols[col_idx]:
                 with st.container(border=True):
-                    st.markdown(f"Field of view name: **{image_name}**")
+                    st.markdown(f"**{image_name}**")
                     if missing_keys or duplicate_keys:
                         st.write("❌ Missing or duplicate files:")
                         for key in missing_keys:
@@ -305,7 +310,7 @@ def check_assign_channel_widget(images_df, selected_channels, flim_decay_input_t
                         if len(available_channels) == 1:
                             images_df[f"{channel_name}_channel"] = available_channels[0]
                         else:
-                            images_df[f"{channel_name}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels)
+                            images_df[f"{channel_name}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels, key=f"{channel_name}_channel_selectbox")
                         time_bins_list.append(time_bins)
                         laser_rep_time_list.append(laser_rep_time)
                     else:
