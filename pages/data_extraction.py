@@ -28,7 +28,7 @@ if "show_time_gates" not in st.session_state:
 st.title("Data Extraction")
 
 col1, col2 = st.columns([0.4, 1])
-steps = ["Image Metadata Extraction", "Numeric Feature Extraction", "Categorical Feature Extraction"]
+steps = ["FOV Metadata Extraction", "Numeric Feature Extraction", "Categorical Feature Extraction"]
 channel_names = get_channel_names()
 input_types = get_input_types(channel_names.keys())
 imaging_modalities = get_imaging_modality(channel_names.keys())
@@ -43,9 +43,9 @@ with col1:
         "Select a step to perform",
         steps,
         index=0,
-        help="Image Metadata Extraction: Extracts metadata from the images. Numeric Feature Extraction: Extracts single cell numeric features from the images. Categorical Feature Extraction: Extracts categorical features from the images. \n ",
+        help="FOV Metadata Extraction: Extracts metadata from the field of views. Numeric Feature Extraction: Extracts single cell numeric features from the FOVs. Categorical Feature Extraction: Extracts categorical features from the FOVs. \n ",
     )
-    if selected_step == "Image Metadata Extraction":
+    if selected_step == "FOV Metadata Extraction":
         checkbox_cols = st.columns(len(channel_names))
         actual_file_suffix = None
         selected_channels = {}
@@ -73,7 +73,7 @@ with col1:
             if error_msg != "":
                 st.error(error_msg)
             else:
-                folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the raw data that is needed for the selected data extraction type." , key="image_metadata_folder_path")
+                folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the raw data that is needed for the selected data extraction type." , key="fov_metadata_folder_path")
     elif selected_step == "Numeric Feature Extraction":
         metadata_df = None
         if st.session_state["last_extracted_metadata"] is not None:
@@ -81,7 +81,7 @@ with col1:
             file_path = st.session_state["last_extracted_metadata_filepath"]
             st.info(f"Using the latest extracted metadata file: {file_path}. Refresh the page to use a different file.")
         else: 
-            uploaded_file = st.file_uploader("Upload the image metadata csv", type=["csv"], help="The metadata file should be from the image metadata extraction step. ")
+            uploaded_file = st.file_uploader("Upload the field of view metadata csv", type=["csv"], help="The metadata file should be from the FOV metadata extraction step.")
             if uploaded_file is not None:
                 try:
                     metadata_df = pd.read_csv(uploaded_file) 
@@ -164,39 +164,39 @@ with col1:
 
 with col2: 
     # check if the folder exists
-    if selected_step == "Image Metadata Extraction" and error_msg == "": 
+    if selected_step == "FOV Metadata Extraction" and error_msg == "": 
         if os.path.isdir(folder_path): 
-            images = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
-            if len(images) != 0:
-                st.success(f"Images with ✅ are loaded successfully {happy_emoji}. Images with ❌ (if any) are not loaded. The following features will be extracted: ")
-                images_df = pd.DataFrame.from_dict(images, orient="index")
+            fovs = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
+            if len(fovs) != 0:
+                st.success(f"Field of Views with ✅ are loaded successfully {happy_emoji}. FOVs with ❌ (if any) are not loaded. The following features will be extracted: ")
+                fov_df = pd.DataFrame.from_dict(fovs, orient="index")
 
                 # Set index name and reset to column (do this once, outside the loop)
-                images_df.index.name = fov_name_col  # Set index name 
-                images_df.reset_index(inplace=True)  # Reset index to make it a column
+                fov_df.index.name = fov_name_col  # Set index name 
+                fov_df.reset_index(inplace=True)  # Reset index to make it a column
                 
                 # For each channel, add the feature_types and num_components
                 for channel_key, channel_name in selected_channels.items():
                     # assign input type to the channel
-                    images_df[f"{channel_name}_input_type"] = input_types[channel_key]
-                    images_df[f"{channel_name}_imaging_modality"] = imaging_modalities[channel_key]
+                    fov_df[f"{channel_name}_input_type"] = input_types[channel_key]
+                    fov_df[f"{channel_name}_imaging_modality"] = imaging_modalities[channel_key]
                     for feature_extractor in selected_ch_feature_extractors[channel_key]:
-                        images_df[f"{channel_name}_{feature_extractor}"] = True
+                        fov_df[f"{channel_name}_{feature_extractor}"] = True
                     if has_flim:
                         if channel_name in selected_ch_num_components: 
-                            images_df[f"{channel_name}_num_components"] = selected_ch_num_components[channel_name]
-                    # ROI Summing Fit and SPCImage takes in raw decay that maybe multiple channels. need to assign data channel to each image channel
+                            fov_df[f"{channel_name}_num_components"] = selected_ch_num_components[channel_name]
+                    # ROI Summing Fit and SPCImage takes in raw decay that maybe multiple channels. need to assign data channel to each fov channel
                     # K-flow already knows the duration and time bins and do not need to assign channel
                 
-                error_msg, images_df = check_assign_channel_widget(images_df, selected_channels, flim_decay_input_type=decay_input_type, imaging_modalities=imaging_modalities, duration=duration, time_bins=time_bins)
+                error_msg, fov_df = check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type=decay_input_type, imaging_modalities=imaging_modalities, duration=duration, time_bins=time_bins)
 
                 if error_msg != "":
                     st.error(f"Error: {error_msg}")        
                 else:   
                     if laser_rate is not None:
-                        images_df["laser_rate"] = laser_rate
-                    display_feature_groups_widget(images_df)
-                    export_metadata_widget(metadata_df=images_df, folder_path=folder_path)
+                        fov_df["laser_rate"] = laser_rate
+                    display_feature_groups_widget(fov_df)
+                    export_metadata_widget(metadata_df=fov_df, folder_path=folder_path)
             else: 
                 st.warning("No data found in the folder. Please check the path and the file suffixes.")
         elif folder_path != "":
@@ -231,7 +231,7 @@ with col2:
     elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"] and metadata_df is not None:
         single_cell_features = fov_extraction_widget(metadata_df, metadata_dict)
         if not single_cell_features.empty:
-            st.success(f"Image features with ✅ are extracted successfully {happy_emoji}! Images with ❌ (if any) are excluded. The first few rows of the features are shown below.")
+            st.success(f"Field of view features with ✅ are extracted successfully {happy_emoji}! FOVs with ❌ (if any) are excluded. The first few rows of the features are shown below.")
             st.write(single_cell_features.head())
             # get the current timestamp 
             timestamp = time.strftime("%Y%m%d_%H%M%S")
