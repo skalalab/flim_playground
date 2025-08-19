@@ -168,7 +168,7 @@ with col2:
         if os.path.isdir(folder_path): 
             fovs = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
             if len(fovs) != 0:
-                st.success(f"Field of Views with ✅ are loaded successfully {happy_emoji}. FOVs with ❌ (if any) are not loaded. The following features will be extracted: ")
+                st.success(f"Field of Views with ✅ are loaded successfully {happy_emoji}. FOVs with ❌ (if any) will **not** be recorded. Here is the preview of the FOVs and metadata recorded:")
                 fov_df = pd.DataFrame.from_dict(fovs, orient="index")
 
                 # Set index name and reset to column (do this once, outside the loop)

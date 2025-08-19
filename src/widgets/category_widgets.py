@@ -53,14 +53,14 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
     # construct a new df with the selected categories and slots and cell_id from the first 5 rows
     if len(combined_df) <= 5:
         # use only the cell_id column
-        preview_df = combined_df[['cell_id']].copy()
+        preview_df = combined_df[[unique_cell_id_col]].copy()
     else:
-        preview_df = combined_df[['cell_id']].iloc[:5].copy()
+        preview_df = combined_df[[unique_cell_id_col]].iloc[:5].copy()
     
     # add the chosen categories to the preview df and assign values based on the selected_indices from that category and concatenate them using delimiter
     for cat in chosen_categories:
         if cat_label_map[cat]:  # Only if user has selected slots for this category
-            preview_df[cat] = preview_df['cell_id'].apply(lambda x: delimiter.join([x.split(delimiter)[i] for i in cat_label_map[cat]]))
+            preview_df[cat] = preview_df[unique_cell_id_col].apply(lambda x: delimiter.join([x.split(delimiter)[i] for i in cat_label_map[cat]]))
         else:
             preview_df[cat] = ""  # Empty string if no slots selected
 
@@ -72,7 +72,7 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
         # use the cat_label_map to map the categories to the combined df
         for cat in chosen_categories:
             if cat_label_map[cat]:  # Only if user has selected slots for this category
-                combined_df[cat] = combined_df['cell_id'].apply(lambda x: delimiter.join([x.split(delimiter)[i] for i in cat_label_map[cat]]))
+                combined_df[cat] = combined_df[unique_cell_id_col].apply(lambda x: delimiter.join([x.split(delimiter)[i] for i in cat_label_map[cat]]))
             else:
                 combined_df[cat] = ""  # Empty string if no slots selected
         # export the combined df
