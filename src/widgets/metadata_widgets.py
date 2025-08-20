@@ -203,19 +203,19 @@ def display_feature_groups_widget(metadata_df, num_cols=3):
         st.write(metadata_df)
 
 def export_metadata_widget(metadata_df, folder_path):
-    # use a botton to export the images as one csv file (one image per row) to the folder_path 
-    confirm_export = st.button("Export Image Metadata as CSV", help=f"Export the image meta as one csv file (one image per row) to {folder_path}", key=f"export_metadata_button")
+    # use a botton to export the fovs as one csv file (one fov per row) to the folder_path 
+    confirm_export = st.button("Export FOV Metadata as CSV", help=f"Export the fov metadata as one csv file (one fov per row) to {folder_path}", key=f"export_metadata_button")
     if confirm_export:
         # convert the dictionary to a dataframe     
         # save the dataframe to a csv file
         time_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        csv_file_path = os.path.join(folder_path, f"image_metadata_{time_stamp}.csv")
+        csv_file_path = os.path.join(folder_path, f"fov_metadata_{time_stamp}.csv")
         try:
             metadata_df.to_csv(csv_file_path) # Save the DataFrame
         except Exception as e:
-            st.error(f"Error exporting the image metadata: {e}. Is the previous metadata file open in another program?")
+            st.error(f"Error exporting the fov metadata: {e}. Is the previous metadata file open in another program?")
             return
-        st.success(f"Image metadata exported successfully to {csv_file_path} {happy_emoji}")
+        st.success(f"FOV metadata exported successfully to {csv_file_path} {happy_emoji}")
         st.session_state["last_extracted_metadata"] = metadata_df
         st.session_state["last_extracted_metadata_filepath"] = csv_file_path
 

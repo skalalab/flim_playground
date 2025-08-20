@@ -1,4 +1,4 @@
-num_channels = 1
+num_channels = 2
 unique_cell_id_col = "cell_id"
 fov_name_col = "image_name"
 flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
@@ -6,7 +6,7 @@ flim_decay_input_type = "Decay (3/4D)"
 all_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
 imaging_modality = "FLIM"
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
-categorical_cols = [ "patient_id", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "replicate",]
+categorical_cols = [ "cell_line", "treatment", "condition", "patient_id", "day",]
 
 [spc_output_suffix]
 a1 = "_a1[%].asc"
@@ -28,7 +28,7 @@ channel_name = "nadh"
 imaging_modality = "FLIM"
 
 [ch2]
-input_type = "Decay (3/4D) pixel-prefitted"
+input_type = "Decay (3/4D)"
 channel_name = "fad"
 imaging_modality = "FLIM"
 
@@ -36,6 +36,7 @@ imaging_modality = "FLIM"
 laser_rate = 0.8
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 file_types = [ "Decay", "IRF", "Mask", "a1",]
+fit_free_calibration = "IRF"
 
 ["Decay (2D)"]
 laser_rate = 0.5
@@ -48,12 +49,12 @@ reference_dye_lifetime = 4.2
 
 [ch3]
 imaging_modality = "FLIM"
-input_type = "Decay (3/4D) pixel-prefitted"
-channel_name = "crypto"
+input_type = "Decay (3/4D)"
+channel_name = "cd8"
 
 [ch1."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture", "Lifetime fit",]
+selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Lifetime fit",]
 
 [ch1."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
@@ -65,7 +66,7 @@ num_components = 2
 
 [ch2."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture", "Lifetime fit",]
 
 [ch2."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
@@ -87,8 +88,8 @@ Decay = "n.sdt"
 IRF = "NADH_IRF.txt"
 
 [ch1."Decay (3/4D) pixel-prefitted".input_suffixes]
-Mask = "_C_nadh_mask_crypto_removed.tif"
-Decay = "_N.uncompressed.sdt"
+Mask = "_nadh_mask.tif"
+Decay = "_N.uncompressed.ptu"
 a1 = "_N.uncompressed_a1[%].asc"
 IRF = "nadh_irf.txt"
 
@@ -102,8 +103,8 @@ Decay = "f.sdt"
 IRF = "FAD_IRF.txt"
 
 [ch2."Decay (3/4D) pixel-prefitted".input_suffixes]
-Mask = "_C_nadh_mask_crypto_removed.tif"
-Decay = "_F.uncompressed.sdt"
+Mask = "nadh_mask.tif"
+Decay = "_F.uncompressed.ptu"
 a1 = "_F.uncompressed_a1[%].asc"
 IRF = "fad_irf.txt"
 
@@ -112,8 +113,8 @@ Decay = "_ch2.csv"
 IRF = "kflow_ch2.txt"
 
 [ch3."Decay (3/4D)".input_suffixes]
-Decay = ""
-Mask = ""
+Decay = "s.sdt"
+Mask = "stain_mask.tiff"
 
 [ch3."Decay (3/4D) pixel-prefitted".input_suffixes]
 Decay = "_C.uncompressed.sdt"

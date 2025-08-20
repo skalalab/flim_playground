@@ -46,10 +46,13 @@ with col1:
         help="FOV Metadata Extraction: Extracts metadata from the field of views. Numeric Feature Extraction: Extracts single cell numeric features from the FOVs. Categorical Feature Extraction: Extracts categorical features from the FOVs. \n ",
     )
     if selected_step == "FOV Metadata Extraction":
+         # show decay input type
+        st.write(f"Decay input type: {decay_input_type}")
         checkbox_cols = st.columns(len(channel_names))
         actual_file_suffix = None
         selected_channels = {}
         selected_ch_num_components = {}
+       
         for index, (channel_key, channel_name) in enumerate(channel_names.items()):       
             with checkbox_cols[index]:
                 has_channel = st.checkbox(f"has {channel_name}", value=True, key=f"has_channel_{channel_key}")
