@@ -272,7 +272,7 @@ def extract_fit_free_results(channel_name, decay_curves, shifted_irf, time_axis,
 
     return single_cell_features_fov
 
-def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, metadata_dict):
+def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name):
     need_to_fit = False
     time_bins = metadata["time_bins"]
     duration = metadata["duration"]
@@ -286,15 +286,15 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         if error_msg != "":
             return error_msg, pd.DataFrame()
     if fit:
-        num_components = metadata_dict[channel_name]["num_components"]
+        num_components = metadata[f"{channel_name}_num_components"]
         if "prefitted" not in input_type:
-            fitting_algo = metadata_dict["fitting_algo"]
-            fitting_mode = metadata_dict["fitting_mode"]
-            start = metadata_dict[channel_name]["start"]
-            end = metadata_dict[channel_name]["end"]
+            fitting_algo = metadata["fitting_algo"]
+            fitting_mode = metadata["fitting_mode"]
+            start = metadata[f"{channel_name}_start"]
+            end = metadata[f"{channel_name}_end"]
             need_to_fit = True
         else: # prefitted
-            error_msg, single_cell_fit_features_fov = extract_spcimage_fit_results(metadata, channel_name, num_components, metadata_dict["fov_name_col"])
+            error_msg, single_cell_fit_features_fov = extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col_name)
             if error_msg != "":
                 return error_msg, pd.DataFrame()
 
@@ -312,7 +312,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         single_cell_fit_features_fov = pd.DataFrame.from_dict(single_cell_fit_features_fov, orient='index')
     channel_container.empty()  # Remove both text and progress bar when done
     if fit_free:
-        laser_rate = metadata_dict["laser_rate"]
+        laser_rate = metadata["laser_rate"]
         single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, shifted_irf, time_axis, laser_rate)
         single_cell_fit_free_features_fov = pd.DataFrame.from_dict(single_cell_fit_free_features_fov, orient='index')
     if fit and fit_free:
@@ -339,8 +339,9 @@ def fov_extraction(metadata, metadata_dict):
         if metadata_dict[channel_name]["imaging_modality"] == "FLIM":  
             fit = "Lifetime fit" in selected_feature_extractors
             fit_free = "Lifetime fit free" in selected_feature_extractors
+            fov_col_name = metadata_dict["fov_name_col"]
             if fit or fit_free:
-                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, metadata_dict)
+                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name)
                 if error_msg != "":
                     st.error(error_msg)
                     continue
@@ -357,13 +358,13 @@ def fov_extraction(metadata, metadata_dict):
                     # check if the morphology features are already extracted for this mask
                     if metadata[f"{channel_name}_Mask"] not in extracted_morphology_masks:
                         extracted_morphology_masks.append(metadata[f"{channel_name}_Mask"])
-                        error_msg, single_cell_morph_features_fov = get_intensity_morphology_features(metadata, channel_name, metadata_dict["fov_name_col"], mask)
+                        error_msg, single_cell_morph_features_fov = get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask)
                         if error_msg != "":
                             st.error(error_msg)
                         else:
                             fov_feature_dfs.append(single_cell_morph_features_fov)
                 if int_texture:
-                        error_msg, single_cell_texture_features_fov = get_intensity_texture_features(metadata, channel_name, metadata_dict["fov_name_col"], mask)
+                        error_msg, single_cell_texture_features_fov = get_intensity_texture_features(metadata, channel_name, fov_col_name, mask)
                         if error_msg != "":
                             st.error(error_msg)
                         else:
@@ -372,7 +373,7 @@ def fov_extraction(metadata, metadata_dict):
     # Combine all channel DataFrames in one operation
     single_cell_features_fov = pd.concat(fov_feature_dfs, axis=1) if fov_feature_dfs else pd.DataFrame()
     if not single_cell_features_fov.empty:
-        single_cell_features_fov[metadata_dict["fov_name_col"]] = fov_name
+        single_cell_features_fov[fov_col_name] = fov_name
         single_cell_features_fov.index.name = unique_cell_id_colname
     else:
         return f"Error: No cells found in the {fov_name}", pd.DataFrame()

@@ -218,7 +218,7 @@ def choose_shift_widget(metadata_df, metadata_dict, channel_name, log_y=True):
     
     return "", shift_data
 
-def fit_options_widget(input_type, metadata_dict, show_time_gates=True):
+def fit_options_widget(input_type, metadata_dict):
     """
     Fit options widget for Streamlit app.
     """
@@ -295,25 +295,9 @@ def fit_options_widget(input_type, metadata_dict, show_time_gates=True):
     # Update channel-specific components
     for channel_name in channels_fit:
         metadata_dict[channel_name]["num_components"] = channel_components[channel_name]
-    
-    # Add start and end widgets for each channel (only if show_time_gates is True)
-    if show_time_gates:
-        for channel_name in channels_fit:
-            start, end = start_end_widget(metadata_dict["time_bins"], channel_name)
-            metadata_dict[channel_name]["start"] = start
-            metadata_dict[channel_name]["end"] = end
-    else:
-        # When time gates are hidden, get values from session state or use defaults
-        for channel_name in channels_fit:
-            if f"{channel_name}_start" in st.session_state:
-                metadata_dict[channel_name]["start"] = st.session_state[f"{channel_name}_start"]
-            else:
-                metadata_dict[channel_name]["start"] = 0  # default start
-            
-            if f"{channel_name}_end" in st.session_state:
-                metadata_dict[channel_name]["end"] = st.session_state[f"{channel_name}_end"]
-            else:
-                metadata_dict[channel_name]["end"] = metadata_dict["time_bins"]  # default end
+        start, end = start_end_widget(metadata_dict["time_bins"], channel_name)
+        metadata_dict[channel_name]["start"] = start
+        metadata_dict[channel_name]["end"] = end
     
     return metadata_dict
 

@@ -23,8 +23,6 @@ if "choosing_shift" not in st.session_state:
     st.session_state["choosing_shift"] = False
 if "shift_ready" not in st.session_state:
     st.session_state["shift_ready"] = False
-if "show_time_gates" not in st.session_state:
-    st.session_state["show_time_gates"] = True
 st.title("Data Extraction")
 
 col1, col2 = st.columns([0.4, 1])
@@ -100,15 +98,15 @@ with col1:
                 shift_needed = len(metadata_dict["channels_shift"]) > 0
                 # if there are channels to be fitted, show the fitting options: spcimage is already fitted
                 if "Lifetime fit" in metadata_dict and len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
-                    st.info("Please specify the following fitting options.")
-                    metadata_dict= fit_options_widget(decay_input_type, metadata_dict, show_time_gates=st.session_state["show_time_gates"])
+                    if st.session_state["choosing_shift"]:
+                        st.info("Please specify the following fitting options.")
+                        metadata_dict= fit_options_widget(decay_input_type, metadata_dict)
                 
                 shifts_are_present = all(f"{ch}_shift" in metadata_df.columns for ch in metadata_dict["channels_shift"])
                 if shift_needed and not shifts_are_present:
                     if st.button("Start Finding Shifts"):
                         st.session_state["choosing_shift"] = True
                         st.session_state["shift_ready"] = False
-                        st.session_state["show_time_gates"] = True  # Show time gates during shift finding
                 else:
                     col1_1, col1_2 = st.columns(2)
                     with col1_1:
@@ -122,7 +120,6 @@ with col1:
                             if st.button("Go back and find shift", use_container_width=True):
                                 st.session_state["choosing_shift"] = True
                                 st.session_state["shift_ready"] = False
-                                st.session_state["show_time_gates"] = True  # Show time gates again when going back
                                 # remove shift columns from metadata_df in session state
                                 for ch in metadata_dict["channels_shift"]:
                                     if f"{ch}_shift" in metadata_df.columns:
@@ -216,19 +213,23 @@ with col2:
                 channel_shifts[channel_name] = shifts
         shift_finished = st.button("Confirm Time Gates (if applicable) and Shift for each channel")
         if shift_finished:
-            # write the shift to the metadata file
+            # write the shift, time gates and fitting options to the metadata file
             for channel_name in channel_shifts:
                 metadata_df[f"{channel_name}_shift"] = channel_shifts[channel_name]
                 if "start" in metadata_dict[channel_name]:
                     metadata_df[f"{channel_name}_start"] = metadata_dict[channel_name]["start"]
                 if "end" in metadata_dict[channel_name]:
                     metadata_df[f"{channel_name}_end"] = metadata_dict[channel_name]["end"]
+            
+            if "fitting_algo" in metadata_dict:
+                metadata_df["fitting_algo"] = metadata_dict["fitting_algo"]
+            if "fitting_mode" in metadata_dict:
+                metadata_df["fitting_mode"] = metadata_dict["fitting_mode"]
  
             # Store the updated metadata_df in session state so it persists across rerun
             st.session_state["last_extracted_metadata"] = metadata_df
             st.session_state["choosing_shift"] = False
             st.session_state["shift_ready"] = False
-            st.session_state["show_time_gates"] = False  # Hide time gates after shift is finished
             st.rerun()
                 
     elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"] and metadata_df is not None:
