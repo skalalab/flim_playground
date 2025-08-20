@@ -1,12 +1,13 @@
+import re
 import pandas as pd
 import numpy as np
 from skimage.measure import regionprops
-from src.file_io import get_decay_curves, load_image
+from src.file_io import get_decay_curves, load_image, get_irf
 from src.decay_io import read_decay
 from src.fit import fit_curves
 from src.fit_helper import create_progress_callback, irf_shift
-from src.fit_free import get_phasor_features
 import streamlit as st
+from phasorpy import phasor
 from src.cell_texture import granularity, radial_distribution, mass_displacement
 
 def get_offset(decay_curve):
@@ -242,7 +243,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
 
     return single_cell_features_fov
 
-def extract_fit_free_results(channel_name, decay_curves, laser_rate, shifted_irf=None):
+def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration_method, shifted_irf=None,reference_dye_file=None, reference_dye_lifetime=None):
     """
     Extract fit free results for a specific channel and store them in single_cell_features_img (for now, only phasor is implemented)
     Args:
@@ -250,38 +251,85 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, shifted_irf
         decay_curves: dictionary of decay curves: key is cell_id, value is decay curve
         shifted_irf: shifted IRF
         laser_rate: laser repetition rate
+        calibration_method: calibration method
+        reference_dye_file: reference dye file
+        reference_dye_lifetime: reference dye lifetime
     """
     fit_free_feature_prefix = f"Lifetime fit free_{channel_name}: "
     single_cell_features_fov = {}
-    for cell_id in decay_curves.keys():
+    if calibration_method == "Reference Dye":
+        try:
+            reference_image = load_image(reference_dye_file)
+        except Exception as e:
+            return f"Error reading the reference dye file: {reference_dye_file}: {e}", pd.DataFrame() 
+        # calculate the phasor of reference dye
+        try:
+            ref_mean, ref_real, ref_imag = phasor.phasor_from_signal(reference_image, axis=0)
+        except Exception as e:
+            return f"Error calculating the phasor of reference dye: {e}", pd.DataFrame()
+    else:
+        if shifted_irf is not None: 
+            # calculate the phasor of irf
+            _, g_irf, s_irf = phasor.phasor_from_signal(shifted_irf)
+            _, g_irf_2nd, s_irf_2nd = phasor.phasor_from_signal(shifted_irf, harmonic=2)
+        else: 
+            return f"Error: Shifted IRF is not provided for {channel_name}", pd.DataFrame()
+    for cell_id, decay_curve in decay_curves.items():
         if cell_id not in single_cell_features_fov:
             single_cell_features_fov[cell_id] = {}
+
+        if calibration_method != "Reference Dye":
+            # subtract the esetimated offset and clip the timebin to above or equal to 0
+            offset = get_offset(decay_curve)
+            decay_curve = decay_curve - offset
+            # clip the timebin to above or equal to 0
+            decay_curve = np.clip(decay_curve, 0, None)
+
+         # calculate the raw phasor coordinates    
+        _, g_raw, s_raw = phasor.phasor_from_signal(decay_curve)
+        _, g_raw_2nd, s_raw_2nd = phasor.phasor_from_signal(decay_curve, harmonic=2)
         
-        # get the offset for this curve
-        offset = get_offset(decay_curves[cell_id])
-        # 1st harmonic
-        g1, s1, g2, s2, tau_phase, tau_m = get_phasor_features(decay_curves[cell_id], f=laser_rate, shifted_irf=shifted_irf, offset=offset)
-        single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}G(1st)"] = g1
-        single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}S(1st)"] = s1
+        if calibration_method == "Reference Dye":
+            G, S = phasor.phasor_calibrate(g_raw, s_raw, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=reference_dye_lifetime)
+            G_2nd, S_2nd = phasor.phasor_calibrate(g_raw_2nd, s_raw_2nd, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=reference_dye_lifetime, harmonic=2)
+        else:
+            if shifted_irf is not None:
+                G, S = phasor.phasor_divide(g_raw, s_raw, g_irf, s_irf)
+                G_2nd, S_2nd = phasor.phasor_divide(g_raw_2nd, s_raw_2nd, g_irf_2nd, s_irf_2nd)
+
+        w = 2*np.pi*laser_rate
+        phi = np.arctan2(G, S) 
+        m = np.sqrt(G**2 + S**2)
+        tau_phase = 1/w * np.tan(phi)
+        tau_m = 1/w * np.sqrt(1/m**2 - 1)
+        single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}G(1st)"] = G
+        single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}S(1st)"] = S
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}Tau_phase"] = tau_phase
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}Tau_m"] = tau_m
         # 2nd harmonic
-        single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}G(2nd)"] = g2
-        single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}S(2nd)"] = s2
+        single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}G(2nd)"] = G_2nd
+        single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}S(2nd)"] = S_2nd
 
-    return single_cell_features_fov
+    return "", single_cell_features_fov
 
-def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name):
+def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method=None, reference_dye_file=None, reference_dye_lifetime=None):
     need_to_fit = False
     time_bins = metadata["time_bins"]
     duration = metadata["duration"]
     if "prefitted" not in input_type or fit_free:
         # get the decay curves and irf
-        error_msg, decay_curves, irf = get_decay_curves(metadata, input_type, channel_name, time_bins, shift=False)
-        shift = metadata[f"{channel_name}_shift"]
-        shifted_irf = irf_shift(irf, shift)
+        error_msg, decay_curves = get_decay_curves(metadata, input_type, channel_name, time_bins, shift=False)
         if error_msg != "":
             return error_msg, pd.DataFrame()
+        
+        if f"{channel_name}_shift" in metadata.index:
+            error_msg, irf = get_irf(metadata, channel_name, time_bins)
+            if error_msg != "":
+                return error_msg, pd.DataFrame()
+            shift = metadata[f"{channel_name}_shift"]
+            shifted_irf = irf_shift(irf, shift)
+        else:
+            shifted_irf = None
     if fit:
         num_components = metadata[f"{channel_name}_num_components"]
         if "prefitted" not in input_type:
@@ -310,7 +358,11 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
     channel_container.empty()  # Remove both text and progress bar when done
     if fit_free:
         laser_rate = metadata["laser_rate"]
-        single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, shifted_irf)
+        if calibration_method == None:
+            return f"Error: Calibration method is not provided for {channel_name}", pd.DataFrame()
+        error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration_method, shifted_irf, reference_dye_file, reference_dye_lifetime)
+        if error_msg != "":
+            return error_msg, pd.DataFrame()
         single_cell_fit_free_features_fov = pd.DataFrame.from_dict(single_cell_fit_free_features_fov, orient='index')
     if fit and fit_free:
         return "", pd.concat([single_cell_fit_features_fov, single_cell_fit_free_features_fov], axis=1)
@@ -324,21 +376,32 @@ def fov_extraction(metadata, metadata_dict):
     """
     Extract single cell features from one fov
     """
-    fov_col_name = metadata["fov_name_col"]
+    fov_col_name = metadata_dict["fov_name_col"]
     fov_name = metadata[fov_col_name]
     # unique cell id colname
     unique_cell_id_colname = metadata_dict["unique_cell_id_col"]
     # Collect DataFrames from each channel
     fov_feature_dfs = []
     extracted_morphology_masks = []
+
     for channel_name in metadata_dict["channel_names"]:
         input_type = metadata_dict[channel_name]["input_type"]
         selected_feature_extractors = metadata_dict[channel_name]["selected_feature_extractors"]
         if metadata_dict[channel_name]["imaging_modality"] == "FLIM":  
             fit = "Lifetime fit" in selected_feature_extractors
             fit_free = "Lifetime fit free" in selected_feature_extractors
+            if fit_free:
+                calibration_method = metadata_dict["fit_free_calibration_method"]
+                if calibration_method == "Reference Dye":
+                    reference_dye_file = metadata_dict["reference_dye_file"]
+                    reference_dye_lifetime = metadata_dict["reference_dye_lifetime"]
+            else: 
+                calibration_method = None
+                reference_dye_file = None
+                reference_dye_lifetime = None
+
             if fit or fit_free:
-                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name)
+                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method, reference_dye_file, reference_dye_lifetime)
                 if error_msg != "":
                     st.error(error_msg)
                     continue

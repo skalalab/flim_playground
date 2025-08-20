@@ -57,7 +57,7 @@ channel_name = "cd8"
 
 [ch1."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Intensity morphology", "Lifetime fit free",]
+selected_feature_extractors = [ "Intensity morphology", "Lifetime fit free", "Lifetime fit",]
 
 [ch1."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
@@ -69,7 +69,7 @@ num_components = 2
 
 [ch2."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Intensity morphology", "Intensity texture", "Lifetime fit",]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
 [ch2."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]

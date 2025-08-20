@@ -74,35 +74,17 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
     # histogram, irf for K-Flow
     error_msg = ""
     decay_curves = {}
-    
-    # Handle both DataFrame and Series cases
-
-    if isinstance(metadata_df, pd.Series):
-        # metadata_df is already a single row (Series)
-        first_row = metadata_df
-        num_fovs = 1
-    else:
-        # metadata_df is a DataFrame, get the first row
-        first_row = metadata_df.iloc[0]
-        num_fovs = len(metadata_df)
-    
-    irf_path = first_row.get(f'{channel_name}_IRF', None)
     fov_name_col = get_fov_name_col()
-    try:
-        irf = np.loadtxt(irf_path)
-    except Exception as e:
-        return f"Error: IRF file not found for {channel_name}.", None, None
-    if irf.ndim != 1:
-        return f"IRF must be 1D. Got {irf.ndim}D array with shape {irf.shape}.", None, None
-    if len(irf) != time_bins:
-        return f"IRF length mismatch with specified time bins. IRF length: {len(irf)}, time bins: {time_bins}.", None, None
+    
     # Handle iteration for both DataFrame and Series cases
     if isinstance(metadata_df, pd.Series):
         # Process single row (Series)
         rows_to_process = [(0, metadata_df)]
+        num_fovs = 1
     else:
         # Process DataFrame rows
         rows_to_process = list(metadata_df.iterrows())
+        num_fovs = len(metadata_df)
     
     for i, row in rows_to_process:
         fov_name = row[fov_name_col]
@@ -112,24 +94,24 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
             try:
                 mask = load_image(mask_path)
             except Exception as e:
-                return f"Error reading the mask file for {fov_name_col} {fov_name} at {mask_path}: {e}", None, None  
+                return f"Error reading the mask file for {fov_name_col} {fov_name} at {mask_path}: {e}", None  
             channel_no = row.get(f'{channel_name}_channel', None)
             if channel_no is None:
-                return f"Error: Channel number not found for {fov_name_col} {fov_name}", None, None      
+                return f"Error: Channel number not found for {fov_name_col} {fov_name}", None      
             try:
                 error_msg, decay = read_decay(decay_path, channel_no)
                 if error_msg != "":
-                    return error_msg, None, None
+                    return error_msg, None
             except Exception as e:
-                return f"Error reading the decay file for {fov_name_col} {fov_name} at {decay_path}: {e}", None, None
+                return f"Error reading the decay file for {fov_name_col} {fov_name} at {decay_path}: {e}", None
             if len(decay.shape) != 3:
-                return f"Decay data mismatch. Expected 3D data (XYT), got {decay.shape}.", None, None
+                return f"Decay data mismatch. Expected 3D data (XYT), got {decay.shape}.", None
             if decay.shape[-1] != time_bins:
-                return f"Decay time bins mismatch. Decay time bins: {decay.shape[2]}, time bins: {time_bins}.", None, None
+                return f"Decay time bins mismatch. Decay time bins: {decay.shape[2]}, time bins: {time_bins}.", None
             if len(mask.shape) != 2:
-                return f"Mask data mismatch. Expected 2D data, got {mask.shape}.", None, None
+                return f"Mask data mismatch. Expected 2D data, got {mask.shape}.", None
             if decay.shape[0] != mask.shape[0] or decay.shape[1] != mask.shape[1]:
-                return f"Dimension mismatch: Decay data {decay.shape[:2]} vs mask {mask.shape}", None, None
+                return f"Dimension mismatch: Decay data {decay.shape[:2]} vs mask {mask.shape}", None
             
             if shift:
                 # binarize the mask
@@ -151,11 +133,11 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
             try:
                 decays = pd.read_csv(decay_path)    
             except Exception as e:
-                return f"Error reading the histogram file for {fov_name_col} {fov_name} at {decay_path}: {e}", None, None
+                return f"Error reading the histogram file for {fov_name_col} {fov_name} at {decay_path}: {e}", None
             if len(decays.shape) != 2:
-                return f"Decay data mismatch. Expected 2D data, got {decays.shape}.", None, None
+                return f"Decay data mismatch. Expected 2D data, got {decays.shape}.", None
             if decays.shape[1] != time_bins:
-                return f"Decay time bins mismatch. Decay time bins: {decays.shape[1]}, time bins: {time_bins}.", None, None 
+                return f"Decay time bins mismatch. Decay time bins: {decays.shape[1]}, time bins: {time_bins}.", None 
 
             if shift:
                 # get sample decay curves from each kflow experiment, totoalling at 30 samples 
@@ -172,7 +154,7 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
                 for index, row in decays.iterrows():
                     decay_curves[f"{fov_name}_{index}"] = row.values
 
-    return error_msg, decay_curves, irf
+    return error_msg, decay_curves
 
 
 def find_file_in_folder(folder_path: str, filename: str) -> tuple[str, Optional[str]]:
@@ -206,3 +188,25 @@ def find_file_in_folder(folder_path: str, filename: str) -> tuple[str, Optional[
     
     # No file found
     return f"Reference dye file '{filename}' not found in folder. Please check the file name.", None
+
+
+def get_irf(metadata_df, channel_name, time_bins):
+    # Handle both DataFrame and Series cases
+    if isinstance(metadata_df, pd.Series):
+        # metadata_df is already a single row (Series)
+        first_row = metadata_df
+    else:
+        # metadata_df is a DataFrame, get the first row
+        first_row = metadata_df.iloc[0]
+      
+    irf_path = first_row.get(f'{channel_name}_IRF', None)
+    
+    try:
+        irf = np.loadtxt(irf_path)
+    except Exception as e:
+        return f"Error: IRF file not found for {channel_name}.", None
+    if irf.ndim != 1:
+        return f"IRF must be 1D. Got {irf.ndim}D array with shape {irf.shape}.", None
+    if len(irf) != time_bins:
+        return f"IRF length mismatch with specified time bins. IRF length: {len(irf)}, time bins: {time_bins}.", None
+    return "", irf

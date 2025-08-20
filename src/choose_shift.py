@@ -2,7 +2,7 @@ import numpy as np
 import streamlit as st
 from src.fit import fit_curves
 from src.fit_helper import create_progress_callback
-from src.file_io import get_decay_curves
+from src.file_io import get_decay_curves, get_irf
 
 
 def guess_shift(irf, curves, fit_free=False):
@@ -23,7 +23,10 @@ def guess_shift(irf, curves, fit_free=False):
 
 def choose_shift_fit_free(metadata_df, time_bins, input_type, channel_name):
 
-    error_msg, decay_curves, irf = get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=True)
+    error_msg, decay_curves = get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=True)
+    if error_msg != "":
+        return error_msg, None
+    error_msg, irf = get_irf(metadata_df, channel_name, time_bins)
     if error_msg != "":
         return error_msg, None
 
@@ -33,7 +36,10 @@ def choose_shift_fit_free(metadata_df, time_bins, input_type, channel_name):
 
 @st.cache_data
 def choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, input_type, channel_name, start, end):
-    error_msg, decay_curves, irf = get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=True)
+    error_msg, decay_curves = get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=True)
+    if error_msg != "":
+        return error_msg, None
+    error_msg, irf = get_irf(metadata_df, channel_name, time_bins)
     if error_msg != "":
         return error_msg, None
     shift_guess = guess_shift(irf, decay_curves.values())

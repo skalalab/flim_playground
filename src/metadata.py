@@ -65,14 +65,18 @@ def get_ch_info(metadata_df):
         if "Lifetime fit free" in selected_feature_extractors:
             fit_free = True
             if channel_name not in metadata_dict["channels_shift"]:
-                # if not using fitting to find the shift, then use fit free to find the shift
-                metadata_dict["channels_shift"][channel_name] = "fit free"
+                # no need to shift if reference dye file is provided
+                if "reference_dye_file" in metadata_df.columns:
+                    continue
+                else:
+                    metadata_dict["channels_shift"][channel_name] = "fit free"
         
         if "Decay (3/4D)" in input_type:
             metadata_dict[channel_name]["channel_no"] = metadata_df[f"{channel_name}_channel"].iloc[0]
 
     metadata_dict["unique_cell_id_col"] = get_unique_cell_id_col()
     metadata_dict["fov_name_col"] = get_fov_name_col()
+    
     if fit_free:    # laser rate is only needed when fit free 
         if "laser_rate" in metadata_df.columns:
             if metadata_df["laser_rate"].nunique() != 1:
@@ -80,6 +84,26 @@ def get_ch_info(metadata_df):
             metadata_dict["laser_rate"] = metadata_df["laser_rate"].iloc[0]
         else:
             return f"Laser rate column laser_rate not found in metadata file.", None
+        
+        if "fit_free_calibration_method" in metadata_df.columns:
+            if metadata_df["fit_free_calibration_method"].nunique() != 1:
+                return f"Fit free calibration method column fit_free_calibration_method is not consistent.", None
+            metadata_dict["fit_free_calibration_method"] = metadata_df["fit_free_calibration_method"].iloc[0]
+            if metadata_dict["fit_free_calibration_method"] == "Reference Dye":
+                if "reference_dye_file" in metadata_df.columns:
+                    if metadata_df["reference_dye_file"].nunique() != 1:
+                        return f"Reference dye file column reference_dye_file is not consistent.", None
+                    metadata_dict["reference_dye_file"] = metadata_df["reference_dye_file"].iloc[0]
+                else:
+                    return f"Reference dye file column reference_dye_file not found in metadata file.", None
+                if "reference_dye_lifetime" in metadata_df.columns:
+                    if metadata_df["reference_dye_lifetime"].nunique() != 1:
+                        return f"Reference dye lifetime column reference_dye_lifetime is not consistent.", None
+                    metadata_dict["reference_dye_lifetime"] = metadata_df["reference_dye_lifetime"].iloc[0]
+                else:
+                    return f"Reference dye lifetime column reference_dye_lifetime not found in metadata file.", None
+        else:
+            return f"Fit free calibration method column fit_free_calibration_method not found in metadata file.", None
 
     return "", metadata_dict
 

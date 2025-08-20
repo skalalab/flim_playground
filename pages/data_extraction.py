@@ -120,6 +120,7 @@ with col1:
                     if st.button("Start Finding Shifts"):
                         st.session_state["choosing_shift"] = True
                         st.session_state["shift_ready"] = False
+                        st.rerun()
                 else:
                     col1_1, col1_2 = st.columns(2)
                     with col1_1:
@@ -208,6 +209,7 @@ def prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components):
 
 def validate_reference_dye(folder_path, fit_free_calibration_method, reference_dye_file, fov_df):
     """Validate and add reference dye file if needed"""
+    fov_df["fit_free_calibration_method"] = fit_free_calibration_method
     if fit_free_calibration_method != "Reference Dye":
         return "", fov_df
     
@@ -216,6 +218,8 @@ def validate_reference_dye(folder_path, fit_free_calibration_method, reference_d
         return error_msg, fov_df
     
     fov_df["reference_dye_file"] = reference_dye_file_path
+    fov_df["reference_dye_lifetime"] = reference_dye_lifetime
+
     return "", fov_df
 
 def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path):
