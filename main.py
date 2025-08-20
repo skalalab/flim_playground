@@ -97,9 +97,9 @@ def main():
         if fit_free_calibration == "Reference Dye":
             with cols[2]:
                 # get the reference dye file
-                cfg[flim_decay_input_type]["reference_dye_file"] = st.text_input(f"Reference dye file suffix", value=cfg.get(flim_decay_input_type, {}).get("reference_dye_file", ""), key=f"reference_dye_file_{flim_decay_input_type}")
+                cfg[flim_decay_input_type]["reference_dye_file"] = st.text_input(f"Reference dye file name", value=cfg.get(flim_decay_input_type, {}).get("reference_dye_file", ""), key=f"reference_dye_file_{flim_decay_input_type}")
                 if cfg[flim_decay_input_type]["reference_dye_file"] == "":
-                    error_msg = f"Please enter a valid reference dye file suffix."
+                    error_msg = f"Please enter a valid reference dye file name."
                     st.error(error_msg)
             with cols[3]:
                 # get the reference dye lifetime
@@ -178,7 +178,7 @@ def main():
                                           ("prefitted" in input_type and not "Lifetime fit free" in selected_feature_extractors)):
                     continue
 
-                if file_type == "IRF" and "Lifetime fit" not in selected_feature_extractors and fit_free_calibration == "Reference Dye":
+                if file_type == "IRF" and "Lifetime fit" not in selected_feature_extractors and "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Reference Dye":
                     continue
 
                 cfg[channel_key][input_type]["input_suffixes"][file_type] = st.text_input(f"{file_type}", value=cfg[channel_key][input_type]["input_suffixes"].get(file_type, ""), key=f"{channel_key}_{input_type}_{file_type}")

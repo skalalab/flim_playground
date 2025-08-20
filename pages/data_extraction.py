@@ -9,7 +9,8 @@ from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.lifetime_widgets import fit_options_widget, choose_shift_widget
 from src.metadata import parse_metadata_file
-from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type
+from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type, get_fit_free_calibration_method
+from src.file_io import find_file_in_folder
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -35,6 +36,7 @@ decay_input_type = get_decay_input_type()
 ch_num_components = get_num_components(input_types, channel_names.keys())
 selected_ch_feature_extractors = get_selected_feature_extractors(input_types, channel_names.keys())
 fov_name_col = get_fov_name_col()
+fit_free_calibration_method, reference_dye_file, reference_dye_lifetime = get_fit_free_calibration_method(decay_input_type)
 with col1:
     # first select the step to perform
     selected_step = st.radio(
@@ -70,6 +72,17 @@ with col1:
                 duration, time_bins, laser_rate = lifetime_data_config_widget(selected_ch_feature_extractors, decay_input_type)
             else: # for later, we will add other imaging modalities and this will ask for those imaging modality specific config
                 duration, time_bins, laser_rate = None, None, None
+            # laser rate is none means there is no fit free analysis
+            if laser_rate is not None and fit_free_calibration_method == "Reference Dye":
+                cols = st.columns(2)
+                with cols[0]:
+                    reference_dye_file = st.text_input("Reference dye file name", value=reference_dye_file, key="reference_dye_file")
+                with cols[1]:
+                    reference_dye_lifetime = st.number_input("Reference dye lifetime in ns", value=reference_dye_lifetime, min_value=0.1, max_value=20.0, step=0.1, key="reference_dye_lifetime")
+                if reference_dye_file == "":
+                    st.error(f"Please enter a valid reference dye file name.")
+                if reference_dye_lifetime == "":
+                    st.error(f"Please enter a valid reference dye lifetime.")
             actual_file_suffix, error_msg = load_data_suffix_widget(input_types, selected_channels, selected_ch_num_components, selected_ch_feature_extractors)
             if error_msg != "":
                 st.error(error_msg)
@@ -137,16 +150,8 @@ with col1:
                                     st.error(f"❌ Cannot save file - it may be open in another program (like Excel). Please close the file and try again.")
                                 except Exception as e:
                                     st.error(f"❌ Error saving file: {str(e)}")
-                                    # Provide fallback download option
-                                    st.download_button(
-                                        label="Download as new file instead", 
-                                        data=metadata_df.to_csv(index=False), 
-                                        file_name=f"metadata_updated_{time.strftime('%Y%m%d_%H%M%S')}.csv",
-                                        key=f"fallback_download_{time.time()}",
-                                        help="Download the updated metadata as a new CSV file since the original couldn't be overwritten."
-                                    )
                         else:
-                            st.download_button(label="Download updated metadata", data=metadata_df.to_csv(index=False), file_name=f"metadata_{time.strftime('%Y%m%d_%H%M%S')}.csv", key=f"download_metadata_{time.time()}", use_container_width=True, help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
+                            st.download_button(label="Download updated metadata", data=metadata_df.to_csv(index=False), file_name=f"fov_metadata_{time.strftime('%Y%m%d_%H%M%S')}.csv", key=f"download_metadata_{time.time()}", use_container_width=True, help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
             else:
                 st.error(f"Error: {error_msg}")
 
@@ -162,47 +167,100 @@ with col1:
             else:
                 st.error(f"No available csv files found at {df_folder_path} {sad_emoji}")
 
+def validate_folder_path(folder_path):
+    """Validate folder path and return appropriate error message"""
+    if folder_path == "":
+        st.info("Please provide a folder path.")
+        return False
+    if not os.path.isdir(folder_path):
+        st.error(f"Folder not found! Please check the path. {sad_emoji}")
+        return False
+    return True
+
+def load_and_validate_fovs(folder_path, actual_file_suffix):
+    """Load FOVs from folder and validate"""
+    fovs = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
+    if len(fovs) == 0:
+        st.warning("No data found in the folder. Please check the path and the file suffixes.")
+        return None
+    
+    st.success(f"Field of Views with ✅ are loaded successfully {happy_emoji}. FOVs with ❌ (if any) will **not** be recorded. Here is the preview of the FOVs and metadata recorded:")
+    return fovs
+
+def prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components):
+    """Prepare FOV dataframe with channel information"""
+    fov_df = pd.DataFrame.from_dict(fovs, orient="index")
+    
+    # Set index name and reset to column
+    fov_df.index.name = fov_name_col
+    fov_df.reset_index(inplace=True)
+    
+    # Add channel information
+    for channel_key, channel_name in selected_channels.items():
+        fov_df[f"{channel_name}_input_type"] = input_types[channel_key]
+        fov_df[f"{channel_name}_imaging_modality"] = imaging_modalities[channel_key]
+        for feature_extractor in selected_ch_feature_extractors[channel_key]:
+            fov_df[f"{channel_name}_{feature_extractor}"] = True
+        if has_flim and channel_name in selected_ch_num_components:
+            fov_df[f"{channel_name}_num_components"] = selected_ch_num_components[channel_name]
+    
+    return fov_df
+
+def validate_reference_dye(folder_path, fit_free_calibration_method, reference_dye_file, fov_df):
+    """Validate and add reference dye file if needed"""
+    if fit_free_calibration_method != "Reference Dye":
+        return "", fov_df
+    
+    error_msg, reference_dye_file_path = find_file_in_folder(folder_path, reference_dye_file)
+    if error_msg != "":
+        return error_msg, fov_df
+    
+    fov_df["reference_dye_file"] = reference_dye_file_path
+    return "", fov_df
+
+def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path):
+    """Final processing steps for FOV data"""
+    if error_msg != "":
+        st.error(f"Error: {error_msg}")
+        return
+    
+    # Check and assign channels
+    error_msg, fov_df = check_assign_channel_widget(
+        fov_df, selected_channels, 
+        flim_decay_input_type=decay_input_type, 
+        imaging_modalities=imaging_modalities, 
+        duration=duration, time_bins=time_bins
+    )
+    
+    if error_msg != "":
+        st.error(f"Error: {error_msg}")
+        return
+    
+    # Display and export
+    display_feature_groups_widget(fov_df)
+    export_metadata_widget(metadata_df=fov_df, folder_path=folder_path)
+
 with col2: 
-    # check if the folder exists
-    if selected_step == "FOV Metadata Extraction" and error_msg == "": 
-        if os.path.isdir(folder_path): 
-            fovs = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
-            if len(fovs) != 0:
-                st.success(f"Field of Views with ✅ are loaded successfully {happy_emoji}. FOVs with ❌ (if any) will **not** be recorded. Here is the preview of the FOVs and metadata recorded:")
-                fov_df = pd.DataFrame.from_dict(fovs, orient="index")
-
-                # Set index name and reset to column (do this once, outside the loop)
-                fov_df.index.name = fov_name_col  # Set index name 
-                fov_df.reset_index(inplace=True)  # Reset index to make it a column
-                
-                # For each channel, add the feature_types and num_components
-                for channel_key, channel_name in selected_channels.items():
-                    # assign input type to the channel
-                    fov_df[f"{channel_name}_input_type"] = input_types[channel_key]
-                    fov_df[f"{channel_name}_imaging_modality"] = imaging_modalities[channel_key]
-                    for feature_extractor in selected_ch_feature_extractors[channel_key]:
-                        fov_df[f"{channel_name}_{feature_extractor}"] = True
-                    if has_flim:
-                        if channel_name in selected_ch_num_components: 
-                            fov_df[f"{channel_name}_num_components"] = selected_ch_num_components[channel_name]
-                    # ROI Summing Fit and SPCImage takes in raw decay that maybe multiple channels. need to assign data channel to each fov channel
-                    # K-flow already knows the duration and time bins and do not need to assign channel
-                
-                error_msg, fov_df = check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type=decay_input_type, imaging_modalities=imaging_modalities, duration=duration, time_bins=time_bins)
-
-                if error_msg != "":
-                    st.error(f"Error: {error_msg}")        
-                else:   
-                    if laser_rate is not None:
-                        fov_df["laser_rate"] = laser_rate
-                    display_feature_groups_widget(fov_df)
-                    export_metadata_widget(metadata_df=fov_df, folder_path=folder_path)
-            else: 
-                st.warning("No data found in the folder. Please check the path and the file suffixes.")
-        elif folder_path != "":
-            st.error(f"Folder not found! Please check the path. {sad_emoji}")
+    # FOV Metadata Extraction workflow
+    if selected_step == "FOV Metadata Extraction" and error_msg == "":
+        # Step 1: Validate folder path
+        if not validate_folder_path(folder_path):
+            pass  # Error already displayed in function
         else:
-            st.info(f"Please provide a folder path.")
+            # Step 2: Load and validate FOVs
+            fovs = load_and_validate_fovs(folder_path, actual_file_suffix)
+            if fovs is None:
+                pass  # Error already displayed in function
+            else:
+                # Step 3: Prepare dataframe
+                fov_df = prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components)
+                if laser_rate is not None:
+                    fov_df["laser_rate"] = laser_rate
+                    # Step 4: fit free analysis: Validate reference dye
+                    error_msg, fov_df = validate_reference_dye(folder_path, fit_free_calibration_method, reference_dye_file, fov_df)
+                
+                # Step 5: Finalize processing
+                finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path)
     elif selected_step == "Numeric Feature Extraction" and st.session_state["choosing_shift"] and metadata_df is not None:
         channel_shifts = {}
         for channel_name in metadata_dict["channels_shift"]:
@@ -220,6 +278,8 @@ with col2:
                     metadata_df[f"{channel_name}_start"] = metadata_dict[channel_name]["start"]
                 if "end" in metadata_dict[channel_name]:
                     metadata_df[f"{channel_name}_end"] = metadata_dict[channel_name]["end"]
+                if "num_components" in metadata_dict[channel_name]:
+                    metadata_df[f"{channel_name}_num_components"] = metadata_dict[channel_name]["num_components"]
             
             if "fitting_algo" in metadata_dict:
                 metadata_df["fitting_algo"] = metadata_dict["fitting_algo"]

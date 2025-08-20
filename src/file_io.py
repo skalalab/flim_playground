@@ -3,10 +3,11 @@ import numpy as np
 import pathlib
 from pathlib import Path
 import tifffile
-from typing import Union
+from typing import Union, Optional
 from src.decay_io import read_decay
 from src.config import get_fov_name_col
 import pandas as pd
+import os
 
 def load_image(path: Union[str, pathlib.PurePath]) -> np.ndarray:
     """
@@ -172,5 +173,36 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
                     decay_curves[f"{fov_name}_{index}"] = row.values
 
     return error_msg, decay_curves, irf
-       
-       
+
+
+def find_file_in_folder(folder_path: str, filename: str) -> tuple[str, Optional[str]]:
+    """
+    Recursively search for a file with the given filename in the specified folder.
+    
+    Parameters
+    ----------
+    folder_path : str
+        The root folder path to search in
+    filename : str
+        The name of the file to search for
+        
+    Returns
+    -------
+    tuple[str, Optional[str]]
+        A tuple containing (error_message, file_path).
+        If successful: ("", file_path) - returns the first file found
+        If file not found: ("error message", None)
+    """
+    if not os.path.isdir(folder_path):
+        return f"Folder not found: {folder_path}", None
+    
+    # Use pathlib for recursive search
+    path = Path(folder_path)
+    
+    # Return the first matching file found
+    for file_path in path.rglob(filename):
+        if file_path.is_file():
+            return "", str(file_path)
+    
+    # No file found
+    return f"Reference dye file '{filename}' not found in folder. Please check the file name.", None

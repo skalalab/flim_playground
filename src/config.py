@@ -44,13 +44,16 @@ def get_default_file_suffixes(channel_key: str, input_type: str, selected_featur
     cfg = load_config()
     filtered_file_suffixes = {}
     file_suffixes = cfg.get(channel_key, {}).get(input_type, {}).get("input_suffixes", {})
+    fit_free_calibration = cfg.get(input_type, {}).get("fit_free_calibration", "")
     for file_type in file_suffixes.keys():
         # skip a bunch of things 
         if file_type == "a1" and "Lifetime fit" not in selected_feature_extractors:
             continue
         # skip IRF if no Lifetime extractors OR if prefitted and no fit free extractors
         if file_type == "IRF" and (not any("Lifetime" in extractor for extractor in selected_feature_extractors) or 
-                                        ("prefitted" in input_type and not any("Lifetime fit free" in extractor for extractor in selected_feature_extractors))):
+                                        ("prefitted" in input_type and not "Lifetime fit free" in selected_feature_extractors)):
+            continue
+        if file_type == "IRF" and "Lifetime fit" not in selected_feature_extractors and "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Reference Dye":
             continue
         filtered_file_suffixes[file_type] = file_suffixes[file_type]
     return filtered_file_suffixes

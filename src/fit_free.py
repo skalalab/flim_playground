@@ -1,7 +1,7 @@
 import numpy as np
 from phasorpy import phasor
 
-def get_phasor_features(decay_curve, shifted_irf, time_axis, f=0.08, offset=0):
+def get_phasor_features(decay_curve, f=0.08, shifted_irf=None, offset=0):
 
     """
     Calculate the phasor features for a given decay curve
@@ -14,25 +14,28 @@ def get_phasor_features(decay_curve, shifted_irf, time_axis, f=0.08, offset=0):
         harmonic: the harmonic of the decay curve
     """
     # step 1: subtract the esetimated offset and clip the timebin to above or equal to 0
-    decay_curve = decay_curve - offset
-    # clip the timebin to above or equal to 0
-    decay_curve = np.clip(decay_curve, 0, None)
+    if shifted_irf is not None:
+        decay_curve = decay_curve - offset
+        # clip the timebin to above or equal to 0
+        decay_curve = np.clip(decay_curve, 0, None)
 
     # step 2: calculate the raw phasor coordinates
     _, g_raw, s_raw = phasor.phasor_from_signal(decay_curve)
     _, g_raw_2nd, s_raw_2nd = phasor.phasor_from_signal(decay_curve, harmonic=2)
-    # step 3: calculate the phasor of irf
-    _, g_irf, s_irf = phasor.phasor_from_signal(shifted_irf)
-    _, g_irf_2nd, s_irf_2nd = phasor.phasor_from_signal(shifted_irf, harmonic=2)
-    # step 4: use phasor.divide to correct the phasor coordinates
-    G, S = phasor.phasor_divide(g_raw, s_raw, g_irf, s_irf)
-    G_2nd, S_2nd = phasor.phasor_divide(g_raw_2nd, s_raw_2nd, g_irf_2nd, s_irf_2nd)
+    # calibrate by irf
+    if shifted_irf is not None: 
+        # step 1: calculate the phasor of irf
+        _, g_irf, s_irf = phasor.phasor_from_signal(shifted_irf)
+        _, g_irf_2nd, s_irf_2nd = phasor.phasor_from_signal(shifted_irf, harmonic=2)
+        # step 2: use phasor.divide to correct the phasor coordinates
+        G, S = phasor.phasor_divide(g_raw, s_raw, g_irf, s_irf)
+        G_2nd, S_2nd = phasor.phasor_divide(g_raw_2nd, s_raw_2nd, g_irf_2nd, s_irf_2nd)
     w = 2*np.pi*f
     phi = np.arctan2(G, S) 
     m = np.sqrt(G**2 + S**2)
     tau_phase = 1/w * np.tan(phi)
     tau_m = 1/w * np.sqrt(1/m**2 - 1)
-    return G,S, G_2nd, S_2nd, tau_phase, tau_m
+    return G, S, G_2nd, S_2nd, tau_phase, tau_m
 
 
 

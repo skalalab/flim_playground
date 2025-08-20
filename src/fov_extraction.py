@@ -242,14 +242,13 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
 
     return single_cell_features_fov
 
-def extract_fit_free_results(channel_name, decay_curves, shifted_irf, time_axis, laser_rate):
+def extract_fit_free_results(channel_name, decay_curves, laser_rate, shifted_irf=None):
     """
     Extract fit free results for a specific channel and store them in single_cell_features_img (for now, only phasor is implemented)
     Args:
         channel_name
         decay_curves: dictionary of decay curves: key is cell_id, value is decay curve
         shifted_irf: shifted IRF
-        time_axis: time axis
         laser_rate: laser repetition rate
     """
     fit_free_feature_prefix = f"Lifetime fit free_{channel_name}: "
@@ -261,7 +260,7 @@ def extract_fit_free_results(channel_name, decay_curves, shifted_irf, time_axis,
         # get the offset for this curve
         offset = get_offset(decay_curves[cell_id])
         # 1st harmonic
-        g1, s1, g2, s2, tau_phase, tau_m = get_phasor_features(decay_curves[cell_id], shifted_irf, time_axis, f=laser_rate, offset=offset)
+        g1, s1, g2, s2, tau_phase, tau_m = get_phasor_features(decay_curves[cell_id], f=laser_rate, shifted_irf=shifted_irf, offset=offset)
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}G(1st)"] = g1
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}S(1st)"] = s1
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}Tau_phase"] = tau_phase
@@ -276,8 +275,6 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
     need_to_fit = False
     time_bins = metadata["time_bins"]
     duration = metadata["duration"]
-    period = duration / time_bins
-    time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
     if "prefitted" not in input_type or fit_free:
         # get the decay curves and irf
         error_msg, decay_curves, irf = get_decay_curves(metadata, input_type, channel_name, time_bins, shift=False)
@@ -313,7 +310,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
     channel_container.empty()  # Remove both text and progress bar when done
     if fit_free:
         laser_rate = metadata["laser_rate"]
-        single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, shifted_irf, time_axis, laser_rate)
+        single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, shifted_irf)
         single_cell_fit_free_features_fov = pd.DataFrame.from_dict(single_cell_fit_free_features_fov, orient='index')
     if fit and fit_free:
         return "", pd.concat([single_cell_fit_features_fov, single_cell_fit_free_features_fov], axis=1)
@@ -327,7 +324,8 @@ def fov_extraction(metadata, metadata_dict):
     """
     Extract single cell features from one fov
     """
-    fov_name = metadata[metadata_dict["fov_name_col"]]
+    fov_col_name = metadata["fov_name_col"]
+    fov_name = metadata[fov_col_name]
     # unique cell id colname
     unique_cell_id_colname = metadata_dict["unique_cell_id_col"]
     # Collect DataFrames from each channel
@@ -339,7 +337,6 @@ def fov_extraction(metadata, metadata_dict):
         if metadata_dict[channel_name]["imaging_modality"] == "FLIM":  
             fit = "Lifetime fit" in selected_feature_extractors
             fit_free = "Lifetime fit free" in selected_feature_extractors
-            fov_col_name = metadata_dict["fov_name_col"]
             if fit or fit_free:
                 error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name)
                 if error_msg != "":
