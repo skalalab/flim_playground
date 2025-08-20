@@ -112,7 +112,6 @@ with col2:
         # for visualization that are point-based, provides the options for other visual encoding channels: opacity, shape, and separate by
         point_based = method not in ["FOV Comparison", "Feature Histogram", "Classification"]
         color_based = method not in [ "Classification"]
-        image_based = method in ["FOV Comparison"]
         separate_by_available = method in ["Feature Comparison"]
         fig = None
         # check if the df is empty after filtering

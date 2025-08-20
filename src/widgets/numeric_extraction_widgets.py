@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from src.image_extraction import fov_extraction
+from src.fov_extraction import fov_extraction
 import numpy as np
 
 def check_fov_features(single_fov_cell_features, fov_name, fov_name_col):
