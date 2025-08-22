@@ -27,7 +27,7 @@ if "shift_ready" not in st.session_state:
 st.title("Data Extraction")
 
 col1, col2 = st.columns([0.4, 1])
-steps = ["FOV Metadata Extraction", "Numeric Feature Extraction", "Categorical Feature Extraction"]
+steps = ["FOV Metadata Extraction", "Numeric Feature Extraction (fitting, phasor, etc.)", "Categorical Feature Extraction (e.g. treatment)"]
 channel_names = get_channel_names()
 input_types = get_input_types(channel_names.keys())
 imaging_modalities = get_imaging_modality(channel_names.keys())
@@ -45,7 +45,7 @@ with col1:
         index=0,
         help="FOV Metadata Extraction: Extracts metadata from the field of views. Numeric Feature Extraction: Extracts single cell numeric features from the FOVs. Categorical Feature Extraction: Extracts categorical features from the FOVs. \n ",
     )
-    if selected_step == "FOV Metadata Extraction":
+    if "FOV Metadata Extraction" in selected_step:
          # show decay input type
         st.write(f"Decay input type: {decay_input_type}")
         checkbox_cols = st.columns(len(channel_names))
@@ -88,7 +88,7 @@ with col1:
                 st.error(error_msg)
             else:
                 folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the raw data that is needed for the selected data extraction type." , key="fov_metadata_folder_path")
-    elif selected_step == "Numeric Feature Extraction":
+    elif "Numeric Feature Extraction" in selected_step:
         metadata_df = None
         if st.session_state["last_extracted_metadata"] is not None:
             metadata_df = st.session_state["last_extracted_metadata"]
@@ -277,7 +277,7 @@ def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_ty
 
 with col2: 
     # FOV Metadata Extraction workflow
-    if selected_step == "FOV Metadata Extraction" and error_msg == "":
+    if "FOV Metadata Extraction" in selected_step and error_msg == "":
         # Step 1: Validate folder path
         if not validate_folder_path(folder_path):
             pass  # Error already displayed in function
@@ -294,7 +294,7 @@ with col2:
                 
                 # Step 4: Finalize processing (reference dye validation moved here)
                 finalize_fov_processing("", fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, fit_free_calibration_method, reference_dye_file, reference_dye_lifetime)
-    elif selected_step == "Numeric Feature Extraction" and st.session_state["choosing_shift"] and metadata_df is not None:
+    elif "Numeric Feature Extraction" in selected_step and st.session_state["choosing_shift"] and metadata_df is not None:
         channel_shifts = {}
         for channel_name in metadata_dict["channels_shift"]:
             error_msg, shifts = choose_shift_widget(metadata_df, metadata_dict, channel_name=channel_name)
@@ -325,7 +325,7 @@ with col2:
             st.session_state["shift_ready"] = False
             st.rerun()
                 
-    elif selected_step == "Numeric Feature Extraction" and st.session_state["shift_ready"] and metadata_df is not None:
+    elif "Numeric Feature Extraction" in selected_step and st.session_state["shift_ready"] and metadata_df is not None:
         single_cell_features = fov_extraction_widget(metadata_df, metadata_dict)
         if not single_cell_features.empty:
             st.success(f"Field of view features with ✅ are extracted successfully {happy_emoji}! FOVs with ❌ (if any) are excluded. The first few rows of the features are shown below.")
@@ -347,6 +347,6 @@ with col2:
                         st.error(f"❌ Error exporting the single cell features: {str(e)}")
             else:
                 st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name= f"single_cell_features_{timestamp}.csv")
-    elif selected_step == "Categorical Feature Extraction" and df_folder_path != "" and len(available_dfs) > 0:
+    elif "Categorical Feature Extraction" in selected_step and df_folder_path != "" and len(available_dfs) > 0:
         combined_df, available_categories = check_and_merge_df_widget(available_dfs)
         map_categories_to_labels_widget(available_categories, combined_df, delimiter, df_folder_path)

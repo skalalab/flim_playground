@@ -401,6 +401,10 @@ def fov_extraction(metadata, metadata_dict):
                         return f"Error: Reference dye file should be a 3D array", pd.DataFrame()
                     reference_dye_lifetime = metadata_dict["reference_dye_lifetime"]   
                     reference_time_axis = metadata["reference_dye_time_axis"]
+                else:
+                    reference_dye_image = None
+                    reference_dye_lifetime = None
+                    reference_time_axis = None
             else: 
                 calibration_method = None
                 reference_dye_file = None
