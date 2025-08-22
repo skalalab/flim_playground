@@ -185,7 +185,7 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
             if cell_id not in single_cell_features_img:
                 single_cell_features_img[cell_id] = {}
             single_cell_features_img[cell_id][prop] = region.intensity_mean
-            single_cell_features_img[cell_id][f"{prop}_stdev"] = region.intensity_std
+            #single_cell_features_img[cell_id][f"{prop}_stdev"] = region.intensity_std
          
    # convert single_cell_features_img to a dataframe
     single_cell_fit_features_fov = pd.DataFrame(single_cell_features_img).T
