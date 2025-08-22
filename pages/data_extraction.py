@@ -10,7 +10,7 @@ from src.widgets.category_widgets import map_categories_to_labels_widget, find_a
 from src.widgets.lifetime_widgets import fit_options_widget, choose_shift_widget
 from src.metadata import parse_metadata_file
 from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type, get_fit_free_calibration_method
-from src.file_io import find_file_in_folder
+from src.file_io import find_file_in_folder, load_image
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -207,7 +207,7 @@ def prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components):
     
     return fov_df
 
-def validate_reference_dye(folder_path, fit_free_calibration_method, reference_dye_file, fov_df):
+def validate_reference_dye(folder_path, fit_free_calibration_method, reference_dye_file, fov_df, time_bins, reference_dye_lifetime):
     """Validate and add reference dye file if needed"""
     fov_df["fit_free_calibration_method"] = fit_free_calibration_method
     if fit_free_calibration_method != "Reference Dye":
@@ -217,12 +217,35 @@ def validate_reference_dye(folder_path, fit_free_calibration_method, reference_d
     if error_msg != "":
         return error_msg, fov_df
     
+    # Check dimensions of reference dye file
+    try:
+        # Try to load the reference dye file to check dimensions
+        ref_dye_data = load_image(reference_dye_file_path)
+        ref_dye_shape = ref_dye_data.shape
+        
+        # Check if it's 3D
+        if len(ref_dye_shape) != 3:
+            return f"Reference dye file must be 3-dimensional, but got {len(ref_dye_shape)} dimensions with shape {ref_dye_shape}", fov_df
+        
+        # Check if any dimension matches time_bins
+        matched_time_bins = ref_dye_shape.count(time_bins)
+        if matched_time_bins == 0:
+            return f"Cannot find the time axis ({time_bins} time bins) in the reference dye file dimensions: {ref_dye_shape}", fov_df
+        # if there are more than one matched, return an error
+        elif matched_time_bins > 1:
+            return f"Ambiguous time axis based on the reference dye file dimension: {ref_dye_shape}", fov_df
+        else:
+            fov_df["reference_dye_time_axis"] = ref_dye_shape.index(time_bins)
+            
+    except Exception as e:
+        return f"Error reading reference dye file for validation: {str(e)}", fov_df
+    
     fov_df["reference_dye_file"] = reference_dye_file_path
     fov_df["reference_dye_lifetime"] = reference_dye_lifetime
 
     return "", fov_df
 
-def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path):
+def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, fit_free_calibration_method=None, reference_dye_file=None, reference_dye_lifetime=None):
     """Final processing steps for FOV data"""
     if error_msg != "":
         st.error(f"Error: {error_msg}")
@@ -239,6 +262,14 @@ def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_ty
     if error_msg != "":
         st.error(f"Error: {error_msg}")
         return
+    
+    # Validate reference dye after channel assignment
+    if fit_free_calibration_method is not None:
+        time_bins = fov_df["time_bins"].iloc[0]
+        error_msg, fov_df = validate_reference_dye(folder_path, fit_free_calibration_method, reference_dye_file, fov_df, time_bins, reference_dye_lifetime)
+        if error_msg != "":
+            st.error(f"Error: {error_msg}")
+            return
     
     # Display and export
     display_feature_groups_widget(fov_df)
@@ -260,11 +291,9 @@ with col2:
                 fov_df = prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components)
                 if laser_rate is not None:
                     fov_df["laser_rate"] = laser_rate
-                    # Step 4: fit free analysis: Validate reference dye
-                    error_msg, fov_df = validate_reference_dye(folder_path, fit_free_calibration_method, reference_dye_file, fov_df)
                 
-                # Step 5: Finalize processing
-                finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path)
+                # Step 4: Finalize processing (reference dye validation moved here)
+                finalize_fov_processing("", fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, fit_free_calibration_method, reference_dye_file, reference_dye_lifetime)
     elif selected_step == "Numeric Feature Extraction" and st.session_state["choosing_shift"] and metadata_df is not None:
         channel_shifts = {}
         for channel_name in metadata_dict["channels_shift"]:

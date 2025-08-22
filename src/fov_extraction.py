@@ -1,4 +1,3 @@
-import re
 import pandas as pd
 import numpy as np
 from skimage.measure import regionprops
@@ -243,7 +242,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
 
     return single_cell_features_fov
 
-def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration_method, shifted_irf=None,reference_dye_file=None, reference_dye_lifetime=None):
+def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration_method, shifted_irf=None,reference_dye_image=None, reference_dye_lifetime=None, reference_time_axis=None):
     """
     Extract fit free results for a specific channel and store them in single_cell_features_img (for now, only phasor is implemented)
     Args:
@@ -258,13 +257,12 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration
     fit_free_feature_prefix = f"Lifetime fit free_{channel_name}: "
     single_cell_features_fov = {}
     if calibration_method == "Reference Dye":
+
+        if reference_time_axis is None:
+            return f"Error: Reference time axis is not provided", pd.DataFrame()
+       
         try:
-            reference_image = load_image(reference_dye_file)
-        except Exception as e:
-            return f"Error reading the reference dye file: {reference_dye_file}: {e}", pd.DataFrame() 
-        # calculate the phasor of reference dye
-        try:
-            ref_mean, ref_real, ref_imag = phasor.phasor_from_signal(reference_image, axis=0)
+            ref_mean, ref_real, ref_imag = phasor.phasor_from_signal(reference_dye_image, axis=reference_time_axis)
         except Exception as e:
             return f"Error calculating the phasor of reference dye: {e}", pd.DataFrame()
     else:
@@ -312,7 +310,7 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration
 
     return "", single_cell_features_fov
 
-def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method=None, reference_dye_file=None, reference_dye_lifetime=None):
+def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method=None, reference_dye_image=None, reference_dye_lifetime=None, reference_time_axis=None):
     need_to_fit = False
     time_bins = metadata["time_bins"]
     duration = metadata["duration"]
@@ -360,7 +358,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         laser_rate = metadata["laser_rate"]
         if calibration_method == None:
             return f"Error: Calibration method is not provided for {channel_name}", pd.DataFrame()
-        error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration_method, shifted_irf, reference_dye_file, reference_dye_lifetime)
+        error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration_method, shifted_irf, reference_dye_image, reference_dye_lifetime, reference_time_axis)
         if error_msg != "":
             return error_msg, pd.DataFrame()
         single_cell_fit_free_features_fov = pd.DataFrame.from_dict(single_cell_fit_free_features_fov, orient='index')
@@ -394,14 +392,23 @@ def fov_extraction(metadata, metadata_dict):
                 calibration_method = metadata_dict["fit_free_calibration_method"]
                 if calibration_method == "Reference Dye":
                     reference_dye_file = metadata_dict["reference_dye_file"]
-                    reference_dye_lifetime = metadata_dict["reference_dye_lifetime"]
+                    try:
+                        reference_dye_image = load_image(reference_dye_file)
+                    except Exception as e:
+                        return f"Error reading the reference dye file: {reference_dye_file}: {e}", pd.DataFrame() 
+                    # calculate the phasor of reference dye
+                    if len(reference_dye_image.shape) != 3:
+                        return f"Error: Reference dye file should be a 3D array", pd.DataFrame()
+                    reference_dye_lifetime = metadata_dict["reference_dye_lifetime"]   
+                    reference_time_axis = metadata["reference_dye_time_axis"]
             else: 
                 calibration_method = None
                 reference_dye_file = None
                 reference_dye_lifetime = None
+                reference_time_axis = None
 
             if fit or fit_free:
-                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method, reference_dye_file, reference_dye_lifetime)
+                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method, reference_dye_image, reference_dye_lifetime, reference_time_axis)
                 if error_msg != "":
                     st.error(error_msg)
                     continue

@@ -102,6 +102,12 @@ def get_ch_info(metadata_df):
                     metadata_dict["reference_dye_lifetime"] = metadata_df["reference_dye_lifetime"].iloc[0]
                 else:
                     return f"Reference dye lifetime column reference_dye_lifetime not found in metadata file.", None
+                if "reference_dye_time_axis" in metadata_df.columns:
+                    if metadata_df["reference_dye_time_axis"].nunique() != 1:
+                        return f"Reference time axis column reference_dye_time_axis is not consistent.", None
+                    metadata_dict["reference_dye_time_axis"] = metadata_df["reference_dye_time_axis"].iloc[0]
+                else:
+                    return f"Reference time axis column `reference_dye_time_axis` not found in metadata file.", None
         else:
             return f"Fit free calibration method column fit_free_calibration_method not found in metadata file.", None
 

@@ -31,7 +31,7 @@ pyinstaller Flim-Playground.spec --clean
 - @[docs]()
 
 # TODO
-- add reference dye option for calibration phasor (phasorpy data)
+
 - fit validation (sensitivity with ground truth of 2 component solution, Alek)
 - add k-means cluster to phasor
 - add flimlib 

@@ -277,7 +277,7 @@ def check_raw_2D_decay_data(images_df, channel_name):
             return f"Error reading decay data for {channel_name}: {e}", None
         return "", decay_data.shape[1]
 
-def check_assign_channel_widget(images_df, selected_channels, flim_decay_input_type, imaging_modalities, duration=None, time_bins=None):   
+def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type, imaging_modalities, duration=None, time_bins=None):   
     error_msg = ""
     time_bins_list = []
     laser_rep_time_list = []
@@ -289,27 +289,27 @@ def check_assign_channel_widget(images_df, selected_channels, flim_decay_input_t
             continue
         else:
             decay_col_name = f"{channel_name}_Decay"
-            if decay_col_name not in images_df.columns:
+            if decay_col_name not in fov_df.columns:
                 return "Error: File paths for decay data are not provided.", None
             if flim_decay_input_type == "Decay (2D)":
                 if duration is not None:
-                    images_df["duration"] = duration
+                    fov_df["duration"] = duration
                 else:
                     return "Error: Duration is not provided.", None
                 if time_bins is not None:
-                    error_msg, time_bins = check_raw_2D_decay_data(images_df, channel_name)
+                    error_msg, time_bins = check_raw_2D_decay_data(fov_df, channel_name)
                     if error_msg == "":
                         time_bins_list.append(time_bins)
                     else:
                         return error_msg, None
             else: # 3/4D decay
                 with cols[i]:
-                    error_msg, available_channels, time_bins, laser_rep_time = check_raw_decay_data(images_df, channel_name)
+                    error_msg, available_channels, time_bins, laser_rep_time = check_raw_decay_data(fov_df, channel_name)
                     if error_msg == "":
                         if len(available_channels) == 1:
-                            images_df[f"{channel_name}_channel"] = available_channels[0]
+                            fov_df[f"{channel_name}_channel"] = available_channels[0]
                         else:
-                            images_df[f"{channel_name}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels, key=f"{channel_name}_channel_selectbox")
+                            fov_df[f"{channel_name}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels, key=f"{channel_name}_channel_selectbox")
                         time_bins_list.append(time_bins)
                         laser_rep_time_list.append(laser_rep_time)
                     else:
@@ -320,16 +320,16 @@ def check_assign_channel_widget(images_df, selected_channels, flim_decay_input_t
                 elif len(laser_rep_time_list) == 0:
                     return "No laser rep time found for the selected channels. Please check the data.", None
                 else:
-                    images_df["duration"] = laser_rep_time_list[0]
+                    fov_df["duration"] = laser_rep_time_list[0]
             
     if len(set(time_bins_list)) > 1:
         return "Inconsistent time bins found for the selected channels. Please check the data.", None
     elif len(time_bins_list) == 0:
         return "No time bins found for the selected channels. Please check the data.", None
     else:
-        images_df["time_bins"] = time_bins_list[0]
+        fov_df["time_bins"] = time_bins_list[0]
 
-    return error_msg, images_df
+    return error_msg, fov_df
 
 def lifetime_data_config_widget(selected_feature_extractors, input_type):
     fit_free = False
