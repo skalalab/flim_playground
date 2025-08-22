@@ -159,7 +159,7 @@ with col1:
     else:   
         # Categorical features extraction
         df_folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the csv files that you want to assign categories to.")
-        delimiter = st.text_input("Cell ID Delimiter", "_", max_chars=2, help="The delimiter used to split the cell ID/base_name column.")
+        delimiter = st.text_input("Field of View Name Delimiter", "_", max_chars=2, help="The delimiter used to split the fov_name column.")
         if df_folder_path != "":
             available_dfs = find_available_dfs_widget(df_folder_path, delimiter)
             if len(available_dfs) > 0:

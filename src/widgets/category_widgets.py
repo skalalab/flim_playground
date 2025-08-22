@@ -3,15 +3,18 @@ import os
 from pathlib import Path
 import pandas as pd
 from datetime import datetime
-from src.config import get_categorical_cols, get_unique_cell_id_col
+from src.config import get_categorical_cols, get_fov_name_col, get_unique_cell_id_col
 
 def map_categories_to_labels_widget(available_categories, combined_df, delimiter, df_folder_path):
-    unique_cell_id_col = get_unique_cell_id_col()
-    exp_cell_id = combined_df.iloc[0][unique_cell_id_col]
-    slots = exp_cell_id.split(delimiter)
+    fov_name_col = get_fov_name_col()
+    if fov_name_col not in combined_df.columns:
+        st.warning(f"The {fov_name_col} column is not found in the combined dataset. Please check the {fov_name_col} column.")
+        return None
+    exp_fov_name = combined_df.iloc[0][fov_name_col]
+    slots = exp_fov_name.split(delimiter)
     st.write("--------------------------------")
     st.write("Now your task is to map the categories to (combination of) slots.")
-    st.info(f"Example cell_id: {exp_cell_id} has slots: {slots}")
+    st.info(f"Example fov_name: {exp_fov_name} has slots: {slots}")
     
     chosen_categories = st.multiselect("Choose Categorical features to populate", available_categories)
     
@@ -49,18 +52,23 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
                     # Store the indices of selected slots instead of the actual values
                     selected_indices = [slots.index(slot) for slot in selected_slots]
                     cat_label_map[cat] = selected_indices
-    # preview the change by loading the first 5 rows or all rows if less than 5 of the combined df
-    # construct a new df with the selected categories and slots and cell_id from the first 5 rows
-    if len(combined_df) <= 5:
-        # use only the cell_id column
-        preview_df = combined_df[[unique_cell_id_col]].copy()
+    # preview the change by loading the first 5 unique values of fov_name_col or all unique values if less than 5
+    # construct a new df with the selected categories and slots and cell_id from the first 5 unique fov_name_col values
+    unique_fov_values = combined_df[fov_name_col].unique()
+    if len(unique_fov_values) <= 5:
+        # use all unique values
+        preview_fov_values = unique_fov_values
     else:
-        preview_df = combined_df[[unique_cell_id_col]].iloc[:5].copy()
+        # use only the first 5 unique values
+        preview_fov_values = unique_fov_values[:5]
+    
+    # filter the dataframe to only include one row for each selected unique fov_name_col value
+    preview_df = combined_df[combined_df[fov_name_col].isin(preview_fov_values)].drop_duplicates(subset=[fov_name_col])[[fov_name_col]].copy()
     
     # add the chosen categories to the preview df and assign values based on the selected_indices from that category and concatenate them using delimiter
     for cat in chosen_categories:
         if cat_label_map[cat]:  # Only if user has selected slots for this category
-            preview_df[cat] = preview_df[unique_cell_id_col].apply(lambda x: delimiter.join([x.split(delimiter)[i] for i in cat_label_map[cat]]))
+            preview_df[cat] = preview_df[fov_name_col].apply(lambda x: delimiter.join([x.split(delimiter)[i] for i in cat_label_map[cat]]))
         else:
             preview_df[cat] = ""  # Empty string if no slots selected
 
@@ -72,7 +80,7 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
         # use the cat_label_map to map the categories to the combined df
         for cat in chosen_categories:
             if cat_label_map[cat]:  # Only if user has selected slots for this category
-                combined_df[cat] = combined_df[unique_cell_id_col].apply(lambda x: delimiter.join([x.split(delimiter)[i] for i in cat_label_map[cat]]))
+                combined_df[cat] = combined_df[fov_name_col].apply(lambda x: delimiter.join([x.split(delimiter)[i] for i in cat_label_map[cat]]))
             else:
                 combined_df[cat] = ""  # Empty string if no slots selected
         # export the combined df
@@ -85,6 +93,7 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
 
 def find_available_dfs_widget(df_folder_path, delimiter):
     unique_cell_id_col = get_unique_cell_id_col()
+    fov_name_col = get_fov_name_col()
     # use glob to recursively find all the csv files in the folder that does end with _merged.csv and _metadata.csv
     if not os.path.isdir(df_folder_path):
         st.warning("Please provide a valid folder path.")
@@ -108,7 +117,7 @@ def find_available_dfs_widget(df_folder_path, delimiter):
         except Exception as e:
             st.warning(f"Failed to read the file {file}.")
             continue
-        if unique_cell_id_col in df.columns:
+        if unique_cell_id_col in df.columns and fov_name_col in df.columns:
             if df[unique_cell_id_col].duplicated().any():
                 st.warning(f"The {unique_cell_id_col} column in {file} has duplicate values. Please check the {unique_cell_id_col} column.")
                 continue
@@ -119,6 +128,7 @@ def find_available_dfs_widget(df_folder_path, delimiter):
             # check if all rows of this column can be split by the delimiter in equal number of parts
             # reject if not
             cell_ids = df[unique_cell_id_col].tolist()
+            fov_names = df[fov_name_col].unique()
             # check if every cell_id is not in existing_cell_ids
             for cell_id in cell_ids:
                 if cell_id in existing_cell_ids:
@@ -126,23 +136,23 @@ def find_available_dfs_widget(df_folder_path, delimiter):
                     continue
             existing_cell_ids.extend(cell_ids)
 
-            cell_ids_parts = [len(cell_id.split(delimiter)) for cell_id in cell_ids]
-            if cell_ids_parts == []:
+            fov_names_parts = [len(fov_name.split(delimiter)) for fov_name in fov_names]
+            if fov_names_parts == []:
                 st.warning(f"The {unique_cell_id_col} column in {file} is empty.")
                 continue
-            elif len(set(cell_ids_parts)) > 1:
+            elif len(set(fov_names_parts)) > 1:
                 # find the first row that has different number of parts
-                first_row_with_different_parts = cell_ids_parts.index(max(cell_ids_parts))
-                first_row_with_different_parts_cell_id = cell_ids[first_row_with_different_parts]
-                st.warning(f"The {unique_cell_id_col} column in {file} has different number of parts. For example, check cell_id: {first_row_with_different_parts_cell_id}.")
+                first_row_with_different_parts = fov_names_parts.index(max(fov_names_parts))
+                first_row_with_different_parts_fov_name = fov_names[first_row_with_different_parts]
+                st.warning(f"The {fov_name_col} column in {file} has different number of parts. For example, check fov_name: {first_row_with_different_parts_fov_name}.")
                 continue
-            elif cell_ids_parts[0] == 1:
-                st.warning(f"Playground failed to parse the {unique_cell_id_col} column based on the delimiter: {delimiter}. For example, check cell_id: {cell_ids[0]}.")
+            elif fov_names_parts[0] == 1:
+                st.warning(f"Playground failed to parse the {fov_name_col} column based on the delimiter: {delimiter}. For example, check fov_name: {fov_names[0]}.")
                 continue
             if prev_num_parts == 0:
-                prev_num_parts = cell_ids_parts[0]
-            elif prev_num_parts != cell_ids_parts[0]:
-                st.warning(f"The {unique_cell_id_col} column in {file} has different number of parts. For example, check cell_id: {cell_ids[0]}.")
+                prev_num_parts = fov_names_parts[0]
+            elif prev_num_parts != fov_names_parts[0]:
+                st.warning(f"The {fov_name_col} column in {file} has different number of parts. For example, check fov_name: {fov_names[0]}.")
                 continue
 
             available_csv_files.append(file)
