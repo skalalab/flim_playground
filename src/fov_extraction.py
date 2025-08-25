@@ -6,7 +6,7 @@ from src.decay_io import read_decay
 from src.fit import fit_curves
 from src.fit_helper import create_progress_callback, irf_shift
 import streamlit as st
-from phasorpy import phasor
+from phasorpy import phasor, lifetime
 from src.cell_texture import granularity, radial_distribution, mass_displacement
 
 def get_offset(decay_curve):
@@ -288,8 +288,8 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration
         _, g_raw_2nd, s_raw_2nd = phasor.phasor_from_signal(decay_curve, harmonic=2)
         
         if calibration_method == "Reference Dye":
-            G, S = phasor.phasor_calibrate(g_raw, s_raw, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=reference_dye_lifetime)
-            G_2nd, S_2nd = phasor.phasor_calibrate(g_raw_2nd, s_raw_2nd, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=reference_dye_lifetime, harmonic=2)
+            G, S = lifetime.phasor_calibrate(g_raw, s_raw, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=reference_dye_lifetime)
+            G_2nd, S_2nd = lifetime.phasor_calibrate(g_raw_2nd, s_raw_2nd, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=reference_dye_lifetime, harmonic=2)
         else:
             if shifted_irf is not None:
                 G, S = phasor.phasor_divide(g_raw, s_raw, g_irf, s_irf)

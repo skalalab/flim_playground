@@ -26,7 +26,7 @@ dependencies = [
     "numpy==2.2.4",
     "packaging==24.2",
     "pandas==2.2.3",
-    "phasorpy>=0.6",
+    "phasorpy>=0.7",
     "plotly==6.2.0",
     "psutil>=7.0.0",
     "ptufile>=2025.5.10",
