@@ -203,13 +203,8 @@ def choose_shift_widget(metadata_df, metadata_dict, channel_name, log_y=True):
     period = duration / time_bins
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
     display_shift_data_widget(results, channel_name, choose_shift_method, time_axis, period, metadata_dict[channel_name].get("num_components", 0), log_y)
-
-    if choose_shift_method == "fit free" or "fix_shift" not in metadata_dict or metadata_dict["fix_shift"]:
-        fix_shift = True
-    else:
-        fix_shift = False
     
-    if fix_shift:
+    if metadata_dict["fix_shift"]:
         median_shift = np.median(results["shift"])
         shift_data = st.number_input(f"{channel_name} Shift", value=median_shift, step=0.1, help=f"The shift for {channel_name} channel. The provided default value is the median of the shifts. You can change it to a specific value.")
     else:
@@ -217,7 +212,7 @@ def choose_shift_widget(metadata_df, metadata_dict, channel_name, log_y=True):
 
     return "", shift_data
 
-def fit_options_widget(input_type, metadata_dict):
+def fit_options_widget(metadata_dict):
     """
     Fit options widget for Streamlit app.
     """
@@ -243,17 +238,14 @@ def fit_options_widget(input_type, metadata_dict):
             help="Hybrid: use global fit to get a good initial guess, then use local fit to refine the fit. Global: use global fit to get the best fit. Local: use local fit to get the best fit."
         )
     
-    # Add fix_shift for ROI Summing Fit
-    fix_shift = None
-    if input_type == "Decay (3/4D)":
-        with cols1[2]:
-            fix_shift = st.checkbox(
-                "Fix the Shift", 
-                value=True, 
-                key="fix_shift",
-                help="If True, the shift will be fixed for all images. If False, the shift will be estimated for each image."
-            )
-    
+    with cols1[2]:
+        fix_shift = st.checkbox(
+            "Fix the Shift", 
+            value=True, 
+            key="fix_shift",
+            help="If True, the shift will be fixed for all images. If False, the shift will be estimated for each image."
+        )
+
     # Handle channel-specific number of components
     channel_components = {}
     channels_fit = metadata_dict["Lifetime fit"]
@@ -285,11 +277,7 @@ def fit_options_widget(input_type, metadata_dict):
     # Update metadata_dict with results
     metadata_dict["fitting_algo"] = fitting_algo
     metadata_dict["fitting_mode"] = fitting_mode
-    if input_type == "Decay (3/4D)":
-        metadata_dict["fix_shift"] = fix_shift
-    else: 
-        # for other input types, fix the shift always
-        metadata_dict["fix_shift"] = True
+    metadata_dict["fix_shift"] = fix_shift
     
     # Update channel-specific components
     for channel_name in channels_fit:

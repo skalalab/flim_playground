@@ -113,7 +113,7 @@ with col1:
                 if "Lifetime fit" in metadata_dict and len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
                     if st.session_state["choosing_shift"]:
                         st.info("Please specify the following fitting options.")
-                        metadata_dict= fit_options_widget(decay_input_type, metadata_dict)
+                        metadata_dict= fit_options_widget(metadata_dict)
                 
                 shifts_are_present = all(f"{ch}_shift" in metadata_df.columns for ch in metadata_dict["channels_shift"])
                 if shift_needed and not shifts_are_present:
