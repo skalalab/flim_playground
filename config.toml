@@ -20,7 +20,7 @@ t3 = "_t3.asc"
 laser_rate = 0.8
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 file_types = [ "Decay", "IRF", "Mask",]
-fit_free_calibration = "Reference Dye"
+fit_free_calibration = "IRF"
 reference_dye_file = "test.tif"
 reference_dye_lifetime = 4.2
 
@@ -69,7 +69,7 @@ num_components = 2
 
 [ch2."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture", "Lifetime fit free",]
 
 [ch2."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]

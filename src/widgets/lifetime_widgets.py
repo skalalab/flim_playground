@@ -3,11 +3,10 @@ import math
 import pandas as pd
 import numpy as np
 from plotly import graph_objects as go
-from src import fit
 from src.choose_shift import choose_shift_fit_free, choose_shift_fit
 from src.fit_helper import forward_pass, irf_shift, mle_likelihood, chi_square
 
-def display_shift_data_widget(results, channel_name, choose_shift_method, time_axis=None, period=None, num_components=None, log_y=False):
+def display_shift_data_widget(results, channel_name, choose_shift_method, time_axis=None, period=None, num_components=None, log_y=True):
     
     # combines image_name and shift from results into a df
     # kflow decay_id is the cell_name, otherwise it is the image_name
@@ -51,7 +50,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
             # prepare the data
             try: 
                 decay_curves = results["decay_curves"]
-                original_decay_curves = results["original_decay_curves"]
+                #original_decay_curves = results["original_decay_curves"]
                 shift_data = results["shift"]
                 amp1 = results["amp1"]
                 t1 = results["t1"]
@@ -84,19 +83,18 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
             except:
                 return "Error: Time axis not found for channel: " + channel_name
             
-            # plot the original decay curve
-            fig2.add_trace(go.Scatter(
-                x=time_axis,
-                y=original_decay_curves[idx],
-                mode='markers',
-                name='Original Decay Curve',
-                line=dict(color='lightblue'),
-                marker=dict(size=4),
-                customdata=bin_numbers,
-                hovertemplate="bin #: %{customdata:.0f}<br>Intensity: %{y:.0f}<extra></extra>"
-            ))
+            # # plot the original decay curve
+            # fig2.add_trace(go.Scatter(
+            #     x=time_axis,
+            #     y=original_decay_curves[idx],
+            #     mode='markers',
+            #     name='Original Decay Curve',
+            #     line=dict(color='lightblue'),
+            #     marker=dict(size=4),
+            #     customdata=bin_numbers,
+            #     hovertemplate="bin #: %{customdata:.0f}<br>Intensity: %{y:.0f}<extra></extra>"
+            # ))
 
-            
             fig2.add_trace(go.Scatter(
                 x=time_axis,
                 y=decay_curves[idx],
@@ -105,7 +103,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
                 line=dict(color='orange'),
                 marker=dict(size=4),
                 customdata=bin_numbers,
-                hoverinfo='skip'
+                hovertemplate="bin #: %{customdata:.0f}<br>Intensity: %{y:.0f}<extra></extra>"
             ))
 
             amp1_data, t1_data, offset_data = amp1[idx], t1[idx], offset[idx]
@@ -157,7 +155,6 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
                 annotation_text += f"<b>t3: {t3_data * 1000:.2f} ns</b><br>"
             annotation_text += f"<b>MLE: {mle:.2f}</b><br>"
             annotation_text += f"<b>χ²: {chiq:.2f}</b>"
-
             fig2.add_annotation(
                     text=annotation_text,
                     xref="paper", yref="paper",
@@ -173,7 +170,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
             fig2.update_layout(
                 title=f"Decay Curve and Fitted Line for {clicked_shift_identifier}",
                 xaxis_title="Time (ns)",
-                yaxis_title="Intensity (log)",
+                yaxis_title="Intensity (log)" if log_y else "Intensity",
                 yaxis_type="log" if log_y else "linear",
                 showlegend=True,
             )
@@ -215,7 +212,9 @@ def choose_shift_widget(metadata_df, metadata_dict, channel_name, log_y=True):
     if fix_shift:
         median_shift = np.median(results["shift"])
         shift_data = st.number_input(f"{channel_name} Shift", value=median_shift, step=0.1, help=f"The shift for {channel_name} channel. The provided default value is the median of the shifts. You can change it to a specific value.")
-    
+    else:
+        shift_data = results["shift"]
+
     return "", shift_data
 
 def fit_options_widget(input_type, metadata_dict):

@@ -44,7 +44,7 @@ def choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_a
         return error_msg, None
     shift_guess = guess_shift(irf, decay_curves.values())
     # Create a separate copy for original display (also floored for consistent log plotting)
-    original_decays = [decay.copy() for decay in decay_curves.values()]
+    #original_decays = [decay.copy() for decay in decay_curves.values()]
   #   sample_decays = _floor_decay_curves(list(decay_curves.values()))
     sample_decays = list(decay_curves.values())
     # get the shift progress bar
@@ -54,7 +54,7 @@ def choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_a
     results = fit_curves(duration, time_bins, sample_decays, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, start=start, end=end, _progress_callback=shift_progress_callback)
     shift_progress.empty()  # Remove progress bar when done
     results["decay_curves"] = sample_decays
-    results["original_decay_curves"] = original_decays
+    #results["original_decay_curves"] = original_decays
     results["decay_id"] = list(decay_curves.keys())
     results["irf"] = irf
     return "", results
