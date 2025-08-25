@@ -13,9 +13,7 @@ def irf_shift(irf, shift):
     return irf_shifted_downsampled
 
 def forward_pass(amp1, t1, offset, shifted_irf, time_axis, amp2=None, t2=None, amp3=None, t3=None):
-    # Create the forward model
-    # t1 /= 1000  # Convert to ms
-    # t2 /= 1000  # Convert to ms
+    #t_i is in ns
     if amp2 is not None and amp3 is not None and t2 is not None and t3 is not None:
         decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2) +  amp3 * np.exp(-time_axis / t3)
     elif amp2 is not None and t2 is not None:
@@ -37,7 +35,6 @@ def chi_square(fitted, data, start=0, end=-1):
     residuals = data - fitted
     residuals[:start] = 0
     residuals[end:] = 0
-    chi2 = np.sum((residuals / fitted[start:end])**2)
     non_zero_indices = data > 0
     
     # Use data values as denominator for chi-square calculation
@@ -67,7 +64,7 @@ def objective(params, data, irf, time_axis, start=0, end=-1, fitting_algo="MLE")
     # Poisson likelihood
     if fitting_algo == "MLE": 
         return mle_likelihood(fitted, data, start, end)
-    elif fitting_algo == "WLS":
+    elif fitting_algo == "LS":
         residuals = data[start:end] - fitted[start:end]
         return residuals
 

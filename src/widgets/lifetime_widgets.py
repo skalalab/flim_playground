@@ -219,15 +219,15 @@ def fit_options_widget(metadata_dict):
     # Create columns for layout
     cols_per_row = 3
     
-    # First row - algorithm and fitting mode
+    # First row - metric and fitting mode
     cols1 = st.columns(cols_per_row)
     with cols1[0]:
         fitting_algo = st.selectbox(
-            "Algorithm", 
-            ["MLE", "WLS"], 
+            "Metric", 
+            ["MLE", "LS"], 
             index=0, 
-            key="fitting_algo",
-            help="MLE: Maximum Likelihood Estimation. WLS: Weighted Least Squares."
+            key="fitting_metric",
+            help="MLE: Maximum Likelihood Estimation. LS: Least Squares."
         )
     with cols1[1]:
         fitting_mode = st.selectbox(

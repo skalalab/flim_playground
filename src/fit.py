@@ -77,7 +77,7 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
                     result = lmfit_minimize(objective, result_global.params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=mle_optimizer, options=mle_fit_options)
                 else: # global
                     result = result_global
-            elif fitting_algo == "WLS":
+            elif fitting_algo == "LS":
                 if fitting_mode == "Local":
                     result = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=wls_optimizer, **wls_fit_options)
                 elif fitting_mode == "Hybrid":
