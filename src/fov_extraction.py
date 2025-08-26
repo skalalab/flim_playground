@@ -294,9 +294,11 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration
             if shifted_irf is not None:
                 G, S = phasor.phasor_divide(g_raw, s_raw, g_irf, s_irf)
                 G_2nd, S_2nd = phasor.phasor_divide(g_raw_2nd, s_raw_2nd, g_irf_2nd, s_irf_2nd)
+            else:
+                return f"Error: Shifted IRF is not provided for {channel_name}", pd.DataFrame()
 
         w = 2*np.pi*laser_rate
-        phi = np.arctan2(G, S) 
+        phi = np.arctan2(S, G) 
         m = np.sqrt(G**2 + S**2)
         tau_phase = 1/w * np.tan(phi)
         tau_m = 1/w * np.sqrt(1/m**2 - 1)
@@ -304,7 +306,6 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}S(1st)"] = S
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}Tau_phase"] = tau_phase
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}Tau_m"] = tau_m
-        # 2nd harmonic
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}G(2nd)"] = G_2nd
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}S(2nd)"] = S_2nd
 
