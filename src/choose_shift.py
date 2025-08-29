@@ -31,7 +31,7 @@ def choose_shift_fit_free(metadata_df, time_bins, input_type, channel_name):
         return error_msg, None
 
     shift_guess = guess_shift(irf, decay_curves.values(), fit_free=True)
-    results = {"shift": shift_guess, "decay_id": decay_curves.keys()}
+    results = {"shift": shift_guess, "decay_id": list(decay_curves.keys())}
     return "", results
 
 @st.cache_data

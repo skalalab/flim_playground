@@ -64,7 +64,7 @@ selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensi
 num_components = 2
 
 [ch1."Decay (2D)"]
-selected_feature_extractors = [ "Lifetime fit free",]
+selected_feature_extractors = [ "Lifetime fit free", "Lifetime fit",]
 num_components = 2
 
 [ch2."Decay (3/4D)"]
@@ -76,7 +76,7 @@ selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensi
 num_components = 2
 
 [ch2."Decay (2D)"]
-selected_feature_extractors = [ "Lifetime fit free",]
+selected_feature_extractors = [ "Lifetime fit free", "Lifetime fit",]
 num_components = 2
 
 [ch3."Decay (3/4D)"]

@@ -206,7 +206,6 @@ def choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name, 
     
     if metadata_dict["fix_shift"]:
         median_shift = np.median(results["shift"])
-        print(median_shift)
         shift_data = st.number_input(f"{channel_name} Shift", value=median_shift, step=0.1, help=f"The shift for {channel_name} channel. The provided default value is the median of the shifts. You can change it to a specific value.")
     else:
         if "2D" in input_type:
@@ -217,7 +216,6 @@ def choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name, 
             fov_shifts = []
             for fov in fovs:
                 shift_fov = np.median([shifts[decay_ids.index(decay_id)] for decay_id in decay_ids if decay_id.startswith(fov)])
-                print(shift_fov)
                 fov_shifts.append(shift_fov)
             shift_data = fov_shifts
         else:

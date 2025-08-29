@@ -90,10 +90,11 @@ with col1:
                 folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the raw data that is needed for the selected data extraction type." , key="fov_metadata_folder_path")
     elif "Numeric Feature Extraction" in selected_step:
         metadata_df = None
-        if st.session_state["last_extracted_metadata"] is not None:
-            metadata_df = st.session_state["last_extracted_metadata"]
+        if st.session_state["last_extracted_metadata_filepath"] is not None:
             file_path = st.session_state["last_extracted_metadata_filepath"]
             st.info(f"Using the latest extracted metadata file: {file_path}. Refresh the page to use a different file.")
+        if st.session_state["last_extracted_metadata"] is not None:
+            metadata_df = st.session_state["last_extracted_metadata"]
         else: 
             uploaded_file = st.file_uploader("Upload the field of view metadata csv", type=["csv"], help="The metadata file should be from the FOV metadata extraction step.")
             if uploaded_file is not None:
@@ -109,14 +110,12 @@ with col1:
                 st.success(f"✅ Features to be extracted confirmed.")
                 decay_input_type = metadata_dict["decay_input_type"]
                 shift_needed = len(metadata_dict["channels_shift"]) > 0
-                # if there are channels to be fitted, show the fitting options: spcimage is already fitted
-                if "Lifetime fit" in metadata_dict and len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
-                    if st.session_state["choosing_shift"]:
-                        st.info("Please specify the following fitting options.")
-                        metadata_dict= fit_options_widget(metadata_dict)
-                
                 shifts_are_present = all(f"{ch}_shift" in metadata_df.columns for ch in metadata_dict["channels_shift"])
                 if shift_needed and not shifts_are_present:
+                        # if there are channels to be fitted, show the fitting options: spcimage is already fitted
+                    if "Lifetime fit" in metadata_dict and len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
+                        st.info("Please specify the following fitting options.")
+                        metadata_dict= fit_options_widget(metadata_dict)
                     col1_1, col1_2 = st.columns(2)
                     with col1_1:
                         metadata_dict["fix_shift"] = st.checkbox(
@@ -131,9 +130,19 @@ with col1:
                             st.session_state["shift_ready"] = False
                             st.rerun()
                 else:
+                    if "fitting_mode" in metadata_df.columns: 
+                        metadata_df["fitting_mode"] = st.selectbox(
+                            "Fitting Mode", 
+                            ["Hybrid", "Global", "Local"], 
+                            index=0, 
+                            key="fitting_mode_update",
+                            help="Hybrid: use global fit to get a good initial guess, then use local fit to refine the fit. Global: use global fit to get the best fit. Local: use local fit to get the best fit."
+                        )
                     col1_1, col1_2 = st.columns(2)
                     with col1_1:
                         if st.button("Confirm and Start Analysis", use_container_width=True):
+                            # Update metadata_df in session state
+                            st.session_state["last_extracted_metadata"] = metadata_df
                             st.session_state["choosing_shift"] = False
                             st.session_state["shift_ready"] = True
                             st.rerun()
