@@ -1,8 +1,8 @@
 num_channels = 2
 unique_cell_id_col = "cell_id"
-fov_name_col = "image_name"
+fov_name_col = "exp_name"
 flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
-flim_decay_input_type = "Decay (3/4D)"
+flim_decay_input_type = "Decay (2D)"
 all_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
 imaging_modality = "FLIM"
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
@@ -25,12 +25,12 @@ reference_dye_file = "test.tif"
 reference_dye_lifetime = 4.2
 
 [ch1]
-input_type = "Decay (3/4D)"
+input_type = "Decay (2D)"
 channel_name = "nadh"
 imaging_modality = "FLIM"
 
 [ch2]
-input_type = "Decay (3/4D)"
+input_type = "Decay (2D)"
 channel_name = "fad"
 imaging_modality = "FLIM"
 
@@ -76,7 +76,7 @@ selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensi
 num_components = 2
 
 [ch2."Decay (2D)"]
-selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
+selected_feature_extractors = [ "Lifetime fit free",]
 num_components = 2
 
 [ch3."Decay (3/4D)"]

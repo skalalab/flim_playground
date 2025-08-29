@@ -176,7 +176,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
             )
             st.plotly_chart(fig2, use_container_width=True)
 
-def choose_shift_widget(metadata_df, metadata_dict, channel_name, log_y=True):
+def choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name, log_y=True):
     error_msg = ""
     duration = metadata_dict["duration"]
     time_bins = metadata_dict["time_bins"]
@@ -206,9 +206,22 @@ def choose_shift_widget(metadata_df, metadata_dict, channel_name, log_y=True):
     
     if metadata_dict["fix_shift"]:
         median_shift = np.median(results["shift"])
+        print(median_shift)
         shift_data = st.number_input(f"{channel_name} Shift", value=median_shift, step=0.1, help=f"The shift for {channel_name} channel. The provided default value is the median of the shifts. You can change it to a specific value.")
     else:
-        shift_data = results["shift"]
+        if "2D" in input_type:
+            # get one shift value for each fov 
+            fovs = metadata_df[fov_name_col].unique()
+            decay_ids = results["decay_id"]
+            shifts = results["shift"]
+            fov_shifts = []
+            for fov in fovs:
+                shift_fov = np.median([shifts[decay_ids.index(decay_id)] for decay_id in decay_ids if decay_id.startswith(fov)])
+                print(shift_fov)
+                fov_shifts.append(shift_fov)
+            shift_data = fov_shifts
+        else:
+            shift_data = results["shift"]
 
     return "", shift_data
 
@@ -217,7 +230,7 @@ def fit_options_widget(metadata_dict):
     Fit options widget for Streamlit app.
     """
     # Create columns for layout
-    cols_per_row = 3
+    cols_per_row = 2
     
     # First row - metric and fitting mode
     cols1 = st.columns(cols_per_row)
@@ -238,14 +251,7 @@ def fit_options_widget(metadata_dict):
             help="Hybrid: use global fit to get a good initial guess, then use local fit to refine the fit. Global: use global fit to get the best fit. Local: use local fit to get the best fit."
         )
     
-    with cols1[2]:
-        fix_shift = st.checkbox(
-            "Fix the Shift", 
-            value=True, 
-            key="fix_shift",
-            help="If True, the shift will be fixed for all images. If False, the shift will be estimated for each image."
-        )
-
+   
     # Handle channel-specific number of components
     channel_components = {}
     channels_fit = metadata_dict["Lifetime fit"]
@@ -277,8 +283,7 @@ def fit_options_widget(metadata_dict):
     # Update metadata_dict with results
     metadata_dict["fitting_algo"] = fitting_algo
     metadata_dict["fitting_mode"] = fitting_mode
-    metadata_dict["fix_shift"] = fix_shift
-    
+   
     # Update channel-specific components
     for channel_name in channels_fit:
         metadata_dict[channel_name]["num_components"] = channel_components[channel_name]

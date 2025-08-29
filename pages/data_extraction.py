@@ -117,10 +117,19 @@ with col1:
                 
                 shifts_are_present = all(f"{ch}_shift" in metadata_df.columns for ch in metadata_dict["channels_shift"])
                 if shift_needed and not shifts_are_present:
-                    if st.button("Start Finding Shifts"):
-                        st.session_state["choosing_shift"] = True
-                        st.session_state["shift_ready"] = False
-                        st.rerun()
+                    col1_1, col1_2 = st.columns(2)
+                    with col1_1:
+                        metadata_dict["fix_shift"] = st.checkbox(
+                            "Fix the Shift", 
+                            value=True, 
+                            key="fix_shift_checkbox",
+                            help="If True, the shift will be fixed for all images. If False, the shift will be estimated for each image."
+                        )
+                    with col1_2:
+                        if st.button("Start Finding Shifts"):
+                            st.session_state["choosing_shift"] = True
+                            st.session_state["shift_ready"] = False
+                            st.rerun()
                 else:
                     col1_1, col1_2 = st.columns(2)
                     with col1_1:
@@ -297,7 +306,7 @@ with col2:
     elif "Numeric Feature Extraction" in selected_step and st.session_state["choosing_shift"] and metadata_df is not None:
         channel_shifts = {}
         for channel_name in metadata_dict["channels_shift"]:
-            error_msg, shifts = choose_shift_widget(metadata_df, metadata_dict, channel_name=channel_name)
+            error_msg, shifts = choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name=channel_name)
             if error_msg != "":
                 st.error(error_msg)
             else:
