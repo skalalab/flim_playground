@@ -303,7 +303,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
             scaleanchor="y"
         ),
         yaxis=dict(
-            range=[0.15, 0.55],
+            range=[-0.05, 0.55],
             title='s',
             showgrid=False,
             zeroline=False,
@@ -331,6 +331,62 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         hoverinfo='skip',# Hide the hover info for this trace
         showlegend=False 
     ))
+
+    # Add S axis line (vertical line from (0,0) to (0,0.5))
+    fig.add_trace(go.Scatter(
+        x=[0, 0],
+        y=[0, 0.5],
+        mode='lines',
+        line=dict(color='gray', width=2),
+        name='S Axis',
+        hoverinfo='skip',
+        showlegend=False
+    ))
+
+    # Add G axis line (horizontal line from (0,0) to (1,0))
+    fig.add_trace(go.Scatter(
+        x=[0, 1],
+        y=[0, 0],
+        mode='lines',
+        line=dict(color='gray', width=2),
+        name='G Axis',
+        hoverinfo='skip',
+        showlegend=False
+    ))
+
+    # Add axis annotations
+    # S axis annotation at 0.5
+    fig.add_annotation(
+        x=-0.02,
+        y=0.5,
+        text="0.5",
+        showarrow=False,
+        font=dict(size=12, color='gray'),
+        xanchor='right',
+        yanchor='middle'
+    )
+    
+    # G axis annotation at 0
+    fig.add_annotation(
+        x=0,
+        y=-0.02,
+        text="0",
+        showarrow=False,
+        font=dict(size=12, color='gray'),
+        xanchor='center',
+        yanchor='top'
+    )
+    
+    # G axis annotation at 1
+    fig.add_annotation(
+        x=1,
+        y=-0.02,
+        text="1",
+        showarrow=False,
+        font=dict(size=12, color='gray'),
+        xanchor='center',
+        yanchor='top'
+    )
 
     # Calculate and plot specific points
     wt = 2 * np.pi * f * np.array([0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=float)

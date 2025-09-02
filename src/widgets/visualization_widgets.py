@@ -159,15 +159,7 @@ def phasor_params_widget(feature_groups_dict):
     else:
         selected_channel = None
         st.error("No available channels found for phasor plot")
-    selected_harmonic = None
-    for channel in channel_harmonics.keys():
-        if channel_harmonics[channel] == []:
-            st.error(f"No available harmonics found for {channel}")     
-        elif len(channel_harmonics[channel]) == 1:
-            selected_harmonic = channel_harmonics[channel][0]
-        else:
-            selected_harmonic = st.selectbox(f"Select a harmonic for {channel}", channel_harmonics[channel])
-    f = None
+    selected_harmonic = st.selectbox(f"Select a harmonic for {selected_channel}", channel_harmonics[selected_channel])
     if selected_channel is not None and selected_harmonic is not None:
         if selected_harmonic == 1:
             harmonic_str = "1st"    

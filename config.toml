@@ -41,7 +41,7 @@ file_types = [ "Decay", "IRF", "Mask", "a1",]
 fit_free_calibration = "IRF"
 
 ["Decay (2D)"]
-laser_rate = 0.5
+laser_rate = 0.05
 duration = 20.0
 time_bins = 1024
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
@@ -57,14 +57,14 @@ channel_name = "cd8"
 
 [ch1."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Intensity morphology",]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
 [ch1."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
 num_components = 2
 
 [ch1."Decay (2D)"]
-selected_feature_extractors = [ "Lifetime fit free", "Lifetime fit",]
+selected_feature_extractors = [ "Lifetime fit free",]
 num_components = 2
 
 [ch2."Decay (3/4D)"]
@@ -76,7 +76,7 @@ selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensi
 num_components = 2
 
 [ch2."Decay (2D)"]
-selected_feature_extractors = [ "Lifetime fit free", "Lifetime fit",]
+selected_feature_extractors = [ "Lifetime fit free",]
 num_components = 2
 
 [ch3."Decay (3/4D)"]
