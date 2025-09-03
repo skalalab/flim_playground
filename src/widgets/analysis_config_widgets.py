@@ -320,11 +320,13 @@ def get_categorical_cols_analysis(use_data_extraction=True):
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
     categorical_cols = cfg.get("categorical_cols", [])
 
-    ## platform specific categorical columns (used by 1d GMM and 2d GMM)
+    ## platform specific categorical columns (used by 1d GMM and 2d GMM and K-Means clustering)
     if "GMM_group" not in categorical_cols:
         categorical_cols.append("GMM_group")
     if "2D_GMM_group" not in categorical_cols:
         categorical_cols.append("2D_GMM_group")
+    if "k_means_cluster" not in categorical_cols:
+        categorical_cols.append("k_means_cluster")
     return categorical_cols
 def get_all_feature_groups():
     cfg = load_config(_ANALYSIS_CONFIG_PATH)

@@ -150,7 +150,8 @@ with col2:
                         st.write("No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Phasor Plot":
                     if selected_channel is not None and selected_harmonic is not None and f is not None:
-                        fig = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, f=f, harmonic=selected_harmonic, colormap=st.session_state.plot_colormap)
+                        fig, kmeans_df = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, f=f, harmonic=selected_harmonic, colormap=st.session_state.plot_colormap)
+                        data_export_ready = True
                     else:
                         st.write("Your data does not contain the required features for phasor plot.")
                                    
@@ -196,6 +197,8 @@ with col2:
                         st.download_button(label="Download 2D GMM data", data=gmm_df.to_csv(index=False), file_name="2D_gmm_data.csv")
                     elif method == "Feature Histogram" and "GMM_group" in gmm_df.columns:
                         st.download_button(label="Download GMM Grouped Data", data=gmm_df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
+                    elif method == "Phasor Plot" and "k_means_cluster" in kmeans_df.columns:
+                        st.download_button(label="Download K-Means Clustered Data", data=kmeans_df.to_csv(index=False), file_name="kmeans_clustered_data.csv", mime="text/csv", key="kmeans_download")
                 # 2. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots 
                 st.subheader("📊 Plot Styling")
                 # Get current values from session state as defaults for the widgets

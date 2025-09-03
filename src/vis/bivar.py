@@ -1,4 +1,4 @@
-from .helpers import _prepare_group_data, _find_best_gmm, get_point_visual_mappings, add_point_legend_traces
+from .helpers import _find_best_gmm, get_point_visual_mappings, add_point_legend_traces
 import plotly.graph_objects as go
 import numpy as np
 from scipy.stats import gaussian_kde, pearsonr, chi2
@@ -6,6 +6,9 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 import streamlit as st
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from scipy.spatial import ConvexHull
 
 def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, plotly_axis_params):
     """Helper function to plot marginal densities."""
@@ -74,6 +77,122 @@ def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, 
                 points=False # Hide points for a cleaner look
             ))
 
+def _create_phasor_background(fig, f=0.08):
+    """
+    Helper function to create the phasor semicircle, axes, annotations, and lifetime markers.
+    Adds these elements to the provided figure.
+    """
+    # Plot the curve
+    u = np.arange(0, 100, 0.01)
+    x_curve = 1 / (1 + u**2)
+    y_curve = u / (1 + u**2)
+
+    fig.add_trace(go.Scatter(
+        x=x_curve,
+        y=y_curve,
+        mode='lines',
+        line=dict(color='black'),
+        name='Curve', 
+        hoverinfo='skip',# Hide the hover info for this trace
+        showlegend=False 
+    ))
+
+    # Add S axis line (vertical line from (0,0) to (0,0.5))
+    fig.add_trace(go.Scatter(
+        x=[0, 0],
+        y=[0, 0.5],
+        mode='lines',
+        line=dict(color='gray', width=2),
+        name='S Axis',
+        hoverinfo='skip',
+        showlegend=False
+    ))
+
+    # Add G axis line (horizontal line from (0,0) to (1,0))
+    fig.add_trace(go.Scatter(
+        x=[0, 1],
+        y=[0, 0],
+        mode='lines',
+        line=dict(color='gray', width=2),
+        name='G Axis',
+        hoverinfo='skip',
+        showlegend=False
+    ))
+
+    # Add axis annotations
+    # S axis annotation at 0.5
+    fig.add_annotation(
+        x=-0.02,
+        y=0.5,
+        text="0.5",
+        showarrow=False,
+        font=dict(size=12, color='gray'),
+        xanchor='right',
+        yanchor='middle'
+    )
+    
+    # G axis annotation at 0
+    fig.add_annotation(
+        x=0,
+        y=-0.02,
+        text="0",
+        showarrow=False,
+        font=dict(size=12, color='gray'),
+        xanchor='center',
+        yanchor='top'
+    )
+    
+    # G axis annotation at 1
+    fig.add_annotation(
+        x=1,
+        y=-0.02,
+        text="1",
+        showarrow=False,
+        font=dict(size=12, color='gray'),
+        xanchor='center',
+        yanchor='top'
+    )
+
+    # Calculate and plot specific points
+    wt = 2 * np.pi * f * np.array([0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=float)
+    x_points = 1 / (1 + wt**2)
+    y_points = wt / (1 + wt**2)
+
+    fig.add_trace(go.Scatter(
+        x=x_points,
+        y=y_points,
+        mode='markers',
+        marker=dict(size=8, color='black'),
+        name='Lifetime Markers', 
+        hoverinfo='skip', # Hide the hover info for this trace,
+        showlegend=False
+    ))
+
+    # Annotate the points
+    lifetime_labels = ['0.5 ns', '1 ns', '2 ns', '3 ns', '4 ns', '5 ns']
+    labels = len(lifetime_labels)
+    label_coords = list(zip(x_points - 0.02, y_points + 0.03))[:labels]
+
+    for i in range(labels):
+        fig.add_annotation(
+            x=label_coords[i][0],
+            y=label_coords[i][1],
+            text=lifetime_labels[i],
+            showarrow=False,
+            font=dict(size=12),
+            xanchor='left'
+        )
+    
+    # Add text inside the plot
+    fig.add_annotation(
+        x=0.8,
+        y=0.5,
+        text=f"f = {f * 1000} MHz",
+        showarrow=False,
+        font=dict(size=15, color='black'),
+        xanchor='left'
+    )
+
 def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i):
     """Helper function to plot GMM ellipses."""
    # Calculate eigenvalues and eigenvectors for ellipse orientation
@@ -105,7 +224,6 @@ def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i):
         showlegend=False,  # Don't clutter legend with ellipses
         hoverinfo='skip'   # Don't show hover for ellipse lines
     ))
-
 
 def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x, selected_y, color_by=[], shape_by=None, opacity_by=None, marginal_plot_type='gaussian fit', colormap="tab10"):
     GROUP_COL_NAME = 'unique_color_group'
@@ -280,17 +398,104 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     table_md = "\n".join(table_md)
     return fig, table_md, df
 
+def _plot_convex_hull(
+    fig,
+    df,
+    g_col,
+    s_col,
+    label_col="k_means_cluster",
+    polygon_color="#1f77b4",
+    centers_raw=None,
+    line_width=2
+):
+    """
+    Overlay per-cluster convex hull polygons (same color) and black × centroids
+    onto an existing Plotly figure.
+
+    Parameters
+    ----------
+    fig : go.Figure
+        Existing figure that already has your (G,S) scatter.
+    df : DataFrame
+        Must contain columns g_col, s_col, and label_col (int cluster labels).
+    g_col, s_col : str
+        Column names for raw G and S used in your scatter.
+    label_col : str
+        Column with integer labels from k-means (e.g., "k_means_cluster").
+    polygon_color : str
+        Single color for all polygons (hex like "#1f77b4" or a named color).
+    centers_raw : array-like, shape (k,2), optional
+        Centroids in RAW (G,S) units (e.g., `scaler.inverse_transform(kmeans.cluster_centers_)`).
+        If None, centroid positions are computed as the mean (G,S) per cluster.
+    line_width : int
+        Polygon outline width.
+    """
+    # 1) Draw a convex hull polygon for each cluster
+    unique_clusters = sorted([c for c in df[label_col].unique() if c >= 0])
+
+    for c in unique_clusters:
+        sub = df.loc[df[label_col] == c, [g_col, s_col]].dropna()
+        if sub.empty:
+            continue
+
+        pts = sub.to_numpy()
+        # Use unique points to avoid Qhull failures on duplicates
+        uniq = np.unique(pts, axis=0)
+
+        if uniq.shape[0] >= 3:
+            hull = ConvexHull(uniq)
+            poly = uniq[hull.vertices]
+        else:
+            # Fallback: small circle around the mean if <3 unique points
+            center = uniq.mean(axis=0)
+            r = max(np.linalg.norm(uniq - center, axis=1).max(initial=0.0), 0.01)
+            theta = np.linspace(0, 2*np.pi, 80)
+            poly = np.c_[center[0] + 1.2*r*np.cos(theta),
+                         center[1] + 1.2*r*np.sin(theta)]
+
+        fig.add_trace(go.Scatter(
+            x=np.r_[poly[:, 0], poly[0, 0]],
+            y=np.r_[poly[:, 1], poly[0, 1]],
+            mode="lines",
+            line=dict(color=polygon_color, width=line_width),
+            name=f"Cluster {int(c)} boundary",
+            showlegend=False,
+        ))
+
+    # 2) Centroids as black crosses
+    if centers_raw is None:
+        centers_raw = (df.groupby(label_col)[[g_col, s_col]]
+                       .mean().reindex(unique_clusters).to_numpy())
+
+    fig.add_trace(go.Scatter(
+        x=centers_raw[:, 0],
+        y=centers_raw[:, 1],
+        mode="markers",
+        marker=dict(symbol="x", size=14, color="black",
+                    line=dict(width=2, color="black")),
+        hovertemplate="<b>Centroid</b><br>G: %{x:.2f}<br>S: %{y:.2f}<extra></extra>",
+        name="Centroids"
+    ))
+    return fig
 
 def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, f=0.08, harmonic=1, colormap="tab10"):
 
     # Create the figure
     fig = go.Figure()
 
-    # Consolidate all layout settings into one call
+    feature_prefix = "Lifetime fit free_" + selected_channel + ": "
     if harmonic == 1:
         harmonic_str = "1st"
+        g_feature = f"{feature_prefix}G(1st)"
+        s_feature = f"{feature_prefix}S(1st)"
     elif harmonic == 2:
         harmonic_str = "2nd"
+        g_feature = f"{feature_prefix}G(2nd)"
+        s_feature = f"{feature_prefix}S(2nd)"
+    
+    # drop rows with NaN values in the g_feature and s_feature columns
+    df = df[df[g_feature].notna() & df[s_feature].notna()]
+
     fig.update_layout(
         title=f'{selected_channel} {harmonic_str} Harmonic Phasor',
         xaxis=dict(
@@ -317,195 +522,84 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         hovermode='closest'
     )
 
-    # Plot the curve
-    u = np.arange(0, 100, 0.01)
-    x_curve = 1 / (1 + u**2)
-    y_curve = u / (1 + u**2)
-
-    fig.add_trace(go.Scatter(
-        x=x_curve,
-        y=y_curve,
-        mode='lines',
-        line=dict(color='black'),
-        name='Curve', 
-        hoverinfo='skip',# Hide the hover info for this trace
-        showlegend=False 
-    ))
-
-    # Add S axis line (vertical line from (0,0) to (0,0.5))
-    fig.add_trace(go.Scatter(
-        x=[0, 0],
-        y=[0, 0.5],
-        mode='lines',
-        line=dict(color='gray', width=2),
-        name='S Axis',
-        hoverinfo='skip',
-        showlegend=False
-    ))
-
-    # Add G axis line (horizontal line from (0,0) to (1,0))
-    fig.add_trace(go.Scatter(
-        x=[0, 1],
-        y=[0, 0],
-        mode='lines',
-        line=dict(color='gray', width=2),
-        name='G Axis',
-        hoverinfo='skip',
-        showlegend=False
-    ))
-
-    # Add axis annotations
-    # S axis annotation at 0.5
-    fig.add_annotation(
-        x=-0.02,
-        y=0.5,
-        text="0.5",
-        showarrow=False,
-        font=dict(size=12, color='gray'),
-        xanchor='right',
-        yanchor='middle'
-    )
-    
-    # G axis annotation at 0
-    fig.add_annotation(
-        x=0,
-        y=-0.02,
-        text="0",
-        showarrow=False,
-        font=dict(size=12, color='gray'),
-        xanchor='center',
-        yanchor='top'
-    )
-    
-    # G axis annotation at 1
-    fig.add_annotation(
-        x=1,
-        y=-0.02,
-        text="1",
-        showarrow=False,
-        font=dict(size=12, color='gray'),
-        xanchor='center',
-        yanchor='top'
-    )
-
-    # Calculate and plot specific points
-    wt = 2 * np.pi * f * np.array([0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=float)
-    x_points = 1 / (1 + wt**2)
-    y_points = wt / (1 + wt**2)
-
-    fig.add_trace(go.Scatter(
-        x=x_points,
-        y=y_points,
-        mode='markers',
-        marker=dict(size=8, color='black'),
-        name='Lifetime Markers', 
-        hoverinfo='skip', # Hide the hover info for this trace,
-        showlegend=False
-    ))
-
-    # Annotate the points
-    lifetime_labels = ['0.5 ns', '1 ns', '2 ns', '3 ns', '4 ns', '5 ns']
-    labels = len(lifetime_labels)
-    label_coords = list(zip(x_points - 0.02, y_points + 0.03))[:labels]
-
-    for i in range(labels):
-        fig.add_annotation(
-            x=label_coords[i][0],
-            y=label_coords[i][1],
-            text=lifetime_labels[i],
-            showarrow=False,
-            font=dict(size=12),
-            xanchor='left'
-        )
-    
-    # Add text inside the plot
-    fig.add_annotation(
-        x=0.8,
-        y=0.5,
-        text=f"f = {f * 1000} MHz",
-        showarrow=False,
-        font=dict(size=15, color='black'),
-        xanchor='left'
-    )
+    # Create phasor background (semicircle, axes, annotations, lifetime markers)
+    _create_phasor_background(fig, f)
     
     # plot the phasor coordinates
     GROUP_COL_NAME = 'unique_color_group'
-    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=True, colormap=colormap)
+    # Use the unified helper for color, shape, opacity
+    grouped, color_map, shape_map, opacity_map, group_keys = get_point_visual_mappings(
+        df,
+        color_by=color_by,
+        shape_by=shape_by,
+        opacity_by=opacity_by,
+        group_col_name=GROUP_COL_NAME,
+        overlap_point=True,
+        colormap=colormap
+    )
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("")
+        st.write("")
+        k_means = st.checkbox("Use K-Means clustering", value=False)
+    if k_means:
+        with col2:
+            k_means_clusters = st.number_input("Number of clusters", value=2, min_value=1, max_value=8, step=1)
 
-    # Add support for shape_by and opacity_by
-    shape_map = None
-    opacity_map = None
-    shape_groups = None
-    opacity_groups = None
-    if shape_by and shape_by in df.columns:
-        shape_groups = sorted(df[shape_by].dropna().unique())
-        # Use helpers to assign symbols
-        symbols = ['circle', 'square', 'diamond', 'cross', 'x', 'triangle-up', 'triangle-down', 'triangle-left', 'triangle-right', 'star']
-        shape_map = {group: symbols[i % len(symbols)] for i, group in enumerate(shape_groups)}
-    if opacity_by and opacity_by in df.columns:
-        opacity_groups = sorted(df[opacity_by].dropna().unique())
-        opacities = np.linspace(0.4, 1.0, num=len(opacity_groups))
-        opacity_map = {group: opacities[i] for i, group in enumerate(opacity_groups)}
+    for group_key, group_df in grouped:
+        # Unpack group_key for color, shape, opacity
+        color_group = group_key[0] if isinstance(group_key, tuple) else group_key
+        shape_group = None
+        opacity_group = None
+        key_idx = 1
+        if shape_by and shape_by in df.columns:
+            shape_group = group_key[key_idx] if len(group_key) > key_idx else None
+            key_idx += 1
+        if opacity_by and opacity_by in df.columns:
+            opacity_group = group_key[key_idx] if len(group_key) > key_idx else None
+        
+        if group_df.empty:
+            continue
+            
+        fig.add_trace(
+            go.Scatter(
+                x=group_df[g_feature],
+                y=group_df[s_feature],
+                mode='markers',
+                name=color_group,
+                text=group_df[unique_row_id_col],
+                customdata=group_df[fov_name_col],
+                hovertemplate="<b>%{text}</b>",
+                marker=dict(
+                    color=color_map.get(color_group, 'gray'),
+                    size=5,
+                    opacity=opacity_map.get(opacity_group, 0.8) if opacity_map else 0.8,
+                    symbol=shape_map.get(shape_group, 'circle') if shape_map else 'circle'
+                )
+            ),
+        )
 
-    feature_prefix = "Lifetime fit free_" + selected_channel + ": "
-    if harmonic == 1:
-        g_feature = f"{feature_prefix}G(1st)"
-        s_feature = f"{feature_prefix}S(1st)"
-    elif harmonic == 2:
-        g_feature = f"{feature_prefix}G(2nd)"
-        s_feature = f"{feature_prefix}S(2nd)"
-    for g in unique_color_groups:
-        g_df =  df[df[GROUP_COL_NAME] == g]   
-        # For each shape/opacity group within this color group
-        if shape_map or opacity_map:
-            # Group by shape and/or opacity
-            group_cols = []
-            if shape_map:
-                group_cols.append(shape_by)
-            if opacity_map:
-                group_cols.append(opacity_by)
-            if group_cols:
-                grouped = g_df.groupby(group_cols)
-                for group_keys, sub_df in grouped:
-                    # Unpack group_keys
-                    if shape_map and opacity_map:
-                        shape_group, opacity_group = group_keys
-                    elif shape_map:
-                        shape_group = group_keys
-                        opacity_group = None
-                    elif opacity_map:
-                        shape_group = None
-                        opacity_group = group_keys
-                    else:
-                        shape_group = opacity_group = None
-                    marker_symbol = shape_map[shape_group] if shape_group is not None else 'circle'
-                    marker_opacity = opacity_map[opacity_group] if opacity_group is not None else 0.8
-                    fig.add_trace(
-                        go.Scatter(
-                            x=sub_df[g_feature],
-                            y=sub_df[s_feature],
-                            mode='markers',
-                            name=f'{g}',
-                            text=sub_df[unique_row_id_col],
-                            customdata=sub_df[fov_name_col],
-                            hovertemplate="<b>%{text}</b>",
-                            marker=dict(color=color_map[g], size=5, symbol=marker_symbol, opacity=marker_opacity)
-                        ),
-                    )
-        else:
-            fig.add_trace(
-                go.Scatter(
-                    x=g_df[g_feature],
-                    y=g_df[s_feature],
-                    mode='markers',
-                    name=f'{g}',
-                    text=g_df[unique_row_id_col],
-                    customdata=g_df[fov_name_col],
-                    hovertemplate="<b>%{text}</b>",
-                    marker=dict(color=color_map[g],size=5)
-                ),
-            )
+        if k_means:
+            # standardize the data
+            # --- 1) DO NOT overwrite raw G,S; fit on a standardized copy ---
+            X_raw = group_df[[g_feature, s_feature]].to_numpy(copy=True)
+            scaler = StandardScaler().fit(X_raw)
+            Xz = scaler.transform(X_raw)
+
+            kmeans = KMeans(n_clusters=k_means_clusters, n_init=50, random_state=0)
+            kmeans.fit(Xz)
+            group_df["k_means_cluster"] = kmeans.labels_
+            centers_raw = scaler.inverse_transform(kmeans.cluster_centers_)
+            # plot the convex hull
+            _plot_convex_hull(fig, group_df, g_feature, s_feature, "k_means_cluster", color_map.get(color_group, 'gray'), centers_raw, line_width=2)
+            # Update the main dataframe with cluster labels
+            assigned_labels = [f"{color_group}_group{label + 1}" for label in kmeans.labels_]
+            df.loc[group_df.index, "k_means_cluster"] = assigned_labels
+          
     # Add shape/opacity legends if needed
-    from .helpers import add_point_legend_traces
     add_point_legend_traces(fig, shape_map, opacity_map, shape_by=shape_by, opacity_by=opacity_by)
-    return fig
+    
+    # Remove the temporary group column after plotting
+    df.drop(columns=[GROUP_COL_NAME], inplace=True)
+    
+    return fig, df
