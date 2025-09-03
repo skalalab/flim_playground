@@ -471,10 +471,10 @@ def _plot_convex_hull(
         x=centers_raw[:, 0],
         y=centers_raw[:, 1],
         mode="markers",
-        marker=dict(symbol="x", size=14, color="black",
-                    line=dict(width=2, color="black")),
+        marker=dict(symbol="x", size=14, line=dict(width=1.5, color="black")),
         hovertemplate="<b>Centroid</b><br>G: %{x:.2f}<br>S: %{y:.2f}<extra></extra>",
-        name="Centroids"
+        name="Centroids",
+        showlegend=False
     ))
     return fig
 

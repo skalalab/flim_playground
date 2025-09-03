@@ -316,7 +316,7 @@ def get_categorical_cols_analysis(use_data_extraction=True):
     if use_data_extraction:
         data_extraction_categorical_cols = get_categorical_cols()
         fov_name_col = get_fov_name_col()
-        return data_extraction_categorical_cols + [fov_name_col, "GMM_group", "2D_GMM_group"]
+        return data_extraction_categorical_cols + [fov_name_col, "GMM_group", "2D_GMM_group", "k_means_cluster"]
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
     categorical_cols = cfg.get("categorical_cols", [])
 

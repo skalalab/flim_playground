@@ -33,7 +33,6 @@ pyinstaller Flim-Playground.spec --clean
 # TODO
 
 - fit validation (sensitivity with ground truth of 2 component solution, Alek)
-- add k-means cluster to phasor
 - add flimlib 
 - move config away (while waiting)
 - add modality alignment (later)
