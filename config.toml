@@ -18,7 +18,7 @@ a3 = "_a3[%].asc"
 t3 = "_t3.asc"
 
 ["Decay (3/4D)"]
-laser_rate = 0.8
+laser_rate = 0.08
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 file_types = [ "Decay", "IRF", "Mask",]
 fit_free_calibration = "IRF"
@@ -52,8 +52,8 @@ reference_dye_lifetime = 4.2
 reference_dye_file = "test.tif"
 
 [ch3]
-imaging_modality = "Intensity-only"
-input_type = "Intensity (2D)"
+imaging_modality = "FLIM"
+input_type = "Decay (3/4D)"
 channel_name = "red"
 
 ["Intensity (2D)"]

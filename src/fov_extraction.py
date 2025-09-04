@@ -281,7 +281,7 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
     # Pre-calculate time_axis and w for reuse across all decay curves
     time_axis = None
     w = 2*np.pi*laser_rate
-    full_period = np.isclose(laser_rate * duration, 1.0, rtol=1e-12, atol=1e-12)
+    full_period = np.isclose(laser_rate * duration, 1.0, rtol=1e-5, atol=1e-5)
     if not full_period:
         # Use the first decay curve to determine time_bins
         first_decay_curve = next(iter(decay_curves.values()))

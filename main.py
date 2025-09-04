@@ -90,7 +90,7 @@ def main():
 
     cols = st.columns(4)
     with cols[0]:
-        laser_rate = st.number_input(f"Laser rate (GHz) for {flim_decay_input_type}", value=cfg.get(flim_decay_input_type, {}).get("laser_rate", 1.0), min_value=0.0, max_value=2.0, key=f"laser_rate_{flim_decay_input_type}")
+        laser_rate = st.number_input(f"Laser rate (GHz) for {flim_decay_input_type}", value=cfg.get(flim_decay_input_type, {}).get("laser_rate", 0.08), min_value=0.0, max_value=1.0, key=f"laser_rate_{flim_decay_input_type}")
         cfg[flim_decay_input_type]["laser_rate"] = laser_rate
     with cols[1]:
         # Get default value from config and find its index
