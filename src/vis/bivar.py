@@ -471,7 +471,7 @@ def _plot_convex_hull(
         x=centers_raw[:, 0],
         y=centers_raw[:, 1],
         mode="markers",
-        marker=dict(symbol="x", size=14, line=dict(width=1.5, color="black")),
+        marker=dict(symbol="x", size=14, line=dict(width=1.5, color="black"), color=polygon_color),
         hovertemplate="<b>Centroid</b><br>G: %{x:.2f}<br>S: %{y:.2f}<extra></extra>",
         name="Centroids",
         showlegend=False
@@ -541,7 +541,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
     with col1:
         st.write("")
         st.write("")
-        k_means = st.checkbox("Use K-Means clustering", value=False)
+        k_means = st.checkbox("Perform K-Means clustering", value=False)
     if k_means:
         with col2:
             k_means_clusters = st.number_input("Number of clusters", value=2, min_value=1, max_value=8, step=1)
@@ -585,12 +585,12 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
             X_raw = group_df[[g_feature, s_feature]].to_numpy(copy=True)
             scaler = StandardScaler().fit(X_raw)
             Xz = scaler.transform(X_raw)
-
-            kmeans = KMeans(n_clusters=k_means_clusters, n_init=50, random_state=0)
+            # step 2: perform k-means clustering
+            kmeans = KMeans(n_clusters=k_means_clusters, random_state=42)
             kmeans.fit(Xz)
             group_df["k_means_cluster"] = kmeans.labels_
             centers_raw = scaler.inverse_transform(kmeans.cluster_centers_)
-            # plot the convex hull
+            # step 3: plot the convex hull
             _plot_convex_hull(fig, group_df, g_feature, s_feature, "k_means_cluster", color_map.get(color_group, 'gray'), centers_raw, line_width=2)
             # Update the main dataframe with cluster labels
             assigned_labels = [f"{color_group}_group{label + 1}" for label in kmeans.labels_]

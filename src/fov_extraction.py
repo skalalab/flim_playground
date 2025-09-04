@@ -250,7 +250,21 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
 
     return single_cell_features_fov
 
-def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration_method, shifted_irf=None,reference_dye_image=None, reference_dye_lifetime=None, reference_time_axis=None):
+def get_raw_phasor(decay_curve, h, duration, w, time_axis=None, full_period=False):
+    # the truncated time axis case
+    if not full_period:
+        if time_axis is None :
+            time_bins = len(decay_curve)
+            period = duration / time_bins
+            time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
+            
+        g_raw = np.dot(np.transpose(decay_curve) , np.cos(h*w*time_axis)) / np.sum(decay_curve)
+        s_raw = np.dot(np.transpose(decay_curve) , np.sin(h*w*time_axis)) / np.sum(decay_curve)
+    else:
+        _, g_raw, s_raw = phasor.phasor_from_signal(decay_curve, harmonic=h)
+    return g_raw, s_raw
+
+def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf=None,reference_dye_image=None, reference_dye_lifetime=None, reference_time_axis=None):
     """
     Extract fit free results for a specific channel and store them in single_cell_features_img (for now, only phasor is implemented)
     Args:
@@ -258,17 +272,31 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration
         decay_curves: dictionary of decay curves: key is cell_id, value is decay curve
         shifted_irf: shifted IRF
         laser_rate: laser repetition rate
+        duration: time between two laser pulses
         calibration_method: calibration method
         reference_dye_file: reference dye file
         reference_dye_lifetime: reference dye lifetime
     """
+    if len(decay_curves) == 0:
+        return f"Error: No decay curves found for {channel_name}", pd.DataFrame()
+
     fit_free_feature_prefix = f"Lifetime fit free_{channel_name}: "
     single_cell_features_fov = {}
+    
+    # Pre-calculate time_axis and w for reuse across all decay curves
+    time_axis = None
+    w = 2*np.pi*laser_rate
+    full_period = np.isclose(laser_rate * duration, 1.0, rtol=1e-12, atol=1e-12)
+    if not full_period:
+        # Use the first decay curve to determine time_bins
+        first_decay_curve = next(iter(decay_curves.values()))
+        time_bins = len(first_decay_curve)
+        period = duration / time_bins
+        time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
+    
     if calibration_method == "Reference Dye":
-
         if reference_time_axis is None:
             return f"Error: Reference time axis is not provided", pd.DataFrame()
-       
         try:
             ref_mean, ref_real, ref_imag = phasor.phasor_from_signal(reference_dye_image, axis=reference_time_axis)
         except Exception as e:
@@ -276,8 +304,8 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration
     else:
         if shifted_irf is not None: 
             # calculate the phasor of irf
-            _, g_irf, s_irf = phasor.phasor_from_signal(shifted_irf)
-            _, g_irf_2nd, s_irf_2nd = phasor.phasor_from_signal(shifted_irf, harmonic=2)
+            g_irf, s_irf = get_raw_phasor(shifted_irf, h=1, duration=duration, w=w, time_axis=time_axis, full_period=full_period)
+            g_irf_2nd, s_irf_2nd = get_raw_phasor(shifted_irf, h=2, duration=duration, w=w, time_axis=time_axis, full_period=full_period)
         else: 
             return f"Error: Shifted IRF is not provided for {channel_name}", pd.DataFrame()
     for cell_id, decay_curve in decay_curves.items():
@@ -292,8 +320,8 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration
             decay_curve = np.clip(decay_curve, 0, None)
 
          # calculate the raw phasor coordinates    
-        _, g_raw, s_raw = phasor.phasor_from_signal(decay_curve)
-        _, g_raw_2nd, s_raw_2nd = phasor.phasor_from_signal(decay_curve, harmonic=2)
+        g_raw, s_raw = get_raw_phasor(decay_curve, h=1, duration=duration, w=w, time_axis=time_axis, full_period=full_period)
+        g_raw_2nd, s_raw_2nd = get_raw_phasor(decay_curve, h=2, duration=duration, w=w, time_axis=time_axis, full_period=full_period)
         
         if calibration_method == "Reference Dye":
             G, S = lifetime.phasor_calibrate(g_raw, s_raw, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=reference_dye_lifetime)
@@ -305,7 +333,6 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration
             else:
                 return f"Error: Shifted IRF is not provided for {channel_name}", pd.DataFrame()
 
-        w = 2*np.pi*laser_rate
         phi = np.arctan2(S, G) 
         m = np.sqrt(G**2 + S**2)
         tau_phase = 1/w * np.tan(phi)
@@ -367,7 +394,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         laser_rate = metadata["laser_rate"]
         if calibration_method == None:
             return f"Error: Calibration method is not provided for {channel_name}", pd.DataFrame()
-        error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, calibration_method, shifted_irf, reference_dye_image, reference_dye_lifetime, reference_time_axis)
+        error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf, reference_dye_image, reference_dye_lifetime, reference_time_axis)
         if error_msg != "":
             return error_msg, pd.DataFrame()
         single_cell_fit_free_features_fov = pd.DataFrame.from_dict(single_cell_fit_free_features_fov, orient='index')
