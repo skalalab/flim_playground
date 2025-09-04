@@ -250,14 +250,9 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
 
     return single_cell_features_fov
 
-def get_raw_phasor(decay_curve, h, duration, w, time_axis=None, full_period=False):
+def get_raw_phasor(decay_curve, h, w, time_axis=None, full_period=False):
     # the truncated time axis case
     if not full_period:
-        if time_axis is None :
-            time_bins = len(decay_curve)
-            period = duration / time_bins
-            time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
-            
         g_raw = np.dot(np.transpose(decay_curve) , np.cos(h*w*time_axis)) / np.sum(decay_curve)
         s_raw = np.dot(np.transpose(decay_curve) , np.sin(h*w*time_axis)) / np.sum(decay_curve)
     else:
@@ -304,8 +299,8 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
     else:
         if shifted_irf is not None: 
             # calculate the phasor of irf
-            g_irf, s_irf = get_raw_phasor(shifted_irf, h=1, duration=duration, w=w, time_axis=time_axis, full_period=full_period)
-            g_irf_2nd, s_irf_2nd = get_raw_phasor(shifted_irf, h=2, duration=duration, w=w, time_axis=time_axis, full_period=full_period)
+            g_irf, s_irf = get_raw_phasor(shifted_irf, h=1,  w=w, time_axis=time_axis, full_period=full_period)
+            g_irf_2nd, s_irf_2nd = get_raw_phasor(shifted_irf, h=2,  w=w, time_axis=time_axis, full_period=full_period)
         else: 
             return f"Error: Shifted IRF is not provided for {channel_name}", pd.DataFrame()
     for cell_id, decay_curve in decay_curves.items():
@@ -320,8 +315,8 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
             decay_curve = np.clip(decay_curve, 0, None)
 
          # calculate the raw phasor coordinates    
-        g_raw, s_raw = get_raw_phasor(decay_curve, h=1, duration=duration, w=w, time_axis=time_axis, full_period=full_period)
-        g_raw_2nd, s_raw_2nd = get_raw_phasor(decay_curve, h=2, duration=duration, w=w, time_axis=time_axis, full_period=full_period)
+        g_raw, s_raw = get_raw_phasor(decay_curve, h=1, w=w, time_axis=time_axis, full_period=full_period)
+        g_raw_2nd, s_raw_2nd = get_raw_phasor(decay_curve, h=2, w=w, time_axis=time_axis, full_period=full_period)
         
         if calibration_method == "Reference Dye":
             G, S = lifetime.phasor_calibrate(g_raw, s_raw, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=reference_dye_lifetime)
