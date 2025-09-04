@@ -347,7 +347,7 @@ with col2:
     elif "Numeric Feature Extraction" in selected_step and st.session_state["shift_ready"] and metadata_df is not None:
         single_cell_features = fov_extraction_widget(metadata_df, metadata_dict)
         if not single_cell_features.empty:
-            st.success(f"Field of view features with ✅ are extracted successfully {happy_emoji}! FOVs with ❌ (if any) are excluded. The first few rows of the features are shown below.")
+            st.success(f"Field of view features with ✅ are extracted successfully {happy_emoji}! FOVs with error messages are excluded. The first few rows of the features are shown below.")
             st.write(single_cell_features.head())
             # get the current timestamp 
             timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -366,6 +366,7 @@ with col2:
                         st.error(f"❌ Error exporting the single cell features: {str(e)}")
             else:
                 st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name= f"single_cell_features_{timestamp}.csv")
+                st.success(f"✅ Single cell features exported successfully to your download folder {happy_emoji}")
     elif "Categorical Feature Extraction" in selected_step and df_folder_path != "" and len(available_dfs) > 0:
         combined_df, available_categories = check_and_merge_df_widget(available_dfs)
         map_categories_to_labels_widget(available_categories, combined_df, delimiter, df_folder_path)

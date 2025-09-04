@@ -293,7 +293,11 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         if reference_time_axis is None:
             return f"Error: Reference time axis is not provided", pd.DataFrame()
         try:
-            ref_mean, ref_real, ref_imag = phasor.phasor_from_signal(reference_dye_image, axis=reference_time_axis)
+            if not full_period:
+                phi = w * time_axis
+                ref_mean, ref_real, ref_imag = phasor.phasor_from_signal(reference_dye_image, axis=reference_time_axis, sample_phase=phi, use_fft=False)
+            else:
+                ref_mean, ref_real, ref_imag = phasor.phasor_from_signal(reference_dye_image, axis=reference_time_axis)
         except Exception as e:
             return f"Error calculating the phasor of reference dye: {e}", pd.DataFrame()
     else:
