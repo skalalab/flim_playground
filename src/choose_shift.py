@@ -21,6 +21,7 @@ def guess_shift(irf, curves, fit_free=False):
     else:
         return np.median(shifts)
 
+@st.cache_data
 def choose_shift_fit_free(metadata_df, time_bins, input_type, channel_name):
 
     error_msg, decay_curves = get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=True)

@@ -267,7 +267,7 @@ def validate_reference_dye(folder_path, fit_free_calibration_method, reference_d
 def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, fit_free_calibration_method=None, reference_dye_file=None, reference_dye_lifetime=None):
     """Final processing steps for FOV data"""
     if error_msg != "":
-        st.error(f"Error: {error_msg}")
+        st.error(error_msg)
         return
     
     # Check and assign channels
@@ -279,7 +279,7 @@ def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_ty
     )
     
     if error_msg != "":
-        st.error(f"Error: {error_msg}")
+        st.error(error_msg)
         return
     
     # Validate reference dye after channel assignment
@@ -287,7 +287,7 @@ def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_ty
         time_bins = fov_df["time_bins"].iloc[0]
         error_msg, fov_df = validate_reference_dye(folder_path, fit_free_calibration_method, reference_dye_file, fov_df, time_bins, reference_dye_lifetime)
         if error_msg != "":
-            st.error(f"Error: {error_msg}")
+            st.error(error_msg)
             return
     
     # Display and export

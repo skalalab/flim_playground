@@ -54,7 +54,7 @@ reference_dye_file = "test.tif"
 [ch3]
 imaging_modality = "Intensity-only"
 input_type = "Intensity (2D)"
-channel_name = "cd8"
+channel_name = "red"
 
 ["Intensity (2D)"]
 available_feature_extractors = [ "Intensity morphology", "Intensity texture",]
@@ -62,7 +62,7 @@ file_types = [ "Intensity (2D)", "Mask",]
 
 [ch1."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture", "Lifetime fit free",]
 
 [ch1."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
@@ -74,7 +74,7 @@ num_components = 2
 
 [ch2."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture", "Lifetime fit free",]
 
 [ch2."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
@@ -94,9 +94,9 @@ selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
 [ch1."Decay (3/4D)".input_suffixes]
-Mask = "n_photons_mask_cyto.tiff"
+Mask = "n.ome_cellpose.tiff"
 Decay = "n.sdt"
-IRF = "NADH_IRF.txt"
+IRF = "Ch3_IRF_750__2024.txt"
 
 [ch1."Decay (3/4D) pixel-prefitted".input_suffixes]
 Mask = "_nadh_mask.tif"
@@ -109,9 +109,9 @@ Decay = "_ch1.csv"
 IRF = "_ch1.txt"
 
 [ch2."Decay (3/4D)".input_suffixes]
-Mask = "n_photons_mask_cyto.tiff"
+Mask = "n.ome_cellpose.tiff"
 Decay = "f.sdt"
-IRF = "FAD_IRF.txt"
+IRF = "Ch2_IRF_890__2024.txt"
 
 [ch2."Decay (3/4D) pixel-prefitted".input_suffixes]
 Mask = "nadh_mask.tif"
@@ -124,13 +124,13 @@ Decay = "_ch2.csv"
 IRF = "_ch2.txt"
 
 [ch3."Decay (3/4D)".input_suffixes]
-Decay = "s.sdt"
-Mask = "stain_mask.tiff"
+Decay = "r.sdt"
+Mask = "r.ome_cellpose.tiff"
 
 [ch3."Decay (3/4D) pixel-prefitted".input_suffixes]
 Decay = "_C.uncompressed.sdt"
 Mask = "_C_crypto_mask.tif"
 
 [ch3."Intensity (2D)".input_suffixes]
-Mask = "n_photons_mask_cyto.tiff"
-"Intensity (2D)" = "r.tiff"
+Mask = "r.ome_cellpose.tiff"
+"Intensity (2D)" = "r.ome.tif"

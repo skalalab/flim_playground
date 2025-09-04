@@ -259,7 +259,7 @@ def check_raw_decay_data(fov_df, channel_name):
             error_msg += f"- Laser rep time {laser_rep_time} appears {count} times.\n"
         return error_msg, [], None, None
     else:
-        # get the first shape: CXYT or XYT
+        # get the first shape: CYXT or YXT
         shape = shape_list[0]
         laser_rep_time = laser_rep_time_list[0]
         if len(shape) == 3:
@@ -392,8 +392,8 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
         if has_intensity_only or has_3_4D_decay:
             return "No fov dimensions found for the selected channels. Please check the data.", None
     else:
-        st.write(f"Fov dimensions: {fov_dimensions_list[0]}")
-        fov_df["fov_dimensions"] = [fov_dimensions_list[0]] * len(fov_df)
+        # Store as string to avoid hashing issues in caching
+        fov_df["fov_dimensions"] = [str(fov_dimensions_list[0])] * len(fov_df)
 
     return error_msg, fov_df
 
