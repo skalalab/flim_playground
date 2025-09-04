@@ -1,3 +1,4 @@
+from matplotlib.tri import TriAnalyzer
 import streamlit as st
 import os 
 import numpy as np
@@ -6,6 +7,7 @@ from pathlib import Path
 from src.config import get_default_file_suffixes, get_spc_output_suffix, get_default_2D_decay_config, get_default_laser_rate
 from src.dataset_io import happy_emoji, sad_emoji
 from src.decay_io import read_decay, read_decay_metadata
+from src.file_io import load_image
 from collections import Counter
 from datetime import datetime
 
@@ -192,13 +194,13 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
 
     return valid_image_groups
 
-def display_feature_groups_widget(metadata_df, num_cols=3):
+def preview_metadata_widget(metadata_df, num_cols=3):
     """
     Display the feature groups to be extracted.
     """
-    # if there are more than 3 rows, write the first 3 rows, else write all rows
-    if len(metadata_df) > 3:
-        st.write(metadata_df.head(3))
+    # if there are more than num_cols rows, write the first num_cols rows, else write all rows
+    if len(metadata_df) > num_cols:
+        st.write(metadata_df.head(num_cols))
     else:
         st.write(metadata_df)
 
@@ -220,32 +222,34 @@ def export_metadata_widget(metadata_df, folder_path):
         st.session_state["last_extracted_metadata_filepath"] = csv_file_path
 
 @st.cache_data
-def check_raw_decay_data(images_df, channel_name):
+def check_raw_decay_data(fov_df, channel_name):
     """
     Check if the sdt data is available.
     """
-    column_name = f"{channel_name}_Decay"
-    if column_name not in images_df.columns:
+    decay_column_name = f"{channel_name}_Decay"
+    mask_column_name = f"{channel_name}_Mask"
+    if decay_column_name not in fov_df.columns:
         return "Error: No sdt data found. Please check the data.", []
+    if mask_column_name not in fov_df.columns:
+        return "Error: No mask data found. Please check the data.", []
 
     shape_list = []
     laser_rep_time_list = []
-    for i, row in images_df.iterrows():
-        error_msg, decay_data = read_decay(row[column_name])
+    for i, row in fov_df.iterrows():
+        error_msg, decay_data = read_decay(row[decay_column_name])
         if error_msg != "":
             return error_msg, [], None, None
         shape_list.append(decay_data.shape)
-        error_msg, laser_rep_time = read_decay_metadata(row[column_name])
+        error_msg, laser_rep_time = read_decay_metadata(row[decay_column_name])
         if error_msg != "":
             return error_msg, [], None, None
         laser_rep_time_list.append(laser_rep_time)
         shape_list.append(decay_data.shape)
 
-    
     # check for the consistency of the shape, a tuple
     if len(set(shape_list)) > 1:
         shape_counts = Counter(shape_list)
-        error_msg = f"Inconsistent sdt data shapes found for {channel_name} decay: \n"
+        error_msg = f"Inconsistent decay data shapes found for {channel_name} decay: \n"
         for shape, count in shape_counts.items():
             error_msg += f"- Shape {shape} appears {count} times.\n"
         return error_msg, [], None, None
@@ -255,39 +259,85 @@ def check_raw_decay_data(images_df, channel_name):
             error_msg += f"- Laser rep time {laser_rep_time} appears {count} times.\n"
         return error_msg, [], None, None
     else:
-        # get the first shape
+        # get the first shape: CXYT or XYT
         shape = shape_list[0]
-        time_bins = shape[-1]
         laser_rep_time = laser_rep_time_list[0]
         if len(shape) == 3:
-            return "", [-1], time_bins, laser_rep_time
+            return "", [-1], shape, laser_rep_time
         elif len(shape) == 4:
             # get all non-zero channels
             non_zero_channels = []
             for i in range(shape[0]):
                 if np.any(decay_data[i]):
                     non_zero_channels.append(i)
-            return "", non_zero_channels, time_bins, laser_rep_time
+            return "", non_zero_channels, shape[1:], laser_rep_time
 
-def check_raw_2D_decay_data(images_df, channel_name):
-    for i, row in images_df.iterrows():
+def check_raw_2D_decay_data(fov_df, channel_name):
+    decay_column_name = f"{channel_name}_Decay"
+    if decay_column_name not in fov_df.columns:
+        return f"Error: Decay data path not found for {channel_name}", None
+    for _, row in fov_df.iterrows():
         try:
-            decay_data = pd.read_csv(row[f"{channel_name}_Decay"], header=None)
+            decay_data = pd.read_csv(row[decay_column_name], header=None)
         except Exception as e:
             return f"Error reading decay data for {channel_name}: {e}", None
         return "", decay_data.shape[1]
 
+def check_raw_intensity_data(fov_df, channel_name):
+    dimension_list = []
+    intensity_column_name = f"{channel_name}_Intensity (2D)"
+    mask_column_name = f"{channel_name}_Mask"
+    if intensity_column_name not in fov_df.columns:
+        return f"Error: Intensity image path not found for {channel_name}", None
+    if mask_column_name not in fov_df.columns:
+        return f"Error: Mask path not found for {channel_name}", None
+    for _, row in fov_df.iterrows():
+        image_path = row[intensity_column_name]
+        try:
+            image_data = load_image(image_path)
+        except Exception as e:
+            return f"Error reading intensity image: {image_path}: {e}", None
+        if len(image_data.shape) != 2:
+            return f"Error: Intensity image {image_path} is not a 2D array", None
+        
+        dimension_list.append(image_data.shape)
+        # check for the consistency of the shape between the intensity image and the mask image
+        mask_path = row[mask_column_name]
+        try:
+            mask_data = load_image(mask_path)
+        except Exception as e:
+            return f"Error reading mask image: {mask_path}: {e}", None
+        if len(mask_data.shape) != 2:
+            return f"Error: Mask image {mask_path} is not a 2D array", None
+        if image_data.shape != mask_data.shape:
+            return f"Error: Intensity image {image_path} and mask image {mask_path} have different shapes: {image_data.shape} != {mask_data.shape}", None
+    
+    if len(set(dimension_list)) > 1:
+        return f"Inconsistent fov dimensions found for channel {channel_name}. Please check the data.", None
+    elif len(dimension_list) == 0:
+        return f"No fov dimensions found for channel {channel_name}. Please check the data.", None
+    else:
+        return "", dimension_list[0]
+            
 def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type, imaging_modalities, duration=None, time_bins=None):   
     error_msg = ""
     time_bins_list = []
     laser_rep_time_list = []
+    fov_dimensions_list = []
     num_cols = len(selected_channels)
     cols = st.columns(num_cols)
+    has_flim = has_3_4D_decay = has_intensity_only = False
     for i, (channel_key, channel_name) in enumerate(selected_channels.items()):
         imaging_modality = imaging_modalities[channel_key]
-        if imaging_modality != "FLIM":
-            continue
-        else:
+        if imaging_modality == "Intensity-only":
+            has_intensity_only = True
+            error_msg, fov_dimensions = check_raw_intensity_data(fov_df, channel_name)
+            if error_msg == "":
+                fov_dimensions_list.append(fov_dimensions)
+            else:
+                return error_msg, None
+        elif imaging_modality == "FLIM":
+            has_flim = True
             decay_col_name = f"{channel_name}_Decay"
             if decay_col_name not in fov_df.columns:
                 return "Error: File paths for decay data are not provided.", None
@@ -303,31 +353,47 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
                     else:
                         return error_msg, None
             else: # 3/4D decay
+                has_3_4D_decay = True
                 with cols[i]:
-                    error_msg, available_channels, time_bins, laser_rep_time = check_raw_decay_data(fov_df, channel_name)
+                    error_msg, available_channels, shape, laser_rep_time = check_raw_decay_data(fov_df, channel_name)
                     if error_msg == "":
                         if len(available_channels) == 1:
                             fov_df[f"{channel_name}_channel"] = available_channels[0]
                         else:
                             fov_df[f"{channel_name}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels, key=f"{channel_name}_channel_selectbox")
-                        time_bins_list.append(time_bins)
+                        time_bins_list.append(shape[-1])
+                        fov_dimensions_list.append(shape[:-1])
                         laser_rep_time_list.append(laser_rep_time)
                     else:
                         return error_msg, None
-                # in 2d decay, the laser rep time is given by the user, so no way to check it here
-                if len(set(laser_rep_time_list)) > 1:
-                    return "Inconsistent laser rep time found for the selected channels. Please check the data.", None
-                elif len(laser_rep_time_list) == 0:
-                    return "No laser rep time found for the selected channels. Please check the data.", None
-                else:
-                    fov_df["duration"] = laser_rep_time_list[0]
-            
+        else:
+            continue
+
     if len(set(time_bins_list)) > 1:
         return "Inconsistent time bins found for the selected channels. Please check the data.", None
     elif len(time_bins_list) == 0:
-        return "No time bins found for the selected channels. Please check the data.", None
+        if has_flim:
+            return "No time bins found for the selected channels. Please check the data.", None
     else:
         fov_df["time_bins"] = time_bins_list[0]
+
+    if len(set(laser_rep_time_list)) > 1:
+        return "Inconsistent laser rep time found for the selected channels. Please check the data.", None
+    elif len(laser_rep_time_list) == 0:
+         # in 2d decay, the laser rep time is given by the user, so no way to check it here
+        if has_3_4D_decay:
+            return "No laser rep time found for the selected channels. Please check the data.", None
+    else:
+        fov_df["duration"] = laser_rep_time_list[0]
+
+    if len(set(fov_dimensions_list)) > 1:
+        return "Inconsistent fov spatial dimensions found for the selected channels. Please check the data.", None
+    elif len(fov_dimensions_list) == 0:
+        if has_intensity_only or has_3_4D_decay:
+            return "No fov dimensions found for the selected channels. Please check the data.", None
+    else:
+        st.write(f"Fov dimensions: {fov_dimensions_list[0]}")
+        fov_df["fov_dimensions"] = [fov_dimensions_list[0]] * len(fov_df)
 
     return error_msg, fov_df
 

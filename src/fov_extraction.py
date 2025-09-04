@@ -34,7 +34,7 @@ def get_offset(decay_curve):
     # Return the minimum of the two medians
     return min(head_median, tail_median)
 
-def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask):
+def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type):
     feature_prefix = f"Intensity texture_{channel_name}: "
     intensity_texture_features = ["intensity_sum", "granularity", "radial_distribution", "mass_displacement"]
     granularity_values = [1,3,5,7]
@@ -45,17 +45,25 @@ def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask):
     mask_ids = np.unique(mask)
     mask_ids = mask_ids[mask_ids != 0]
     # get the intensity image from the metadata
-    try:
-        decay_path = metadata[f"{channel_name}_Decay"]
-        channel_no = metadata[f"{channel_name}_channel"]
-        error_msg, decay = read_decay(decay_path, channel_no)
-        if error_msg != "":
-            return error_msg, pd.DataFrame()
-        if len(decay.shape) != 3:
-            return f"Error: {channel_name} decay file is not a 3D array", pd.DataFrame()
-    except Exception as e:
-        return f"Error reading the {channel_name} decay file: {metadata[f'{channel_name}_Decay']}: {e}", pd.DataFrame()
-    intensity_image = np.sum(decay, axis=-1)
+    if input_type == "Intensity (2D)":
+        try:
+            intensity_image = load_image(metadata[f"{channel_name}_Intensity (2D)"])
+        except Exception as e:
+            return f"Error reading the {channel_name} intensity image: {metadata[f'{channel_name}_Intensity (2D)']}: {e}", pd.DataFrame()
+    elif "Decay (3/4D)" in input_type:
+        try:
+            decay_path = metadata[f"{channel_name}_Decay"]
+            channel_no = metadata[f"{channel_name}_channel"]
+            error_msg, decay = read_decay(decay_path, channel_no)
+            if error_msg != "":
+                return error_msg, pd.DataFrame()
+            if len(decay.shape) != 3:
+                return f"Error: {channel_name} decay file is not a 3D array", pd.DataFrame()
+        except Exception as e:
+            return f"Error reading the {channel_name} decay file: {metadata[f'{channel_name}_Decay']}: {e}", pd.DataFrame()
+        intensity_image = np.sum(decay, axis=-1)
+    if intensity_image.shape != mask.shape:
+        return f"Error: {channel_name} intensity image has a different shape than the mask: {intensity_image.shape} != {mask.shape}", pd.DataFrame()
     for mask_id in mask_ids:
         cell_id = f"{fov_name}_{mask_id}"
         single_cell_texture_features_fov[cell_id] = {}
@@ -385,8 +393,9 @@ def fov_extraction(metadata, metadata_dict):
 
     for channel_name in metadata_dict["channel_names"]:
         input_type = metadata_dict[channel_name]["input_type"]
+        imaging_modality = metadata_dict[channel_name]["imaging_modality"]
         selected_feature_extractors = metadata_dict[channel_name]["selected_feature_extractors"]
-        if metadata_dict[channel_name]["imaging_modality"] == "FLIM":  
+        if imaging_modality == "FLIM":  
             fit = "Lifetime fit" in selected_feature_extractors
             fit_free = "Lifetime fit free" in selected_feature_extractors
             if fit_free:
@@ -436,12 +445,35 @@ def fov_extraction(metadata, metadata_dict):
                         else:
                             fov_feature_dfs.append(single_cell_morph_features_fov)
                 if int_texture:
-                        error_msg, single_cell_texture_features_fov = get_intensity_texture_features(metadata, channel_name, fov_col_name, mask)
+                        error_msg, single_cell_texture_features_fov = get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type)
                         if error_msg != "":
                             st.error(error_msg)
                         else:
                             fov_feature_dfs.append(single_cell_texture_features_fov)
-    
+        elif imaging_modality == "Intensity-only":
+            if input_type == "Intensity (2D)":
+                int_morph = "Intensity morphology" in selected_feature_extractors
+                int_texture = "Intensity texture" in selected_feature_extractors
+                try:
+                    mask = load_image(metadata[f"{channel_name}_Mask"])
+                except Exception as e:
+                    st.error(f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}")
+                    continue
+                if int_morph:
+                    if metadata[f"{channel_name}_Mask"] not in extracted_morphology_masks:
+                        extracted_morphology_masks.append(metadata[f"{channel_name}_Mask"])
+                        error_msg, single_cell_morph_features_fov = get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask)
+                        if error_msg != "":
+                            st.error(error_msg)
+                        else:
+                            fov_feature_dfs.append(single_cell_morph_features_fov)
+                if int_texture:
+                    error_msg, single_cell_texture_features_fov = get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type)
+                    if error_msg != "":
+                        st.error(error_msg)
+                    else:
+                        fov_feature_dfs.append(single_cell_texture_features_fov)
+
     # Combine all channel DataFrames in one operation
     single_cell_features_fov = pd.concat(fov_feature_dfs, axis=1) if fov_feature_dfs else pd.DataFrame()
     if not single_cell_features_fov.empty:

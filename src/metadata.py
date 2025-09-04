@@ -121,15 +121,17 @@ def parse_metadata_file(metadata_df, fov_name_col):
     """
     # check for required column
     if fov_name_col not in metadata_df.columns:
-       return f"Image name column {fov_name_col} not found in metadata file.", None
+       return f"Column of field of view names `{fov_name_col}` not found in metadata file.", None
     # check for unique image name
     if metadata_df[fov_name_col].duplicated().any():
-        return f"Image name column {fov_name_col} is not unique.", None
-
+        return f"Field of view names are not unique. Check the column `{fov_name_col}`.", None
+    has_flim = False
     error_msg, metadata_dict = get_ch_info(metadata_df)
     for channel_name in metadata_dict["channel_names"]:
         # check for file paths
         input_type = metadata_dict[channel_name]["input_type"]
+        if metadata_dict[channel_name]["imaging_modality"] == "FLIM":
+            has_flim = True
         available_file_types = get_file_types(input_type)
         for file_type in available_file_types:
             if f"{channel_name}_{file_type}" in metadata_df.columns and file_type != "IRF":
@@ -142,19 +144,20 @@ def parse_metadata_file(metadata_df, fov_name_col):
                for file_path in metadata_df[f"{channel_name}_{file_type}"]:
                    if not Path(file_path).exists():
                        return f"File path {file_path} for {channel_name}_{file_type} is not valid.", None
- 
-    # check for time bins, duration, laser rate
-    if "time_bins" in metadata_df.columns:
-        if metadata_df["time_bins"].nunique() != 1:
-            return f"Time bins column time_bins is not consistent.", None
-        metadata_dict["time_bins"] = metadata_df["time_bins"].iloc[0]
-    else:
-        return f"Time bins column time_bins not found in metadata file.", None
-    if "duration" in metadata_df.columns:
-        if metadata_df["duration"].nunique() != 1:
-            return f"Duration column duration is not consistent.", None
-        metadata_dict["duration"] = metadata_df["duration"].iloc[0]
-    else:
-        return f"Duration column duration not found in metadata file.", None
+    
+    if has_flim:
+        # check for time bins, duration
+        if "time_bins" in metadata_df.columns:
+            if metadata_df["time_bins"].nunique() != 1:
+                return f"Time bins column time_bins is not consistent.", None
+            metadata_dict["time_bins"] = metadata_df["time_bins"].iloc[0]
+        else:
+            return f"Time bins column time_bins not found in metadata file.", None
+        if "duration" in metadata_df.columns:
+            if metadata_df["duration"].nunique() != 1:
+                return f"Duration column duration is not consistent.", None
+            metadata_dict["duration"] = metadata_df["duration"].iloc[0]
+        else:
+            return f"Duration column duration not found in metadata file.", None
 
     return error_msg, metadata_dict

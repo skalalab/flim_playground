@@ -5,7 +5,7 @@ import time
 from src.navigation import render_top_menu
 from src.dataset_io import happy_emoji, sad_emoji
 from src.widgets.numeric_extraction_widgets import fov_extraction_widget
-from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, display_feature_groups_widget, check_assign_channel_widget, lifetime_data_config_widget
+from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, preview_metadata_widget, check_assign_channel_widget, lifetime_data_config_widget
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.lifetime_widgets import fit_options_widget, choose_shift_widget
 from src.metadata import parse_metadata_file
@@ -47,7 +47,8 @@ with col1:
     )
     if "FOV Metadata Extraction" in selected_step:
          # show decay input type
-        st.write(f"Decay input type: {decay_input_type}")
+        if has_flim:
+            st.write(f"Decay input type: {decay_input_type}")
         checkbox_cols = st.columns(len(channel_names))
         actual_file_suffix = None
         selected_channels = {}
@@ -290,7 +291,7 @@ def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_ty
             return
     
     # Display and export
-    display_feature_groups_widget(fov_df)
+    preview_metadata_widget(fov_df)
     export_metadata_widget(metadata_df=fov_df, folder_path=folder_path)
 
 with col2: 

@@ -1,12 +1,13 @@
-num_channels = 2
+num_channels = 3
 unique_cell_id_col = "cell_id"
-fov_name_col = "exp_name"
+fov_name_col = "image_name"
 flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
-flim_decay_input_type = "Decay (2D)"
+flim_decay_input_type = "Decay (3/4D)"
 all_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
 imaging_modality = "FLIM"
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 categorical_cols = [ "cell_line", "treatment", "condition", "patient_id", "day",]
+intensity_only_input_type = "Intensity (2D)"
 
 [spc_output_suffix]
 a1 = "_a1[%].asc"
@@ -25,12 +26,12 @@ reference_dye_file = "test.tif"
 reference_dye_lifetime = 4.2
 
 [ch1]
-input_type = "Decay (2D)"
+input_type = "Decay (3/4D)"
 channel_name = "nadh"
 imaging_modality = "FLIM"
 
 [ch2]
-input_type = "Decay (2D)"
+input_type = "Decay (3/4D)"
 channel_name = "fad"
 imaging_modality = "FLIM"
 
@@ -51,9 +52,13 @@ reference_dye_lifetime = 4.2
 reference_dye_file = "test.tif"
 
 [ch3]
-imaging_modality = "FLIM"
-input_type = "Decay (3/4D)"
+imaging_modality = "Intensity-only"
+input_type = "Intensity (2D)"
 channel_name = "cd8"
+
+["Intensity (2D)"]
+available_feature_extractors = [ "Intensity morphology", "Intensity texture",]
+file_types = [ "Intensity (2D)", "Mask",]
 
 [ch1."Decay (3/4D)"]
 num_components = 2
@@ -83,6 +88,9 @@ num_components = 2
 selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
 [ch3."Decay (3/4D) pixel-prefitted"]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
+
+[ch3."Intensity (2D)"]
 selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
 [ch1."Decay (3/4D)".input_suffixes]
@@ -122,3 +130,7 @@ Mask = "stain_mask.tiff"
 [ch3."Decay (3/4D) pixel-prefitted".input_suffixes]
 Decay = "_C.uncompressed.sdt"
 Mask = "_C_crypto_mask.tif"
+
+[ch3."Intensity (2D)".input_suffixes]
+Mask = "n_photons_mask_cyto.tiff"
+"Intensity (2D)" = "r.tiff"

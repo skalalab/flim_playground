@@ -45,10 +45,9 @@ def main():
     cfg = load_config()
     error_msg = ""
     max_num_channels = 4
-    imaging_modalities = ["FLIM"]
     all_flim_decay_input_types = ["Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)"]
+    intensity_only_input_types = ["Intensity (2D)"]
     all_available_categorical_cols = ["experiment", "patient_id", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "replicate"]
-    # in the future it will be other lists, one for each imaging modality
     spc_output_suffix = {"a1": "_a1[%].asc", "t1": "_t1.asc", "a2": "_a2[%].asc", "t2": "_t2.asc", "a3": "_a3[%].asc", "t3": "_t3.asc"}
     all_feature_extractors = ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture"]
     if "all_feature_extractors" not in cfg:
@@ -66,6 +65,12 @@ def main():
 
     if "flim_decay_input_type" not in cfg:
         cfg["flim_decay_input_type"] = all_flim_decay_input_types[0]
+
+    # currently, the only option for intensity-only is 2D
+    intensity_only_input_type = intensity_only_input_types[0]
+    cfg["intensity_only_input_type"] = intensity_only_input_type
+    if intensity_only_input_type not in cfg:
+        cfg[intensity_only_input_type] = {}
 
     cols = st.columns(4)
 
@@ -111,9 +116,16 @@ def main():
             cfg[flim_decay_input_type]["available_feature_extractors"] = ["Lifetime fit", "Lifetime fit free"]
         else:
             cfg[flim_decay_input_type]["available_feature_extractors"] = ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture"]
+    if "available_feature_extractors" not in cfg[intensity_only_input_type]:
+        cfg[intensity_only_input_type]["available_feature_extractors"] = ["Intensity morphology", "Intensity texture"]
+
+    if flim_decay_input_type == "Decay (2D)":
+        imaging_modalities = ["FLIM"]
+    else:
+        imaging_modalities = ["FLIM", "Intensity-only"]
 
     # init file types for each input type
-    for input_type in all_flim_decay_input_types:
+    for input_type in all_flim_decay_input_types + intensity_only_input_types:
         if "file_types" not in cfg[input_type]:
             if input_type == "Decay (3/4D)":
                 cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask",]
@@ -121,6 +133,8 @@ def main():
                 cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask", "a1"]
             elif input_type == "Decay (2D)":
                 cfg[input_type]["file_types"] = ["Decay", "IRF"]
+            elif input_type == "Intensity (2D)":
+                cfg[input_type]["file_types"] = ["Intensity (2D)", "Mask"]
     
     cols = st.columns(cfg["num_channels"])
    
@@ -131,13 +145,13 @@ def main():
             channel_key = f"ch{i+1}"
             if channel_key not in cfg:
                 cfg[channel_key] = {}
-            imaging_modality = "FLIM"
-            if "imaging_modality" not in cfg[channel_key]:
-                cfg[channel_key]["imaging_modality"] = imaging_modality
-        #    imaging_modality = st.selectbox("Imaging modality", imaging_modalities, index=0, key=f"imaging_modality_{channel_key}")
+            imaging_modality = st.selectbox("Imaging modality", imaging_modalities, index=0, key=f"imaging_modality_{channel_key}")
             # get input type for this channel
+            cfg[channel_key]["imaging_modality"] = imaging_modality
             if imaging_modality == "FLIM":
                 input_type = flim_decay_input_type
+            elif imaging_modality == "Intensity-only":
+                input_type = intensity_only_input_type
             cfg[channel_key]["input_type"] = input_type
             if input_type not in cfg[channel_key]:
                 cfg[channel_key][input_type] = {}
