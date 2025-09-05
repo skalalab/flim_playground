@@ -444,6 +444,7 @@ def fov_extraction(metadata, metadata_dict):
             else: 
                 calibration_method = None
                 reference_dye_file = None
+                reference_dye_image = None
                 reference_dye_lifetime = None
                 reference_time_axis = None
 

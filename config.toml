@@ -54,7 +54,7 @@ reference_dye_file = "test.tif"
 [ch3]
 imaging_modality = "FLIM"
 input_type = "Decay (3/4D)"
-channel_name = "red"
+channel_name = "cd8"
 
 ["Intensity (2D)"]
 available_feature_extractors = [ "Intensity morphology", "Intensity texture",]
@@ -62,7 +62,7 @@ file_types = [ "Intensity (2D)", "Mask",]
 
 [ch1."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Intensity morphology", "Intensity texture", "Lifetime fit free",]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture", "Lifetime fit",]
 
 [ch1."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
