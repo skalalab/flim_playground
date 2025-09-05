@@ -68,7 +68,7 @@ def create_shape_mapping(groups):
     return {group: symbols[i % len(symbols)] for i, group in enumerate(groups)}
 
 def create_color_map(groups, overlap_point, colormap="tab10"):
-    # if points in the visulization is going to overlap, use a transparent color
+    # if points in the visualization is going to overlap, use a transparent color
     if overlap_point: 
         alpha = 0.6 if len(groups) > 1 else 1.0
     else:

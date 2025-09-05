@@ -219,7 +219,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
     for i, cell_id in enumerate(decay_curves.keys()):
         if cell_id not in single_cell_features_fov:
             single_cell_features_fov[cell_id] = {}
-        # amplitutes and offsets are just bookkeeping, should be default to uncategorized features (i.e. without prefix)
+        # amplitudes and offsets are just bookkeeping, should be default to uncategorized features (i.e. without prefix)
         single_cell_features_fov[cell_id][f"{channel_name}_amp1"] = results["amp1"][i]
         single_cell_features_fov[cell_id][f"{fit_feature_prefix}t1"] = results["t1"][i] * 1000  # Convert to ps
         single_cell_features_fov[cell_id][f"{channel_name}_offset"] = results["offset"][i]
