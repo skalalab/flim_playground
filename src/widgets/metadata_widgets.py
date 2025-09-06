@@ -407,15 +407,15 @@ def lifetime_data_config_widget(selected_feature_extractors, input_type):
         default_2D_decay_duration, default_2D_decay_time_bins = get_default_2D_decay_config()
         cols = st.columns(3 if fit_free else 2)
         with cols[0]:
-            duration = st.number_input("Duration (s)", value=default_2D_decay_duration, min_value=0.0, max_value=100.0, key="2D_decay_duration")
+            duration = st.number_input("Duration (**ns**)", value=default_2D_decay_duration, min_value=0.0, max_value=100.0, key="2D_decay_duration")
         with cols[1]:
             time_bins = st.number_input("Time bins", value=default_2D_decay_time_bins, min_value=256, max_value=2048, key="2D_decay_time_bins")
         if fit_free:
             default_laser_rate = get_default_laser_rate(input_type)
             with cols[2]:
-                laser_rate = st.number_input("Laser rate (GHz)", value=default_laser_rate, min_value=0.0, max_value=2.0, key="2D_decay_laser_rate")
+                laser_rate = st.number_input("Laser rate **(GHz)**", value=default_laser_rate, min_value=0.0, max_value=2.0, key="2D_decay_laser_rate")
     else: 
         if fit_free:
             default_laser_rate = get_default_laser_rate(input_type)
-            laser_rate = st.number_input("Laser rate (GHz)", value=default_laser_rate, min_value=0.0, max_value=2.0, key="laser_rate")
+            laser_rate = st.number_input("Laser rate **(GHz)**", value=default_laser_rate, min_value=0.0, max_value=2.0, key="laser_rate")
     return duration, time_bins, laser_rate

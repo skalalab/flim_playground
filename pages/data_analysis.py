@@ -138,7 +138,7 @@ with col2:
                         else: 
                             fig = feature_histogram_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap)    
                 else:
-                    st.write("No data available after removing rows with missing values {sad_emoji}")
+                    st.write(f"No data available after removing rows with missing values {sad_emoji}")
             elif method in bivar_methods:
                 if "2D" in method and selected_x != "Select" and selected_y != "Select":
                     # drop rows with NaN values in the selected_x and selected_y columns
@@ -147,7 +147,7 @@ with col2:
                         fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_x=selected_x, selected_y=selected_y, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap)
                         data_export_ready = True
                     else:
-                        st.write("No data available after removing rows with missing values {sad_emoji}")
+                        st.write(f"No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Phasor Plot":
                     if selected_channel is not None and selected_harmonic is not None and f is not None:
                         fig, kmeans_df = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, f=f, harmonic=selected_harmonic, colormap=st.session_state.plot_colormap)

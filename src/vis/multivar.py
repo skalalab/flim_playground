@@ -30,7 +30,7 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, ra
             df = pd.DataFrame(reducer.fit_transform(X_std), columns=["UMAP1", "UMAP2"])
         elif method == "t-SNE":
             perplexity = hyperParam_dict.get('perplexity', 15)
-            early_exaggeration = hyperParam_dict.get('early_exaggeration', 1)
+            early_exaggeration = hyperParam_dict.get('early_exaggeration', 12)
             tsne = TSNE(n_components=n_components, perplexity=perplexity, early_exaggeration=early_exaggeration, random_state=random_state)
             df = pd.DataFrame(tsne.fit_transform(X_std), columns=["t-SNE1", "t-SNE2"])
     return df, exp_var

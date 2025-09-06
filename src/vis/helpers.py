@@ -314,7 +314,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
             group2_data = df[df[group_col_name] == pair[1]][selected_var].dropna()
 
             if group1_data.empty or group2_data.empty:
-                st.debug(f"Skipping pair {pair} due to empty data for one or both groups.")
+                st.warning(f"Skipping pair {pair} due to empty data for one or both groups.")
                 continue
             effect_size_value = _calculate_effect_size(group1_data, group2_data, effect_size_method, mean_or_median)
 

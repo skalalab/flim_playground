@@ -41,7 +41,6 @@ def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab1
                 hovertemplate=(
                     f"<b>FOV:</b> {fov_name}<br>"
                     f"<b>Group:</b> {color_group}<br>"
-                    f"<b>Count:</b> %{{y}}<extra></extra>"
                 )
             ))
     

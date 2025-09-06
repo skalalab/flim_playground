@@ -79,11 +79,10 @@ with col1:
                 with cols[0]:
                     reference_dye_file = st.text_input("Reference dye file name", value=reference_dye_file, key="reference_dye_file")
                 with cols[1]:
-                    reference_dye_lifetime = st.number_input("Reference dye lifetime in ns", value=reference_dye_lifetime, min_value=0.1, max_value=20.0, step=0.1, key="reference_dye_lifetime")
+                    reference_dye_lifetime = st.number_input("Reference dye lifetime in **ns**", value=reference_dye_lifetime, min_value=0.1, max_value=20.0, step=0.1, key="reference_dye_lifetime")
                 if reference_dye_file == "":
-                    st.error(f"Please enter a valid reference dye file name.")
-                if reference_dye_lifetime == "":
-                    st.error(f"Please enter a valid reference dye lifetime.")
+                    st.error("Please enter a valid reference dye file name.")
+
             actual_file_suffix, error_msg = load_data_suffix_widget(input_types, selected_channels, selected_ch_num_components, selected_ch_feature_extractors)
             if error_msg != "":
                 st.error(error_msg)
@@ -167,7 +166,7 @@ with col1:
                                     metadata_df.to_csv(st.session_state["last_extracted_metadata_filepath"], index=False)
                                     st.success(f"✅ Metadata updated successfully at {st.session_state['last_extracted_metadata_filepath']}")
                                 except PermissionError:
-                                    st.error(f"❌ Cannot save file - it may be open in another program (like Excel). Please close the file and try again.")
+                                    st.error("❌ Cannot save file - it may be open in another program (like Excel). Please close the file and try again.")
                                 except Exception as e:
                                     st.error(f"❌ Error saving file: {str(e)}")
                         else:

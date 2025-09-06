@@ -113,6 +113,10 @@ def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask
     return "", single_cell_morph_features_fov
 
 def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_colname):
+
+    if num_components > 3 or num_components < 1:
+        return f"Error: {num_components} are not yet supported. ", pd.DataFrame()
+
     fit_feature_prefix = f"Lifetime fit_{channel_name}: "
     image_props = {}
     try:
@@ -120,58 +124,55 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
         # SPC image will output 0 for the thresholded pixels (background), so we need to mask them
         a1 = np.ma.masked_array(a1, mask=a1==0, fill_value=np.nan)
     except Exception as e:
-        return f"Error reading the {channel_name} a1 file: {metadata[f'{channel_name}_a1']}: {e}", pd.DataFrame()
+        return f"Error: failed to read the {channel_name} a1 file: {metadata[f'{channel_name}_a1']}: {e}", pd.DataFrame()
     try:
         mask = load_image(metadata[f"{channel_name}_Mask"])
     except Exception as e:
-        return f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}", pd.DataFrame()
+        return f"Error: failed to read the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}", pd.DataFrame()
     if mask.shape != a1.shape:
         return f"Error: {channel_name} a1 file has a different shape than the mask file: {a1.shape} != {mask.shape}", pd.DataFrame()
     try:
         t1 = load_image(metadata[f"{channel_name}_t1"])
         t1 = np.ma.masked_array(t1, mask=t1==0, fill_value=np.nan)
     except Exception as e:
-        return f"Error reading the {channel_name} t1 file: {metadata[f'{channel_name}_t1']}: {e}", pd.DataFrame()
+        return f"Error: failed to read the {channel_name} t1 file: {metadata[f'{channel_name}_t1']}: {e}", pd.DataFrame()
     if mask.shape != t1.shape:
         return f"Error: {channel_name} t1 file has a different shape than the mask file: {t1.shape} != {mask.shape}", pd.DataFrame()
     
     try:
         image_props[f"{fit_feature_prefix}a1"] = regionprops(label_image=mask, intensity_image=a1)
         image_props[f"{fit_feature_prefix}t1"] = regionprops(label_image=mask, intensity_image=t1)
-        tm = a1 * t1
     except Exception as e:
         return f"Error: {channel_name} a1 or t1 file is not valid: {e}", pd.DataFrame()
 
-    if num_components == 2:
+    if num_components >= 2:
         try:
             t2 = load_image(metadata[f"{channel_name}_t2"])
             t2 = np.ma.masked_array(t2, mask=t2==0, fill_value=np.nan)
         except Exception as e:
-            return f"Error reading the {channel_name} t2 file: {metadata[f'{channel_name}_t2']}: {e}", pd.DataFrame()
+            return f"Error: failed to read the {channel_name} t2 file: {metadata[f'{channel_name}_t2']}: {e}", pd.DataFrame()
         if mask.shape != t2.shape:
             return f"Error: {channel_name} t2 file has a different shape than the mask file: {t2.shape} != {mask.shape}", pd.DataFrame()
-        tm= (a1 / 100 * t1) + ((100 - a1) / 100 * t2)
         try:
             image_props[f"{fit_feature_prefix}t2"] = regionprops(label_image=mask, intensity_image=t2)
         except Exception as e:
             return f"Error: {channel_name} t2 file is not valid: {e}", pd.DataFrame()
     
-    elif num_components == 3:
+    if num_components == 3:
         try:
             a2 = load_image(metadata[f"{channel_name}_a2"])
             a2 = np.ma.masked_array(a2, mask=a2==0, fill_value=np.nan)
         except Exception as e:
-            return f"Error reading the {channel_name} a2 file: {metadata[f'{channel_name}_a2']}: {e}", pd.DataFrame()
+            return f"Error: failed to read the {channel_name} a2 file: {metadata[f'{channel_name}_a2']}: {e}", pd.DataFrame()
         if mask.shape != a2.shape:
             return f"Error: {channel_name} a2 file has a different shape than the mask file: {a2.shape} != {mask.shape}", pd.DataFrame()
         try:
             t3 = load_image(metadata[f"{channel_name}_t3"])
             t3 = np.ma.masked_array(t3, mask=t3==0, fill_value=np.nan)
         except Exception as e:
-            return f"Error reading the {channel_name} t3 file: {metadata[f'{channel_name}_t3']}: {e}", pd.DataFrame()
+            return f"Error: failed to read the {channel_name} t3 file: {metadata[f'{channel_name}_t3']}: {e}", pd.DataFrame()
         if mask.shape != t3.shape:
             return f"Error: {channel_name} t3 file has a different shape than the mask file: {t3.shape} != {mask.shape}", pd.DataFrame()
-        tm= (a1 / 100 * t1) + ((100 - a1) / 100 * t2) + ((100 - a1 - a2) / 100 * t3)
         try:
             image_props[f"{fit_feature_prefix}a2"] = regionprops(label_image=mask, intensity_image=a2)
         except Exception as e:
@@ -180,6 +181,13 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
             image_props[f"{fit_feature_prefix}t3"] = regionprops(label_image=mask, intensity_image=t3)
         except Exception as e:
             return f"Error: {channel_name} t3 file is not valid: {e}", pd.DataFrame()
+
+    if num_components == 1:
+        tm = t1 
+    elif num_components == 2:
+        tm = (a1 / 100 * t1) + ((100 - a1) / 100 * t2)
+    elif num_components == 3:
+        tm = (a1 / 100 * t1) + (a2 / 100 * t2) + ((100 - a1 - a2) / 100 * t3)
     try:
         image_props[f"{fit_feature_prefix}tm"] = regionprops(label_image=mask, intensity_image=tm)
     except Exception as e:
@@ -215,7 +223,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
     """
     single_cell_features_fov = {}
     fit_feature_prefix = f"Lifetime fit_{channel_name}: "
-
+    warning_msg = ""
     for i, cell_id in enumerate(decay_curves.keys()):
         if cell_id not in single_cell_features_fov:
             single_cell_features_fov[cell_id] = {}
@@ -229,6 +237,10 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
             # Calculate alpha values
             amp1, amp2 = results["amp1"][i], results["amp2"][i]
             total_amp = amp1 + amp2
+            # guard against division by zero
+            if total_amp == 0:
+                warning_msg += f"Warning: {cell_id} has a total amplitude of 0. "
+                continue
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}a1"] = (amp1 / total_amp) * 100
             # single_cell_features_fov[cell_id][f"{channel_name}_a2"] = (amp2 / total_amp) * 100
             # Calculate mean lifetime (in original units, not converted)
@@ -242,13 +254,17 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
             # Calculate alpha values for 3 components
             amp1, amp2, amp3 = results["amp1"][i], results["amp2"][i], results["amp3"][i]
             total_amp = amp1 + amp2 + amp3
+            # guard against division by zero
+            if total_amp == 0:
+                warning_msg += f"Warning: {cell_id} has a total amplitude of 0. "
+                continue
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}a1"] = (amp1 / total_amp) * 100
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}a2"] = (amp2 / total_amp) * 100
            # single_cell_features_fov[cell_id][f"{lifetime_feature_prefix}_a3"] = (amp3 / total_amp) * 100
             # Calculate mean lifetime for 3 components (in original units, not converted)
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm"] = ((amp1 / total_amp) * results["t1"][i] + (amp2 / total_amp) * results["t2"][i] + (amp3 / total_amp) * results["t3"][i]) * 1000
 
-    return single_cell_features_fov
+    return warning_msg, single_cell_features_fov
 
 def get_raw_phasor(decay_curve, h, w, time_axis=None, full_period=False):
     # the truncated time axis case
@@ -266,11 +282,11 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         channel_name
         decay_curves: dictionary of decay curves: key is cell_id, value is decay curve
         shifted_irf: shifted IRF
-        laser_rate: laser repetition rate
-        duration: time between two laser pulses
+        laser_rate: laser repetition rate (GHz)
+        duration: time between two laser pulses (ns)
         calibration_method: calibration method
         reference_dye_file: reference dye file
-        reference_dye_lifetime: reference dye lifetime
+        reference_dye_lifetime: reference dye lifetime (ns)
     """
     if len(decay_curves) == 0:
         return f"Error: No decay curves found for {channel_name}", pd.DataFrame()
@@ -364,12 +380,18 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         else:
             shifted_irf = None
     if fit:
-        num_components = metadata[f"{channel_name}_num_components"]
+        try:
+            num_components = metadata[f"{channel_name}_num_components"]
+        except Exception as e:
+            return f"Error: Number of components not found for {channel_name}: {e}", pd.DataFrame()
         if "prefitted" not in input_type:
-            fitting_algo = metadata["fitting_algo"]
-            fitting_mode = metadata["fitting_mode"]
-            start = metadata[f"{channel_name}_start"]
-            end = metadata[f"{channel_name}_end"]
+            try:
+                fitting_algo = metadata["fitting_algo"]
+                fitting_mode = metadata["fitting_mode"]
+                start = metadata[f"{channel_name}_start"]
+                end = metadata[f"{channel_name}_end"]
+            except Exception as e:
+                return f"Error: Fitting algorithm or mode or start or end not found for {channel_name}: {e}", pd.DataFrame()
             need_to_fit = True
         else: # prefitted
             error_msg, single_cell_fit_features_fov = extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col_name)
@@ -385,7 +407,9 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
     channel_progress_callback = create_progress_callback(channel_progress)
     if need_to_fit:
         results = fit_curves(duration, time_bins, list(decay_curves.values()), shifted_irf, num_components, fitting_algo, fitting_mode, start=start, end=end, _progress_callback=channel_progress_callback)
-        single_cell_fit_features_fov = extract_fit_results(channel_name, decay_curves, results, num_components)
+        warning_msg, single_cell_fit_features_fov = extract_fit_results(channel_name, decay_curves, results, num_components)
+        if warning_msg != "":
+            st.warning(warning_msg)
         # convert to dataframe
         single_cell_fit_features_fov = pd.DataFrame.from_dict(single_cell_fit_features_fov, orient='index')
     channel_container.empty()  # Remove both text and progress bar when done

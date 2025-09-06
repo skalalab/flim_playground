@@ -90,7 +90,7 @@ def main():
 
     cols = st.columns(4)
     with cols[0]:
-        laser_rate = st.number_input(f"Laser rate (GHz) for {flim_decay_input_type}", value=cfg.get(flim_decay_input_type, {}).get("laser_rate", 0.08), min_value=0.0, max_value=1.0, key=f"laser_rate_{flim_decay_input_type}")
+        laser_rate = st.number_input(f"Laser rate **(GHz)** for {flim_decay_input_type}", value=cfg.get(flim_decay_input_type, {}).get("laser_rate", 0.08), min_value=0.0, max_value=1.0, key=f"laser_rate_{flim_decay_input_type}")
         cfg[flim_decay_input_type]["laser_rate"] = laser_rate
     with cols[1]:
         # Get default value from config and find its index
@@ -108,7 +108,7 @@ def main():
                     st.error(error_msg)
             with cols[3]:
                 # get the reference dye lifetime
-                cfg[flim_decay_input_type]["reference_dye_lifetime"] = st.number_input(f"Reference dye lifetime (ns)", value=cfg.get(flim_decay_input_type, {}).get("reference_dye_lifetime", 1.0), min_value=0.1, max_value=20.0, key=f"reference_dye_lifetime_{flim_decay_input_type}")
+                cfg[flim_decay_input_type]["reference_dye_lifetime"] = st.number_input(f"Reference dye lifetime **(ns)**", value=cfg.get(flim_decay_input_type, {}).get("reference_dye_lifetime", 1.0), min_value=0.1, max_value=20.0, key=f"reference_dye_lifetime_{flim_decay_input_type}")
        
         # feature extractor initialization
     if "available_feature_extractors" not in cfg[flim_decay_input_type]:
@@ -201,7 +201,7 @@ def main():
         cols = st.columns(2)
         with cols[0]:
             # ask for k_flow duration and time bins
-            cfg[flim_decay_input_type]["duration"] = st.number_input(f"{flim_decay_input_type} duration (s)", value=cfg.get(flim_decay_input_type, {}).get("duration", 20.0), min_value=0.0, max_value=100.0, key=f"{flim_decay_input_type}_duration")
+            cfg[flim_decay_input_type]["duration"] = st.number_input(f"{flim_decay_input_type} duration (**ns**)", value=cfg.get(flim_decay_input_type, {}).get("duration", 20.0), min_value=0.0, max_value=100.0, key=f"{flim_decay_input_type}_duration")
         with cols[1]:
             cfg[flim_decay_input_type]["time_bins"] = st.number_input(f"{flim_decay_input_type} time bins", value=cfg.get(flim_decay_input_type, {}).get("time_bins", 1024), min_value=256, max_value=2048, key=f"{flim_decay_input_type}_time_bins")
       

@@ -21,7 +21,7 @@ t3 = "_t3.asc"
 laser_rate = 0.08
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 file_types = [ "Decay", "IRF", "Mask",]
-fit_free_calibration = "IRF"
+fit_free_calibration = "Reference Dye"
 reference_dye_file = "test.tif"
 reference_dye_lifetime = 4.2
 
