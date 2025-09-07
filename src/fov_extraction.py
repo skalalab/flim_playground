@@ -119,18 +119,12 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
 
     fit_feature_prefix = f"Lifetime fit_{channel_name}: "
     image_props = {}
-    try:
-        a1 = load_image(metadata[f"{channel_name}_a1"])
-        # SPC image will output 0 for the thresholded pixels (background), so we need to mask them
-        a1 = np.ma.masked_array(a1, mask=a1==0, fill_value=np.nan)
-    except Exception as e:
-        return f"Error: failed to read the {channel_name} a1 file: {metadata[f'{channel_name}_a1']}: {e}", pd.DataFrame()
+   
     try:
         mask = load_image(metadata[f"{channel_name}_Mask"])
     except Exception as e:
         return f"Error: failed to read the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}", pd.DataFrame()
-    if mask.shape != a1.shape:
-        return f"Error: {channel_name} a1 file has a different shape than the mask file: {a1.shape} != {mask.shape}", pd.DataFrame()
+   
     try:
         t1 = load_image(metadata[f"{channel_name}_t1"])
         t1 = np.ma.masked_array(t1, mask=t1==0, fill_value=np.nan)
@@ -140,12 +134,19 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
         return f"Error: {channel_name} t1 file has a different shape than the mask file: {t1.shape} != {mask.shape}", pd.DataFrame()
     
     try:
-        image_props[f"{fit_feature_prefix}a1"] = regionprops(label_image=mask, intensity_image=a1)
         image_props[f"{fit_feature_prefix}t1"] = regionprops(label_image=mask, intensity_image=t1)
     except Exception as e:
-        return f"Error: {channel_name} a1 or t1 file is not valid: {e}", pd.DataFrame()
+        return f"Error: {channel_name} t1 file is not valid: {e}", pd.DataFrame()
 
     if num_components >= 2:
+        try:
+            a1 = load_image(metadata[f"{channel_name}_a1"])
+            # SPC image will output 0 for the thresholded pixels (background), so we need to mask them
+            a1 = np.ma.masked_array(a1, mask=a1==0, fill_value=np.nan)
+        except Exception as e:
+            return f"Error: failed to read the {channel_name} a1 file: {metadata[f'{channel_name}_a1']}: {e}", pd.DataFrame()
+        if mask.shape != a1.shape:
+            return f"Error: {channel_name} a1 file has a different shape than the mask file: {a1.shape} != {mask.shape}", pd.DataFrame()
         try:
             t2 = load_image(metadata[f"{channel_name}_t2"])
             t2 = np.ma.masked_array(t2, mask=t2==0, fill_value=np.nan)
@@ -153,6 +154,10 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
             return f"Error: failed to read the {channel_name} t2 file: {metadata[f'{channel_name}_t2']}: {e}", pd.DataFrame()
         if mask.shape != t2.shape:
             return f"Error: {channel_name} t2 file has a different shape than the mask file: {t2.shape} != {mask.shape}", pd.DataFrame()
+        try:
+            image_props[f"{fit_feature_prefix}a1"] = regionprops(label_image=mask, intensity_image=a1)
+        except Exception as e:
+            return f"Error: {channel_name} a1 file is not valid: {e}", pd.DataFrame()
         try:
             image_props[f"{fit_feature_prefix}t2"] = regionprops(label_image=mask, intensity_image=t2)
         except Exception as e:

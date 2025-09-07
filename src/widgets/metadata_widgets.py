@@ -16,7 +16,7 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
     """
     actual_file_suffix = {}
     error_msg = ""
-    a1_suffix_list = []
+    t1_suffix_list = []
     mask_suffix_list = {}
     if any("prefitted" in input_type for input_type in input_types.values()):
         spc_output_suffix = get_spc_output_suffix()
@@ -33,8 +33,8 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
         num_cols = 3
         cols = st.columns(num_cols)
         for j, (file_type, default_suffix) in enumerate(actual_file_suffix[channel_name].items()):
-            if file_type == "a1":
-                a1_suffix_list.append(default_suffix)
+            if file_type == "SPCImage t1":
+                t1_suffix_list.append(default_suffix)
             elif file_type == "Mask":
                 mask_suffix_list[channel_name] = default_suffix
             col = cols[j % num_cols]
@@ -42,8 +42,8 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
                 # only show the help message for the first file type of the first channel
                 if i == 0 and j == 0:
                     help_msg = "The filenames are expected to have *exactly* two parts: *image_name + suffix*. All files from the same image should share the **same** image_name, with the only difference being the suffix."
-                elif i == 0 and "prefitted" in input_type and file_type == "a1":
-                    help_msg = f"For other SPCImage output files (e.g. t1, t2), the suffixes are automatically generated based on the provided a1 suffix by replacing {spc_output_suffix['a1']} to get the others."
+                elif i == 0 and "prefitted" in input_type and file_type == "SPCImage t1":
+                    help_msg = f"For other SPCImage output files (e.g. a1, t2), the suffixes are automatically generated based on the provided t1 suffix by replacing {spc_output_suffix['t1']} to get the others."
                 else:
                     help_msg = None
                 suffix = st.text_input(f"{file_type}", default_suffix, key=f"{channel_name}_{input_type}_{file_type}_suffix", help=help_msg)
@@ -54,18 +54,19 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
         if "prefitted" in input_type and error_msg == "": # write the spc outputs' suffixes for this channel
             if channel_name in selected_ch_num_components and selected_ch_num_components[channel_name] != 0:
                 num_components = selected_ch_num_components[channel_name]
+                # t1 is already provided, so no need to generate the others
                 if num_components == 1:
-                    needed_suffix = ["t1"]
+                    continue
                 elif num_components == 2:
-                    needed_suffix = ["t1", "t2"]
+                    needed_suffix = ["a1", "t2"]
                 elif num_components == 3:
-                    needed_suffix = ["t1", "a2", "t2", "t3"]
+                    needed_suffix = ["a1", "a2", "t2", "t3"]
                 for key in needed_suffix:
-                    actual_file_suffix[channel_name][key] = actual_file_suffix[channel_name]["a1"].replace(spc_output_suffix["a1"], spc_output_suffix[key])
+                    actual_file_suffix[channel_name][key] = actual_file_suffix[channel_name]["SPCImage t1"].replace(spc_output_suffix["t1"], spc_output_suffix[key])
 
-    # check for duplicates in a1_suffix_list
-    if len(set(a1_suffix_list)) != len(a1_suffix_list):
-        error_msg += f"Duplicate a1 suffixes found: {a1_suffix_list} {sad_emoji}"
+    # check for duplicates in t1_suffix_list
+    if len(set(t1_suffix_list)) != len(t1_suffix_list):
+        error_msg += f"Duplicate t1 suffixes found: {t1_suffix_list} {sad_emoji}"
 
     # output info message for channels that share the same mask suffix
     mask_suffix_seen = {}

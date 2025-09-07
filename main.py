@@ -130,7 +130,7 @@ def main():
             if input_type == "Decay (3/4D)":
                 cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask",]
             elif input_type == "Decay (3/4D) pixel-prefitted":
-                cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask", "a1"]
+                cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask", "SPCImage t1"]
             elif input_type == "Decay (2D)":
                 cfg[input_type]["file_types"] = ["Decay", "IRF"]
             elif input_type == "Intensity (2D)":
@@ -184,8 +184,8 @@ def main():
 
             st.subheader(f"File suffixes: {custom_channel_name}")
             for file_type in cfg[input_type]["file_types"]:
-                # Skip a1 if no Lifetime fit extractors are selected
-                if file_type == "a1" and not "Lifetime fit" in selected_feature_extractors:
+                # Skip t1 if no Lifetime fit extractors are selected
+                if file_type == "SPCImage t1" and not "Lifetime fit" in selected_feature_extractors:
                     continue
                 # Skip IRF if no Lifetime extractors OR if prefitted and no fit free extractors
                 if file_type == "IRF" and (not any("Lifetime" in extractor for extractor in selected_feature_extractors) or 

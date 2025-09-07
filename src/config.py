@@ -47,7 +47,7 @@ def get_default_file_suffixes(channel_key: str, input_type: str, selected_featur
     fit_free_calibration = cfg.get(input_type, {}).get("fit_free_calibration", "")
     for file_type in file_suffixes.keys():
         # skip a bunch of things 
-        if file_type == "a1" and "Lifetime fit" not in selected_feature_extractors:
+        if file_type == "SPCImage t1" and "Lifetime fit" not in selected_feature_extractors:
             continue
         # skip IRF if no Lifetime extractors OR if prefitted and no fit free extractors
         if file_type == "IRF" and (not any("Lifetime" in extractor for extractor in selected_feature_extractors) or 
