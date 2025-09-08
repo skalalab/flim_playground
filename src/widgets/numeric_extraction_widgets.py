@@ -5,23 +5,19 @@ import numpy as np
 
 def check_fov_features(single_fov_cell_features, fov_name, fov_name_col):
     """
-    Drop the cells that have '--' or NaN values.
+    Give warnings for cells that have NaN values.
     """
     total_cells = len(single_fov_cell_features)
-    # Create boolean masks for invalid cells
-    dash_mask = single_fov_cell_features.astype(str).apply(lambda x: x.str.contains("--").any(), axis=1)
+    # Create boolean masks for nan cells
     nan_mask = single_fov_cell_features.isna().any(axis=1)
     
-    # Combine masks
-    invalid_mask = dash_mask | nan_mask
-    invalid_cells = invalid_mask.sum()
+    # Count nan cells
+    nan_cells = nan_mask.sum()
     
-    if invalid_cells > 0:
+    if nan_cells > 0:
         st.warning(
-            f"The {fov_name_col} {fov_name} has **{invalid_cells}** cell(s) with '--' or NaN values out of {total_cells} cell(s). "
+            f"The {fov_name_col} {fov_name} has **{nan_cells}** cell(s) with NaN values out of {total_cells} cell(s). "
         )
-        # replace '--' with NaN
-        single_fov_cell_features = single_fov_cell_features.replace("--", np.nan)
     
     return single_fov_cell_features
             
