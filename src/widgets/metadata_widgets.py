@@ -361,7 +361,7 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
                         if len(available_channels) == 1:
                             fov_df[f"{channel_name}_channel"] = available_channels[0]
                         else:
-                            fov_df[f"{channel_name}_channel"] = st.selectbox("Select the sdt channel for nadh decay", available_channels, key=f"{channel_name}_channel_selectbox")
+                            fov_df[f"{channel_name}_channel"] = st.selectbox(f"Select the sdt channel for {channel_name} decay", available_channels, key=f"{channel_name}_channel_selectbox")
                         time_bins_list.append(shape[-1])
                         fov_dimensions_list.append(shape[:-1])
                         laser_rep_time_list.append(laser_rep_time)
