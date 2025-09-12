@@ -364,6 +364,13 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
 
     return "", single_cell_features_fov
 
+def extract_intensity_sum_2d(channel_name, decay_curves, single_cell_features_fov):
+    intensity_sum_feature_name = f"Intensity texture_{channel_name}: intensity_sum"
+    for _, cell_id in enumerate(decay_curves.keys()):
+        single_cell_features_fov[cell_id][intensity_sum_feature_name] = np.sum(decay_curves[cell_id])
+    return single_cell_features_fov
+
+
 def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method=None, reference_dye_image=None, reference_dye_lifetime=None, reference_time_axis=None):
     need_to_fit = False
     time_bins = metadata["time_bins"]
@@ -413,6 +420,8 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         warning_msg, single_cell_fit_features_fov = extract_fit_results(channel_name, decay_curves, results, num_components)
         if warning_msg != "":
             st.warning(warning_msg)
+        if "2D" in input_type:
+            single_cell_fit_features_fov = extract_intensity_sum_2d(channel_name, decay_curves, single_cell_fit_features_fov)
         # convert to dataframe
         single_cell_fit_features_fov = pd.DataFrame.from_dict(single_cell_fit_features_fov, orient='index')
     channel_container.empty()  # Remove both text and progress bar when done

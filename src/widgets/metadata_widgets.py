@@ -319,7 +319,7 @@ def check_raw_intensity_data(fov_df, channel_name):
         return f"No fov dimensions found for channel {channel_name}. Please check the data.", None
     else:
         return "", dimension_list[0]
-            
+
 def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type, imaging_modalities, duration=None, time_bins=None):   
     error_msg = ""
     time_bins_list = []

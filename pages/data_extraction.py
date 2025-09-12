@@ -111,6 +111,9 @@ with col1:
                 decay_input_type = metadata_dict["decay_input_type"]
                 shift_needed = len(metadata_dict["channels_shift"]) > 0
                 shifts_are_present = all(f"{ch}_shift" in metadata_df.columns for ch in metadata_dict["channels_shift"])
+                # Defensive reset: if shifts are required but missing, do not allow extraction yet
+                if shift_needed and not shifts_are_present and st.session_state.get("shift_ready", False):
+                    st.session_state["shift_ready"] = False
                 if shift_needed and not shifts_are_present:
                         # if there are channels to be fitted, show the fitting options: spcimage is already fitted
                     if "Lifetime fit" in metadata_dict and len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
