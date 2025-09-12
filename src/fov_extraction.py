@@ -11,28 +11,26 @@ from src.cell_texture import granularity, radial_distribution, mass_displacement
 
 def get_offset(decay_curve):
     """
-    Get the offset of a decay curve by taking the minimum of:
-    - Median of the first 20% of bins
-    - Median of the last 10% of bins
+    Get the offset of a decay curve using: median of the last 10% of bins
     """
-    head_bins_percentile = 20
+   # head_bins_percentile = 20
     tail_bins_percentile = 90
     
     # Calculate the number of bins for each segment
     total_bins = len(decay_curve)
-    head_bins = int(total_bins * head_bins_percentile / 100)
+    #head_bins = int(total_bins * head_bins_percentile / 100)
     tail_start_bin = int(total_bins * tail_bins_percentile / 100)
     
     # Get the first 20% of bins and calculate median
-    head_segment = decay_curve[:head_bins]
-    head_median = np.median(head_segment)
+  #  head_segment = decay_curve[:head_bins]
+  #  head_median = np.median(head_segment)
     
     # Get the last 10% of bins and calculate median  
     tail_segment = decay_curve[tail_start_bin:]
-    tail_median = np.median(tail_segment)
+    tail_median = np.mean(tail_segment)
     
     # Return the minimum of the two medians
-    return min(head_median, tail_median)
+    return tail_median
 
 def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type):
     feature_prefix = f"Intensity texture_{channel_name}: "
@@ -307,7 +305,7 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         time_bins = len(first_decay_curve)
         period = duration / time_bins
         time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
-    
+
     if calibration_method == "Reference Dye":
         if reference_time_axis is None:
             return f"Error: Reference time axis is not provided", pd.DataFrame()
@@ -420,8 +418,6 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         warning_msg, single_cell_fit_features_fov = extract_fit_results(channel_name, decay_curves, results, num_components)
         if warning_msg != "":
             st.warning(warning_msg)
-        if "2D" in input_type:
-            single_cell_fit_features_fov = extract_intensity_sum_2d(channel_name, decay_curves, single_cell_fit_features_fov)
         # convert to dataframe
         single_cell_fit_features_fov = pd.DataFrame.from_dict(single_cell_fit_features_fov, orient='index')
     channel_container.empty()  # Remove both text and progress bar when done
@@ -432,6 +428,8 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf, reference_dye_image, reference_dye_lifetime, reference_time_axis)
         if error_msg != "":
             return error_msg, pd.DataFrame()
+        if "2D" in input_type:
+            single_cell_fit_free_features_fov = extract_intensity_sum_2d(channel_name, decay_curves, single_cell_fit_free_features_fov)
         single_cell_fit_free_features_fov = pd.DataFrame.from_dict(single_cell_fit_free_features_fov, orient='index')
     if fit and fit_free:
         return "", pd.concat([single_cell_fit_features_fov, single_cell_fit_free_features_fov], axis=1)
@@ -440,7 +438,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
     elif fit_free:
         return "", single_cell_fit_free_features_fov
 
-@st.cache_data
+#@st.cache_data
 def fov_extraction(metadata, metadata_dict):
     """
     Extract single cell features from one fov
