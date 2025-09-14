@@ -180,6 +180,8 @@ def main():
 
             st.subheader(f"File suffixes: {custom_channel_name}")
             for file_type in cfg[input_type]["file_types"]:
+                if file_type == "Decay" and "prefitted" in input_type and len(selected_feature_extractors) == 1 and "Lifetime fit" in selected_feature_extractors:
+                    continue
                 # Skip t1 if no Lifetime fit extractors are selected
                 if file_type == "SPCImage t1" and not "Lifetime fit" in selected_feature_extractors:
                     continue

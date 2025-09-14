@@ -47,6 +47,8 @@ def get_default_file_suffixes(channel_key: str, input_type: str, selected_featur
     fit_free_calibration = cfg.get(input_type, {}).get("fit_free_calibration", "")
     for file_type in file_suffixes.keys():
         # Only include Reference Dye when fit free uses Reference Dye and this channel does fit free
+        if file_type == "Decay" and "prefitted" in input_type and len(selected_feature_extractors) == 1 and "Lifetime fit" in selected_feature_extractors:
+            continue
         if file_type == "Reference Dye":
             if not ("Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Reference Dye"):
                 continue
@@ -58,7 +60,7 @@ def get_default_file_suffixes(channel_key: str, input_type: str, selected_featur
                                         ("prefitted" in input_type and not "Lifetime fit free" in selected_feature_extractors)):
             continue
         if file_type == "IRF" and ("Lifetime fit" not in selected_feature_extractors or "prefitted" in input_type) and "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Reference Dye":
-                    continue
+            continue
         filtered_file_suffixes[file_type] = file_suffixes[file_type]
     return filtered_file_suffixes
 
