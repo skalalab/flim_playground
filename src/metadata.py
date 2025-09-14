@@ -65,8 +65,9 @@ def get_ch_info(metadata_df):
         if "Lifetime fit free" in selected_feature_extractors:
             fit_free = True
             if channel_name not in metadata_dict["channels_shift"]:
-                # no need to shift if reference dye file is provided
-                if "reference_dye_file" in metadata_df.columns:
+                # no need to shift if channel-specific reference dye file is provided
+                channel_ref_col = f"{channel_name}_Reference Dye"
+                if channel_ref_col in metadata_df.columns:
                     continue
                 else:
                     metadata_dict["channels_shift"][channel_name] = "fit free"
@@ -90,24 +91,30 @@ def get_ch_info(metadata_df):
                 return f"Fit free calibration method column fit_free_calibration_method is not consistent.", None
             metadata_dict["fit_free_calibration_method"] = metadata_df["fit_free_calibration_method"].iloc[0]
             if metadata_dict["fit_free_calibration_method"] == "Reference Dye":
-                if "reference_dye_file" in metadata_df.columns:
-                    if metadata_df["reference_dye_file"].nunique() != 1:
-                        return f"Reference dye file column reference_dye_file is not consistent.", None
-                    metadata_dict["reference_dye_file"] = metadata_df["reference_dye_file"].iloc[0]
-                else:
-                    return f"Reference dye file column reference_dye_file not found in metadata file.", None
+                # lifetime is global and must be present
                 if "reference_dye_lifetime" in metadata_df.columns:
                     if metadata_df["reference_dye_lifetime"].nunique() != 1:
                         return f"Reference dye lifetime column reference_dye_lifetime is not consistent.", None
                     metadata_dict["reference_dye_lifetime"] = metadata_df["reference_dye_lifetime"].iloc[0]
                 else:
                     return f"Reference dye lifetime column reference_dye_lifetime not found in metadata file.", None
-                if "reference_dye_time_axis" in metadata_df.columns:
-                    if metadata_df["reference_dye_time_axis"].nunique() != 1:
-                        return f"Reference time axis column reference_dye_time_axis is not consistent.", None
-                    metadata_dict["reference_dye_time_axis"] = metadata_df["reference_dye_time_axis"].iloc[0]
-                else:
-                    return f"Reference time axis column `reference_dye_time_axis` not found in metadata file.", None
+                # channel-specific reference dye file and time axis
+                for channel_name in metadata_dict["channel_names"]:
+                    if "Lifetime fit free" not in metadata_dict[channel_name]["selected_feature_extractors"]:
+                        continue
+                    ref_col = f"{channel_name}_Reference Dye"
+                    if ref_col not in metadata_df.columns:
+                        return f"Reference dye file column {ref_col} not found in metadata file.", None
+                    # Must be consistent across rows
+                    if metadata_df[ref_col].nunique() != 1:
+                        return f"Reference dye file column {ref_col} is not consistent.", None
+                    metadata_dict[channel_name]["reference_dye_file"] = metadata_df[ref_col].iloc[0]
+                    time_axis_col = f"{channel_name}_reference_dye_time_axis"
+                    if time_axis_col not in metadata_df.columns:
+                        return f"Reference time axis column `{time_axis_col}` not found in metadata file.", None
+                    if metadata_df[time_axis_col].nunique() != 1:
+                        return f"Reference time axis column {time_axis_col} is not consistent.", None
+                    metadata_dict[channel_name]["reference_dye_time_axis"] = metadata_df[time_axis_col].iloc[0]
         else:
             return f"Fit free calibration method column fit_free_calibration_method not found in metadata file.", None
 

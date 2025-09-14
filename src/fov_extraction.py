@@ -461,16 +461,22 @@ def fov_extraction(metadata, metadata_dict):
             if fit_free:
                 calibration_method = metadata_dict["fit_free_calibration_method"]
                 if calibration_method == "Reference Dye":
-                    reference_dye_file = metadata_dict["reference_dye_file"]
+                    # channel-specific
+                    try:
+                        reference_dye_file = metadata_dict[channel_name]["reference_dye_file"]
+                    except KeyError:
+                        return f"Error: Reference dye file not found for channel {channel_name}.", pd.DataFrame()
                     try:
                         reference_dye_image = load_image(reference_dye_file)
                     except Exception as e:
-                        return f"Error reading the reference dye file: {reference_dye_file}: {e}", pd.DataFrame() 
-                    # calculate the phasor of reference dye
+                        return f"Error reading the reference dye file for {channel_name}: {reference_dye_file}: {e}", pd.DataFrame() 
                     if len(reference_dye_image.shape) != 3:
-                        return f"Error: Reference dye file should be a 3D array", pd.DataFrame()
-                    reference_dye_lifetime = metadata_dict["reference_dye_lifetime"]   
-                    reference_time_axis = metadata["reference_dye_time_axis"]
+                        return f"Error: Reference dye file for {channel_name} should be a 3D array", pd.DataFrame()
+                    reference_dye_lifetime = metadata_dict["reference_dye_lifetime"]
+                    try:
+                        reference_time_axis = metadata[f"{channel_name}_reference_dye_time_axis"]
+                    except KeyError:
+                        return f"Error: Reference dye time axis not found for {channel_name}", pd.DataFrame()
                 else:
                     reference_dye_image = None
                     reference_dye_lifetime = None

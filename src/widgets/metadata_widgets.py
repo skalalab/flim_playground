@@ -153,8 +153,8 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
             duplicate_keys = []
             # get the list of files that belong to this image
             for key, suffix in file_suffix.items():
-                # find the file with the exact name: image_name + suffix recursively within the folder (except for IRF)
-                if "IRF" not in key:
+                # Exact match for per-FOV files; suffix-only for IRF and Reference Dye (global per dataset)
+                if "IRF" not in key and "Reference Dye" not in key:
                     filename = image_name + suffix
                     matched_files = files_by_name.get(filename, [])
                 else:
@@ -176,12 +176,12 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
                     if missing_keys or duplicate_keys:
                         st.write("❌ Missing or duplicate files:")
                         for key in missing_keys:
-                            if "IRF" not in key:
+                            if "IRF" not in key and "Reference Dye" not in key:
                                 st.write(f"- Missing {key}: {image_name + file_suffix[key]}")
                             else:
                                 st.write(f"- Missing {key} with suffix: {file_suffix[key]}")
                         for key in duplicate_keys:
-                            if "IRF" not in key:
+                            if "IRF" not in key and "Reference Dye" not in key:
                                 st.write(f"- Duplicate {key}: {image_name + file_suffix[key]}")
                             else:
                                 st.write(f"- Duplicate {key} with suffix: {file_suffix[key]}")
