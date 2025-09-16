@@ -134,6 +134,9 @@ def parse_metadata_file(metadata_df, fov_name_col):
         return f"Field of view names are not unique. Check the column `{fov_name_col}`.", None
     has_flim = False
     error_msg, metadata_dict = get_ch_info(metadata_df)
+    # If channel info parsing failed, return early to avoid subscripting None
+    if error_msg != "" or metadata_dict is None:
+        return error_msg if error_msg != "" else "Channel info parsing failed.", None
     for channel_name in metadata_dict["channel_names"]:
         # check for file paths
         input_type = metadata_dict[channel_name]["input_type"]

@@ -123,7 +123,7 @@ with col1:
                             help="If True, the shift will be fixed for all images. If False, the shift will be estimated for each image."
                         )
                     with col1_2:
-                        if st.button("Start Finding Shifts"):
+                        if st.button("Optimize for Shifts"):
                             st.session_state["choosing_shift"] = True
                             st.session_state["shift_ready"] = False
                             st.rerun()

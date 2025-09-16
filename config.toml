@@ -1,6 +1,6 @@
 num_channels = 2
 unique_cell_id_col = "cell_id"
-fov_name_col = "exp_name"
+fov_name_col = "image_name"
 flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
 flim_decay_input_type = "Decay (3/4D)"
 all_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
@@ -21,7 +21,7 @@ t3 = "_t3.asc"
 laser_rate = 0.08
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 file_types = [ "Decay", "IRF", "Mask",]
-fit_free_calibration = "Reference Dye"
+fit_free_calibration = "IRF"
 reference_dye_file = "test.tif"
 reference_dye_lifetime = 4.2
 
@@ -94,9 +94,9 @@ selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
 [ch1."Decay (3/4D)".input_suffixes]
-Mask = "-Ch1-_photonsallmacro.tiff"
+Mask = "n_photons_mask_cyto.tiff"
 Decay = "n.sdt"
-IRF = "ch3_irf.txt"
+IRF = "NADH_IRF.txt"
 "Reference Dye" = "test.tif"
 
 [ch1."Decay (3/4D) pixel-prefitted".input_suffixes]
@@ -110,9 +110,9 @@ Decay = "_ch1.csv"
 IRF = "_ch1.txt"
 
 [ch2."Decay (3/4D)".input_suffixes]
-Mask = "-Ch1-_photonsallmacro.tiff"
+Mask = "n_photons_mask_cyto.tiff"
 Decay = "f.sdt"
-IRF = "ch2_irf.txt"
+IRF = "FAD_IRF.txt"
 "Reference Dye" = "test.tif"
 
 [ch2."Decay (3/4D) pixel-prefitted".input_suffixes]

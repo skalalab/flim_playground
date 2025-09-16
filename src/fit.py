@@ -11,20 +11,20 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
     amp1_data = np.zeros(num_curves)
     params.add('amp1', min=0)
     t1_data = np.zeros(num_curves)
-    params.add('t1', value=0.400, min=0.100, max=1.0)
+    params.add('t1', value=0.400, min=0.0, max=duration)
     offset_data = np.zeros(num_curves)
     params.add('offset', min=0, max=1000000)
     if num_components > 1:
         amp2_data = np.zeros(num_curves)
         params.add('amp2', min=0)
         t2_data = np.zeros(num_curves)
-        params.add('t2', value=2.5, min=1.0, max=5.0)
+        params.add('t2', value=2.5, min=0.0, max=duration)
         
     if num_components > 2:
         amp3_data = np.zeros(num_curves)
         params.add('amp3', min=0)
         t3_data = np.zeros(num_curves)
-        params.add('t3', value=5.0, min=4.0, max=duration)
+        params.add('t3', min=0.0, max=duration)
 
     if fit_shift:
         shift_data = np.zeros(num_curves)
