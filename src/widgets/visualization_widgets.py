@@ -137,7 +137,7 @@ def phasor_params_widget(feature_groups_dict):
     
     for extractor_channel in feature_groups_dict.keys():
         try:
-            extractor, channel = extractor_channel.split("_")
+            extractor, channel = extractor_channel.split("_", 1)
         except Exception as e:
             continue
         if extractor == "Lifetime fit free":
