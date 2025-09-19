@@ -161,10 +161,6 @@ def phasor_params_widget(feature_groups_dict):
         st.error("No available channels found for phasor plot")
     selected_harmonic = st.selectbox(f"{selected_channel} harmonic No. ", channel_harmonics[selected_channel])
     if selected_channel is not None and selected_harmonic is not None:
-        if selected_harmonic == 1:
-            harmonic_str = "1st"    
-        elif selected_harmonic == 2:
-            harmonic_str = "2nd"
         f = st.number_input(f"Laser repetition rate (**GHz**)", value=0.08, min_value=0.0, step=0.01)
     return selected_channel, selected_harmonic, f
 
