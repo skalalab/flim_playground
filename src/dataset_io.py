@@ -120,7 +120,7 @@ def get_feature_groups_data_extraction(cols):
             feature_groups_dict["Uncategorized Features"].append(col)
             continue
         try:
-            extractor, channel = extractor_channel.split("_")
+            extractor, channel = extractor_channel.split("_", 1)
         except:
             feature_groups_dict["Uncategorized Features"].append(col)
             continue
