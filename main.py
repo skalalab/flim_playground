@@ -45,7 +45,7 @@ def main():
     cfg = load_config()
     error_msg = ""
     max_num_channels = 4
-    all_flim_decay_input_types = ["Decay (3/4D)", "Decay (3/4D) SPCImage pixel-prefitted", "Decay (2D)"]
+    all_flim_decay_input_types = ["Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)"]
     intensity_only_input_types = ["Intensity (2D)"]
     all_available_categorical_cols = ["experiment", "patient_id", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "replicate"]
     spc_output_suffix = {"a1": "_a1[%].asc", "t1": "_t1.asc", "a2": "_a2[%].asc", "t2": "_t2.asc", "a3": "_a3[%].asc", "t3": "_t3.asc"}
@@ -125,7 +125,7 @@ def main():
         if "file_types" not in cfg[input_type]:
             if input_type == "Decay (3/4D)":
                 cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask",]
-            elif input_type == "Decay (3/4D) SPCImage pixel-prefitted":
+            elif input_type == "Decay (3/4D) pixel-prefitted":
                 cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask", "SPCImage t1"]
             elif input_type == "Decay (2D)":
                 cfg[input_type]["file_types"] = ["Decay", "IRF"]

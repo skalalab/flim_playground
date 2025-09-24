@@ -88,17 +88,43 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
             print(f"Error fitting curve {i}: {e}")
             result = None
             continue
-        amp1_data[i] = result.params['amp1'].value
-        t1_data[i] = result.params['t1'].value
-        offset_data[i] = result.params['offset'].value
         if fit_shift:
             shift_data[i] = result.params['shift'].value
-        if num_components > 1:
-            amp2_data[i] = result.params['amp2'].value
-            t2_data[i] = result.params['t2'].value
-        if num_components > 2:
-            amp3_data[i] = result.params['amp3'].value
-            t3_data[i] = result.params['t3'].value
+        offset_data[i] = result.params['offset'].value
+        if num_components == 1:
+            amp1_data[i] = result.params['amp1'].value
+            t1_data[i] = result.params['t1'].value
+        elif num_components == 2:
+            t1 = result.params['t1'].value
+            t2 = result.params['t2'].value
+            amp1 = result.params['amp1'].value
+            amp2 = result.params['amp2'].value
+            # make sure t1 is the shorter lifetime component and its amplitude
+            if t1 > t2:
+                t1, t2 = t2, t1
+                amp1, amp2 = amp2, amp1
+            amp1_data[i] = amp1
+            t1_data[i] = t1
+            amp2_data[i] = amp2
+            t2_data[i] = t2
+        elif num_components == 3:
+            t1 = result.params['t1'].value
+            t2 = result.params['t2'].value
+            t3 = result.params['t3'].value
+            amp1 = result.params['amp1'].value
+            amp2 = result.params['amp2'].value
+            amp3 = result.params['amp3'].value
+            # sort the lifetimes and keep amplitudes aligned
+            lifetime_amp_pairs = sorted([(t1, amp1), (t2, amp2), (t3, amp3)], key=lambda x: x[0])
+            (t1, amp1), (t2, amp2), (t3, amp3) = lifetime_amp_pairs
+
+            amp1_data[i] = amp1
+            t1_data[i] = t1
+            amp2_data[i] = amp2
+            t2_data[i] = t2
+            amp3_data[i] = amp3
+            t3_data[i] = t3
+
     # assemble results dynamically
     results = {"amp1": amp1_data, "t1": t1_data, "offset": offset_data}
     

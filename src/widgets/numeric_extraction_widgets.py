@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 from src.fov_extraction import fov_extraction
-import numpy as np
 
-def check_fov_features(single_fov_cell_features, fov_name, fov_name_col):
+
+def check_fov_features(single_fov_cell_features):
     """
     Give warnings for cells that have NaN values.
     """
@@ -16,7 +16,7 @@ def check_fov_features(single_fov_cell_features, fov_name, fov_name_col):
     
     if nan_cells > 0:
         st.warning(
-            f"The {fov_name_col} {fov_name} has **{nan_cells}** cell(s) with NaN values out of {total_cells} cell(s). "
+            f"It has **{nan_cells}** cell(s) with NaN values out of {total_cells} cell(s). "
         )
     
     return single_fov_cell_features
@@ -29,6 +29,8 @@ def fov_extraction_widget(metadata_df, metadata_dict, num_cols=3):
     fov_names = metadata_df[fov_name_col].tolist()
    
     num_fovs = len(fov_names)
+    if num_fovs > 0:
+        st.markdown("##### :green[Field of views:] \n")
     num_cols = min(num_cols, num_fovs)
     rows = (num_fovs + num_cols - 1) // num_cols
 
@@ -41,13 +43,13 @@ def fov_extraction_widget(metadata_df, metadata_dict, num_cols=3):
             fov_name = fov_names[img_idx]
             with cols[col_idx]:
                 with st.container(border=True):
-                    st.markdown(f"{fov_name_col}: **{fov_name}**")
+                    st.markdown(f"**{fov_name}**")
                     metadata = metadata_df[metadata_df[fov_name_col] == fov_name].iloc[0]
                     error_msg, single_cell_features_fov = fov_extraction(metadata, metadata_dict) 
                     if error_msg != "":
                         st.error(error_msg)
                     else:
-                        single_cell_features_fov = check_fov_features(single_cell_features_fov, fov_name, fov_name_col)
+                        single_cell_features_fov = check_fov_features(single_cell_features_fov)
                         st.success("✅ Success!")
                         single_cell_features = pd.concat([single_cell_features, single_cell_features_fov])
 

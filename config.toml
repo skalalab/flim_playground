@@ -6,7 +6,7 @@ flim_decay_input_type = "Decay (3/4D)"
 all_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
 imaging_modality = "FLIM"
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
-categorical_cols = [ "cell_line", "treatment", "condition", "patient_id", "day",]
+categorical_cols = [ "cell_line", "treatment", "dish",]
 intensity_only_input_type = "Intensity (2D)"
 
 [spc_output_suffix]
@@ -62,7 +62,7 @@ file_types = [ "Intensity (2D)", "Mask",]
 
 [ch1."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Lifetime fit free", "Lifetime fit",]
+selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 
 [ch1."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
@@ -74,7 +74,7 @@ num_components = 2
 
 [ch2."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Lifetime fit free",]
+selected_feature_extractors = [ "Lifetime fit free", "Lifetime fit", "Intensity morphology", "Intensity texture",]
 
 [ch2."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
@@ -94,9 +94,9 @@ selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
 [ch1."Decay (3/4D)".input_suffixes]
-Mask = "n_photons_mask_cyto.tiff"
+Mask = "n_photonscell_mask.tiff"
 Decay = "n.sdt"
-IRF = "NADH_IRF.txt"
+IRF = "nadh_irf.txt"
 "Reference Dye" = "test.tif"
 
 [ch1."Decay (3/4D) pixel-prefitted".input_suffixes]
@@ -110,9 +110,9 @@ Decay = "_ch1.csv"
 IRF = "_ch1.txt"
 
 [ch2."Decay (3/4D)".input_suffixes]
-Mask = "n_photons_mask_cyto.tiff"
+Mask = "_n_photonscell_mask.tiff"
 Decay = "f.sdt"
-IRF = "FAD_IRF.txt"
+IRF = "fad_irf.txt"
 "Reference Dye" = "test.tif"
 
 [ch2."Decay (3/4D) pixel-prefitted".input_suffixes]

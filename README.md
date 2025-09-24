@@ -31,10 +31,7 @@ pyinstaller Flim-Playground.spec --clean
 - @[docs]()
 
 # TODO
-
-- fit validation (sensitivity with ground truth of 2 component solution, Alek)
 - add flimlib 
-- move config away (while waiting)
 - add modality alignment (later)
 - add confidence interval to effect size (later)
 
