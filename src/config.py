@@ -1,9 +1,31 @@
 import toml
+import sys
 from pathlib import Path
 from typing import Optional
 
-# Absolute path to the project-level config file (../config.toml)
-_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.toml"
+def _get_config_path() -> Path:
+    """Get the config file path, handling both development and bundled app scenarios."""
+    # Check if running as a PyInstaller bundle
+    if getattr(sys, '_MEIPASS', None):
+        # Running as bundled app - save config to a persistent location
+        # Use the directory where the executable is located
+        exe_dir = Path(sys.executable).parent
+        config_path = exe_dir / "config.toml"
+        
+        # If config doesn't exist in exe directory, try to copy from bundle
+        if not config_path.exists():
+            bundled_config = Path(sys._MEIPASS) / "config.toml"
+            if bundled_config.exists():
+                import shutil
+                shutil.copy(bundled_config, config_path)
+        
+        return config_path
+    else:
+        # Running in development mode - use config.toml in project root
+        return Path(__file__).resolve().parent.parent / "config.toml"
+
+# Absolute path to the project-level config file
+_CONFIG_PATH = _get_config_path()
 
 def load_config(config_path: Optional[Path] = None) -> dict:
     """Load and return the TOML configuration as a dict.

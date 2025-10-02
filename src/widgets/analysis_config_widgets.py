@@ -1,9 +1,32 @@
 import streamlit as st
 from streamlit_sortables import sort_items
 from pathlib import Path
+import sys
 from src.config import load_config, save_config, get_unique_cell_id_col, get_fov_name_col, get_all_feature_extractors, get_categorical_cols
-# Absolute path to the analysis config file (../../analysis_config.toml)
-_ANALYSIS_CONFIG_PATH = Path(__file__).resolve().parent.parent.parent / "analysis_config.toml"
+
+def _get_analysis_config_path() -> Path:
+    """Get the analysis config file path, handling both development and bundled app scenarios."""
+    # Check if running as a PyInstaller bundle
+    if getattr(sys, '_MEIPASS', None):
+        # Running as bundled app - save config to a persistent location
+        # Use the directory where the executable is located
+        exe_dir = Path(sys.executable).parent
+        config_path = exe_dir / "analysis_config.toml"
+        
+        # If config doesn't exist in exe directory, try to copy from bundle
+        if not config_path.exists():
+            bundled_config = Path(sys._MEIPASS) / "analysis_config.toml"
+            if bundled_config.exists():
+                import shutil
+                shutil.copy(bundled_config, config_path)
+        
+        return config_path
+    else:
+        # Running in development mode - use analysis_config.toml in project root
+        return Path(__file__).resolve().parent.parent.parent / "analysis_config.toml"
+
+# Absolute path to the analysis config file - handles both dev and bundled scenarios
+_ANALYSIS_CONFIG_PATH = _get_analysis_config_path()
 
 def dataset_config_widget(use_data_extraction=True):
     if "config_saved" not in st.session_state:
