@@ -26,13 +26,15 @@ def read_decay_metadata(filename):
         try:
             laser_rep_rate = ptu.tags['TTResult_SyncRate']
             # convert to GHz and then to get the period in ns
-            laser_rep_time = 1 / (laser_rep_rate * 1e-9)
+            laser_rep_time = 1 / laser_rep_rate * 1e9
         except:
             return f"Error: Cannot extract laser rep time from {filename}", None
     elif filename.endswith(".sdt"):
         sdt = SdtFile(filename)
         try:        
-            laser_rep_time = sdt.measure_info[0].rep_t
+            tac_r = sdt.measure_info[0].tac_r
+            tac_g = sdt.measure_info[0].tac_g
+            laser_rep_time = tac_r / tac_g * 1e9
         except:
             return f"Error: Cannot extract laser rep time from {filename}", None
     else:
