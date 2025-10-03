@@ -1,13 +1,19 @@
 import streamlit as st
 from src.vis.helpers import natural_tuple_sort
-# Generic callback function to handle "All" logic
-def update_multiselect(key, options):
+# Generic callback function to handle "All" logic and cascade resets
+def update_multiselect(key, options, categories_to_filter, current_category_index):
     current_selection = st.session_state[key]
     if len(current_selection) > 1:
         if "All" in current_selection[-1]:
             st.session_state[key] = ["All"]
         else:
             st.session_state[key] = [option for option in current_selection if option != "All"]
+    
+    # Reset all downstream filters to "All" when this filter changes
+    if current_category_index < len(categories_to_filter) - 1:
+        for j in range(current_category_index + 1, len(categories_to_filter)):
+            downstream_key = f"{categories_to_filter[j]}_multiselect"
+            st.session_state[downstream_key] = ["All"]
 
 def filters_widget(df, categorical_cols):
     categories_to_filter = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1]
@@ -49,7 +55,7 @@ def filters_widget(df, categorical_cols):
                 unique_values_for_current_filter,
                 key=key,
                 on_change=update_multiselect,
-                args=(key, unique_values_for_current_filter),
+                args=(key, unique_values_for_current_filter, categories_to_filter, i),
             )
 
             # Progressively filter the dataframe for determining the next filter's options.
