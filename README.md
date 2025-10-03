@@ -28,12 +28,16 @@ pyinstaller Flim-Playground.spec --clean
 ```
 
 # Documentation
-- @[docs]()
+- @[docs](https://allanware.quarto.pub/flim-playground-doc/)
 
 # TODO
-- add flimlib 
-- add modality alignment (later)
-- add confidence interval to effect size (later)
+- add contour map that use color to encode data point density
+- randomize the plot order of points
+- add hierarchical clustering
+- add linear mixed effect model
+- add modality alignment
+- add confidence interval to effect size
+- add flimlib?
 
 ```bash
 streamlit run main.py # when in development
