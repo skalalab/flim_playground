@@ -254,8 +254,9 @@ def check_raw_decay_data(fov_df, channel_name):
             error_msg += f"- Shape {shape} appears {count} times.\n"
         return error_msg, [], None, None
     if len(set(laser_rep_time_list)) > 1:
+        laser_rep_time_counts = Counter(laser_rep_time_list)
         error_msg = f"Inconsistent laser rep time found for {channel_name} decay: \n"
-        for laser_rep_time, count in laser_rep_time_list.items():
+        for laser_rep_time, count in laser_rep_time_counts.items():
             error_msg += f"- Laser rep time {laser_rep_time} appears {count} times.\n"
         return error_msg, [], None, None
     else:

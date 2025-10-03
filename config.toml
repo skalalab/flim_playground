@@ -1,4 +1,4 @@
-num_channels = 2
+num_channels = 3
 unique_cell_id_col = "cell_id"
 fov_name_col = "image_name"
 flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
@@ -27,7 +27,7 @@ reference_dye_lifetime = 4.2
 
 [ch1]
 input_type = "Decay (3/4D)"
-channel_name = "nadh"
+channel_name = "r"
 imaging_modality = "FLIM"
 
 [ch2]
@@ -54,7 +54,7 @@ reference_dye_file = "test.tif"
 [ch3]
 imaging_modality = "FLIM"
 input_type = "Decay (3/4D)"
-channel_name = "cd8"
+channel_name = "nadh"
 
 ["Intensity (2D)"]
 available_feature_extractors = [ "Intensity morphology", "Intensity texture",]
@@ -85,7 +85,8 @@ selected_feature_extractors = [ "Lifetime fit free",]
 num_components = 2
 
 [ch3."Decay (3/4D)"]
-selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture", "Lifetime fit",]
+num_components = 1
 
 [ch3."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
@@ -94,9 +95,9 @@ selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
 [ch1."Decay (3/4D)".input_suffixes]
-Mask = "n_cellpose.tiff"
-Decay = "n.sdt"
-IRF = "nadh_irf.txt"
+Mask = "r_cellpose.tiff"
+Decay = "r.sdt"
+IRF = "Ch1_IRF_890__2024.txt"
 "Reference Dye" = "test.tif"
 
 [ch1."Decay (3/4D) pixel-prefitted".input_suffixes]
@@ -110,9 +111,9 @@ Decay = "_ch1.csv"
 IRF = "_ch1.txt"
 
 [ch2."Decay (3/4D)".input_suffixes]
-Mask = "n_cellpose.tiff"
+Mask = "r_cellpose.tiff"
 Decay = "f.sdt"
-IRF = "fad_irf.txt"
+IRF = "Ch2_IRF_890__2024.txt"
 "Reference Dye" = "test.tif"
 
 [ch2."Decay (3/4D) pixel-prefitted".input_suffixes]
@@ -126,8 +127,9 @@ Decay = "_ch2.csv"
 IRF = "_ch2.txt"
 
 [ch3."Decay (3/4D)".input_suffixes]
-Decay = "r.sdt"
-Mask = "r.ome_cellpose.tiff"
+Decay = "n.sdt"
+Mask = "r_cellpose.tiff"
+IRF = "Ch3_IRF_750__2024.txt"
 
 [ch3."Decay (3/4D) pixel-prefitted".input_suffixes]
 Decay = "_C.uncompressed.sdt"
