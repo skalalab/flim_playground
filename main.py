@@ -209,7 +209,7 @@ def main():
             # ask for k_flow duration and time bins
             cfg[flim_decay_input_type]["duration"] = st.number_input(f"{flim_decay_input_type} duration (**ns**)", value=cfg.get(flim_decay_input_type, {}).get("duration", 20.0), min_value=0.0, max_value=100.0, key=f"{flim_decay_input_type}_duration")
         with cols[1]:
-            cfg[flim_decay_input_type]["time_bins"] = st.number_input(f"{flim_decay_input_type} time bins", value=cfg.get(flim_decay_input_type, {}).get("time_bins", 1024), min_value=1, max_value=2048, key=f"{flim_decay_input_type}_time_bins")
+            cfg[flim_decay_input_type]["time_bins"] = st.number_input(f"{flim_decay_input_type} time bins", value=cfg.get(flim_decay_input_type, {}).get("time_bins", 1024), min_value=10, max_value=2048, key=f"{flim_decay_input_type}_time_bins")
       
        
     # render a multiselect for categorical columns

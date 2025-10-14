@@ -2,7 +2,7 @@ import streamlit as st
 from src.vis.helpers import natural_tuple_sort
 # Generic callback function to handle "All" logic and cascade resets
 def update_multiselect(key, options, categories_to_filter, current_category_index):
-    current_selection = st.session_state[key]
+    current_selection = st.session_state.get(key, ["All"])
     if len(current_selection) > 1:
         if "All" in current_selection[-1]:
             st.session_state[key] = ["All"]

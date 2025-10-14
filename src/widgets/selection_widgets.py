@@ -5,7 +5,7 @@ This module contains functions to create single and multiple selection widgets.
 
 def update_multiselect_feature(key, options):
     """Callback function to handle "All" logic for feature selection widgets"""
-    current_selection = st.session_state[key]
+    current_selection = st.session_state.get(key, ["All"])
     if len(current_selection) > 1:
         if "All" in current_selection[-1]:
             st.session_state[key] = ["All"]
@@ -13,7 +13,7 @@ def update_multiselect_feature(key, options):
             st.session_state[key] = [option for option in current_selection if option != "All"]
 
 def reset_other_menus(selected_menu, menus):
-    selected_value = st.session_state[selected_menu]
+    selected_value = st.session_state.get(selected_menu, "Select")
     if selected_value != "Select":  # Only reset if the selection is not "Select"
         for menu in menus:
             if menu != selected_menu:
