@@ -1,8 +1,16 @@
 import streamlit as st
-from src.widgets.filter_widgets import update_multiselect
 """
 This module contains functions to create single and multiple selection widgets. 
 """
+
+def update_multiselect_feature(key, options):
+    """Callback function to handle "All" logic for feature selection widgets"""
+    current_selection = st.session_state[key]
+    if len(current_selection) > 1:
+        if "All" in current_selection[-1]:
+            st.session_state[key] = ["All"]
+        else:
+            st.session_state[key] = [option for option in current_selection if option != "All"]
 
 def reset_other_menus(selected_menu, menus):
     selected_value = st.session_state[selected_menu]
@@ -115,14 +123,14 @@ def multi_feature_select_widget(feature_groups_dict, data_extraction=True, n_per
                     default = feature_list
                 if key not in st.session_state:
                     st.session_state[key] = default
-                # use update_multiselect to handle the "All" logic: if "All" is selected, clear all other selections
+                # use update_multiselect_feature to handle the "All" logic: if "All" is selected, clear all other selections
                 # if "All" is in selected list, and other options are selected, remove "All"
                 selected = st.multiselect(
                     f"{feature_group}",
                     options=options,
                     #default=st.session_state[key],
                     key=key,
-                    on_change=update_multiselect,
+                    on_change=update_multiselect_feature,
                     args=(key, options),
                     help=f"Select one or more columns corresponding to {feature_group} features."
                 )
