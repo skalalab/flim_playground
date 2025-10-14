@@ -202,7 +202,10 @@ def get_irf(metadata_df, channel_name, time_bins):
     irf_path = first_row.get(f'{channel_name}_IRF', None)
     
     try:
-        irf = np.loadtxt(irf_path)
+        if irf_path.endswith(".csv"):
+            irf = pd.read_csv(irf_path)
+        else:
+            irf = np.loadtxt(irf_path)
     except Exception as e:
         return f"Error: IRF file not found for {channel_name}.", None
     if irf.ndim != 1:

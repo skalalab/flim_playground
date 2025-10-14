@@ -412,7 +412,7 @@ def lifetime_data_config_widget(selected_feature_extractors, input_type):
         with cols[0]:
             duration = st.number_input("Duration (**ns**)", value=default_2D_decay_duration, min_value=0.0, max_value=100.0, key="2D_decay_duration")
         with cols[1]:
-            time_bins = st.number_input("Time bins", value=default_2D_decay_time_bins, min_value=256, max_value=2048, key="2D_decay_time_bins")
+            time_bins = st.number_input("Time bins", value=default_2D_decay_time_bins, min_value=10, max_value=2048, key="2D_decay_time_bins")
         if fit_free:
             default_laser_rate = get_default_laser_rate(input_type)
             with cols[2]:
