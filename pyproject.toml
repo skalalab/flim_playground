@@ -44,7 +44,7 @@ dependencies = [
     "streamlit==1.47.0",
     "streamlit-sortables>=0.3.1",
     "threadpoolctl==3.6.0",
-    "tifffile==2025.3.30",
+    "tifffile>=2025.3.30",
     "toml==0.10.2",
     "tornado==6.5.1",
     "typing-extensions==4.13.2",
