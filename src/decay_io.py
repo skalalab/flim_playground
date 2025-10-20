@@ -45,7 +45,7 @@ def read_decay_metadata(filename):
 def read_sdt(filename, channel=-1):
     sdt = SdtFile(filename)
     if len(sdt.data) != 1:
-        return f"Error: {filename} has multiple data blocks. It should be on one field of view", None
+        return f"Error: {filename} has multiple time frames. It should be on one field of view at a single time point (maybe multiple channels).", None
     else:
         # get the x, y, t, c
         try:
@@ -80,7 +80,7 @@ def read_ptu(filename, channel=-1):
    
     ptu = PtuFile(filename)
     if ptu.shape[0] != 1:
-        return f"Error: {filename} has multiple data blocks. It should be on one field of view", None
+        return f"Error: {filename} has multiple time frames. It should be on one field of view at a single time point (maybe multiple channels).", None
     else:
         try: 
             c = ptu.shape[ptu.dims.index("C")]
