@@ -10,7 +10,7 @@ from src.widgets.category_widgets import map_categories_to_labels_widget, find_a
 from src.widgets.lifetime_widgets import fit_options_widget, choose_shift_widget
 from src.metadata import parse_metadata_file
 from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type, get_fit_free_calibration_method
-from src.file_io import find_file_in_folder, load_image
+from src.file_io import load_image
 
 st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
 # Render the top menu 
@@ -357,8 +357,9 @@ with col2:
                 except Exception as e:
                     st.error(f"❌ Error exporting the single cell features: {str(e)}")
             else:
-                st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name= f"single_cell_features_{timestamp}.csv")
-                st.success(f"✅ Single cell features exported successfully to your download folder {happy_emoji}")
+                downloaded = st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name= f"single_cell_features_{timestamp}.csv")
+                if downloaded:
+                    st.success(f"✅ Single cell features exported successfully to your download folder {happy_emoji}")
     elif "Categorical Feature Extraction" in selected_step and df_folder_path != "" and len(available_dfs) > 0:
         combined_df, available_categories = check_and_merge_df_widget(available_dfs)
         map_categories_to_labels_widget(available_categories, combined_df, delimiter, df_folder_path)
