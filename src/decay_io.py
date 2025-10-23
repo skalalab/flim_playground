@@ -89,10 +89,11 @@ def read_ptu(filename, channel=-1):
             t = ptu.shape[ptu.dims.index("H")]
         except:
             return f"Error: {filename} has no C, Y, X, or H dimension", None
+        ptu_data = ptu[0]
         if c == 1:
-            decay_data = ptu.reshape(y, x, t)
+            decay_data = ptu_data.reshape(y, x, t)
         else:
-            decay_data = ptu.reshape(c, y, x, t)
+            decay_data = ptu_data.reshape(c, y, x, t)
         if channel != -1:
             decay_data = decay_data[channel]
         return "", decay_data
