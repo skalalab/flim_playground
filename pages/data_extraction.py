@@ -350,15 +350,12 @@ with col2:
             if st.session_state["last_extracted_metadata_filepath"] is not None:
                 folder_path = os.path.dirname(st.session_state["last_extracted_metadata_filepath"])
                 csv_path = os.path.join(folder_path, f"single_cell_features_{timestamp}.csv")
-    
-            # save the features to a csv file
-                confirm_export = st.button("Download single cell features as CSV")
-                if confirm_export:
-                    try:
-                        single_cell_features.to_csv(csv_path) # Save the DataFrame
-                        st.success(f"✅ Single cell features exported successfully to {csv_path} {happy_emoji}")
-                    except Exception as e:
-                        st.error(f"❌ Error exporting the single cell features: {str(e)}")
+            # save the features to a csv file automatically
+                try:
+                    single_cell_features.to_csv(csv_path) # Save the DataFrame
+                    st.success(f"✅ Single cell features exported successfully to {csv_path} {happy_emoji}")
+                except Exception as e:
+                    st.error(f"❌ Error exporting the single cell features: {str(e)}")
             else:
                 st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name= f"single_cell_features_{timestamp}.csv")
                 st.success(f"✅ Single cell features exported successfully to your download folder {happy_emoji}")
