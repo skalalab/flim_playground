@@ -28,7 +28,7 @@ pyinstaller Flim-Playground.spec --clean
 ```
 
 # Documentation
-- @[docs](https://allanware.quarto.pub/flim-playground-doc/)
+- @[docs](https://skalalab.github.io/flim_playground_doc/)
 
 # TODO
 - add contour map that use color to encode data point density

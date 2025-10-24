@@ -30,7 +30,7 @@ def main():
     
     deployed_url = "https://flim-playground.streamlit.app/"
     github_repo_url = "https://github.com/skalalab/flim_playground_bioarchive"
-    doc_github_url = "https://allanware.quarto.pub/flim-playground-doc/" 
+    doc_github_url = "https://skalalab.github.io/flim_playground_doc/" 
     generalInfo = f"""Please use the top menu to navigate to other pages. For detailed documentation of each playground, please refer to [documentation]({doc_github_url}). 
     This platform is open-source: releases for Windows and Mac are available at [Github Repo]({github_repo_url}). 
     The Data Analysis playground is also deployed on [Streamlit Cloud]({deployed_url}) (Data Extraction playground is **NOT** avialble online as it requires local disk access: available in local executable). """
