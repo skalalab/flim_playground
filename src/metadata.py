@@ -65,8 +65,8 @@ def get_ch_info(metadata_df):
         if "Lifetime fit free" in selected_feature_extractors:
             fit_free = True
             if channel_name not in metadata_dict["channels_shift"]:
-                # no need to shift if channel-specific reference dye file is provided
-                channel_ref_col = f"{channel_name}_Reference Dye"
+                # no need to shift if channel-specific fluorescence lifetime standard file is provided
+                channel_ref_col = f"{channel_name}_Fluorescence Lifetime Standard"
                 if channel_ref_col in metadata_df.columns:
                     continue
                 else:
@@ -90,31 +90,31 @@ def get_ch_info(metadata_df):
             if metadata_df["fit_free_calibration_method"].nunique() != 1:
                 return f"Fit free calibration method column fit_free_calibration_method is not consistent.", None
             metadata_dict["fit_free_calibration_method"] = metadata_df["fit_free_calibration_method"].iloc[0]
-            if metadata_dict["fit_free_calibration_method"] == "Reference Dye":
+            if metadata_dict["fit_free_calibration_method"] == "Fluorescence Lifetime Standard":
                 # lifetime is global and must be present
-                if "reference_dye_lifetime" in metadata_df.columns:
-                    if metadata_df["reference_dye_lifetime"].nunique() != 1:
-                        return f"Reference dye lifetime column reference_dye_lifetime is not consistent.", None
-                    metadata_dict["reference_dye_lifetime"] = metadata_df["reference_dye_lifetime"].iloc[0]
+                if "fluorescence_lifetime_standard_lifetime" in metadata_df.columns:
+                    if metadata_df["fluorescence_lifetime_standard_lifetime"].nunique() != 1:
+                        return f"Fluorescence lifetime standard's lifetime column fluorescence_lifetime_standard_lifetime is not consistent.", None
+                    metadata_dict["fluorescence_lifetime_standard_lifetime"] = metadata_df["fluorescence_lifetime_standard_lifetime"].iloc[0]
                 else:
-                    return f"Reference dye lifetime column reference_dye_lifetime not found in metadata file.", None
-                # channel-specific reference dye file and time axis
+                    return f"Fluorescence lifetime standard's lifetime column fluorescence_lifetime_standard_lifetime not found in metadata file.", None
+                # channel-specific fluorescence lifetime standard file and time axis
                 for channel_name in metadata_dict["channel_names"]:
                     if "Lifetime fit free" not in metadata_dict[channel_name]["selected_feature_extractors"]:
                         continue
-                    ref_col = f"{channel_name}_Reference Dye"
+                    ref_col = f"{channel_name}_Fluorescence Lifetime Standard"
                     if ref_col not in metadata_df.columns:
-                        return f"Reference dye file column {ref_col} not found in metadata file.", None
+                        return f"Fluorescence lifetime standard's file column {ref_col} not found in metadata file.", None
                     # Must be consistent across rows
                     if metadata_df[ref_col].nunique() != 1:
-                        return f"Reference dye file column {ref_col} is not consistent.", None
-                    metadata_dict[channel_name]["reference_dye_file"] = metadata_df[ref_col].iloc[0]
-                    time_axis_col = f"{channel_name}_reference_dye_time_axis"
+                        return f"Fluorescence lifetime standard's file column {ref_col} is not consistent.", None
+                    metadata_dict[channel_name]["fluorescence_lifetime_standard_file"] = metadata_df[ref_col].iloc[0]
+                    time_axis_col = f"{channel_name}_fluorescence_lifetime_standard_time_axis"
                     if time_axis_col not in metadata_df.columns:
-                        return f"Reference time axis column `{time_axis_col}` not found in metadata file.", None
+                        return f"Fluorescence lifetime standard's time axis column `{time_axis_col}` not found in metadata file.", None
                     if metadata_df[time_axis_col].nunique() != 1:
-                        return f"Reference time axis column {time_axis_col} is not consistent.", None
-                    metadata_dict[channel_name]["reference_dye_time_axis"] = metadata_df[time_axis_col].iloc[0]
+                        return f"Fluorescence lifetime standard's time axis column {time_axis_col} is not consistent.", None
+                    metadata_dict[channel_name]["fluorescence_lifetime_standard_time_axis"] = metadata_df[time_axis_col].iloc[0]
         else:
             return f"Fit free calibration method column fit_free_calibration_method not found in metadata file.", None
 

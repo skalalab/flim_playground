@@ -94,17 +94,17 @@ def main():
         cfg[flim_decay_input_type]["laser_rate"] = laser_rate
     with cols[1]:
         # Get default value from config and find its index
-        options = ["IRF", "Reference Dye"]
+        options = ["IRF", "Fluorescence Lifetime Standard"]
         default_value = cfg.get(flim_decay_input_type, {}).get("fit_free_calibration", "IRF")
         default_index = options.index(default_value) if default_value in options else 0
         fit_free_calibration = st.radio("Fit free calibration method", options, index=default_index, key=f"fit_free_calibration_{flim_decay_input_type}")
         cfg[flim_decay_input_type]["fit_free_calibration"] = fit_free_calibration
-        if fit_free_calibration == "Reference Dye":
+        if fit_free_calibration == "Fluorescence Lifetime Standard":
             with cols[3]:
-                st.caption("Provide channel-specific Reference Dye file suffixes below in the File suffixes section.")
+                st.caption("Provide channel-specific Fluorescence lifetime standard file suffixes below in the File suffixes section.")
             with cols[2]:
-                # get the reference dye lifetime (shared across channels)
-                cfg[flim_decay_input_type]["reference_dye_lifetime"] = st.number_input(f"Reference dye lifetime **(ns)**", value=cfg.get(flim_decay_input_type, {}).get("reference_dye_lifetime", 1.0), min_value=0.1, max_value=20.0, key=f"reference_dye_lifetime_{flim_decay_input_type}")
+                # get the fluorescence lifetime standard's lifetime (shared across channels)
+                cfg[flim_decay_input_type]["fluorescence_lifetime_standard_lifetime"] = st.number_input(f"Fluorescence lifetime standard's lifetime **(ns)**", value=cfg.get(flim_decay_input_type, {}).get("fluorescence_lifetime_standard_lifetime", 1.0), min_value=0.1, max_value=20.0, key=f"fluorescence_lifetime_standard_lifetime_{flim_decay_input_type}")
        
         # feature extractor initialization
     if "available_feature_extractors" not in cfg[flim_decay_input_type]:
@@ -190,17 +190,17 @@ def main():
                                           ("prefitted" in input_type and not "Lifetime fit free" in selected_feature_extractors)):
                     continue
 
-                if file_type == "IRF" and ("Lifetime fit" not in selected_feature_extractors or "prefitted" in input_type) and "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Reference Dye":
+                if file_type == "IRF" and ("Lifetime fit" not in selected_feature_extractors or "prefitted" in input_type) and "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Fluorescence Lifetime Standard":
                     continue
 
                 cfg[channel_key][input_type]["input_suffixes"][file_type] = st.text_input(f"{file_type}", value=cfg[channel_key][input_type]["input_suffixes"].get(file_type, ""), key=f"{channel_key}_{input_type}_{file_type}")
 
-            # If using Reference Dye calibration for fit free on this channel, ask for channel-specific Reference Dye suffix
-            if "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Reference Dye":
-                cfg[channel_key][input_type]["input_suffixes"]["Reference Dye"] = st.text_input(
-                    "Reference Dye",
-                    value=cfg[channel_key][input_type]["input_suffixes"].get("Reference Dye", ""),
-                    key=f"{channel_key}_{input_type}_ReferenceDye"
+            # If using Fluorescence lifetime standard calibration for fit free on this channel, ask for channel-specific Fluorescence lifetime standard file suffix
+            if "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Fluorescence Lifetime Standard":
+                cfg[channel_key][input_type]["input_suffixes"]["Fluorescence Lifetime Standard"] = st.text_input(
+                    "Fluorescence lifetime standard file",
+                    value=cfg[channel_key][input_type]["input_suffixes"].get("Fluorescence Lifetime Standard", ""),
+                    key=f"{channel_key}_{input_type}_FluorescenceLifetimeStandard"
                 )
 
     if imaging_modality == "FLIM" and flim_decay_input_type == "Decay (2D)":

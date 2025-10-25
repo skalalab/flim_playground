@@ -1,4 +1,4 @@
-num_channels = 3
+num_channels = 1
 unique_cell_id_col = "cell_id"
 fov_name_col = "image_name"
 flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
@@ -6,7 +6,7 @@ flim_decay_input_type = "Decay (3/4D)"
 all_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
 imaging_modality = "FLIM"
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
-categorical_cols = [ "cell_line", "treatment", "dish",]
+categorical_cols = [ "treatment",]
 intensity_only_input_type = "Intensity (2D)"
 
 [spc_output_suffix]
@@ -21,13 +21,12 @@ t3 = "_t3.asc"
 laser_rate = 0.08
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 file_types = [ "Decay", "IRF", "Mask",]
-fit_free_calibration = "IRF"
-reference_dye_file = "test.tif"
-reference_dye_lifetime = 4.2
+fit_free_calibration = "Fluorescence Lifetime Standard"
+fluorescence_lifetime_standard_lifetime = 4.2
 
 [ch1]
 input_type = "Decay (3/4D)"
-channel_name = "r"
+channel_name = "NAD(P)H"
 imaging_modality = "FLIM"
 
 [ch2]
@@ -44,12 +43,11 @@ fit_free_calibration = "IRF"
 ["Decay (2D)"]
 laser_rate = 0.05
 duration = 20.0
-time_bins = 1024
+time_bins = 200
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
 file_types = [ "Decay", "IRF",]
 fit_free_calibration = "IRF"
-reference_dye_lifetime = 4.2
-reference_dye_file = "test.tif"
+fluorescence_lifetime_standard_lifetime = 4.2
 
 [ch3]
 imaging_modality = "FLIM"
@@ -69,7 +67,7 @@ selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensi
 num_components = 2
 
 [ch1."Decay (2D)"]
-selected_feature_extractors = [ "Lifetime fit free",]
+selected_feature_extractors = [ "Lifetime fit free", "Lifetime fit",]
 num_components = 2
 
 [ch2."Decay (3/4D)"]
@@ -95,10 +93,10 @@ selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
 [ch1."Decay (3/4D)".input_suffixes]
-Mask = "r_cellpose.tiff"
-Decay = "r.sdt"
-IRF = "Ch1_IRF_890__2024.txt"
-"Reference Dye" = "test.tif"
+Mask = "MaskN.tif"
+Decay = "N.ptu"
+IRF = "ReferenceIRFN.txt"
+"Fluorescence Lifetime Standard" = "test.tiff"
 
 [ch1."Decay (3/4D) pixel-prefitted".input_suffixes]
 Mask = "_nadh_mask.tif"
@@ -107,14 +105,14 @@ Decay = "_N.uncompressed.ptu"
 IRF = "nadh_irf.txt"
 
 [ch1."Decay (2D)".input_suffixes]
-Decay = "_ch1.csv"
-IRF = "_ch1.txt"
+Decay = "_filtered.csv"
+IRF = "IRF.txt"
 
 [ch2."Decay (3/4D)".input_suffixes]
 Mask = "r_cellpose.tiff"
 Decay = "f.sdt"
 IRF = "Ch2_IRF_890__2024.txt"
-"Reference Dye" = "test.tif"
+"Fluorescence Lifetime Standard" = "test.tif"
 
 [ch2."Decay (3/4D) pixel-prefitted".input_suffixes]
 Mask = "nadh_mask.tif"

@@ -276,18 +276,9 @@ def get_raw_phasor(decay_curve, h, w, time_axis=None, full_period=False):
         _, g_raw, s_raw = phasor.phasor_from_signal(decay_curve, harmonic=h)
     return g_raw, s_raw
 
-def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf=None,reference_dye_image=None, reference_dye_lifetime=None, reference_time_axis=None):
+def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf=None,fluorescence_lifetime_standard_image=None, fluorescence_lifetime_standard_lifetime=None, fluorescence_lifetime_standard_time_axis=None):
     """
     Extract fit free results for a specific channel and store them in single_cell_features_img (for now, only phasor is implemented)
-    Args:
-        channel_name
-        decay_curves: dictionary of decay curves: key is cell_id, value is decay curve
-        shifted_irf: shifted IRF
-        laser_rate: laser repetition rate (GHz)
-        duration: time between two laser pulses (ns)
-        calibration_method: calibration method
-        reference_dye_file: reference dye file
-        reference_dye_lifetime: reference dye lifetime (ns)
     """
     if len(decay_curves) == 0:
         return f"Error: No decay curves found for {channel_name}", pd.DataFrame()
@@ -306,17 +297,17 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         period = duration / time_bins
         time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
 
-    if calibration_method == "Reference Dye":
-        if reference_time_axis is None:
-            return f"Error: Reference time axis is not provided", pd.DataFrame()
+    if calibration_method == "Fluorescence Lifetime Standard":
+        if fluorescence_lifetime_standard_time_axis is None:
+            return f"Error: Fluorescence lifetime standard time axis is not provided", pd.DataFrame()
         try:
             if not full_period:
                 phi = w * time_axis
-                ref_mean, ref_real, ref_imag = phasor.phasor_from_signal(reference_dye_image, axis=reference_time_axis, sample_phase=phi, use_fft=False)
+                ref_mean, ref_real, ref_imag = phasor.phasor_from_signal(fluorescence_lifetime_standard_image, axis=fluorescence_lifetime_standard_time_axis, sample_phase=phi, use_fft=False)
             else:
-                ref_mean, ref_real, ref_imag = phasor.phasor_from_signal(reference_dye_image, axis=reference_time_axis)
+                ref_mean, ref_real, ref_imag = phasor.phasor_from_signal(fluorescence_lifetime_standard_image, axis=fluorescence_lifetime_standard_time_axis)
         except Exception as e:
-            return f"Error calculating the phasor of reference dye: {e}", pd.DataFrame()
+            return f"Error calculating the phasor of fluorescence lifetime standard: {e}", pd.DataFrame()
     else:
         if shifted_irf is not None: 
             # calculate the phasor of irf
@@ -328,7 +319,7 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         if cell_id not in single_cell_features_fov:
             single_cell_features_fov[cell_id] = {}
 
-        if calibration_method != "Reference Dye":
+        if calibration_method != "Fluorescence Lifetime Standard":
             # subtract the esetimated offset and clip the timebin to above or equal to 0
             offset = get_offset(decay_curve)
             decay_curve = decay_curve - offset
@@ -339,9 +330,9 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         g_raw, s_raw = get_raw_phasor(decay_curve, h=1, w=w, time_axis=time_axis, full_period=full_period)
         g_raw_2nd, s_raw_2nd = get_raw_phasor(decay_curve, h=2, w=w, time_axis=time_axis, full_period=full_period)
         
-        if calibration_method == "Reference Dye":
-            G, S = lifetime.phasor_calibrate(g_raw, s_raw, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=reference_dye_lifetime)
-            G_2nd, S_2nd = lifetime.phasor_calibrate(g_raw_2nd, s_raw_2nd, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=reference_dye_lifetime, harmonic=2)
+        if calibration_method == "Fluorescence Lifetime Standard":
+            G, S = lifetime.phasor_calibrate(g_raw, s_raw, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=fluorescence_lifetime_standard_lifetime)
+            G_2nd, S_2nd = lifetime.phasor_calibrate(g_raw_2nd, s_raw_2nd, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=fluorescence_lifetime_standard_lifetime, harmonic=2)
         else:
             if shifted_irf is not None:
                 G, S = phasor.phasor_divide(g_raw, s_raw, g_irf, s_irf)
@@ -369,7 +360,7 @@ def extract_intensity_sum_2d(channel_name, decay_curves, single_cell_features_fo
     return single_cell_features_fov
 
 
-def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method=None, reference_dye_image=None, reference_dye_lifetime=None, reference_time_axis=None):
+def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method=None, fluorescence_lifetime_standard_image=None, fluorescence_lifetime_standard_lifetime=None, fluorescence_lifetime_standard_time_axis=None):
     need_to_fit = False
     time_bins = metadata["time_bins"]
     duration = metadata["duration"]
@@ -425,7 +416,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         laser_rate = metadata["laser_rate"]
         if calibration_method == None:
             return f"Error: Calibration method is not provided for {channel_name}", pd.DataFrame()
-        error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf, reference_dye_image, reference_dye_lifetime, reference_time_axis)
+        error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf, fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis)
         if error_msg != "":
             return error_msg, pd.DataFrame()
         if "2D" in input_type:
@@ -460,36 +451,36 @@ def fov_extraction(metadata, metadata_dict):
             fit_free = "Lifetime fit free" in selected_feature_extractors
             if fit_free:
                 calibration_method = metadata_dict["fit_free_calibration_method"]
-                if calibration_method == "Reference Dye":
+                if calibration_method == "Fluorescence Lifetime Standard":
                     # channel-specific
                     try:
-                        reference_dye_file = metadata_dict[channel_name]["reference_dye_file"]
+                        fluorescence_lifetime_standard_file = metadata_dict[channel_name]["fluorescence_lifetime_standard_file"]
                     except KeyError:
-                        return f"Error: Reference dye file not found for channel {channel_name}.", pd.DataFrame()
+                        return f"Error: Fluorescence lifetime standard file not found for channel {channel_name}.", pd.DataFrame()
                     try:
-                        reference_dye_image = load_image(reference_dye_file)
+                        fluorescence_lifetime_standard_image = load_image(fluorescence_lifetime_standard_file)
                     except Exception as e:
-                        return f"Error reading the reference dye file for {channel_name}: {reference_dye_file}: {e}", pd.DataFrame() 
-                    if len(reference_dye_image.shape) != 3:
-                        return f"Error: Reference dye file for {channel_name} should be a 3D array", pd.DataFrame()
-                    reference_dye_lifetime = metadata_dict["reference_dye_lifetime"]
+                        return f"Error reading the fluorescence lifetime standard file for {channel_name}: {fluorescence_lifetime_standard_file}: {e}", pd.DataFrame() 
+                    if len(fluorescence_lifetime_standard_image.shape) != 3:
+                        return f"Error: Fluorescence lifetime standard file for {channel_name} should be a 3D array", pd.DataFrame()
+                    fluorescence_lifetime_standard_lifetime = metadata_dict["fluorescence_lifetime_standard_lifetime"]
                     try:
-                        reference_time_axis = metadata[f"{channel_name}_reference_dye_time_axis"]
+                        fluorescence_lifetime_standard_time_axis = metadata[f"{channel_name}_fluorescence_lifetime_standard_time_axis"]
                     except KeyError:
-                        return f"Error: Reference dye time axis not found for {channel_name}", pd.DataFrame()
+                        return f"Error: Fluorescence lifetime standard time axis not found for {channel_name}", pd.DataFrame()
                 else:
-                    reference_dye_image = None
-                    reference_dye_lifetime = None
-                    reference_time_axis = None
+                    fluorescence_lifetime_standard_image = None
+                    fluorescence_lifetime_standard_lifetime = None
+                    fluorescence_lifetime_standard_time_axis = None
             else: 
                 calibration_method = None
-                reference_dye_file = None
-                reference_dye_image = None
-                reference_dye_lifetime = None
-                reference_time_axis = None
+                fluorescence_lifetime_standard_file = None
+                fluorescence_lifetime_standard_image = None
+                fluorescence_lifetime_standard_lifetime = None
+                fluorescence_lifetime_standard_time_axis = None
 
             if fit or fit_free:
-                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method, reference_dye_image, reference_dye_lifetime, reference_time_axis)
+                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method, fluorescence_lifetime_standard_image=fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime=fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis=fluorescence_lifetime_standard_time_axis)
                 if error_msg != "":
                     st.error(error_msg)
                     continue

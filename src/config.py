@@ -68,11 +68,11 @@ def get_default_file_suffixes(channel_key: str, input_type: str, selected_featur
     file_suffixes = cfg.get(channel_key, {}).get(input_type, {}).get("input_suffixes", {})
     fit_free_calibration = cfg.get(input_type, {}).get("fit_free_calibration", "")
     for file_type in file_suffixes.keys():
-        # Only include Reference Dye when fit free uses Reference Dye and this channel does fit free
+        # Only include Fluorescence Lifetime Standard when fit free uses Fluorescence Lifetime Standard and this channel does fit free
         if file_type == "Decay" and "prefitted" in input_type and len(selected_feature_extractors) == 1 and "Lifetime fit" in selected_feature_extractors:
             continue
-        if file_type == "Reference Dye":
-            if not ("Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Reference Dye"):
+        if file_type == "Fluorescence Lifetime Standard":
+            if not ("Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Fluorescence Lifetime Standard"):
                 continue
         # skip a bunch of things 
         if file_type == "SPCImage t1" and "Lifetime fit" not in selected_feature_extractors:
@@ -81,7 +81,7 @@ def get_default_file_suffixes(channel_key: str, input_type: str, selected_featur
         if file_type == "IRF" and (not any("Lifetime" in extractor for extractor in selected_feature_extractors) or 
                                         ("prefitted" in input_type and not "Lifetime fit free" in selected_feature_extractors)):
             continue
-        if file_type == "IRF" and ("Lifetime fit" not in selected_feature_extractors or "prefitted" in input_type) and "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Reference Dye":
+        if file_type == "IRF" and ("Lifetime fit" not in selected_feature_extractors or "prefitted" in input_type) and "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Fluorescence Lifetime Standard":
             continue
         filtered_file_suffixes[file_type] = file_suffixes[file_type]
     return filtered_file_suffixes
@@ -156,9 +156,8 @@ def get_categorical_cols() -> list:
 def get_fit_free_calibration_method(input_type: str) -> str:
     cfg = load_config()
     method = cfg.get(input_type, {}).get("fit_free_calibration", "")
-    if method == "Reference Dye":
-        dye_file = cfg.get(input_type, {}).get("reference_dye_file", "")
-        reference_dye_lifetime = cfg.get(input_type, {}).get("reference_dye_lifetime", "")
-        return method, dye_file, reference_dye_lifetime
+    if method == "Fluorescence Lifetime Standard":
+        fluorescence_lifetime_standard_lifetime = cfg.get(input_type, {}).get("fluorescence_lifetime_standard_lifetime", "")
+        return method, fluorescence_lifetime_standard_lifetime
     else:
         return method, "", ""

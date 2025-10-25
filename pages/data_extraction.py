@@ -36,7 +36,7 @@ decay_input_type = get_decay_input_type()
 ch_num_components = get_num_components(input_types, channel_names.keys())
 selected_ch_feature_extractors = get_selected_feature_extractors(input_types, channel_names.keys())
 fov_name_col = get_fov_name_col()
-fit_free_calibration_method, reference_dye_file, reference_dye_lifetime = get_fit_free_calibration_method(decay_input_type)
+fit_free_calibration_method, fluorescence_lifetime_standard_lifetime = get_fit_free_calibration_method(decay_input_type)
 with col1:
     # first select the step to perform
     selected_step = st.radio(
@@ -74,9 +74,9 @@ with col1:
             else: # for later, we will add other imaging modalities and this will ask for those imaging modality specific config
                 duration, time_bins, laser_rate = None, None, None
             # laser rate is none means there is no fit free analysis
-            if laser_rate is not None and fit_free_calibration_method == "Reference Dye":
-                # Reference dye file is per-channel and collected via suffixes; only lifetime is shared
-                reference_dye_lifetime = st.number_input("Reference dye lifetime in **ns**", value=reference_dye_lifetime, min_value=0.1, max_value=20.0, step=0.1, key="reference_dye_lifetime")
+            if laser_rate is not None and fit_free_calibration_method == "Fluorescence Lifetime Standard":
+                # Fluorescence lifetime standard file is per-channel and collected via suffixes; only lifetime is shared
+                fluorescence_lifetime_standard_lifetime = st.number_input("Fluorescence lifetime standard's lifetime in **ns**", value=fluorescence_lifetime_standard_lifetime, min_value=0.1, max_value=20.0, step=0.1, key="fluorescence_lifetime_standard_lifetime")
 
             actual_file_suffix, error_msg = load_data_suffix_widget(input_types, selected_channels, selected_ch_num_components, selected_ch_feature_extractors)
             if error_msg != "":
@@ -223,43 +223,43 @@ def prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components):
     
     return fov_df
 
-def validate_reference_dye_per_channel(fov_df, selected_channels, fit_free_calibration_method, time_bins, reference_dye_lifetime):
-    """Validate and add per-channel reference dye info if needed"""
+def validate_fluorescence_lifetime_standard_per_channel(fov_df, selected_channels, fit_free_calibration_method, time_bins, fluorescence_lifetime_standard_lifetime):
+    """Validate and add per-channel fluorescence lifetime standard info if needed"""
     fov_df["fit_free_calibration_method"] = fit_free_calibration_method
-    if fit_free_calibration_method != "Reference Dye":
+    if fit_free_calibration_method != "Fluorescence Lifetime Standard":
         return "", fov_df
     
     # lifetime is shared across channels
-    fov_df["reference_dye_lifetime"] = reference_dye_lifetime
+    fov_df["fluorescence_lifetime_standard_lifetime"] = fluorescence_lifetime_standard_lifetime
     
     for _, channel_name in selected_channels.items():
-        ref_col = f"{channel_name}_Reference Dye"
+        ref_col = f"{channel_name}_Fluorescence Lifetime Standard"
         if ref_col not in fov_df.columns:
             # Channel may not use fit free; skip
             continue
         unique_paths = fov_df[ref_col].dropna().unique().tolist()
         if len(unique_paths) != 1:
-            return f"Reference Dye file column {ref_col} is not consistent across FOVs.", fov_df
-        reference_dye_file_path = unique_paths[0]
-        # Check dimensions of reference dye file
+            return f"Fluorescence lifetime standard file path column {ref_col} is not consistent across FOVs.", fov_df
+        fluorescence_lifetime_standard_file_path = unique_paths[0]
+        # Check dimensions of fluorescence lifetime standard file
         try:
-            ref_dye_data = load_image(reference_dye_file_path)
-            ref_dye_shape = ref_dye_data.shape
-            if len(ref_dye_shape) != 3:
-                return f"Reference dye file for {channel_name} must be 3D, got {len(ref_dye_shape)} with shape {ref_dye_shape}", fov_df
-            matched_time_bins = ref_dye_shape.count(time_bins)
+            fluorescence_lifetime_standard_data = load_image(fluorescence_lifetime_standard_file_path)
+            fluorescence_lifetime_standard_shape = fluorescence_lifetime_standard_data.shape
+            if len(fluorescence_lifetime_standard_shape) != 3:
+                return f"Fluorescence lifetime standard file for {channel_name} must be 3D, got {len(fluorescence_lifetime_standard_shape)} with shape {fluorescence_lifetime_standard_shape}", fov_df
+            matched_time_bins = fluorescence_lifetime_standard_shape.count(time_bins)
             if matched_time_bins == 0:
-                return f"Cannot find the time axis ({time_bins} bins) for {channel_name} reference dye dimensions: {ref_dye_shape}", fov_df
+                return f"Cannot find the time axis ({time_bins} bins) for {channel_name} fluorescence lifetime standard file dimensions: {fluorescence_lifetime_standard_shape}", fov_df
             elif matched_time_bins > 1:
-                return f"Ambiguous time axis for {channel_name} reference dye dimensions: {ref_dye_shape}", fov_df
+                return f"Ambiguous time axis for {channel_name} fluorescence lifetime standard file dimensions: {fluorescence_lifetime_standard_shape}", fov_df
             else:
-                fov_df[f"{channel_name}_reference_dye_time_axis"] = ref_dye_shape.index(time_bins)
+                fov_df[f"{channel_name}_fluorescence_lifetime_standard_time_axis"] = fluorescence_lifetime_standard_shape.index(time_bins)
         except Exception as e:
-            return f"Error reading reference dye file for {channel_name}: {str(e)}", fov_df
+            return f"Error reading fluorescence lifetime standard file for {channel_name}: {str(e)}", fov_df
 
     return "", fov_df
 
-def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, fit_free_calibration_method=None, reference_dye_lifetime=None):
+def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, fit_free_calibration_method=None, fluorescence_lifetime_standard_lifetime=None):
     """Final processing steps for FOV data"""
     if error_msg != "":
         st.error(error_msg)
@@ -277,10 +277,10 @@ def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_ty
         st.error(error_msg)
         return
     
-    # Validate reference dye per channel after channel assignment
+    # Validate fluorescence lifetime standard file per channel after channel assignment
     if fit_free_calibration_method is not None:
         time_bins = fov_df["time_bins"].iloc[0]
-        error_msg, fov_df = validate_reference_dye_per_channel(fov_df, selected_channels, fit_free_calibration_method, time_bins, reference_dye_lifetime)
+        error_msg, fov_df = validate_fluorescence_lifetime_standard_per_channel(fov_df, selected_channels, fit_free_calibration_method, time_bins, fluorescence_lifetime_standard_lifetime)
         if error_msg != "":
             st.error(error_msg)
             return
@@ -306,8 +306,8 @@ with col2:
                 if laser_rate is not None:
                     fov_df["laser_rate"] = laser_rate
                 
-                # Step 4: Finalize processing (reference dye validation moved here)
-                finalize_fov_processing("", fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, fit_free_calibration_method, reference_dye_lifetime)
+                # Step 4: Finalize processing ( fluorescence lifetime standard validation moved here)
+                finalize_fov_processing("", fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, fit_free_calibration_method, fluorescence_lifetime_standard_lifetime)
     elif "Numeric Feature Extraction" in selected_step and st.session_state["choosing_shift"] and metadata_df is not None:
         channel_shifts = {}
         for channel_name in metadata_dict["channels_shift"]:
