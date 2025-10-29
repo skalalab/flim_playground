@@ -75,7 +75,7 @@ def tsne_hyperParams_widget():
         tsne_hyperParams_dict["early_exaggeration"] = early_exaggeration
     return tsne_hyperParams_dict
 
-def effect_size_pair_widget(available_pairs):
+def comparison_pair_widget(available_pairs):
     # Create more descriptive labels for each pair
     pair_labels = []
     for pair in available_pairs:
@@ -91,7 +91,7 @@ def effect_size_pair_widget(available_pairs):
     label_to_pair = dict(zip(pair_labels, available_pairs))
     
     selected_labels = st.multiselect(
-        "Select effect size calculation pairs",
+        "Select comparison pairs",
         pair_labels,
         default=pair_labels,
         key="compare_pairs"

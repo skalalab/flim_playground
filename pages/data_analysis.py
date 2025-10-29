@@ -81,6 +81,7 @@ with col1:
                 with ef_col2:
                     if selected_effect_size_method != "None":
                         mean_or_median = st.radio("Mean or Median", ["Mean", "Median"])
+                statistical_test = st.radio("Statistical Comparison between Two Groups", ["None", "Independent t-test", "Welch's t-test"], index=0)
                
         elif method in bivar_methods:
             if "2D" in method:
@@ -123,7 +124,7 @@ with col2:
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, colormap=st.session_state.plot_colormap)
+                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test, colormap=st.session_state.plot_colormap)
                     elif method == "FOV Comparison":
                         fig = fov_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, colormap=st.session_state.plot_colormap)
                     elif method == "Feature Histogram":

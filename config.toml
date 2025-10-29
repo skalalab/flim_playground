@@ -6,7 +6,7 @@ flim_decay_input_type = "Decay (3/4D)"
 all_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
 imaging_modality = "FLIM"
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
-categorical_cols = [ "treatment",]
+categorical_cols = [ "treatment", "cell_line", "dish",]
 intensity_only_input_type = "Intensity (2D)"
 
 [spc_output_suffix]

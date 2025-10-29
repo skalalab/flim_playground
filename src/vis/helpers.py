@@ -1,11 +1,11 @@
 import seaborn as sns
 import streamlit as st
 import numpy as np
-from scipy.stats import norm, gaussian_kde, median_abs_deviation
+from scipy.stats import norm, gaussian_kde, median_abs_deviation, ttest_ind
 from scipy.optimize import brentq
 from sklearn.mixture import GaussianMixture
 import pandas as pd
-from src.widgets.visualization_widgets import effect_size_pair_widget
+from src.widgets.visualization_widgets import comparison_pair_widget
 import re
 import plotly.graph_objects as go
 
@@ -134,7 +134,8 @@ def _calculate_effect_size(group1_data, group2_data, method: str, mean_or_median
 def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_groups_list, 
                                  drawn_annotations_list, positioning_metrics, 
                                  original_df, data_column_name, group_column_name_in_df, 
-                                 overall_min_y_val, data_range_y, position_map=None):
+                                 overall_min_y_val, data_range_y, position_map=None,
+                                 star_text: str = None, show_effect_size: bool = True):
     """
     Adds a single effect size annotation (bracket and text) to the figure,
     handling y-positioning and collision detection.
@@ -237,14 +238,23 @@ def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_g
             x1=x_pos_single, y1=final_y_bracket_top - bracket_vertical_length_abs,
             line=dict(width=1.5, color='gray')
         )
-    # Add effect size text
+    # Build annotation text based on requested display
+    if show_effect_size and star_text:
+        annotation_text = f"{effect_size_value:.2f}{star_text}"
+    elif show_effect_size and not star_text:
+        annotation_text = f"Δ={effect_size_value:.2f}"
+    elif (not show_effect_size) and star_text:
+        annotation_text = star_text
+    else:
+        annotation_text = ""
+
     fig.add_annotation(
         x=(x_start_new + x_end_new) / 2, y=final_y_text_annotation_center,
-        text=f"Δ={effect_size_value:.2f}", showarrow=False, font=dict(size=12),
+        text=annotation_text, showarrow=False, font=dict(size=12),
         align="center"
     )
 
-def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None):
+def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None, statistical_test: str = "None"):
     """
     Adds effect size annotations to the figure.
     Manages selection of pairs, calculation of effect sizes, and calls annotation plotting.
@@ -259,7 +269,35 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
 
     # Only show widget if pairs aren't pre-selected
     if selected_pairs is None:
-        selected_pairs = effect_size_pair_widget(all_possible_pairs)
+        selected_pairs = comparison_pair_widget(all_possible_pairs)
+
+    # Precompute star texts if a statistical test is requested
+    pair_to_star = {}
+    if selected_pairs and statistical_test != "None":
+        for pair in selected_pairs:
+            group1 = df[df[group_col_name] == pair[0]][selected_var].dropna()
+            group2 = df[df[group_col_name] == pair[1]][selected_var].dropna()
+            if group1.empty or group2.empty:
+                continue
+            equal_var = (statistical_test == "Independent t-test")
+            try:
+                _, pval = ttest_ind(group1, group2, equal_var=equal_var, nan_policy='omit')
+            except Exception:
+                pval = np.nan
+            # Map p-value to stars
+            if pd.isna(pval):
+                stars = ""
+            elif pval <= 0.0001:
+                stars = "****"
+            elif pval <= 0.001:
+                stars = "***"
+            elif pval <= 0.01:
+                stars = "**"
+            elif pval <= 0.05:
+                stars = "*"
+            else:
+                stars = ""
+            pair_to_star[pair] = stars
 
     if selected_pairs and effect_size_method != "None":
         drawn_annotations = []  # List to store details of drawn annotations for collision detection
@@ -281,7 +319,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
             'offset_from_data_abs': 0.05 * data_range_y,
             'vertical_spacing_abs': 0.08 * data_range_y,
             'bracket_vertical_length_abs': 0.03 * data_range_y,
-            'text_offset_from_bracket_abs': 0.02 * data_range_y,
+            'text_offset_from_bracket_abs': 0.03 * data_range_y,
             'text_height_allowance_for_collision_abs': 0.04 * data_range_y
         }
 
@@ -319,6 +357,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
             effect_size_value = _calculate_effect_size(group1_data, group2_data, effect_size_method, mean_or_median)
 
             if effect_size_value is not None and abs(effect_size_value) >= threshold:
+                stars = pair_to_star.get(pair)
                 _annotate_single_effect_size(
                     fig=fig,
                     pair_strings=pair,
@@ -331,12 +370,64 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
                     group_column_name_in_df=group_col_name,
                     overall_min_y_val=global_min_y, # Pass global_min_y for fallback
                     data_range_y=data_range_y, # Pass data_range_y for context if needed inside, though metrics are now absolute
-                    position_map=position_map
+                    position_map=position_map,
+                    star_text=stars,
+                    show_effect_size=True
                 )
           
 
         # No explicit "else" for unsupported methods here as _calculate_effect_size handles the warning,
         # and effect_size_value would be None, thus skipping annotation.
+
+    # If only statistical tests were requested (no effect size), add star-only annotations
+    if selected_pairs and effect_size_method == "None" and statistical_test != "None":
+        drawn_annotations = []
+
+        global_max_y = df[selected_var].max(skipna=True)
+        global_min_y = df[selected_var].min(skipna=True)
+        if pd.isna(global_max_y) or pd.isna(global_min_y) or len(df[selected_var].dropna()) < 2:
+            data_range_y = 1
+        else:
+            data_range_y = global_max_y - global_min_y
+        if data_range_y == 0:
+            data_range_y = 1
+
+        positioning_metrics = {
+            'offset_from_data_abs': 0.05 * data_range_y,
+            'vertical_spacing_abs': 0.08 * data_range_y,
+            'bracket_vertical_length_abs': 0.03 * data_range_y,
+            'text_offset_from_bracket_abs': 0.035 * data_range_y,
+            'text_height_allowance_for_collision_abs': 0.04 * data_range_y
+        }
+
+        if position_map is not None:
+            sorted_pairs = sorted(selected_pairs,
+                                  key=lambda p: (min(position_map[p[0]], position_map[p[1]]),
+                                                 max(position_map[p[0]], position_map[p[1]])))
+        else:
+            sorted_pairs = sorted(selected_pairs,
+                                  key=lambda p: (min(compare_groups.index(p[0]), compare_groups.index(p[1])),
+                                                 max(compare_groups.index(p[0]), compare_groups.index(p[1]))))
+
+        for pair in sorted_pairs:
+            stars = pair_to_star.get(pair, "")
+            # Skip if both groups empty or no stars and you prefer not to show ns; we'll annotate even if empty string to keep brackets consistent if desired
+            _annotate_single_effect_size(
+                fig=fig,
+                pair_strings=pair,
+                effect_size_value=0.0,
+                compare_groups_list=compare_groups,
+                drawn_annotations_list=drawn_annotations,
+                positioning_metrics=positioning_metrics,
+                original_df=df,
+                data_column_name=selected_var,
+                group_column_name_in_df=group_col_name,
+                overall_min_y_val=global_min_y,
+                data_range_y=data_range_y,
+                position_map=position_map,
+                star_text=stars,
+                show_effect_size=False
+            )
 
 def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_state=42):
     """

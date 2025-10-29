@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 from itertools import combinations
 import numpy as np
-from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, effect_size_pair_widget
+from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, comparison_pair_widget
 from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces
 
 def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab10"):
@@ -294,7 +294,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
 
     return fig, df
 
-def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None", mean_or_median=None, colormap="tab10"):
+def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None", mean_or_median=None, statistical_test="None", colormap="tab10"):
     connect_means = st.checkbox("Connect means", value=False, key=f"connect_means_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
     fig = go.Figure()
     COLOR_GROUP_COL_NAME = 'compare_group'
@@ -598,10 +598,10 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
     )
     # --- 4. Add statistical annotations ---
 
-    if compare_pairs != [] and effect_size_method != "None" and mean_or_median is not None:
+    if compare_pairs != [] and ((effect_size_method != "None" and mean_or_median is not None) or (statistical_test != "None")):
         if separate_groups:
             # Get user selection for statistical comparisons once (to avoid duplicate widget keys)
-            selected_pairs = effect_size_pair_widget(compare_pairs)
+            selected_pairs = comparison_pair_widget(compare_pairs)
             
             # Get threshold once to avoid duplicate widgets across sections
             threshold = 0.0
@@ -652,7 +652,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                                 mean_or_median=mean_or_median,
                                 position_map=section_position_map,
                                 selected_pairs=filtered_section_pairs,
-                                threshold=threshold
+                                threshold=threshold,
+                                statistical_test=statistical_test
                             )
         else:
             # Standard statistical annotations when no separate_by
@@ -664,7 +665,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 group_col_name=COLOR_GROUP_COL_NAME,
                 all_possible_pairs=compare_pairs,
                 effect_size_method=effect_size_method,
-                mean_or_median=mean_or_median
+                mean_or_median=mean_or_median,
+                statistical_test=statistical_test
             )
 
     df.drop(columns=[COLOR_GROUP_COL_NAME], inplace=True)
