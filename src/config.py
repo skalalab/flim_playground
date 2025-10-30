@@ -160,4 +160,4 @@ def get_fit_free_calibration_method(input_type: str) -> str:
         fluorescence_lifetime_standard_lifetime = cfg.get(input_type, {}).get("fluorescence_lifetime_standard_lifetime", "")
         return method, fluorescence_lifetime_standard_lifetime
     else:
-        return method, "", ""
+        return method, ""
