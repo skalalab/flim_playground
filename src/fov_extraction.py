@@ -319,12 +319,11 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         if cell_id not in single_cell_features_fov:
             single_cell_features_fov[cell_id] = {}
 
-        if calibration_method != "Fluorescence Lifetime Standard":
-            # subtract the esetimated offset and clip the timebin to above or equal to 0
-            offset = get_offset(decay_curve)
-            decay_curve = decay_curve - offset
-            # clip the timebin to above or equal to 0
-            decay_curve = np.clip(decay_curve, 0, None)
+        # subtract the esetimated offset and clip the timebin to above or equal to 0
+        offset = get_offset(decay_curve)
+        decay_curve = decay_curve - offset
+        # clip the timebin to above or equal to 0
+        decay_curve = np.clip(decay_curve, 0, None)
 
          # calculate the raw phasor coordinates    
         g_raw, s_raw = get_raw_phasor(decay_curve, h=1, w=w, time_axis=time_axis, full_period=full_period)

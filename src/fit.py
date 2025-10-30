@@ -30,7 +30,7 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         shift_data = np.zeros(num_curves)
         if shift_guess is None:
             shift_guess = 0
-        params.add('shift', value=shift_guess, min=-100, max=100)
+        params.add('shift', value=shift_guess, min=-1*time_bins, max=time_bins)
     period = duration / time_bins
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
     mle_fit_options = { 'maxfev': 100000,      # Maximum function evaluations
