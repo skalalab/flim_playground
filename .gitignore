@@ -8,3 +8,4 @@ test.py
 logo/
 sdt_headers/
 *.csv
+!inhibitors.csv
