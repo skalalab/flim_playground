@@ -17,11 +17,11 @@ def forward_pass(amp1, t1, offset, shifted_irf, time_axis, amp2=None, t2=None, a
     if amp2 is not None and amp3 is not None and t2 is not None and t3 is not None:
         decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2) +  amp3 * np.exp(-time_axis / t3)
     elif amp2 is not None and t2 is not None:
-        decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2) 
+        decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2)
     else:
         decay = amp1 * np.exp(-time_axis / t1) 
     # convolve the decay with the shifted IRF, finally add the offset
-    convolved_decay = convolve(decay, shifted_irf + offset)[:len(time_axis)]
+    convolved_decay = convolve(decay, shifted_irf)[:len(time_axis)] + offset
     
     return convolved_decay
 def mle_likelihood(fitted, data, start, end):
