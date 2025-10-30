@@ -17,19 +17,21 @@ def forward_pass(amp1, t1, offset, shifted_irf, time_axis, amp2=None, t2=None, a
     if amp2 is not None and amp3 is not None and t2 is not None and t3 is not None:
         decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2) +  amp3 * np.exp(-time_axis / t3)
     elif amp2 is not None and t2 is not None:
-        decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2)
+        decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2) 
     else:
         decay = amp1 * np.exp(-time_axis / t1) 
     # convolve the decay with the shifted IRF, finally add the offset
     convolved_decay = convolve(decay, shifted_irf)[:len(time_axis)] + offset
     
     return convolved_decay
-def mle_likelihood(fitted, data, start, end):
-    fitted = np.maximum(fitted, 1e-10)  # Prevent log(0)
+def nll_poisson(fitted, data, start, end):
+    if end == -1 or end > len(data):
+        end = len(data) 
+    fitted = np.maximum(fitted, 1e-12)  # Prevent log(0)
     likelihood = -np.sum(data[start:end] * np.log(fitted[start:end]) - fitted[start:end])
     return likelihood
 
-def chi_square(fitted, data, start=0, end=-1):
+def chi_square(fitted, data, start, end, num_free_params):
     if end == -1 or end > len(data):
         end = len(data) 
     # crop out the region of interest by time gates
@@ -40,9 +42,8 @@ def chi_square(fitted, data, start=0, end=-1):
     data_slice = data_slice[valid]
     fitted_slice = fitted_slice[valid]
     residuals = data_slice - fitted_slice
-     # Poisson noise assumption where variance equals the count
-    tmp_chiq = residuals**2/data_slice
-    chiq = tmp_chiq.sum() / len(data_slice) 
+    tmp_chiq = residuals**2/fitted_slice
+    chiq = tmp_chiq.sum() / (len(data_slice) - num_free_params) 
     return chiq
 
 def objective(params, data, irf, time_axis, start=0, end=-1, fitting_algo="MLE"):
@@ -63,7 +64,7 @@ def objective(params, data, irf, time_axis, start=0, end=-1, fitting_algo="MLE")
     fitted = forward_pass(amp1=amp1, t1=t1, offset=offset, shifted_irf=irf, time_axis=time_axis, amp2=amp2, t2=t2, amp3=amp3, t3=t3)
     # Poisson likelihood
     if fitting_algo == "MLE": 
-        return mle_likelihood(fitted, data, start, end)
+        return nll_poisson(fitted, data, start, end)
     elif fitting_algo == "LS":
         residuals = data[start:end] - fitted[start:end]
         return residuals

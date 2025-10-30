@@ -4,9 +4,9 @@ import pandas as pd
 import numpy as np
 from plotly import graph_objects as go
 from src.choose_shift import choose_shift_fit_free, choose_shift_fit
-from src.fit_helper import forward_pass, irf_shift, mle_likelihood, chi_square
+from src.fit_helper import forward_pass, irf_shift, nll_poisson, chi_square
 
-def display_shift_data_widget(results, channel_name, choose_shift_method, time_axis=None, period=None, num_components=None, log_y=True):
+def display_shift_data_widget(results, channel_name, choose_shift_method, time_axis=None, period=None, num_components=None, log_y=True, start=None, end=None):
     
     # combines image_name and shift from results into a df
     # kflow decay_id is the cell_name, otherwise it is the image_name
@@ -130,8 +130,8 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
                 amp3=amp3_data,
                 t3=t3_data
             )
-            mle = mle_likelihood(fitted_curve, decay_curves[idx], start=0, end=-1)
-            chiq = chi_square(fitted_curve, decay_curves[idx], start=0, end=-1)
+            nll = nll_poisson(fitted_curve, decay_curves[idx], start=start, end=end)
+            chiq = chi_square(fitted_curve, decay_curves[idx], start=start, end=end, num_free_params=num_components*2+1)
 
             fig2.add_trace(go.Scatter(
                 x=time_axis,
@@ -141,7 +141,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
                 line=dict(color='red'),
                 hoverinfo='skip'
             ))
-            
+
             # Add annotations with fitting parameters and statistics
             annotation_text = f"<b>Shift: {shift_data:.2f}</b><br>"
             annotation_text += f"<b>t1: {t1_data * 1000:.2f} ps</b><br>"
@@ -153,7 +153,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
                 a2 = amp2_data / (amp1_data + amp2_data + amp3_data)
                 annotation_text += f"<b>α2: {a2 * 100:.2f}%</b><br>"
                 annotation_text += f"<b>t3: {t3_data * 1000:.2f} ps</b><br>"
-            annotation_text += f"<b>NLL: {mle:.2f}</b><br>"
+            annotation_text += f"<b>NLL: {nll:.2f}</b><br>"
             annotation_text += f"<b>χ²: {chiq:.2f}</b>"
             fig2.add_annotation(
                     text=annotation_text,
@@ -202,7 +202,7 @@ def choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name, 
     
     period = duration / time_bins
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
-    display_shift_data_widget(results, channel_name, choose_shift_method, time_axis, period, metadata_dict[channel_name].get("num_components", 0), log_y)
+    display_shift_data_widget(results, channel_name, choose_shift_method, time_axis, period, metadata_dict[channel_name].get("num_components", 0), log_y, start, end)
     
     if metadata_dict["fix_shift"]:
         median_shift = np.median(results["shift"])
