@@ -1,13 +1,6 @@
 # FLIM Playground
 
-Input Type, Channels, Extracted Feature Types
-- Lifetime 
-    - fit
-    - fit free (e.g. Phasor)
-- Intensity
-    - morphology
-    - texture
-
+![](logo.gif)
 
 # Quick try 
 It is deployed at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). 
@@ -15,7 +8,7 @@ You can try out analysis modules in the **Data Analysis** section using this sam
 
 # Install
 ## Option 1: Download from Releases
-- Releases for Mac OS 15, Windows 11
+- Releases for Mac OS 26, Windows 11 (look for the latest ones)
 ## Option 2: Build from source
 ### Clone the repo
 Navigate into the repository once cloned. 
@@ -37,7 +30,6 @@ pyinstaller Flim-Playground.spec --clean
 - add linear mixed effect model
 - add modality alignment
 - add confidence interval to effect size
-- add flimlib?
 
 ```bash
 streamlit run main.py # when in development
