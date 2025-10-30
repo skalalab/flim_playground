@@ -141,7 +141,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
                 line=dict(color='red'),
                 hoverinfo='skip'
             ))
-        
+            
             # Add annotations with fitting parameters and statistics
             annotation_text = f"<b>Shift: {shift_data:.2f}</b><br>"
             annotation_text += f"<b>t1: {t1_data * 1000:.2f} ps</b><br>"
@@ -153,7 +153,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
                 a2 = amp2_data / (amp1_data + amp2_data + amp3_data)
                 annotation_text += f"<b>α2: {a2 * 100:.2f}%</b><br>"
                 annotation_text += f"<b>t3: {t3_data * 1000:.2f} ps</b><br>"
-            annotation_text += f"<b>MLE: {mle:.2f}</b><br>"
+            annotation_text += f"<b>NLL: {mle:.2f}</b><br>"
             annotation_text += f"<b>χ²: {chiq:.2f}</b>"
             fig2.add_annotation(
                     text=annotation_text,
@@ -169,7 +169,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
 
             fig2.update_layout(
                 title=f"Decay Curve and Fitted Line for {clicked_shift_identifier}",
-                xaxis_title="Time (ps)",
+                xaxis_title="Time (ns)",
                 yaxis_title="Intensity (log)" if log_y else "Intensity",
                 yaxis_type="log" if log_y else "linear",
                 showlegend=True,

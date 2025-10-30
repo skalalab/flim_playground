@@ -17,11 +17,11 @@ def forward_pass(amp1, t1, offset, shifted_irf, time_axis, amp2=None, t2=None, a
     if amp2 is not None and amp3 is not None and t2 is not None and t3 is not None:
         decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2) +  amp3 * np.exp(-time_axis / t3)
     elif amp2 is not None and t2 is not None:
-        decay = amp1 * np.exp(-time_axis / t1) +  amp2 *  np.exp(-time_axis / t2)    
+        decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2) 
     else:
-        decay = amp1 * np.exp(-time_axis / t1)
+        decay = amp1 * np.exp(-time_axis / t1) 
     # convolve the decay with the shifted IRF, finally add the offset
-    convolved_decay = convolve(decay, shifted_irf)[:len(time_axis)] + offset
+    convolved_decay = convolve(decay, shifted_irf + offset)[:len(time_axis)]
     
     return convolved_decay
 def mle_likelihood(fitted, data, start, end):
@@ -32,17 +32,17 @@ def mle_likelihood(fitted, data, start, end):
 def chi_square(fitted, data, start=0, end=-1):
     if end == -1 or end > len(data):
         end = len(data) 
-    residuals = data - fitted
-    residuals[:start] = 0
-    residuals[end:] = 0
-    non_zero_indices = data > 0
-    
-    # Use data values as denominator for chi-square calculation
-    denominator = data[non_zero_indices]
-    residuals = residuals[non_zero_indices]
+    # crop out the region of interest by time gates
+    data_slice = data[start:end]
+    fitted_slice = fitted[start:end]
+    # keep only the positive-count bins 
+    valid = data_slice > 0
+    data_slice = data_slice[valid]
+    fitted_slice = fitted_slice[valid]
+    residuals = data_slice - fitted_slice
      # Poisson noise assumption where variance equals the count
-    tmp_chiq = residuals**2/denominator
-    chiq = tmp_chiq.sum() / len(non_zero_indices) 
+    tmp_chiq = residuals**2/data_slice
+    chiq = tmp_chiq.sum() / len(data_slice) 
     return chiq
 
 def objective(params, data, irf, time_axis, start=0, end=-1, fitting_algo="MLE"):

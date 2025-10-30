@@ -9,28 +9,28 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
     params = Parameters()
     # initialize the parameters
     amp1_data = np.zeros(num_curves)
-    params.add('amp1', min=0)
+    params.add('amp1', min=0.001)
     t1_data = np.zeros(num_curves)
-    params.add('t1', value=0.400, min=0.0, max=duration)
+    params.add('t1', value=0.400, min=0.001, max=duration)
     offset_data = np.zeros(num_curves)
-    params.add('offset', min=0, max=1000000)
+    params.add('offset', min=0.0, max=1000000)
     if num_components > 1:
         amp2_data = np.zeros(num_curves)
-        params.add('amp2', min=0)
+        params.add('amp2', min=0.001)
         t2_data = np.zeros(num_curves)
-        params.add('t2', value=2.5, min=0.0, max=duration)
+        params.add('t2', value=2.5, min=0.001, max=duration)
         
     if num_components > 2:
         amp3_data = np.zeros(num_curves)
-        params.add('amp3', min=0)
+        params.add('amp3', min=0.001)
         t3_data = np.zeros(num_curves)
-        params.add('t3', min=0.0, max=duration)
+        params.add('t3', min=0.001, max=duration)
 
     if fit_shift:
         shift_data = np.zeros(num_curves)
         if shift_guess is None:
             shift_guess = 0
-        params.add('shift', value=shift_guess, min=-1*time_bins, max=time_bins)
+        params.add('shift', value=shift_guess, min=-1*time_bins/2, max=time_bins/2)
     period = duration / time_bins
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
     mle_fit_options = { 'maxfev': 100000,      # Maximum function evaluations
@@ -49,7 +49,7 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
     global_fit_options = {
         'popsize': 25,    # Population size
         'tol': 1e-8,      # Convergence tolerance
-        'max_nfev': 10000   # Maximum function evaluations
+        'max_nfev': 100000  # Maximum function evaluations
     }
     for i in range(num_curves):
         decay_curve = decay_curves[i]
@@ -138,7 +138,3 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         results["t3"] = t3_data
    
     return results
-
-
-
-

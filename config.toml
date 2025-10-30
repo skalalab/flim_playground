@@ -21,7 +21,7 @@ t3 = "_t3.asc"
 laser_rate = 0.08
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 file_types = [ "Decay", "IRF", "Mask",]
-fit_free_calibration = "Fluorescence Lifetime Standard"
+fit_free_calibration = "IRF"
 fluorescence_lifetime_standard_lifetime = 4.2
 
 [ch1]
@@ -60,7 +60,7 @@ file_types = [ "Intensity (2D)", "Mask",]
 
 [ch1."Decay (3/4D)"]
 num_components = 2
-selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+selected_feature_extractors = [ "Lifetime fit",]
 
 [ch1."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit", "Intensity morphology", "Intensity texture",]
@@ -93,9 +93,9 @@ selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
 [ch1."Decay (3/4D)".input_suffixes]
-Mask = "MaskN.tif"
-Decay = "N.ptu"
-IRF = "ReferenceIRFN.txt"
+Mask = "n_cellpose.tiff"
+Decay = "n.sdt"
+IRF = "Ch3_IRF_750__2024.txt"
 "Fluorescence Lifetime Standard" = "test.tiff"
 
 [ch1."Decay (3/4D) pixel-prefitted".input_suffixes]
