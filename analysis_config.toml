@@ -4,4 +4,5 @@ categorical_cols = [ "species",]
 all_numerical_features = [ "sepal_length", "sepal_width", "petal_length", "petal_width",]
 
 [feature_groups]
-"fad lifetime" = []
+sepal = [ "sepal_width", "sepal_length",]
+petal = [ "petal_width", "petal_length",]
