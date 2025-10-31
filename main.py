@@ -18,7 +18,7 @@ def main():
         base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
         return base / rel
     
-    logo_file = resource_path("logo.gif")
+    logo_file = resource_path("logo.png")
     with center_column:
         st.image(str(logo_file))
 
