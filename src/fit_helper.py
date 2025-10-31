@@ -38,8 +38,8 @@ def chi_square(fitted, data, start, end, num_free_params):
     data_slice = data[start:end]
     fitted_slice = fitted[start:end]
     # keep only the positive-count bins 
-    valid = data_slice > 0
-    data_slice = data_slice[valid]
+    valid = (data_slice > 0) & (fitted_slice > 0)
+    data_slice = data_slice[valid] 
     fitted_slice = fitted_slice[valid]
     residuals = data_slice - fitted_slice
     tmp_chiq = residuals**2/fitted_slice
