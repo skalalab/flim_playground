@@ -6,9 +6,8 @@ def granularity(cell_image, n):
     Calculate the granularity of the image using morphological opening
     
     Parameters:
-    - image: 2D numpy array (intensity image)
-    - mask: 2D numpy array (binary mask)
-    - n: int (size of structuring element)
+    - cell_image: 2D numpy array (cell ROI intensity image)
+    - n: int (radius of disk structuring element)
     
     Returns:
     - granularity value: percentage of intensity removed by opening
@@ -24,7 +23,7 @@ def granularity(cell_image, n):
         # For larger sizes, use disk structuring element
         selem = morphology.disk(n)
     
-    # Apply morphological opening (erosion followed by dilation) to remove bright objects of diameter n
+    # Apply morphological opening (erosion followed by dilation) to remove bright objects of radius n
     opened_image = morphology.opening(cell_image, selem)
     
     # Calculate intensity difference
@@ -47,8 +46,7 @@ def radial_distribution(cell_image, ring_number):
     Calculate the radial distribution mean fraction for a specific ring
     
     Parameters:
-    - image: 2D numpy array (intensity image)
-    - mask: 2D numpy array (binary mask)
+    - cell_image: 2D numpy array (intensity image)
     - ring_number: int (1-4, where 1 is innermost, 4 is outermost)
     
     Returns:

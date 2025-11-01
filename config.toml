@@ -2,7 +2,7 @@ num_channels = 1
 unique_cell_id_col = "cell_id"
 fov_name_col = "image_name"
 flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
-flim_decay_input_type = "Decay (3/4D)"
+flim_decay_input_type = "Decay (2D)"
 all_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
 imaging_modality = "FLIM"
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
@@ -25,7 +25,7 @@ fit_free_calibration = "IRF"
 fluorescence_lifetime_standard_lifetime = 4.2
 
 [ch1]
-input_type = "Decay (3/4D)"
+input_type = "Decay (2D)"
 channel_name = "NAD(P)H"
 imaging_modality = "FLIM"
 
