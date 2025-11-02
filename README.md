@@ -2,6 +2,19 @@
 
 ![](logo.gif)
 
+FLIM Playground allows you to extract single-cell features from fluorescence lifetime imaging microscopy (FLIM) raw data (Data Extraction) and analyze extracted features or datasets extracted via other methods using a built-in repertoire of methods (Data Analysis).
+
+# Data Extraction Demo
+
+# Data Analysis Demo
+
+<video src="demo/demo_videos/data_analysis_movie.mp4" controls width="100%"></video>
+
+## Use Your Own Data in Data Analysis
+
+<video src="demo/demo_videos/data_analysis_config_movie.mp4" controls width="100%"></video>
+
+
 # Quick try 
 It is deployed at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). 
 You can try out analysis modules in the **Data Analysis** section using this sample [dataset](./inhibitors.csv) extracted previously by the **Data Extraction** module
