@@ -1,6 +1,8 @@
 # FLIM Playground
 
-![](logo.png)
+<p align="center">
+  <img src="logo.png" alt="FLIM Playground Logo">
+</p>
 
 FLIM Playground allows you to extract single-cell features from fluorescence lifetime imaging microscopy (FLIM) raw data (Data Extraction) and analyze extracted features or datasets extracted via other methods using a built-in repertoire of methods (Data Analysis).
 
