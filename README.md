@@ -16,7 +16,7 @@ https://github.com/user-attachments/assets/b85cef5a-3c42-4b0e-a4fa-77968ad5a1f6
 
 # Quick try 
 It is deployed at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). 
-You can try out analysis modules in the **Data Analysis** section using this sample [dataset](./example_data/Data_Analysis/inhibitors.csv) extracted previously by the **Data Extraction** module
+You can try out analysis modules in the **Data Analysis** section using this sample [dataset](./example_data/Data_Analysis/inhibitors.csv) extracted previously by the **Data Extraction** module.
 
 # Install
 ## Option 1: Download from Releases
@@ -34,6 +34,10 @@ pyinstaller Flim-Playground.spec --clean
 
 # Documentation
 - @[docs](https://skalalab.github.io/flim_playground_doc/)
+
+# Citation
+
+FLIM Playground is currently on [bioarchive](https://www.biorxiv.org/content/10.1101/2025.09.30.679625). If you used Data Extraction to get single cell features, or Data Analysis to explore your data to find data of interest, perform analysis, or pin down suitable hyperparameters (UMAP, classification options, etc.) and analysis methods, please cite us 🥳🎉🥂. 
 
 # TODO
 - add contour map that use color to encode data point density
