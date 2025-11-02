@@ -6,14 +6,19 @@
 
 FLIM Playground allows you to extract single-cell features from fluorescence lifetime imaging microscopy (FLIM) raw data (Data Extraction) and analyze extracted features or datasets extracted via other methods using a built-in repertoire of methods (Data Analysis).
 
-# Data Extraction Demo
+# Data Extraction + Data Analysis Demo
+- Demo uses the T cell activation [dataset](example_data/Data_Extraction/T_cell_activation) from this [paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11425855/):
+
+https://github.com/user-attachments/assets/31910280-ae9e-4db9-a1c7-88c81d8d1e05
 
 # Data Analysis Demo
-
+- Demo uses the inhibitor treatments on cancer cell lines (MCF7 and PANC-1) [dataset](./example_data/Data_Analysis/inhibitors.csv) extracted by Data Extraction:
+  
 https://github.com/user-attachments/assets/bb72c4e3-5785-4770-83ea-690ed3a3cf79
 
 ## Use Your Own Data in Data Analysis
-
+- Demo uses the [iris dataset](example_data/Data_Analysis/iris.csv):
+  
 https://github.com/user-attachments/assets/b85cef5a-3c42-4b0e-a4fa-77968ad5a1f6
 
 # Quick try 
