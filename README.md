@@ -16,7 +16,7 @@ https://github.com/user-attachments/assets/b85cef5a-3c42-4b0e-a4fa-77968ad5a1f6
 
 # Quick try 
 It is deployed at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). 
-You can try out analysis modules in the **Data Analysis** section using this sample [dataset](./inhibitors.csv) extracted previously by the **Data Extraction** module
+You can try out analysis modules in the **Data Analysis** section using this sample [dataset](./example_data/Data_Analysis/inhibitors.csv) extracted previously by the **Data Extraction** module
 
 # Install
 ## Option 1: Download from Releases
