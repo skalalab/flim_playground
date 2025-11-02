@@ -8,7 +8,11 @@ FLIM Playground allows you to extract single-cell features from fluorescence lif
 
 # Data Analysis Demo
 
+https://github.com/user-attachments/assets/bb72c4e3-5785-4770-83ea-690ed3a3cf79
+
 ## Use Your Own Data in Data Analysis
+
+https://github.com/user-attachments/assets/b85cef5a-3c42-4b0e-a4fa-77968ad5a1f6
 
 # Quick try 
 It is deployed at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). 
