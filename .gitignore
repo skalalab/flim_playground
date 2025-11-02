@@ -7,6 +7,3 @@ test.py
 .venv/
 logo/
 sdt_headers/
-*.csv
-!inhibitors.csv
-!iris.csv
