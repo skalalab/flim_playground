@@ -19,17 +19,17 @@ def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
     return brentq(f, min(mu1, mu2), max(mu1, mu2))
 
 def glass_delta(group1, group2, mean_or_median):
+    # group1 should be the control
     if mean_or_median == "Mean": 
-        diff = np.mean(group1) - np.mean(group2)
-        # group2 should be the control
-        group2_sd = np.std(group2, ddof=1)  # Using Bessel's correction with ddof=1
+        diff = np.mean(group2) - np.mean(group1)
+        group1_sd = np.std(group1, ddof=1)  # Using Bessel's correction with ddof=1
     else:
-        diff = np.median(group1) - np.median(group2)
+        diff = np.median(group2) - np.median(group1)
         # use MAD (median_absolute_deviation) 
         # scale: normal: divides by 0.67449 → multiplies by 1.4826 internally
-        group2_sd = median_abs_deviation(group2, scale='normal') 
+        group1_sd = median_abs_deviation(group1, scale='normal') 
     
-    return diff / group2_sd
+    return diff / group1_sd
 
 def cohens_d(group1, group2, mean_or_median):
     """Compute Cohen's d for two independent samples."""
