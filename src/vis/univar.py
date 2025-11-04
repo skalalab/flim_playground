@@ -566,7 +566,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             if section_info['combinations']:  # Only add annotation if section has data
                 fig.add_annotation(
                     x=section_info['center'],
-                    y=-0.15,  # Position below x-axis
+                    y=-0.20,  # Position below x-axis labels
                     text=f"<b>{section_info['group']}</b>",
                     showarrow=False,
                     xref="x",

@@ -47,6 +47,7 @@ pyinstaller Flim-Playground.spec --clean
 FLIM Playground is currently on [bioarchive](https://www.biorxiv.org/content/10.1101/2025.09.30.679625). If you used Data Extraction to get single cell features, or Data Analysis to explore your data to find data of interest, perform analysis, or pin down suitable hyperparameters (UMAP, classification options, etc.) and analysis methods, please cite us 🥳🎉🥂. 
 
 # TODO
+- add filters based on numerical user-specified feature range/cutoff
 - add contour map that use color to encode data point density
 - randomize the plot order of points
 - add hierarchical clustering
