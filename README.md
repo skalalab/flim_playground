@@ -13,8 +13,8 @@ https://github.com/user-attachments/assets/a01b8a22-1bc3-46f1-aa37-1c3191a6fa1a
 
 # Data Analysis Demo
 - Demo uses the inhibitor treatments on cancer cell lines (MCF7 and PANC-1) [dataset](./example_data/Data_Analysis/inhibitors.csv) extracted by Data Extraction:
-  
-https://github.com/user-attachments/assets/bb72c4e3-5785-4770-83ea-690ed3a3cf79
+
+https://github.com/user-attachments/assets/19dab644-5977-45e8-b92b-47c6588a74bb
 
 ## Use Your Own Data in Data Analysis
 - Demo uses the [iris dataset](example_data/Data_Analysis/iris.csv):
