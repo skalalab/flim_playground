@@ -120,7 +120,8 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
             
             if shift:
                 # Optimize: directly create boolean mask (faster than np.where)
-                binary_mask = mask > 0
+                # Ensure mask has same dtype as decay for efficient broadcasting
+                binary_mask = (mask > 0).astype(decay.dtype)
                 # image_level ROI summing: sum the time axis of all non-zero pixels in the decay
                 summed_decay_curve = np.sum(decay * binary_mask[:, :, np.newaxis], axis=(0, 1))
                 decay_curves[fov_name] = summed_decay_curve

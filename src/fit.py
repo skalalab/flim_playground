@@ -52,8 +52,12 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         'tol': 1e-8,      # Convergence tolerance
         'max_nfev': 100000  # Maximum function evaluations
     }
-    # Update progress less frequently (every 5% or at least every 10 curves)
-    progress_interval = max(1, min(10, num_curves // 20))
+    # Update progress less frequently to reduce UI overhead
+    # Configuration: Update every 5% of curves, but at least once per curve and at most every 10 curves
+    MIN_PROGRESS_INTERVAL = 1
+    MAX_PROGRESS_INTERVAL = 10
+    PROGRESS_UPDATE_PERCENT = 0.05  # Update every 5%
+    progress_interval = max(MIN_PROGRESS_INTERVAL, min(MAX_PROGRESS_INTERVAL, int(num_curves * PROGRESS_UPDATE_PERCENT)))
     
     for i in range(num_curves):
         decay_curve = decay_curves[i]

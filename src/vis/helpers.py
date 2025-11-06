@@ -429,7 +429,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
                 show_effect_size=False
             )
 
-def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_state=42):
+def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_state=42, max_iter=200):
     """
     Finds the best Gaussian Mixture Model (GMM) based on BIC, subject to constraints.
     Optimized to reduce unnecessary computations.
@@ -439,6 +439,7 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
         max_components (int): Maximum number of components to try.
         min_weight_threshold (float): Minimum weight for a component to be considered valid.
         random_state (int): Random state for GMM initialization.
+        max_iter (int): Maximum iterations for GMM fitting. Default 200 balances performance with convergence.
 
     Returns:
         sklearn.mixture.GaussianMixture or None: The best GMM found, or None if no valid model.
@@ -456,7 +457,7 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
     # Optimize: Use early stopping if we find a single component is best
     # (checking k=1 first often saves computation)
     for k in range(1, max_components + 1):
-        gmm = GaussianMixture(n_components=k, random_state=random_state, max_iter=100)
+        gmm = GaussianMixture(n_components=k, random_state=random_state, max_iter=max_iter)
         gmm.fit(data_reshaped)
         bic = gmm.bic(data_reshaped)
 

@@ -11,7 +11,12 @@ from src.cell_texture import granularity, radial_distribution, mass_displacement
 
 def get_offset(decay_curve):
     """
-    Get the offset of a decay curve using: mean of the last 10% of bins
+    Get the offset of a decay curve using: mean of the last 10% of bins.
+    
+    Note: Uses mean instead of median for computational efficiency. For typical
+    decay curves with Poisson noise, the mean provides a good estimate of the
+    background offset and is significantly faster than median for large arrays.
+    
     Optimized to reduce computation.
     """
     tail_bins_percentile = 90
@@ -21,9 +26,9 @@ def get_offset(decay_curve):
     tail_start_bin = int(total_bins * tail_bins_percentile / 100)
     
     # Get the last 10% of bins and calculate mean (faster than median for our use case)
-    tail_median = np.mean(decay_curve[tail_start_bin:])
+    tail_mean = np.mean(decay_curve[tail_start_bin:])
     
-    return tail_median
+    return tail_mean
 
 def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type):
     feature_prefix = f"Intensity texture_{channel_name}: "

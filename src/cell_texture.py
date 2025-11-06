@@ -69,9 +69,11 @@ def radial_distribution(cell_image, ring_number):
     mask_distances = np.sqrt(y_diff**2 + x_diff**2)
     max_distance = np.max(mask_distances)
     
-    # Avoid division by zero
+    # Handle edge case: if all pixels are at the same location (max_distance == 0)
+    # In this case, all intensity is in the innermost ring by definition
+    INNERMOST_RING = 1
     if max_distance == 0:
-        return 1.0 if ring_number == 1 else 0.0
+        return 1.0 if ring_number == INNERMOST_RING else 0.0
     
     # Divide into 4 equal rings based on distance
     ring_thickness = max_distance / 4.0
