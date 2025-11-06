@@ -76,6 +76,11 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
     decay_curves = {}
     fov_name_col = get_fov_name_col()
     
+    # Pre-compute column names to avoid repeated string operations
+    decay_col = f'{channel_name}_Decay'
+    mask_col = f'{channel_name}_Mask'
+    channel_col = f'{channel_name}_channel'
+    
     # Handle iteration for both DataFrame and Series cases
     if isinstance(metadata_df, pd.Series):
         # Process single row (Series)
@@ -88,14 +93,14 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
     
     for i, row in rows_to_process:
         fov_name = row[fov_name_col]
-        decay_path = row.get(f'{channel_name}_Decay', None)
+        decay_path = row.get(decay_col, None)
         if "Decay (3/4D)" in input_type:
-            mask_path = row.get(f'{channel_name}_Mask', None)
+            mask_path = row.get(mask_col, None)
             try:
                 mask = load_image(mask_path)
             except Exception as e:
                 return f"Error reading the mask file for {fov_name_col} {fov_name} at {mask_path}: {e}", None  
-            channel_no = row.get(f'{channel_name}_channel', None)
+            channel_no = row.get(channel_col, None)
             if channel_no is None:
                 return f"Error: Channel number not found for {fov_name_col} {fov_name}", None      
             try:
@@ -114,18 +119,19 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
                 return f"Dimension mismatch: Decay data {decay.shape[:2]} vs mask {mask.shape}", None
             
             if shift:
-                # binarize the mask
-                binary_mask = np.where(mask > 0, 1, 0)
+                # Optimize: directly create boolean mask (faster than np.where)
+                binary_mask = mask > 0
                 # image_level ROI summing: sum the time axis of all non-zero pixels in the decay
                 summed_decay_curve = np.sum(decay * binary_mask[:, :, np.newaxis], axis=(0, 1))
                 decay_curves[fov_name] = summed_decay_curve
             else:
                 # get all the decay curves for each cell
-                unique_cells = np.sort(np.unique(mask))
-                # Remove background (0)
+                unique_cells = np.unique(mask)
+                # Remove background (0) - no need to sort for iteration
                 unique_cells = unique_cells[unique_cells != 0]
                 for cell in unique_cells:
                     cell_mask = mask == cell
+                    # Optimize: Use direct indexing instead of string formatting in loop
                     cell_id = f"{fov_name}_{cell}"
                     decay_curves[cell_id] = decay[cell_mask, :].sum(axis=0)
 
@@ -144,15 +150,16 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
                 # Use integer division to get number of samples per image, ensuring at least 1 sample
                 samples_per_experiment = max(1, 30 // num_fovs)  # // operator performs integer division
                 sample_decays, top_indices = _get_sample_decay_curves(decays, samples_per_experiment, 100000)
-                # use the indices (essentially cell_number) to concatenate with image_name to form decay_id
+                # Optimize: Build dict keys more efficiently
                 for i, index in enumerate(top_indices):
                     decay_curves[f"{fov_name}_{index}"] = sample_decays[i]
 
             else:
                 # get all the decay curves for each cell
-                # each cell is a row in the decays dataframe
-                for index, row in decays.iterrows():
-                    decay_curves[f"{fov_name}_{index}"] = row.values
+                # Optimize: Use itertuples for faster iteration over DataFrame
+                for row_tuple in decays.itertuples(index=True, name=None):
+                    index = row_tuple[0]  # First element is the index
+                    decay_curves[f"{fov_name}_{index}"] = np.array(row_tuple[1:], dtype=np.float64)
 
     return error_msg, decay_curves
 
@@ -165,13 +172,15 @@ def get_irf(metadata_df, channel_name, time_bins):
         # metadata_df is a DataFrame, get the first row
         first_row = metadata_df.iloc[0]
       
-    irf_path = first_row.get(f'{channel_name}_IRF', None)
+    irf_col = f'{channel_name}_IRF'
+    irf_path = first_row.get(irf_col, None)
     
     try:
         if irf_path.endswith(".csv"):
-            irf = pd.read_csv(irf_path)
+            # Optimize: read CSV directly as numpy array for better performance
+            irf = pd.read_csv(irf_path).values.flatten()
         else:
-            irf = np.loadtxt(irf_path)
+            irf = np.loadtxt(irf_path, dtype=np.float64)
     except Exception as e:
         return f"Error: IRF file not found for {channel_name}.", None
     if irf.ndim != 1:

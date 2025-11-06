@@ -8,30 +8,31 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
     num_curves = len(decay_curves)
     params = Parameters()
     # initialize the parameters
-    amp1_data = np.zeros(num_curves)
+    amp1_data = np.zeros(num_curves, dtype=np.float64)
     params.add('amp1', min=0.001)
-    t1_data = np.zeros(num_curves)
+    t1_data = np.zeros(num_curves, dtype=np.float64)
     params.add('t1', value=0.400, min=0.001, max=duration)
-    offset_data = np.zeros(num_curves)
+    offset_data = np.zeros(num_curves, dtype=np.float64)
     params.add('offset', min=0.0, max=1000000)
     if num_components > 1:
-        amp2_data = np.zeros(num_curves)
+        amp2_data = np.zeros(num_curves, dtype=np.float64)
         params.add('amp2', min=0.001)
-        t2_data = np.zeros(num_curves)
+        t2_data = np.zeros(num_curves, dtype=np.float64)
         params.add('t2', value=2.5, min=0.001, max=duration)
         
     if num_components > 2:
-        amp3_data = np.zeros(num_curves)
+        amp3_data = np.zeros(num_curves, dtype=np.float64)
         params.add('amp3', min=0.001)
-        t3_data = np.zeros(num_curves)
+        t3_data = np.zeros(num_curves, dtype=np.float64)
         params.add('t3', min=0.001, max=duration)
 
     if fit_shift:
-        shift_data = np.zeros(num_curves)
+        shift_data = np.zeros(num_curves, dtype=np.float64)
         if shift_guess is None:
             shift_guess = 0
         params.add('shift', value=shift_guess, min=-1*time_bins/2, max=time_bins/2)
     period = duration / time_bins
+    # Pre-compute time_axis once (reused for all curves)
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
     mle_fit_options = { 'maxfev': 100000,      # Maximum function evaluations
             'xatol': 1e-8,        # Absolute parameter tolerance
@@ -51,22 +52,27 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         'tol': 1e-8,      # Convergence tolerance
         'max_nfev': 100000  # Maximum function evaluations
     }
+    # Update progress less frequently (every 5% or at least every 10 curves)
+    progress_interval = max(1, min(10, num_curves // 20))
+    
     for i in range(num_curves):
         decay_curve = decay_curves[i]
         
-        # Update progress if callback is provided
-        if _progress_callback:
+        # Update progress if callback is provided (but less frequently)
+        if _progress_callback and (i % progress_interval == 0 or i == num_curves - 1):
             _progress_callback(i, num_curves)
 
         current_params = params.copy()
-        current_params['amp1'].value = np.max(decay_curve) 
-        current_params['amp1'].max = np.max(decay_curve) * 10
+        # Cache max value to avoid computing twice
+        decay_max = np.max(decay_curve)
+        current_params['amp1'].value = decay_max
+        current_params['amp1'].max = decay_max * 10
         if num_components > 1:
-            current_params['amp2'].value = np.max(decay_curve) / 2
-            current_params['amp2'].max = np.max(decay_curve) * 10
+            current_params['amp2'].value = decay_max / 2
+            current_params['amp2'].max = decay_max * 10
         if num_components > 2:
-            current_params['amp3'].value = np.max(decay_curve) / 2
-            current_params['amp3'].max = np.max(decay_curve) * 10
+            current_params['amp3'].value = decay_max / 2
+            current_params['amp3'].max = decay_max * 10
         try: 
             if fitting_mode != "Local":
                 result_global = lmfit_minimize(objective, current_params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=global_optimizer, **global_fit_options)

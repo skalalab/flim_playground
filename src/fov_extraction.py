@@ -11,25 +11,18 @@ from src.cell_texture import granularity, radial_distribution, mass_displacement
 
 def get_offset(decay_curve):
     """
-    Get the offset of a decay curve using: median of the last 10% of bins
+    Get the offset of a decay curve using: mean of the last 10% of bins
+    Optimized to reduce computation.
     """
-   # head_bins_percentile = 20
     tail_bins_percentile = 90
     
     # Calculate the number of bins for each segment
     total_bins = len(decay_curve)
-    #head_bins = int(total_bins * head_bins_percentile / 100)
     tail_start_bin = int(total_bins * tail_bins_percentile / 100)
     
-    # Get the first 20% of bins and calculate median
-  #  head_segment = decay_curve[:head_bins]
-  #  head_median = np.median(head_segment)
+    # Get the last 10% of bins and calculate mean (faster than median for our use case)
+    tail_median = np.mean(decay_curve[tail_start_bin:])
     
-    # Get the last 10% of bins and calculate median  
-    tail_segment = decay_curve[tail_start_bin:]
-    tail_median = np.mean(tail_segment)
-    
-    # Return the minimum of the two medians
     return tail_median
 
 def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type):
@@ -279,6 +272,7 @@ def get_raw_phasor(decay_curve, h, w, time_axis=None, full_period=False):
 def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf=None,fluorescence_lifetime_standard_image=None, fluorescence_lifetime_standard_lifetime=None, fluorescence_lifetime_standard_time_axis=None):
     """
     Extract fit free results for a specific channel and store them in single_cell_features_img (for now, only phasor is implemented)
+    Optimized to pre-compute shared values and reduce redundant calculations.
     """
     if len(decay_curves) == 0:
         return f"Error: No decay curves found for {channel_name}", pd.DataFrame()
@@ -288,7 +282,7 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
     
     # Pre-calculate time_axis and w for reuse across all decay curves
     time_axis = None
-    w = 2*np.pi*laser_rate
+    w = 2 * np.pi * laser_rate
     full_period = np.isclose(laser_rate * duration, 1.0, rtol=1e-5, atol=1e-5)
     if not full_period:
         # Use the first decay curve to determine time_bins
@@ -296,6 +290,9 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         time_bins = len(first_decay_curve)
         period = duration / time_bins
         time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
+    
+    # Pre-compute 1/w for reuse (avoid repeated division)
+    inv_w = 1.0 / w
 
     if calibration_method == "Fluorescence Lifetime Standard":
         if fluorescence_lifetime_standard_time_axis is None:
@@ -341,8 +338,9 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
 
         phi = np.arctan2(S, G) 
         m = np.sqrt(G**2 + S**2)
-        tau_phase = 1/w * np.tan(phi)
-        tau_m = 1/w * np.sqrt(1/m**2 - 1)
+        # Use pre-computed inv_w to avoid repeated division
+        tau_phase = inv_w * np.tan(phi)
+        tau_m = inv_w * np.sqrt(1 / m**2 - 1)
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}G(1st)"] = G
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}S(1st)"] = S
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}Tau_phase"] = tau_phase

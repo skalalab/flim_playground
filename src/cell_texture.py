@@ -58,18 +58,20 @@ def radial_distribution(cell_image, ring_number):
     if len(y_coords) == 0:
         return 0.0
     
+    # Vectorized centroid calculation
     centroid_y = np.mean(y_coords)
     centroid_x = np.mean(x_coords)
     
-    # Create coordinate arrays
-    y_indices, x_indices = np.indices(cell_image.shape)
-    
-    # Calculate distance from centroid to each pixel
-    distances = np.sqrt((y_indices - centroid_y)**2 + (x_indices - centroid_x)**2)
-    
-    # Only consider distances within the mask
-    mask_distances = distances[mask]
+    # Optimize: only calculate distances for masked pixels (avoid full image calculation)
+    # This reduces computation significantly for sparse masks
+    y_diff = y_coords - centroid_y
+    x_diff = x_coords - centroid_x
+    mask_distances = np.sqrt(y_diff**2 + x_diff**2)
     max_distance = np.max(mask_distances)
+    
+    # Avoid division by zero
+    if max_distance == 0:
+        return 1.0 if ring_number == 1 else 0.0
     
     # Divide into 4 equal rings based on distance
     ring_thickness = max_distance / 4.0
@@ -78,18 +80,18 @@ def radial_distribution(cell_image, ring_number):
     ring_min = (ring_number - 1) * ring_thickness
     ring_max = ring_number * ring_thickness
     
-    # Create ring mask
-    ring_mask = (distances >= ring_min) & (distances < ring_max) & mask
-    
-    # For the outermost ring (ring 4), include the maximum distance
+    # Create ring mask for pixels only (not full image)
     if ring_number == 4:
-        ring_mask = (distances >= ring_min) & (distances <= ring_max) & mask
+        # For the outermost ring, include the maximum distance
+        ring_pixel_mask = (mask_distances >= ring_min) & (mask_distances <= ring_max)
+    else:
+        ring_pixel_mask = (mask_distances >= ring_min) & (mask_distances < ring_max)
     
-    # Calculate intensity in this ring
-    ring_intensity = np.sum(cell_image[ring_mask])
+    # Calculate intensity in this ring (using masked pixels only)
+    ring_intensity = np.sum(cell_image[y_coords[ring_pixel_mask], x_coords[ring_pixel_mask]])
     
     # Calculate total intensity in the entire cell
-    total_intensity = np.sum(cell_image)
+    total_intensity = np.sum(cell_image[mask])
     
     # Avoid division by zero
     if total_intensity == 0:
@@ -105,11 +107,27 @@ def mass_displacement(cell_image):
     # step1: get the centroid of the cell
     cell_mask = cell_image > 0
     y_coords, x_coords = np.where(cell_mask)
+    
+    if len(y_coords) == 0:
+        return 0.0
+    
     centroid_y = np.mean(y_coords)
     centroid_x = np.mean(x_coords)
+    
     # step2: get the intensity weighted centroid of the cell
-    intensity_weighted_centroid_y = np.sum(y_coords * cell_image[y_coords, x_coords]) / np.sum(cell_image[y_coords, x_coords])
-    intensity_weighted_centroid_x = np.sum(x_coords * cell_image[y_coords, x_coords]) / np.sum(cell_image[y_coords, x_coords])
+    # Optimize: extract intensities once
+    cell_intensities = cell_image[y_coords, x_coords]
+    total_intensity = np.sum(cell_intensities)
+    
+    if total_intensity == 0:
+        return 0.0
+    
+    # Vectorized weighted centroid calculation
+    intensity_weighted_centroid_y = np.sum(y_coords * cell_intensities) / total_intensity
+    intensity_weighted_centroid_x = np.sum(x_coords * cell_intensities) / total_intensity
+    
     # step3: calculate the geometric displacement between the centroid and the intensity weighted centroid
-    geometric_displacement = np.sqrt((centroid_y - intensity_weighted_centroid_y)**2 + (centroid_x - intensity_weighted_centroid_x)**2)
+    # Use np.hypot for more numerically stable distance calculation
+    geometric_displacement = np.hypot(centroid_y - intensity_weighted_centroid_y, 
+                                     centroid_x - intensity_weighted_centroid_x)
     return geometric_displacement

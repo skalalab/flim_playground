@@ -167,6 +167,9 @@ def monitor_browser_windows(port, shutdown_event):
     # Wait for initial browser connection
     time.sleep(5)
     
+    # Optimize: Increase check interval to reduce CPU usage
+    check_interval = 10  # Check every 10 seconds instead of 5
+    
     while not shutdown_event.is_set():
         try:
             # Check if browser windows are open
@@ -191,7 +194,7 @@ def monitor_browser_windows(port, shutdown_event):
             shutdown_event.set()
             aggressive_shutdown()
         
-        time.sleep(5)
+        time.sleep(check_interval)
 
 
 def run_streamlit_app(main_script):

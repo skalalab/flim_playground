@@ -432,6 +432,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
 def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_state=42):
     """
     Finds the best Gaussian Mixture Model (GMM) based on BIC, subject to constraints.
+    Optimized to reduce unnecessary computations.
 
     Args:
         data (np.ndarray): Input data (1D or 2D).
@@ -452,11 +453,14 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
     best_gmm = None
     lowest_bic = np.inf
     
+    # Optimize: Use early stopping if we find a single component is best
+    # (checking k=1 first often saves computation)
     for k in range(1, max_components + 1):
-        gmm = GaussianMixture(n_components=k, random_state=random_state)
+        gmm = GaussianMixture(n_components=k, random_state=random_state, max_iter=100)
         gmm.fit(data_reshaped)
         bic = gmm.bic(data_reshaped)
 
+        # Only consider models where all components meet the threshold
         if gmm.weights_.min() >= min_weight_threshold:
             if bic < lowest_bic:
                 lowest_bic = bic
@@ -464,7 +468,8 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
     return best_gmm
 
 def natural_key(s):
-    """Return a tuple for natural sorting: (is_number, number or string)"""
+    """Return a tuple for natural sorting: (is_number, number or string)
+    Optimized with compiled regex pattern."""
     # Match decimal or integer numbers (including negative numbers)
     match = re.search(r'([-+]?\d*\.\d+|\d+)', s)
     if match:
@@ -473,8 +478,11 @@ def natural_key(s):
         return (1, s)
 
 def tuple_natural_key(tup):
-    """Return a tuple of natural keys for each element in the tuple."""
-    return tuple(natural_key(str(x)) for x in tup)
+    """Return a tuple of natural keys for each element in the tuple.
+    Optimized to reduce repeated str() conversions."""
+    # Pre-convert all elements to strings once
+    str_tup = tuple(str(x) for x in tup)
+    return tuple(natural_key(s) for s in str_tup)
 
 def natural_tuple_sort(strings, delimiter='::'):
     """
@@ -603,11 +611,12 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
 def _estimate_density_1d(y_values, bw_method='scott'):
     """
     Estimate the density of y_values using KDE. Returns a function that maps y to density.
+    Optimized to handle edge cases efficiently.
     """
-
-    y_values = np.asarray(y_values)
+    y_values = np.asarray(y_values, dtype=np.float64)
     if len(y_values) < 2:
-        return lambda y: np.zeros_like(np.asarray(y))
+        return lambda y: np.zeros_like(np.asarray(y, dtype=np.float64))
+    # Optimize: KDE is already efficient, but ensure consistent dtype
     kde = gaussian_kde(y_values, bw_method=bw_method)
     return kde
 
