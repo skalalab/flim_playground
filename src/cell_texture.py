@@ -61,15 +61,10 @@ def radial_distribution(cell_image, ring_number):
     centroid_y = np.mean(y_coords)
     centroid_x = np.mean(x_coords)
     
-    # Create coordinate arrays
-    y_indices, x_indices = np.indices(cell_image.shape)
-    
-    # Calculate distance from centroid to each pixel
-    distances = np.sqrt((y_indices - centroid_y)**2 + (x_indices - centroid_x)**2)
-    
-    # Only consider distances within the mask
-    mask_distances = distances[mask]
-    max_distance = np.max(mask_distances)
+    # Calculate distances directly for masked pixels only (optimization)
+    # This avoids creating a full-size distance array for the entire image
+    distances_masked = np.sqrt((y_coords - centroid_y)**2 + (x_coords - centroid_x)**2)
+    max_distance = np.max(distances_masked)
     
     # Divide into 4 equal rings based on distance
     ring_thickness = max_distance / 4.0
@@ -78,15 +73,15 @@ def radial_distribution(cell_image, ring_number):
     ring_min = (ring_number - 1) * ring_thickness
     ring_max = ring_number * ring_thickness
     
-    # Create ring mask
-    ring_mask = (distances >= ring_min) & (distances < ring_max) & mask
-    
+    # Determine which masked pixels belong to this ring
     # For the outermost ring (ring 4), include the maximum distance
     if ring_number == 4:
-        ring_mask = (distances >= ring_min) & (distances <= ring_max) & mask
+        in_ring = (distances_masked >= ring_min) & (distances_masked <= ring_max)
+    else:
+        in_ring = (distances_masked >= ring_min) & (distances_masked < ring_max)
     
-    # Calculate intensity in this ring
-    ring_intensity = np.sum(cell_image[ring_mask])
+    # Calculate intensity in this ring using only masked pixel coordinates
+    ring_intensity = np.sum(cell_image[y_coords[in_ring], x_coords[in_ring]])
     
     # Calculate total intensity in the entire cell
     total_intensity = np.sum(cell_image)
