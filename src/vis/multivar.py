@@ -7,7 +7,7 @@ import pandas as pd
 import umap
 import plotly.graph_objects as go
 import streamlit as st
-from .helpers import get_point_visual_mappings, add_point_legend_traces
+from .helpers import get_point_visual_mappings, add_interleaved_points_trace
 import threading  
   
 @st.cache_data()
@@ -72,29 +72,18 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
         overlap_point=True,
         colormap=colormap
     )
-    for group_key, group_df in grouped:
-        color_group = group_key[0]
-        shape_group = group_key[1] if shape_by else None
-        opacity_group = group_key[2] if shape_by and opacity_by else (group_key[1] if opacity_by else None)
-        marker_color = color_map[color_group]
-        marker_symbol = shape_map[shape_group] if shape_group is not None and shape_map else 'circle'
-        marker_opacity = opacity_map[opacity_group] if opacity_group is not None and opacity_map else 0.8
-        fig.add_trace(
-            go.Scatter(
-                x=group_df[axis_labels[0]],
-                y=group_df[axis_labels[1]],
-                mode='markers',
-                name=f'{color_group}',
-                text=group_df[unique_row_id_col],
-                customdata=group_df[fov_name_col],
-                hovertemplate="<b>%{text}</b>",
-                marker=dict(color=marker_color, symbol=marker_symbol, opacity=marker_opacity)
-            ),
-        )
-    # Add shape/opacity legends if needed
-    add_point_legend_traces(fig, shape_map, opacity_map, shape_by=shape_by, opacity_by=opacity_by)
-    fig.update_layout(
-        hovermode='closest'
+    
+    # Use the reusable function to add interleaved points and legend
+    add_interleaved_points_trace(
+        fig=fig,
+        grouped=grouped,
+        color_map=color_map,
+        shape_map=shape_map,
+        opacity_map=opacity_map,
+        axis_labels=axis_labels,
+        text_col=unique_row_id_col,
+        customdata_col=fov_name_col,
+        hovertemplate="<b>%{text}</b>"
     )
 
     # Update axis labels to include explained variance

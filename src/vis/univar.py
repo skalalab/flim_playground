@@ -408,7 +408,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 continue  # Skip if x_position not found
         
         marker_color = color_map[color_group]
-        marker_opacity = opacity_map.get(opacity_group, 0.8) if opacity_map and opacity_group is not None else 0.7
+        marker_opacity = opacity_map.get(opacity_group, 0.7) if opacity_map and opacity_group is not None else 0.7
         marker_symbol = shape_map.get(shape_group, 'circle') if shape_map and shape_group is not None else 'circle'
         
         # --- Determine trace name and legend visibility ---
@@ -669,5 +669,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 statistical_test=statistical_test
             )
 
-    df.drop(columns=[COLOR_GROUP_COL_NAME], inplace=True)
+    # Drop the temporary group column if it exists
+    if COLOR_GROUP_COL_NAME in df.columns:
+        df.drop(columns=[COLOR_GROUP_COL_NAME], inplace=True)
     return fig

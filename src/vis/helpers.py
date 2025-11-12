@@ -611,6 +611,173 @@ def _estimate_density_1d(y_values, bw_method='scott'):
     kde = gaussian_kde(y_values, bw_method=bw_method)
     return kde
 
+def add_interleaved_points_trace(
+    fig,
+    grouped,
+    color_map,
+    shape_map,
+    opacity_map,
+    axis_labels,
+    text_col,
+    customdata_col,
+    shape_by=None,
+    opacity_by=None,
+    hovertemplate="<b>%{text}</b>",
+    random_seed=None
+):
+    """
+    Adds a single trace with interleaved (shuffled) points to prevent occlusion,
+    and creates legend traces in colormap order.
+    
+    Parameters:
+    -----------
+    fig : plotly.graph_objects.Figure
+        The figure to add traces to
+    grouped : iterable
+        Iterator of (group_key, group_df) tuples from get_point_visual_mappings
+    color_map : dict
+        Mapping of color_group to color values
+    shape_map : dict or None
+        Mapping of shape_group to symbol values
+    opacity_map : dict or None
+        Mapping of opacity_group to opacity values
+    axis_labels : list
+        List of [x_label, y_label] for the axes
+    text_col : str
+        Column name for text/hover labels
+    customdata_col : str
+        Column name for customdata
+    shape_by : str or None
+        Column name used for shape grouping
+    opacity_by : str or None
+        Column name used for opacity grouping
+    hovertemplate : str
+        Hover template string
+    random_seed : int or None
+        Random seed for shuffling (for reproducibility)
+    
+    Returns:
+    --------
+    fig : plotly.graph_objects.Figure
+        The figure with traces added
+    """
+    import random
+    
+    # Set random seed if provided
+    if random_seed is not None:
+        random.seed(random_seed)
+    
+    # Collect all points with their visual properties
+    all_points_data = []
+    for group_key, group_df in grouped:
+        color_group = group_key[0]
+        shape_group = group_key[1] if shape_by else None
+        opacity_group = group_key[2] if shape_by and opacity_by else (group_key[1] if opacity_by else None)
+        for idx, row in group_df.iterrows():
+            all_points_data.append({
+                'x': row[axis_labels[0]],
+                'y': row[axis_labels[1]],
+                'text': row[text_col],
+                'customdata': row[customdata_col],
+                'color_group': color_group,
+                'shape_group': shape_group,
+                'opacity_group': opacity_group,
+            })
+    
+    # Shuffle all points to interleave them
+    random.shuffle(all_points_data)
+    
+    # Extract arrays for efficient single-trace plotting with per-point styling
+    x_vals = [p['x'] for p in all_points_data]
+    y_vals = [p['y'] for p in all_points_data]
+    text_vals = [p['text'] for p in all_points_data]
+    customdata_vals = [p['customdata'] for p in all_points_data]
+    marker_colors = [color_map[p['color_group']] for p in all_points_data]
+    marker_symbols = [shape_map[p['shape_group']] if p['shape_group'] is not None and shape_map else 'circle' for p in all_points_data]
+    marker_opacities = [opacity_map[p['opacity_group']] if p['opacity_group'] is not None and opacity_map else 0.8 for p in all_points_data]
+    
+    # Create a single trace with all points (interleaved) using per-point styling
+    # This is much faster than creating one trace per point
+    # Add <extra></extra> to hovertemplate to hide trace name from hover
+    if "<extra>" not in hovertemplate:
+        hover_without_trace = hovertemplate + "<extra></extra>"
+    else:
+        hover_without_trace = hovertemplate
+    fig.add_trace(
+        go.Scatter(
+            x=x_vals,
+            y=y_vals,
+            mode='markers',
+            text=text_vals,
+            customdata=customdata_vals,
+            hovertemplate=hover_without_trace,
+            marker=dict(
+                color=marker_colors,
+                symbol=marker_symbols,
+                opacity=marker_opacities
+            ),
+            showlegend=False  # We'll add legend traces separately
+        ),
+    )
+    
+    # Collect unique visual groups in consistent order for legend
+    unique_visual_groups = {}
+    for point in all_points_data:
+        visual_key = (point['color_group'], point['shape_group'], point['opacity_group'])
+        if visual_key not in unique_visual_groups:
+            unique_visual_groups[visual_key] = {
+                'color_group': point['color_group'],
+                'shape_group': point['shape_group'],
+                'opacity_group': point['opacity_group']
+            }
+    
+    # Sort visual groups to follow colormap order first, then shape, then opacity
+    # Get the order of color groups from color_map (which follows colormap order)
+    color_group_order = {color_group: i for i, color_group in enumerate(color_map.keys())}
+    
+    def sort_key(visual_key):
+        color_group, shape_group, opacity_group = visual_key
+        # Primary sort: by color_group order in colormap
+        # Secondary sort: by shape_group (None comes last)
+        # Tertiary sort: by opacity_group (None comes last)
+        shape_val = shape_group if shape_group is not None else ''
+        opacity_val = opacity_group if opacity_group is not None else ''
+        return (color_group_order.get(color_group, float('inf')), shape_val, opacity_val)
+    
+    sorted_visual_keys = sorted(unique_visual_groups.keys(), key=sort_key)
+    
+    # Add legend traces in consistent order
+    for visual_key in sorted_visual_keys:
+        color_group = unique_visual_groups[visual_key]['color_group']
+        shape_group = unique_visual_groups[visual_key]['shape_group']
+        opacity_group = unique_visual_groups[visual_key]['opacity_group']
+        marker_color = color_map[color_group]
+        marker_symbol = shape_map[shape_group] if shape_group is not None and shape_map else 'circle'
+        marker_opacity = opacity_map[opacity_group] if opacity_group is not None and opacity_map else 0.8
+        # Add invisible trace just for legend
+        # Using x=[None], y=[None] creates a trace that appears in legend but doesn't plot points
+        fig.add_trace(
+            go.Scatter(
+                x=[None],
+                y=[None],
+                mode='markers',
+                name=f'{color_group}',
+                marker=dict(color=marker_color, symbol=marker_symbol, opacity=marker_opacity),
+                showlegend=True,
+                hoverinfo='skip'  # Skip hover for legend-only traces
+            ),
+        )
+    
+    # Add shape/opacity legends if needed
+    add_point_legend_traces(fig, shape_map, opacity_map, shape_by=shape_by, opacity_by=opacity_by)
+    
+    # Update layout with hovermode
+    fig.update_layout(
+        hovermode='closest'
+    )
+    
+    return fig
+
 def add_point_legend_traces(fig, shape_map, opacity_map, shape_by=None, opacity_by=None):
     """
     Adds legend traces for shape and opacity visual channels to the given figure.

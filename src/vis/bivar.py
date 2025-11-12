@@ -1,4 +1,4 @@
-from .helpers import _find_best_gmm, get_point_visual_mappings, add_point_legend_traces
+from .helpers import _find_best_gmm, get_point_visual_mappings, add_point_legend_traces, add_interleaved_points_trace
 import plotly.graph_objects as go
 import numpy as np
 from scipy.stats import gaussian_kde, pearsonr, chi2
@@ -259,8 +259,32 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     if fit_gmm:
         fit_gmm_max_components, fit_gmm_min_weight_threshold = gmm_hyperParams_widget()
 
+    # Convert grouped iterator to list so we can iterate multiple times
+    grouped_list = list(grouped)
+    
+    # Add all points using interleaved plotting function
+    add_interleaved_points_trace(
+        fig=fig,
+        grouped=grouped_list,
+        color_map=color_map,
+        shape_map=shape_map,
+        opacity_map=opacity_map,
+        axis_labels=[selected_x, selected_y],
+        text_col=unique_row_id_col,
+        customdata_col=fov_name_col,
+        hovertemplate=(
+            f"<b>Cell ID:</b> %{{text}}<br>"
+            f"<b>Image:</b> %{{customdata}}<br>"
+            f"<b>{selected_x}:</b> %{{x}}<br>"
+            f"<b>{selected_y}:</b> %{{y}}<extra></extra>"
+        )
+    )
+    
+    # Note: hovermode='closest' is already set by add_interleaved_points_trace
+    # But we'll update it later with additional layout settings
+
     table_md = []
-    for group_key, group_df in grouped:
+    for group_key, group_df in grouped_list:
         # Unpack group_key for color, shape, opacity
         color_group = group_key[0] if isinstance(group_key, tuple) else group_key
         shape_group = None
@@ -273,28 +297,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
             opacity_group = group_key[key_idx] if len(group_key) > key_idx else None
         if group_df.empty or group_df[selected_x].nunique() < 2 or group_df[selected_y].nunique() < 2:
             continue
-        # Main scatter plot
-        fig.add_trace(go.Scatter(
-            x=group_df[selected_x],
-            y=group_df[selected_y],
-            mode='markers',
-            name=color_group,
-            text=group_df[unique_row_id_col],
-            customdata=group_df[fov_name_col],
-            marker=dict(
-                color=color_map.get(color_group, 'gray'),
-                size=5,
-                opacity=opacity_map.get(opacity_group, 0.7) if opacity_map else 0.7,
-                symbol=shape_map.get(shape_group, 'circle') if shape_map else 'circle',
-            ),
-            hovertemplate=(
-                f"<b>Group:</b> {color_group}<br>"
-                f"<b>Cell ID:</b> %{{text}}<br>"
-                f"<b>Image:</b> %{{customdata}}<br>"
-                f"<b>{selected_x}:</b> %{{x}}<br>"
-                f"<b>{selected_y}:</b> %{{y}}<extra></extra>"
-            )
-        ))
+        # Points are already added via add_interleaved_points_trace above
+        # Continue with per-group analyses
 
         # annotate the correlation coefficient and p-value of the current group
         corr_coef, p_value = pearsonr(group_df[selected_x], group_df[selected_y])
@@ -376,14 +380,12 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         # Marginal density for Y-axis
         _plot_marginal_density(fig, y_data, 'y', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'xaxis': 'x2'})
 
-    # Add legend traces for opacity and shape
-    add_point_legend_traces(fig, shape_map, opacity_map, shape_by=shape_by, opacity_by=opacity_by)
-
+    # Note: Legend traces and hovermode are already added by add_interleaved_points_trace
+    # Just update layout with additional settings
     fig.update_layout(
         title=f'2D Distribution of {selected_x} and {selected_y} by {", ".join(color_by)}',
         xaxis_title=selected_x,
         yaxis_title=selected_y,
-        hovermode='closest',
         # Configure axes for marginal plots
         xaxis=dict(domain=[0, 0.9], showgrid=False, zeroline=False), # Main x-axis, reduced slightly
         yaxis=dict(domain=[0, 0.9], showgrid=False, zeroline=False), # Main y-axis, reduced slightly
@@ -546,7 +548,26 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         with col2:
             k_means_clusters = st.number_input("Number of clusters", value=2, min_value=1, max_value=8, step=1)
 
-    for group_key, group_df in grouped:
+    # Convert grouped iterator to list so we can iterate multiple times
+    grouped_list = list(grouped)
+    
+    # Add all points using interleaved plotting function
+    add_interleaved_points_trace(
+        fig=fig,
+        grouped=grouped_list,
+        color_map=color_map,
+        shape_map=shape_map,
+        opacity_map=opacity_map,
+        axis_labels=[g_feature, s_feature],
+        text_col=unique_row_id_col,
+        customdata_col=fov_name_col,
+        hovertemplate="<b>%{text}</b>"
+    )
+    
+    # Note: hovermode='closest' is already set by add_interleaved_points_trace
+    # But we'll update it later with additional layout settings
+
+    for group_key, group_df in grouped_list:
         # Unpack group_key for color, shape, opacity
         color_group = group_key[0] if isinstance(group_key, tuple) else group_key
         shape_group = None
@@ -560,24 +581,9 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         
         if group_df.empty:
             continue
-            
-        fig.add_trace(
-            go.Scatter(
-                x=group_df[g_feature],
-                y=group_df[s_feature],
-                mode='markers',
-                name=color_group,
-                text=group_df[unique_row_id_col],
-                customdata=group_df[fov_name_col],
-                hovertemplate="<b>%{text}</b>",
-                marker=dict(
-                    color=color_map.get(color_group, 'gray'),
-                    size=5,
-                    opacity=opacity_map.get(opacity_group, 0.8) if opacity_map else 0.8,
-                    symbol=shape_map.get(shape_group, 'circle') if shape_map else 'circle'
-                )
-            ),
-        )
+        
+        # Points are already added via add_interleaved_points_trace above
+        # Continue with per-group k-means clustering if needed
 
         if k_means:
             # standardize the data
@@ -595,10 +601,8 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
             # Update the main dataframe with cluster labels
             assigned_labels = [f"{color_group}_group{label + 1}" for label in kmeans.labels_]
             df.loc[group_df.index, "k_means_cluster"] = assigned_labels
-          
-    # Add shape/opacity legends if needed
-    add_point_legend_traces(fig, shape_map, opacity_map, shape_by=shape_by, opacity_by=opacity_by)
     
+    # Note: Legend traces and hovermode are already added by add_interleaved_points_trace
     # Remove the temporary group column after plotting
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
     
