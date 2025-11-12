@@ -478,7 +478,7 @@ def _plot_convex_hull(
     ))
     return fig
 
-def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, f=0.08, harmonic=1, colormap="tab10"):
+def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, colormap="tab10", f=0.08, harmonic=1):
 
     # Create the figure
     fig = go.Figure()

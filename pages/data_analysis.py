@@ -124,7 +124,7 @@ with col2:
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test, colormap=st.session_state.plot_colormap)
+                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, colormap=st.session_state.plot_colormap, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test)
                     elif method == "FOV Comparison":
                         fig = fov_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, colormap=st.session_state.plot_colormap)
                     elif method == "Feature Histogram":
@@ -151,7 +151,7 @@ with col2:
                         st.write(f"No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Phasor Plot":
                     if selected_channel is not None and selected_harmonic is not None and f is not None:
-                        fig, kmeans_df = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, f=f, harmonic=selected_harmonic, colormap=st.session_state.plot_colormap)
+                        fig, kmeans_df = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap, f=f, harmonic=selected_harmonic)
                         data_export_ready = True
                     else:
                         st.write("Your data does not contain the required features for phasor plot.")
@@ -166,7 +166,7 @@ with col2:
                         
                         if len(filtered_df) > 0:
                             # plot the reduced data
-                            fig = dimension_reduction_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_features=selected_features, method=dr_method, hyperParam_dict=hyperParam_dict, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by, colormap=st.session_state.plot_colormap)
+                            fig = dimension_reduction_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_features=selected_features, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by, colormap=st.session_state.plot_colormap, method=dr_method, hyperParam_dict=hyperParam_dict)
                         else:
                             st.write(f"No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Classification":

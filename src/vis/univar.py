@@ -294,7 +294,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
 
     return fig, df
 
-def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, effect_size_method="None", mean_or_median=None, statistical_test="None", colormap="tab10"):
+def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None"):
     connect_means = st.checkbox("Connect means", value=False, key=f"connect_means_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
     fig = go.Figure()
     COLOR_GROUP_COL_NAME = 'compare_group'
