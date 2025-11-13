@@ -99,32 +99,43 @@ def plot_feature_importance(classifier, feature_names, axis_label_size=12, bar_l
 
 def calculate_metrics(y_test, y_pred):
     """
-    Calculate comprehensive classification metrics including accuracy, precision, recall, specificity, and F1 score.
+    Calculate comprehensive classification metrics including accuracy, precision, recall, and F1 score.
+    Returns both overall accuracy and per-class metrics.
     
     Args:
         y_test: True labels
         y_pred: Predicted labels
-        y_score: Prediction probabilities (optional, for ROC calculations)
-    
+
     Returns:
-        dict: Dictionary containing all calculated metrics
+        dict: Dictionary containing overall accuracy and per-class metrics
     """
-    # Basic metrics
+    # Overall accuracy
     accuracy = accuracy_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred, average='weighted', zero_division=0)
-    recall = recall_score(y_test, y_pred, average='weighted', zero_division=0)
-    f1 = f1_score(y_test, y_pred, average='weighted', zero_division=0)
+    
+    # Per-class metrics
+    classes, support_per_class = np.unique(y_test, return_counts=True)
+    precision_per_class = precision_score(y_test, y_pred, average=None, zero_division=0)
+    recall_per_class = recall_score(y_test, y_pred, average=None, zero_division=0)
+    f1_per_class = f1_score(y_test, y_pred, average=None, zero_division=0)
+    
+    # Create dictionary with per-class metrics
+    per_class_metrics = {}
+    for i, cls in enumerate(classes):
+        per_class_metrics[str(cls)] = {
+            'n': int(support_per_class[i]),
+            'precision': precision_per_class[i],
+            'recall': recall_per_class[i],
+            'f1_score': f1_per_class[i]
+        }
     
     return {
         'accuracy': accuracy,
-        'precision': precision,
-        'recall': recall,
-        'f1_score': f1
+        'per_class': per_class_metrics
     }
 
-def create_metrics_table(metrics_dict):
+def create_overall_accuracy_table(metrics_dict):
     """
-    Create a markdown table with classification metrics in two rows.
+    Create a markdown table with overall accuracy.
     
     Args:
         metrics_dict: Dictionary containing metrics (from calculate_metrics)
@@ -132,32 +143,67 @@ def create_metrics_table(metrics_dict):
     Returns:
         str: Markdown formatted table
     """
-    table = f"""
+    # Calculate total N
+    total_n = sum(metrics['n'] for metrics in metrics_dict['per_class'].values()) if 'per_class' in metrics_dict else 0
+    
+    table = "    | **Metric** | **Value** |\n"
+    table += "    |------------|-----------|\n"
+    table += f"    | **Accuracy** | {metrics_dict['accuracy']:.4f} |\n"
+    table += f"    | **N** | {total_n} |\n"
+    
+    return f"\n{table}"
 
-| Accuracy | Recall | Precision | F1 Score |
-|----------|--------|-----------|----------|
-| {metrics_dict['accuracy']:.4f} | {metrics_dict['recall']:.4f} | {metrics_dict['precision']:.4f} | {metrics_dict['f1_score']:.4f} |
-
+def create_per_class_metrics_table(metrics_dict):
     """
-    return table
+    Create a markdown table with per-class metrics.
+    
+    Args:
+        metrics_dict: Dictionary containing metrics (from calculate_metrics)
+    
+    Returns:
+        str: Markdown formatted table
+    """
+    if 'per_class' not in metrics_dict or not metrics_dict['per_class']:
+        return "\n    | **Class** | **N** | **Precision** | **Recall** | **F1 Score** |\n    |-----------|-------|---------------|------------|--------------|\n    | No data | - | - | - | - |\n"
+    
+    table = "    | **Class** | **N** | **Precision** | **Recall** | **F1 Score** |\n"
+    table += "    |-----------|-------|---------------|------------|--------------|\n"
+    
+    for class_name, metrics in metrics_dict['per_class'].items():
+        table += f"    | {class_name} | {metrics['n']} | {metrics['precision']:.4f} | {metrics['recall']:.4f} | {metrics['f1_score']:.4f} |\n"
+    
+    return f"\n{table}"
+
+def create_metrics_table(metrics_dict):
+    """
+    Create markdown tables with overall accuracy and per-class metrics.
+    Returns both tables for side-by-side display.
+    
+    Args:
+        metrics_dict: Dictionary containing metrics (from calculate_metrics)
+    
+    Returns:
+        tuple: (overall_accuracy_table, per_class_metrics_table)
+    """
+    return create_overall_accuracy_table(metrics_dict), create_per_class_metrics_table(metrics_dict)
 
 def run_classification(df, method, splits, sampling_method, random_state=42):
     error_msg, X_train, X_test, y_train, y_test = prepare_data(df, splits, sampling_method, random_state)
     if error_msg:
         return error_msg, None
     if method == "Random Forest":
-        classifier = RandomForestClassifier(random_state=random_state)
+        classifier = RandomForestClassifier(random_state=random_state )
     elif method == "Gradient Boosting":
         classifier = GradientBoostingClassifier(random_state=random_state)
     elif method == "SVM":
         classifier = make_pipeline(StandardScaler(), SVC(kernel='linear', probability=True, random_state=random_state))
     elif method == "Logistic Regression":
-        classifier = make_pipeline(StandardScaler(), LogisticRegression(random_state=random_state, max_iter=1000))
+        classifier = make_pipeline(StandardScaler(), LogisticRegression(random_state=random_state, max_iter=10000, class_weight='balanced'))
     
     classifier.fit(X_train, y_train)
     y_score = classifier.predict_proba(X_test)
     y_pred = classifier.predict(X_test)
-    
+
     # Calculate comprehensive metrics
     metrics = calculate_metrics(y_test, y_pred)
     
