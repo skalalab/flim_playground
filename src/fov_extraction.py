@@ -361,9 +361,10 @@ def extract_intensity_sum_2d(channel_name, decay_curves, single_cell_features_fo
 
 def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method=None, fluorescence_lifetime_standard_image=None, fluorescence_lifetime_standard_lifetime=None, fluorescence_lifetime_standard_time_axis=None):
     need_to_fit = False
-    time_bins = metadata["time_bins"]
-    duration = metadata["duration"]
+
     if "prefitted" not in input_type or fit_free:
+        time_bins = metadata["time_bins"]
+        duration = metadata["duration"]
         # get the decay curves and irf
         error_msg, decay_curves = get_decay_curves(metadata, input_type, channel_name, time_bins, shift=False)
         if error_msg != "":

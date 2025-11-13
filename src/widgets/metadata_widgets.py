@@ -340,10 +340,10 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
         elif imaging_modality == "FLIM":
             if "prefitted" in flim_decay_input_type:
                 feature_extractors = selected_ch_feature_extractors[channel_key]
-                if "Lifetime fit free" in feature_extractors or any("Intensity" in fe for fe in feature_extractors):
-                    has_flim = True
-                else:
+                if "Lifetime fit" in feature_extractors and len(feature_extractors) == 1:
                     has_flim = False
+                else:
+                    has_flim = True
             else:
                 has_flim = True
 

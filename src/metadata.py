@@ -73,7 +73,14 @@ def get_ch_info(metadata_df):
                     metadata_dict["channels_shift"][channel_name] = "fit free"
         
         if "Decay (3/4D)" in input_type:
-            metadata_dict[channel_name]["channel_no"] = metadata_df[f"{channel_name}_channel"].iloc[0]
+            if "prefitted" in input_type:
+                if len(selected_feature_extractors) == 1 and "Lifetime fit" in selected_feature_extractors:
+                    # only lifetime fit is selected, and data is prefitted, no decay channel needed
+                    continue
+            if f"{channel_name}_channel" not in metadata_df.columns:
+                return f"Channel number column {channel_name}_channel not found in metadata file.", None
+            else:
+                metadata_dict[channel_name]["channel_no"] = metadata_df[f"{channel_name}_channel"].iloc[0]
 
     metadata_dict["unique_cell_id_col"] = get_unique_cell_id_col()
     metadata_dict["fov_name_col"] = get_fov_name_col()
@@ -141,7 +148,12 @@ def parse_metadata_file(metadata_df, fov_name_col):
         # check for file paths
         input_type = metadata_dict[channel_name]["input_type"]
         if metadata_dict[channel_name]["imaging_modality"] == "FLIM":
-            has_flim = True
+            if "prefitted" in input_type:
+                feature_extractors = metadata_dict[channel_name]["selected_feature_extractors"]
+                if "Lifetime fit" in feature_extractors and len(feature_extractors) == 1:
+                    has_flim = False
+                else:
+                    has_flim = True
         available_file_types = get_file_types(input_type)
         for file_type in available_file_types:
             if f"{channel_name}_{file_type}" in metadata_df.columns and file_type != "IRF":
