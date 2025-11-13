@@ -73,8 +73,10 @@ with col1:
                 duration, time_bins, laser_rate = lifetime_data_config_widget(selected_ch_feature_extractors, decay_input_type)
             else: # for later, we will add other imaging modalities and this will ask for those imaging modality specific config
                 duration, time_bins, laser_rate = None, None, None
+            if laser_rate is None:
+                fit_free_calibration_method = None
             # laser rate is none means there is no fit free analysis
-            if laser_rate is not None and fit_free_calibration_method == "Fluorescence Lifetime Standard":
+            if fit_free_calibration_method == "Fluorescence Lifetime Standard":
                 # Fluorescence lifetime standard file is per-channel and collected via suffixes; only lifetime is shared
                 fluorescence_lifetime_standard_lifetime = st.number_input("Fluorescence lifetime standard's lifetime in **ns**", value=fluorescence_lifetime_standard_lifetime, min_value=0.1, max_value=20.0, step=0.1, key="fluorescence_lifetime_standard_lifetime")
 
