@@ -259,7 +259,7 @@ def validate_fluorescence_lifetime_standard_per_channel(fov_df, selected_channel
 
     return "", fov_df
 
-def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, fit_free_calibration_method=None, fluorescence_lifetime_standard_lifetime=None):
+def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, selected_ch_feature_extractors, fit_free_calibration_method=None, fluorescence_lifetime_standard_lifetime=None):
     """Final processing steps for FOV data"""
     if error_msg != "":
         st.error(error_msg)
@@ -270,6 +270,7 @@ def finalize_fov_processing(error_msg, fov_df, selected_channels, decay_input_ty
         fov_df, selected_channels, 
         flim_decay_input_type=decay_input_type, 
         imaging_modalities=imaging_modalities, 
+        selected_ch_feature_extractors=selected_ch_feature_extractors,
         duration=duration, time_bins=time_bins
     )
     
@@ -307,7 +308,7 @@ with col2:
                     fov_df["laser_rate"] = laser_rate
                 
                 # Step 4: Finalize processing ( fluorescence lifetime standard validation moved here)
-                finalize_fov_processing("", fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, fit_free_calibration_method, fluorescence_lifetime_standard_lifetime)
+                finalize_fov_processing("", fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, selected_ch_feature_extractors, fit_free_calibration_method, fluorescence_lifetime_standard_lifetime)
     elif "Numeric Feature Extraction" in selected_step and st.session_state["choosing_shift"] and metadata_df is not None:
         channel_shifts = {}
         for channel_name in metadata_dict["channels_shift"]:
