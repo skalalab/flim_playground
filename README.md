@@ -49,13 +49,13 @@ FLIM Playground is currently on [bioarchive](https://www.biorxiv.org/content/10.
 # TODO
 
 - [x] randomize the plot order of points so specific colors and shapes plotted later do not occlude early color and shape groups. 
+- [x] add multiple analysis config profile
 - [] add cost matrix in evalutation time to penalize more on prediction error of minority class. 
 - [] add filters based on numerical user-specified feature range/cutoff (phasor draw gates to filter)
 - [] add hierarchical clustering
 - [] add linear mixed effect model
 - [] add modality alignment
 - [] add confidence interval to effect size
-- [] add multiple analysis config profile
 
 ```bash
 streamlit run main.py # when in development

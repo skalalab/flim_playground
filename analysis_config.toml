@@ -1,8 +1,11 @@
+current_profile = "iris"
+
+[profiles.iris]
 unique_row_id_col = "flower_id"
 fov_name_col = ""
 categorical_cols = [ "species",]
 all_numerical_features = [ "sepal_length", "sepal_width", "petal_length", "petal_width",]
 
-[feature_groups]
+[profiles.iris.feature_groups]
 sepal = [ "sepal_width", "sepal_length",]
 petal = [ "petal_width", "petal_length",]
