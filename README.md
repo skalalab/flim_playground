@@ -52,6 +52,7 @@ FLIM Playground is currently on [bioarchive](https://www.biorxiv.org/content/10.
 - [x] add multiple analysis config profile
 - [] add cost matrix in evalutation time to penalize more on prediction error of minority class. 
 - [] add filters based on numerical user-specified feature range/cutoff (phasor draw gates to filter)
+- [] add representative lifetime feature maker in FOV comparison
 - [] add hierarchical clustering
 - [] add linear mixed effect model
 - [] add modality alignment
