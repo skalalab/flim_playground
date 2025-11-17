@@ -1,8 +1,7 @@
 import numpy as np 
 import pandas as pd
-from sklearn.metrics import roc_curve, auc, confusion_matrix, ConfusionMatrixDisplay, accuracy_score, precision_score, recall_score, f1_score
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.metrics import roc_curve, auc, confusion_matrix, ConfusionMatrixDisplay
+from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.preprocessing import label_binarize, StandardScaler
@@ -11,6 +10,8 @@ from sklearn.model_selection import train_test_split
 from imblearn.over_sampling import RandomOverSampler
 from imblearn.under_sampling import RandomUnderSampler
 import matplotlib.pyplot as plt
+from copy import deepcopy
+from src.tuned_threshold_classifier import TunedThresholdClassifierCV
 
 def prepare_data(df, splits, sampling_method, random_state):
     X = df.iloc[:, :-1]
@@ -30,43 +31,109 @@ def prepare_data(df, splits, sampling_method, random_state):
     
     return "", X_train, X_test, y_train, y_test
 
-def calculate_roc_curve(num_classes, y_test, y_score):
-    y_test = label_binarize(y_test, classes=np.unique(y_test))
+def calculate_roc_curve(num_classes, y_test, y_score, classes=None):
+    if classes is None:
+        classes = np.unique(y_test)
+    y_test_binarized = label_binarize(y_test, classes=classes)
     if num_classes == 2:
-        fpr, tpr, _ = roc_curve(y_test, y_score[:,1])  # Probabilities for the positive class
+        # For binary classification, use the first class (class at index 0) as the positive class
+        # label_binarize marks the second class as positive, so we invert the labels
+        # and use probabilities for the first class
+        y_test_first_class = 1 - y_test_binarized  # Invert: 1 = first class, 0 = second class
+        fpr, tpr, thresholds   = roc_curve(y_test_first_class, y_score[:,0])  # Probabilities for the first class
         roc_auc = auc(fpr, tpr)
+        return fpr, tpr, roc_auc, classes[0], thresholds  # Return thresholds as well
     else:
         fpr = dict()
         tpr = dict()
         roc_auc = dict()
+        thresholds_dict = dict()
         for i in range(num_classes):
-            fpr[i], tpr[i], _ = roc_curve(y_test[:, i], y_score[:, i])
+            fpr[i], tpr[i], thresholds_dict[i] = roc_curve(y_test_binarized[:, i], y_score[:, i])
             roc_auc[i] = auc(fpr[i], tpr[i])
-    return fpr, tpr, roc_auc
+        return fpr, tpr, roc_auc, classes, thresholds_dict
 
-def plot_confusion_matrix(y_test, y_pred, axis_label_size=12, legend_size=12):
-    classes = np.unique(y_test)
-    cm = confusion_matrix(y_test, y_pred)
-    
-    fig, ax = plt.subplots()
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes).plot(cmap='Blues', ax=ax, colorbar=False, text_kw={'fontsize': legend_size})
-    ax.set_title("Confusion Matrix", fontsize=axis_label_size)
-    ax.set_xlabel("Predicted Label", fontsize=axis_label_size)
-    ax.set_ylabel("True Label", fontsize=axis_label_size)
-    ax.tick_params(axis='both', labelsize=legend_size)
-    ax.set_aspect('equal', adjustable='box')
-    return fig
-
-def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12):
+def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12, threshold_value=None):
     classes = np.unique(y_test)
     num_classes = len(classes)
-    fpr, tpr, roc_auc = calculate_roc_curve(num_classes, y_test, y_score)
+    result = calculate_roc_curve(num_classes, y_test, y_score, classes=classes)
     fig, ax = plt.subplots()
-    if num_classes == 2:
-        ax.plot(fpr, tpr, label=f"AUC = {roc_auc:.2f}")
+    
+    # Define colors for different classes (use a colormap for multi-class)
+    if num_classes <= 10:
+        colors = plt.cm.tab10(np.linspace(0, 1, num_classes))
     else:
+        colors = plt.cm.tab20(np.linspace(0, 1, num_classes))
+    
+    if num_classes == 2:
+        fpr, tpr, roc_auc, positive_class, thresholds = result
+        # Show which class the ROC represents
+        ax.plot(fpr, tpr, label=f"{positive_class} (AUC = {roc_auc:.2f})", color=colors[0])
+        
+        # Plot threshold value if provided
+        if threshold_value is not None:
+            # The threshold_value is for class 1 (second class): predict class 1 if P(class_1) >= threshold
+            # But the ROC curve uses class 0 (first class) probabilities: y_score[:,0]
+            # So we need to convert: if P(class_1) >= threshold, then P(class_0) <= 1 - threshold
+            # For the ROC curve, we predict class 0 when P(class_0) >= (1 - threshold)
+            threshold_for_roc = 1 - threshold_value
+            threshold_idx = np.argmin(np.abs(thresholds - threshold_for_roc))
+            # Threshold interpretation: 
+            # The threshold_value is the probability threshold for class 1
+            # On the ROC curve (which uses class 0 probabilities), this corresponds to 1 - threshold_value
+            threshold_label = f'Threshold (≥{threshold_value:.2f})'
+            ax.scatter(fpr[threshold_idx], tpr[threshold_idx], c='red', s=100, zorder=5, label=threshold_label)
+    else:
+        fpr, tpr, roc_auc, classes, thresholds_dict = result
+        
+        # Extract threshold values if provided
+        threshold_array = None
+        if threshold_value is not None:
+            if isinstance(threshold_value, (np.ndarray, list)):
+                threshold_array = np.asarray(threshold_value)
+            elif isinstance(threshold_value, dict):
+                # Convert dict to array ordered by class index
+                threshold_array = np.array([threshold_value.get(str(classes[i]), None) for i in range(num_classes)])
+        
+        # Plot ROC curves for each class with combined label (AUC + norm factor)
         for i in range(num_classes):
-            ax.plot(fpr[i], tpr[i], label=f"{classes[i]} (AUC = {roc_auc[i]:.2f})")
+            # Build label with AUC and normalization factor if available
+            if threshold_array is not None and len(threshold_array) == num_classes and threshold_array[i] is not None:
+                label = f"{classes[i]} (AUC={roc_auc[i]:.2f}, norm={threshold_array[i]:.2f})"
+            else:
+                label = f"{classes[i]} (AUC={roc_auc[i]:.2f})"
+            ax.plot(fpr[i], tpr[i], label=label, color=colors[i])
+        
+        # Plot threshold markers on ROC curves if provided (for multi-class)
+        if threshold_value is not None:
+            # threshold_value can be a numpy array or dict
+            if isinstance(threshold_value, (np.ndarray, list)):
+                # If it's an array, assume it's ordered by class index
+                threshold_array = np.asarray(threshold_value)
+                if len(threshold_array) == num_classes:
+                    for i in range(num_classes):
+                        # Find the point on the ROC curve closest to the threshold
+                        # The threshold corresponds to a probability, so we need to find
+                        # where on the ROC curve this threshold falls
+                        # ROC curve thresholds are in descending order of probability
+                        thresholds_roc = thresholds_dict[i]
+                        threshold_idx = np.argmin(np.abs(thresholds_roc - threshold_array[i]))
+                        # Mark the point on the curve (no separate label, already in main label)
+                        ax.scatter(fpr[i][threshold_idx], tpr[i][threshold_idx], 
+                                 c=colors[i], s=100, zorder=5, marker='s', 
+                                 edgecolors='black', linewidths=1.5)
+            elif isinstance(threshold_value, dict):
+                # If it's a dict, use class names as keys
+                for i, class_name in enumerate(classes):
+                    if str(class_name) in threshold_value:
+                        threshold_val = threshold_value[str(class_name)]
+                        thresholds_roc = thresholds_dict[i]
+                        threshold_idx = np.argmin(np.abs(thresholds_roc - threshold_val))
+                        # Mark the point on the curve (no separate label, already in main label)
+                        ax.scatter(fpr[i][threshold_idx], tpr[i][threshold_idx], 
+                                 c=colors[i], s=100, zorder=5, marker='s', 
+                                 edgecolors='black', linewidths=1.5)
+    
     ax.plot([0, 1], [0, 1], 'k--', label="Random Chance")
     ax.set_xlabel("False Positive Rate", fontsize=axis_label_size)
     ax.set_ylabel("True Positive Rate", fontsize=axis_label_size)
@@ -77,8 +144,31 @@ def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12):
     plt.tight_layout()
     return fig
 
+def plot_confusion_matrix(y_test, y_pred, axis_label_size=12, legend_size=12):
+    """
+    Plot confusion matrix.
+    Computes confusion matrix separately for plotting.
+    
+    Args:
+        y_test: True labels
+        y_pred: Predicted labels
+        axis_label_size: Font size for axis labels
+        legend_size: Font size for legend/text
+    """
+    classes = np.unique(y_test)
+    cm = confusion_matrix(y_test, y_pred, labels=classes)
+    
+    fig, ax = plt.subplots()
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes).plot(cmap='Blues', ax=ax, colorbar=False, text_kw={'fontsize': legend_size})
+    ax.set_title("Confusion Matrix", fontsize=axis_label_size)
+    ax.set_xlabel("Predicted Label", fontsize=axis_label_size)
+    ax.set_ylabel("True Label", fontsize=axis_label_size)
+    ax.tick_params(axis='both', labelsize=legend_size)
+    ax.set_aspect('equal', adjustable='box')
+    return fig
+
 def plot_feature_importance(classifier, feature_names, axis_label_size=12, bar_label_size=12):
-    fig, ax = plt.subplots(figsize=(12,6))
+    fig, ax = plt.subplots(figsize=(24,12))
     feature_importances = pd.Series(classifier.feature_importances_, index=feature_names)
     feature_importances = feature_importances.sort_values(ascending=False)
     plt.barh(
@@ -99,24 +189,76 @@ def plot_feature_importance(classifier, feature_names, axis_label_size=12, bar_l
 
 def calculate_metrics(y_test, y_pred):
     """
-    Calculate comprehensive classification metrics including accuracy, precision, recall, and F1 score.
-    Returns both overall accuracy and per-class metrics.
+    Calculate comprehensive classification metrics from a single confusion matrix.
+    All metrics are computed manually for efficiency - no sklearn metric functions used.
     
     Args:
         y_test: True labels
         y_pred: Predicted labels
 
     Returns:
-        dict: Dictionary containing overall accuracy and per-class metrics
+        dict: Dictionary containing overall accuracy, per-class metrics, and confusion matrix
     """
-    # Overall accuracy
-    accuracy = accuracy_score(y_test, y_pred)
-    
-    # Per-class metrics
+    # Get classes and calculate confusion matrix once
     classes, support_per_class = np.unique(y_test, return_counts=True)
-    precision_per_class = precision_score(y_test, y_pred, average=None, zero_division=0)
-    recall_per_class = recall_score(y_test, y_pred, average=None, zero_division=0)
-    f1_per_class = f1_score(y_test, y_pred, average=None, zero_division=0)
+    cm = confusion_matrix(y_test, y_pred, labels=classes)
+    
+    num_classes = len(classes)
+    total_samples = np.sum(cm)
+    
+    # Initialize arrays for per-class metrics
+    precision_per_class = np.zeros(num_classes)
+    recall_per_class = np.zeros(num_classes)
+    specificity_per_class = np.zeros(num_classes)
+    youdens_j_per_class = np.zeros(num_classes)
+    f1_per_class = np.zeros(num_classes)
+    
+    # Calculate all metrics from confusion matrix
+    for i in range(num_classes):
+        # True Positives: diagonal element
+        tp = cm[i, i]
+        
+        # False Positives: sum of column i minus TP
+        fp = np.sum(cm[:, i]) - tp
+        
+        # False Negatives: sum of row i minus TP
+        fn = np.sum(cm[i, :]) - tp
+        
+        # True Negatives: all samples minus TP, FP, FN
+        tn = total_samples - (tp + fp + fn)
+        
+        # Precision = TP / (TP + FP)
+        if (tp + fp) > 0:
+            precision_per_class[i] = tp / (tp + fp)
+        else:
+            precision_per_class[i] = 0.0
+        
+        # Recall (Sensitivity) = TP / (TP + FN)
+        if (tp + fn) > 0:
+            recall_per_class[i] = tp / (tp + fn)
+        else:
+            recall_per_class[i] = 0.0
+        
+        # Specificity (TNR) = TN / (TN + FP)
+        if (tn + fp) > 0:
+            specificity_per_class[i] = tn / (tn + fp)
+        else:
+            specificity_per_class[i] = 0.0
+        
+        # Youden's J = Sensitivity + Specificity - 1 = Recall + Specificity - 1
+        youdens_j_per_class[i] = recall_per_class[i] + specificity_per_class[i] - 1.0
+        
+        # F1 Score = 2 * (Precision * Recall) / (Precision + Recall)
+        if (precision_per_class[i] + recall_per_class[i]) > 0:
+            f1_per_class[i] = 2 * (precision_per_class[i] * recall_per_class[i]) / (precision_per_class[i] + recall_per_class[i])
+        else:
+            f1_per_class[i] = 0.0
+    
+    # Overall accuracy = sum of diagonal / total samples
+    accuracy = np.trace(cm) / total_samples if total_samples > 0 else 0.0
+    
+    # Overall balanced accuracy = average of recall across all classes
+    overall_balanced_accuracy = np.mean(recall_per_class)
     
     # Create dictionary with per-class metrics
     per_class_metrics = {}
@@ -125,12 +267,17 @@ def calculate_metrics(y_test, y_pred):
             'n': int(support_per_class[i]),
             'precision': precision_per_class[i],
             'recall': recall_per_class[i],
+            'specificity': specificity_per_class[i],
+            'youdens_j': youdens_j_per_class[i],
             'f1_score': f1_per_class[i]
         }
     
     return {
         'accuracy': accuracy,
-        'per_class': per_class_metrics
+        'balanced_accuracy': overall_balanced_accuracy,
+        'per_class': per_class_metrics,
+        'confusion_matrix': cm,
+        'classes': classes
     }
 
 def create_overall_accuracy_table(metrics_dict):
@@ -153,24 +300,64 @@ def create_overall_accuracy_table(metrics_dict):
     
     return f"\n{table}"
 
-def create_per_class_metrics_table(metrics_dict):
+def create_per_class_metrics_table(metrics_dict, threshold_method):
     """
     Create a markdown table with per-class metrics.
     
     Args:
         metrics_dict: Dictionary containing metrics (from calculate_metrics)
-    
+        threshold_method: Threshold tuning method
     Returns:
         str: Markdown formatted table
     """
-    if 'per_class' not in metrics_dict or not metrics_dict['per_class']:
-        return "\n    | **Class** | **N** | **Precision** | **Recall** | **F1 Score** |\n    |-----------|-------|---------------|------------|--------------|\n    | No data | - | - | - | - |\n"
+    # Color column header red based on threshold method
+    recall_header = '<span style="color:red">**Recall**</span>' if threshold_method == "Balanced Accuracy" else "Recall"
+    f1_score_header = '<span style="color:red">**F1 Score**</span>' if threshold_method == "F1 Score" else "F1 Score"
     
-    table = "    | **Class** | **N** | **Precision** | **Recall** | **F1 Score** |\n"
-    table += "    |-----------|-------|---------------|------------|--------------|\n"
+    if 'per_class' not in metrics_dict or not metrics_dict['per_class']:
+        return f"\n    | **Class** | **N** | **Precision** | {recall_header} | **Specificity** | **Youden's J** | {f1_score_header} |\n    |-----------|-------|---------------|------------|-----------------|----------------|--------------|\n    | No data | - | - | - | - | - | - |\n"
+    
+    table = f"    | **Class** | **N** | **Precision** | {recall_header} | **Specificity** | **Youden's J** | {f1_score_header} |\n"
+    table += "    |-----------|-------|---------------|------------|-----------------|----------------|--------------|\n"
+    
+    # Calculate averages for multi-class case
+    num_classes = len(metrics_dict['per_class'])
+    if num_classes > 1:
+        # Initialize accumulators
+        total_n = sum_precision = sum_recall = sum_specificity = sum_youdens_j = sum_f1_score = 0.0
     
     for class_name, metrics in metrics_dict['per_class'].items():
-        table += f"    | {class_name} | {metrics['n']} | {metrics['precision']:.4f} | {metrics['recall']:.4f} | {metrics['f1_score']:.4f} |\n"
+        # Color recall values red if threshold method is Balanced Accuracy
+        recall_value = f'<span style="color:red">{metrics["recall"]:.4f}</span>' if threshold_method == "Balanced Accuracy" else f"{metrics['recall']:.4f}"
+        # Color F1 Score values red if threshold method is F1 Score
+        f1_score_value = f'<span style="color:red">{metrics["f1_score"]:.4f}</span>' if threshold_method == "F1 Score" else f"{metrics['f1_score']:.4f}"
+        youdens_j_value = f"{metrics['youdens_j']:.4f}"
+        table += f"    | {class_name} | {metrics['n']} | {metrics['precision']:.4f} | {recall_value} | {metrics['specificity']:.4f} | {youdens_j_value} | {f1_score_value} |\n"
+        
+        # Accumulate for average calculation
+        if num_classes > 1:
+            total_n += metrics['n']
+            sum_precision += metrics['precision']
+            sum_recall += metrics['recall']
+            sum_specificity += metrics['specificity']
+            sum_youdens_j += metrics['youdens_j']
+            sum_f1_score += metrics['f1_score']
+    
+    # Add average row if more than one class
+    if num_classes > 1:
+        avg_n = total_n / num_classes
+        avg_precision = sum_precision / num_classes
+        avg_recall = sum_recall / num_classes
+        avg_specificity = sum_specificity / num_classes
+        avg_youdens_j = sum_youdens_j / num_classes
+        avg_f1_score = sum_f1_score / num_classes
+        
+        # Color recall average red if threshold method is Balanced Accuracy
+        avg_recall_value = f'<span style="color:red">{avg_recall:.4f}</span>' if threshold_method == "Balanced Accuracy" else f"{avg_recall:.4f}"
+        # Color F1 Score average red if threshold method is F1 Score
+        avg_f1_score_value = f'<span style="color:red">{avg_f1_score:.4f}</span>' if threshold_method == "F1 Score" else f"{avg_f1_score:.4f}"
+        
+        table += f"    | **Average** | {avg_n} | {avg_precision:.4f} | {avg_recall_value} | {avg_specificity:.4f} | {avg_youdens_j:.4f} | {avg_f1_score_value} |\n"
     
     return f"\n{table}"
 
@@ -187,22 +374,63 @@ def create_metrics_table(metrics_dict):
     """
     return create_overall_accuracy_table(metrics_dict), create_per_class_metrics_table(metrics_dict)
 
-def run_classification(df, method, splits, sampling_method, random_state=42):
+def run_classification(df, method, splits, sampling_method, class_weight, threshold_method, random_state=42):
     error_msg, X_train, X_test, y_train, y_test = prepare_data(df, splits, sampling_method, random_state)
     if error_msg:
         return error_msg, None
+    if class_weight == "Balanced":
+        class_weight = 'balanced'
+    else:
+        class_weight = None
     if method == "Random Forest":
-        classifier = RandomForestClassifier(random_state=random_state )
+        classifier = RandomForestClassifier(random_state=random_state, class_weight=class_weight)
     elif method == "Gradient Boosting":
         classifier = GradientBoostingClassifier(random_state=random_state)
     elif method == "SVM":
-        classifier = make_pipeline(StandardScaler(), SVC(kernel='linear', probability=True, random_state=random_state))
+        classifier = make_pipeline(StandardScaler(), SVC(kernel='linear', probability=True, random_state=random_state, class_weight=class_weight))
     elif method == "Logistic Regression":
-        classifier = make_pipeline(StandardScaler(), LogisticRegression(random_state=random_state, max_iter=10000, class_weight='balanced'))
+        classifier = make_pipeline(StandardScaler(), LogisticRegression(random_state=random_state, max_iter=10000, class_weight=class_weight))
     
-    classifier.fit(X_train, y_train)
-    y_score = classifier.predict_proba(X_test)
-    y_pred = classifier.predict(X_test)
+    # adjust thresholds based on the threshold method
+    tuned_classifier = None
+    threshold_values = None
+    
+    if threshold_method == "None":
+        # Use default threshold (0.5 for binary classification)
+        classifier.fit(X_train, y_train)
+        threshold_values = 0.5 if len(np.unique(y_train)) == 2 else None
+    elif threshold_method in ["Balanced Accuracy", "F1 Score"]:
+        # Map threshold method to scoring metric
+        scoring_map = {
+            "Balanced Accuracy": "balanced_accuracy",
+            "F1 Score": "f1_macro"
+        }
+        # Create a deep copy of the classifier for tuning
+        classifier_copy = deepcopy(classifier)
+        tuned_classifier = TunedThresholdClassifierCV(
+            classifier_copy, 
+            scoring=scoring_map[threshold_method],
+            random_state=random_state
+        ).fit(X_train, y_train)
+        # Extract thresholds (binary: best_threshold_, multi-class: best_thresholds_)
+        if tuned_classifier.n_classes_ == 2:
+            threshold_values = tuned_classifier.best_threshold_
+        else:
+            threshold_values = tuned_classifier.best_thresholds_
+    
+    # Fit the original classifier if not already fitted
+    if tuned_classifier is None:
+        classifier.fit(X_train, y_train)
+    
+    # Get predictions and probabilities
+    if tuned_classifier is not None:
+        y_pred = tuned_classifier.predict(X_test)
+        y_score = tuned_classifier.predict_proba(X_test)
+        # Use the tuned classifier as the main classifier
+        classifier = tuned_classifier.estimator
+    else:
+        y_pred = classifier.predict(X_test)
+        y_score = classifier.predict_proba(X_test)
 
     # Calculate comprehensive metrics
     metrics = calculate_metrics(y_test, y_pred)
@@ -216,5 +444,6 @@ def run_classification(df, method, splits, sampling_method, random_state=42):
         'y_pred': y_pred,
         'y_score': y_score,
         'metrics': metrics,
+        'threshold_values': threshold_values,
     }
         

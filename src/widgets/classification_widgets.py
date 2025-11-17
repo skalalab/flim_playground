@@ -6,12 +6,22 @@ from src.widgets.visualization_widgets import plot_config_widget
 
 def classifier_options_widget(df, categorical_cols, fov_name_col, selected_features, classifier, splits):
     classify_by_options = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1 and category != fov_name_col]
-    col1, col2 = st.columns(2)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         if len(classify_by_options) > 0:
             classify_by_options = st.multiselect("Classify by", classify_by_options, default=classify_by_options[-1])
     with col2:
         sampling_method = st.selectbox("Sampling method", ["None", "Undersampling", "Oversampling"], help="Undersampling: Randomly remove samples from the majority class. Oversampling: Randomly duplicate samples from the minority class.")
+    with col3:
+        # Hide class_weight option for Gradient Boosting (not supported)
+        if classifier != "Gradient Boosting":
+            class_weight = st.selectbox("Class weight", ["None", "Balanced"], help="Balanced: Assign weights to each class when calculating the loss function. The weights are inversely proportional to the number of samples in each class.")
+        else:
+            # Set to None for Gradient Boosting (not supported by sklearn)
+            class_weight = "None"
+            st.caption("Class weight not available for Gradient Boosting")
+    with col4:
+        threshold_method = st.selectbox("Threshold tuning based on", ["None", "Balanced Accuracy", "F1 Score"])
 
     df['classes'] = df[classify_by_options].agg('_'.join, axis=1)
     classes = df['classes'].unique()
@@ -52,24 +62,12 @@ def classifier_options_widget(df, categorical_cols, fov_name_col, selected_featu
             the_rest = [cls for cls in classes if cls != selected_option[0]]
             selected_option_text = f"{selected_option[0]} VS {', '.join(the_rest)}"
         st.write(f"Running {classifier} to classify between: {selected_option_text}, trained on {int(splits*100)}% of the data {happy_emoji}.")
-        return "", df_classify, sampling_method
+        return "", df_classify, sampling_method, class_weight, threshold_method
     
-def classification_plot_widget(results, classification_method):
-    st.markdown("---")  # Add a separator line
+def classification_plot_widget(results, classification_method, threshold_method):
     st.subheader("📈 Performance Metrics")
-    # Get current values from session state as defaults for the widgets
-    point_size, axis_label_size, legend_size, _ = plot_config_widget(point_based=False)
-
-    # Now generate the plots with the selected styles
-    cols = st.columns(2)
-    with cols[0]:
-        fig1 = plot_roc_curve(results['y_test'], results['y_score'], axis_label_size=axis_label_size, legend_size=legend_size)
-        st.pyplot(fig1)
-    with cols[1]:
-        fig2 = plot_confusion_matrix(results['y_test'], results['y_pred'], axis_label_size=axis_label_size, legend_size=legend_size)
-        st.pyplot(fig2)
-
-    # Display metrics tables side by side
+    
+    # Display metrics tables side by side (moved above plots)
     metrics = results['metrics']
     cols_metrics = st.columns(2)
     with cols_metrics[0]:
@@ -78,8 +76,23 @@ def classification_plot_widget(results, classification_method):
         st.markdown(overall_table)
     with cols_metrics[1]:
         st.markdown("**Per-Class Metrics**")
-        per_class_table = create_per_class_metrics_table(metrics)
-        st.markdown(per_class_table)
+        per_class_table = create_per_class_metrics_table(metrics, threshold_method)
+        st.markdown(per_class_table, unsafe_allow_html=True)
+    
+    st.markdown("---")  # Divider between tables and plot controls
+    
+    # Get current values from session state as defaults for the widgets
+    _, axis_label_size, legend_size, _ = plot_config_widget(point_based=False)
+
+    # Now generate the plots with the selected styles
+    cols = st.columns(2)
+    with cols[0]:
+        threshold_value = results.get('threshold_values')
+        fig1 = plot_roc_curve(results['y_test'], results['y_score'], axis_label_size=axis_label_size, legend_size=legend_size, threshold_value=threshold_value)
+        st.pyplot(fig1)
+    with cols[1]:
+        fig2 = plot_confusion_matrix(results['y_test'], results['y_pred'], axis_label_size=axis_label_size, legend_size=legend_size)
+        st.pyplot(fig2)
     
     if classification_method in ["Random Forest", "Gradient Boosting"]:
         fig3 = plot_feature_importance(results['classifier'], results['X_train'].columns, axis_label_size=axis_label_size, bar_label_size=legend_size)

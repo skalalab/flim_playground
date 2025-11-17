@@ -170,15 +170,15 @@ with col2:
                         else:
                             st.write(f"No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Classification":
-                    error_msg, df_classify, sampling_method = classifier_options_widget(filtered_df, categorical_cols, fov_name_col=fov_name_col, selected_features=selected_features, classifier=classification_method, splits=splits)
+                    error_msg, df_classify, sampling_method, apply_class_weight, threshold_method = classifier_options_widget(filtered_df, categorical_cols, fov_name_col=fov_name_col, selected_features=selected_features, classifier=classification_method, splits=splits)
                     if error_msg:
                         st.error(error_msg)
                     else:
-                        error_msg, results = run_classification(df_classify, classification_method, splits, sampling_method, random_state=42)
+                        error_msg, results = run_classification(df_classify, classification_method, splits, sampling_method, apply_class_weight, threshold_method, random_state=42)
                         if error_msg:
                             st.error(error_msg)
                         else:
-                            classification_plot_widget(results, classification_method)
+                            classification_plot_widget(results, classification_method, threshold_method)
                     
             if fig is not None: 
                 fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size) 
