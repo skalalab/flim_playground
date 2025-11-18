@@ -26,16 +26,16 @@ def classifier_options_widget(df, categorical_cols, fov_name_col, selected_featu
     df['classes'] = df[classify_by_options].agg('_'.join, axis=1)
     classes = df['classes'].unique()
     if len(classes) <= 1:
-        return f"No more than one class available for classification {sad_emoji}.", None, None
+        return f"No more than one class available for classification {sad_emoji}.", None, None, None, None
     elif len(selected_features) == 0:
-        return "Please select features.", None, None
+        return "Please select features.", None, None, None, None
     else: 
         # Check if the number of classes would generate too many combinations
         max_combinations = 2000  # Reasonable limit for UI performance
         total_combinations = 2 ** len(classes) - 1  # Total possible non-empty combinations
         
         if total_combinations > max_combinations:
-            return f"Too many classes ({len(classes)}) would generate {total_combinations:,} combinations, which exceeds the limit of {max_combinations:,}. Please reduce the number of classes or group some categories together {sad_emoji}.", None, None
+            return f"Too many classes ({len(classes)}) would generate {total_combinations:,} combinations, which exceeds the limit of {max_combinations:,}. Please reduce the number of classes or group some categories together {sad_emoji}.", None, None, None, None
         
         classification_options = []
         for i in range(len(classes)+1, 1, -1):

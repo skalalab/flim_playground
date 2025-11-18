@@ -83,7 +83,7 @@ class TunedThresholdClassifierCV:
         
         return y_pred
     
-    def _objective_function(self, thresholds, X, y, cv_splits, cached_probas=None):
+    def _objective_function(self, thresholds, X, y, cv_splits, cached_probas):
         """
         Objective function to minimize (negative of scoring metric).
         Uses cached probabilities if available to avoid refitting models.
@@ -98,8 +98,8 @@ class TunedThresholdClassifierCV:
             True labels.
         cv_splits : list
             List of (train_idx, test_idx) tuples for cross-validation.
-        cached_probas : list, optional
-            Pre-computed probabilities for each CV fold. If None, will compute them.
+        cached_probas : list
+            Pre-computed probabilities for each CV fold.
             
         Returns
         -------
@@ -114,48 +114,19 @@ class TunedThresholdClassifierCV:
         # Use cached probabilities if available (much faster!)
         # Since the probability model is fixed, we just apply different thresholds
         # to the pre-computed probabilities without refitting models
-        if cached_probas is not None:
-            for i, (train_idx, val_idx) in enumerate(cv_splits):
-                y_val_cv = y[val_idx]
-                y_proba_val = cached_probas[i]  # Use cached probabilities (model unchanged)
-                
-                # Predict using thresholds (only thresholds change, not probabilities)
-                y_pred_val = self._predict_with_thresholds(y_proba_val, thresholds)
-                
-                # Calculate score
-                if self._score_func is not None:
-                    score = self._score_func(y_val_cv, y_pred_val)
-                else:
-                    score = accuracy_score(y_val_cv, y_pred_val)  # Fallback
-                scores.append(score)
-        else:
-            # Fallback: compute probabilities on the fly (slower)
-            for train_idx, val_idx in cv_splits:
-                X_train_cv, X_val_cv = X[train_idx], X[val_idx]
-                y_train_cv, y_val_cv = y[train_idx], y[val_idx]
-                
-                # Fit classifier on training fold
-                try:
-                    estimator_copy = clone(self._original_estimator)
-                except Exception:
-                    try:
-                        estimator_copy = clone(self.estimator)
-                    except Exception:
-                        estimator_copy = deepcopy(self._original_estimator if self._original_estimator is not None else self.estimator)
-                estimator_copy.fit(X_train_cv, y_train_cv)
-                
-                # Get probabilities on validation fold
-                y_proba_val = estimator_copy.predict_proba(X_val_cv)
-                
-                # Predict using thresholds
-                y_pred_val = self._predict_with_thresholds(y_proba_val, thresholds)
-                
-                # Calculate score
-                if self._score_func is not None:
-                    score = self._score_func(y_val_cv, y_pred_val)
-                else:
-                    score = accuracy_score(y_val_cv, y_pred_val)
-                scores.append(score)
+        for i, (train_idx, val_idx) in enumerate(cv_splits):
+            y_val_cv = y[val_idx]
+            y_proba_val = cached_probas[i]  # Use cached probabilities
+            
+            # Predict using thresholds (only thresholds change, not probabilities)
+            y_pred_val = self._predict_with_thresholds(y_proba_val, thresholds)
+            
+            # Calculate score
+            if self._score_func is not None:
+                score = self._score_func(y_val_cv, y_pred_val)
+            else:
+                score = accuracy_score(y_val_cv, y_pred_val)  # Fallback
+            scores.append(score)
         
         # Return negative score for minimization
         return -np.mean(scores)
@@ -330,4 +301,3 @@ class TunedThresholdClassifierCV:
         # Convert to numpy array to avoid feature name warnings (consistent with fit)
         X = np.asarray(X)
         return self.estimator.predict_proba(X)
-
