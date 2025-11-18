@@ -299,7 +299,7 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
 
     if calibration_method == "Fluorescence Lifetime Standard":
         if fluorescence_lifetime_standard_time_axis is None:
-            return f"Error: Fluorescence lifetime standard time axis is not provided", pd.DataFrame()
+            return "Error: Fluorescence lifetime standard time axis is not provided", pd.DataFrame()
         try:
             if not full_period:
                 phi = w * time_axis

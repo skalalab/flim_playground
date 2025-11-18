@@ -79,7 +79,7 @@ def get_default_file_suffixes(channel_key: str, input_type: str, selected_featur
             continue
         # skip IRF if no Lifetime extractors OR if prefitted and no fit free extractors
         if file_type == "IRF" and (not any("Lifetime" in extractor for extractor in selected_feature_extractors) or 
-                                        ("prefitted" in input_type and not "Lifetime fit free" in selected_feature_extractors)):
+                                        ("prefitted" in input_type and "Lifetime fit free" not in selected_feature_extractors)):
             continue
         if file_type == "IRF" and ("Lifetime fit" not in selected_feature_extractors or "prefitted" in input_type) and "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Fluorescence Lifetime Standard":
             continue

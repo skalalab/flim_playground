@@ -3,11 +3,10 @@ import numpy as np
 import pathlib
 from pathlib import Path
 import tifffile
-from typing import Union, Optional
+from typing import Union
 from src.decay_io import read_decay
 from src.config import get_fov_name_col
 import pandas as pd
-import os
 
 def load_image(path: Union[str, pathlib.PurePath]) -> np.ndarray:
     """

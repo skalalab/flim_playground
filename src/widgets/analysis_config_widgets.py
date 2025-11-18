@@ -532,7 +532,8 @@ def parse_features(text: str):
     out, seen = [], set()
     for t in toks:
         if t and t not in seen:
-            seen.add(t); out.append(t)
+            seen.add(t)
+            out.append(t)
     return out
 
 def get_unique_row_id_col(use_data_extraction=True):

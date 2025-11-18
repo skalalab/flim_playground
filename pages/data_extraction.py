@@ -63,7 +63,7 @@ with col1:
                         st.write(selected_ch_feature_extractors[channel_key])
                     selected_channels[channel_key] = channel_name
                     if ch_num_components[channel_key] != 0 and "prefitted" in input_types[channel_key]: # if equals to 0, it means this channel does not have any lifetime fit analysis; only prefitted needs to be specified to get all the files. 
-                        selected_ch_num_components[channel_name] = st.number_input(f"No. component", value=ch_num_components[channel_key], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_name}")
+                        selected_ch_num_components[channel_name] = st.number_input("No. component", value=ch_num_components[channel_key], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_name}")
                     elif ch_num_components[channel_key] != 0: # do not ask now, will ask later when fitting
                         selected_ch_num_components[channel_name] = ch_num_components[channel_key]
         if len(selected_channels) == 0:
@@ -104,7 +104,7 @@ with col1:
         if metadata_df is not None:
             error_msg, metadata_dict = parse_metadata_file(metadata_df, fov_name_col)
             if error_msg == "":
-                st.success(f"✅ Features to be extracted confirmed.")
+                st.success("✅ Features to be extracted confirmed.")
                 decay_input_type = metadata_dict["decay_input_type"]
                 shift_needed = len(metadata_dict["channels_shift"]) > 0
                 shifts_are_present = all(f"{ch}_shift" in metadata_df.columns for ch in metadata_dict["channels_shift"])

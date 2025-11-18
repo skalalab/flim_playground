@@ -37,7 +37,7 @@ def get_ch_info(metadata_df):
                 metadata_dict["decay_input_type"] = input_type
             else:
                 if metadata_dict["decay_input_type"] != input_type:
-                    return f"Decay input type should be consistent across all channels.", None
+                    return "Decay input type should be consistent across all channels.", None
 
         # get selected feature extractors
         available_feature_extractors = get_available_feature_extractors(input_type)
@@ -88,23 +88,23 @@ def get_ch_info(metadata_df):
     if fit_free:    # laser rate is only needed when fit free 
         if "laser_rate" in metadata_df.columns:
             if metadata_df["laser_rate"].nunique() != 1:
-                return f"Laser rate column laser_rate is not consistent.", None
+                return "Laser rate column laser_rate is not consistent.", None
             metadata_dict["laser_rate"] = metadata_df["laser_rate"].iloc[0]
         else:
             return f"Laser rate column laser_rate not found in metadata file.", None
         
         if "fit_free_calibration_method" in metadata_df.columns:
             if metadata_df["fit_free_calibration_method"].nunique() != 1:
-                return f"Fit free calibration method column fit_free_calibration_method is not consistent.", None
+                return "Fit free calibration method column fit_free_calibration_method is not consistent.", None
             metadata_dict["fit_free_calibration_method"] = metadata_df["fit_free_calibration_method"].iloc[0]
             if metadata_dict["fit_free_calibration_method"] == "Fluorescence Lifetime Standard":
                 # lifetime is global and must be present
                 if "fluorescence_lifetime_standard_lifetime" in metadata_df.columns:
                     if metadata_df["fluorescence_lifetime_standard_lifetime"].nunique() != 1:
-                        return f"Fluorescence lifetime standard's lifetime column fluorescence_lifetime_standard_lifetime is not consistent.", None
+                        return "Fluorescence lifetime standard's lifetime column fluorescence_lifetime_standard_lifetime is not consistent.", None
                     metadata_dict["fluorescence_lifetime_standard_lifetime"] = metadata_df["fluorescence_lifetime_standard_lifetime"].iloc[0]
                 else:
-                    return f"Fluorescence lifetime standard's lifetime column fluorescence_lifetime_standard_lifetime not found in metadata file.", None
+                    return "Fluorescence lifetime standard's lifetime column fluorescence_lifetime_standard_lifetime not found in metadata file.", None
                 # channel-specific fluorescence lifetime standard file and time axis
                 for channel_name in metadata_dict["channel_names"]:
                     if "Lifetime fit free" not in metadata_dict[channel_name]["selected_feature_extractors"]:
@@ -123,7 +123,7 @@ def get_ch_info(metadata_df):
                         return f"Fluorescence lifetime standard's time axis column {time_axis_col} is not consistent.", None
                     metadata_dict[channel_name]["fluorescence_lifetime_standard_time_axis"] = metadata_df[time_axis_col].iloc[0]
         else:
-            return f"Fit free calibration method column fit_free_calibration_method not found in metadata file.", None
+            return "Fit free calibration method column fit_free_calibration_method not found in metadata file.", None
 
     return "", metadata_dict
 

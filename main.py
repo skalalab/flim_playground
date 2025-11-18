@@ -104,7 +104,7 @@ def main():
                 st.caption("Provide channel-specific Fluorescence lifetime standard file suffixes below in the File suffixes section.")
             with cols[2]:
                 # get the fluorescence lifetime standard's lifetime (shared across channels)
-                cfg[flim_decay_input_type]["fluorescence_lifetime_standard_lifetime"] = st.number_input(f"Fluorescence lifetime standard's lifetime **(ns)**", value=cfg.get(flim_decay_input_type, {}).get("fluorescence_lifetime_standard_lifetime", 1.0), min_value=0.1, max_value=20.0, key=f"fluorescence_lifetime_standard_lifetime_{flim_decay_input_type}")
+                cfg[flim_decay_input_type]["fluorescence_lifetime_standard_lifetime"] = st.number_input("Fluorescence lifetime standard's lifetime **(ns)**", value=cfg.get(flim_decay_input_type, {}).get("fluorescence_lifetime_standard_lifetime", 1.0), min_value=0.1, max_value=20.0, key=f"fluorescence_lifetime_standard_lifetime_{flim_decay_input_type}")
        
         # feature extractor initialization
     if "available_feature_extractors" not in cfg[flim_decay_input_type]:
@@ -156,7 +156,7 @@ def main():
             default_name = cfg[channel_key].get("channel_name", f"Channel {i+1}")
             custom_channel_name = st.text_input(f"Channel {i+1} name", value=default_name)
             if custom_channel_name in channel_names:
-                error_msg = f"Duplicate channel names found. Please change the names to be unique."
+                error_msg = "Duplicate channel names found. Please change the names to be unique."
                 st.error(error_msg)
                 continue
             channel_names.append(custom_channel_name)
@@ -183,11 +183,11 @@ def main():
                 if file_type == "Decay" and "prefitted" in input_type and len(selected_feature_extractors) == 1 and "Lifetime fit" in selected_feature_extractors:
                     continue
                 # Skip t1 if no Lifetime fit extractors are selected
-                if file_type == "SPCImage t1" and not "Lifetime fit" in selected_feature_extractors:
+                if file_type == "SPCImage t1" and "Lifetime fit" not in selected_feature_extractors:
                     continue
                 # Skip IRF if no Lifetime extractors OR if prefitted and no fit free extractors
                 if file_type == "IRF" and (not any("Lifetime" in extractor for extractor in selected_feature_extractors) or 
-                                          ("prefitted" in input_type and not "Lifetime fit free" in selected_feature_extractors)):
+                                          ("prefitted" in input_type and "Lifetime fit free" not in selected_feature_extractors)):
                     continue
 
                 if file_type == "IRF" and ("Lifetime fit" not in selected_feature_extractors or "prefitted" in input_type) and "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Fluorescence Lifetime Standard":

@@ -1,4 +1,4 @@
-from .helpers import _find_best_gmm, get_point_visual_mappings, add_point_legend_traces, add_interleaved_points_trace
+from .helpers import _find_best_gmm, get_point_visual_mappings, add_interleaved_points_trace
 import plotly.graph_objects as go
 import numpy as np
 from scipy.stats import gaussian_kde, pearsonr, chi2

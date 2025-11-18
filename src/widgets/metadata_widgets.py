@@ -206,7 +206,7 @@ def preview_metadata_widget(metadata_df, num_cols=3):
 
 def export_metadata_widget(metadata_df, folder_path):
     # use a botton to export the fovs as one csv file (one fov per row) to the folder_path 
-    confirm_export = st.button("Export FOV Metadata as CSV", help=f"Export the fov metadata as one csv file (one fov per row) to {folder_path}", key=f"export_metadata_button")
+    confirm_export = st.button("Export FOV Metadata as CSV", help=f"Export the fov metadata as one csv file (one fov per row) to {folder_path}", key="export_metadata_button")
     if confirm_export:
         # convert the dictionary to a dataframe     
         # save the dataframe to a csv file

@@ -116,12 +116,12 @@ def get_feature_groups_data_extraction(cols):
         # first split by ":"
         try:
             extractor_channel, feature = col.split(": ")
-        except:
+        except Exception as e:
             feature_groups_dict["Uncategorized Features"].append(col)
             continue
         try:
             extractor, channel = extractor_channel.split("_", 1)
-        except:
+        except Exception as e:
             feature_groups_dict["Uncategorized Features"].append(col)
             continue
         if extractor in all_feature_extractors:

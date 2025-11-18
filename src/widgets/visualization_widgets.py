@@ -162,7 +162,7 @@ def phasor_params_widget(feature_groups_dict):
         return None, None, None
     selected_harmonic = st.selectbox(f"{selected_channel} harmonic No. ", channel_harmonics[selected_channel])
     if selected_channel is not None and selected_harmonic is not None:
-        f = st.number_input(f"Laser repetition rate (**GHz**)", value=0.08, min_value=0.0, step=0.01)
+        f = st.number_input("Laser repetition rate (**GHz**)", value=0.08, min_value=0.0, step=0.01)
     return selected_channel, selected_harmonic, f
 
 def plot_config_widget(point_based=True, show_colormap=False):
