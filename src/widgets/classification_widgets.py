@@ -88,7 +88,7 @@ def classification_plot_widget(results, classification_method, threshold_method)
     cols = st.columns(2)
     with cols[0]:
         threshold_value = results.get('threshold_values')
-        fig1 = plot_roc_curve(results['y_test'], results['y_score'], axis_label_size=axis_label_size, legend_size=legend_size, threshold_value=threshold_value)
+        fig1 = plot_roc_curve(results['y_test'], results['y_score'], axis_label_size=axis_label_size, legend_size=legend_size, metrics=metrics, threshold_value=threshold_value)
         st.pyplot(fig1)
     with cols[1]:
         fig2 = plot_confusion_matrix(results['y_test'], results['y_pred'], axis_label_size=axis_label_size, legend_size=legend_size)

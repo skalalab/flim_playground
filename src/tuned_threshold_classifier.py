@@ -111,7 +111,7 @@ class TunedThresholdClassifierCV:
         
         scores = []
         
-        # Use cached probabilities if available (much faster!)
+        # Use cached probabilities (much faster!)
         # Since the probability model is fixed, we just apply different thresholds
         # to the pre-computed probabilities without refitting models
         for i, (train_idx, val_idx) in enumerate(cv_splits):
@@ -235,7 +235,7 @@ class TunedThresholdClassifierCV:
                 initial_threshold,
                 args=(X, y, cv_splits, cached_probas),  # Pass cached probabilities
                 method='Nelder-Mead',
-                options={'maxiter': 50, 'xatol': 1e-3, 'fatol': 1e-3}  # Reduced iterations and tolerance
+                options={'maxiter': 50, 'xatol': 1e-3, 'fatol': 1e-3} 
             )
             if result.success:
                 score_result = -result.fun

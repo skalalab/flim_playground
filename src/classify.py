@@ -40,7 +40,7 @@ def calculate_roc_curve(num_classes, y_test, y_score, classes=None):
         # label_binarize marks the second class as positive, so we invert the labels
         # and use probabilities for the first class
         y_test_first_class = 1 - y_test_binarized  # Invert: 1 = first class, 0 = second class
-        fpr, tpr, thresholds   = roc_curve(y_test_first_class, y_score[:,0])  # Probabilities for the first class
+        fpr, tpr, thresholds = roc_curve(y_test_first_class, y_score[:,0])  # Probabilities for the first class
         roc_auc = auc(fpr, tpr)
         return fpr, tpr, roc_auc, classes[0], thresholds  # Return thresholds as well
     else:
@@ -53,7 +53,7 @@ def calculate_roc_curve(num_classes, y_test, y_score, classes=None):
             roc_auc[i] = auc(fpr[i], tpr[i])
         return fpr, tpr, roc_auc, classes, thresholds_dict
 
-def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12, threshold_value=None):
+def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12, metrics=None, threshold_value=None):
     classes = np.unique(y_test)
     num_classes = len(classes)
     result = calculate_roc_curve(num_classes, y_test, y_score, classes=classes)
@@ -70,32 +70,31 @@ def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12, threshol
         # Show which class the ROC represents
         ax.plot(fpr, tpr, label=f"{positive_class} (AUC = {roc_auc:.2f})", color=colors[0])
         
-        # Plot threshold value if provided
-        if threshold_value is not None:
-            # The threshold_value is for class 1 (second class): predict class 1 if P(class_1) >= threshold
-            # But the ROC curve uses class 0 (first class) probabilities: y_score[:,0]
-            # So we need to convert: if P(class_1) >= threshold, then P(class_0) <= 1 - threshold
-            # For the ROC curve, we predict class 0 when P(class_0) >= (1 - threshold)
-            threshold_for_roc = 1 - threshold_value
-            threshold_idx = np.argmin(np.abs(thresholds - threshold_for_roc))
-            # Threshold interpretation: 
-            # The threshold_value is the probability threshold for class 1
-            # On the ROC curve (which uses class 0 probabilities), this corresponds to 1 - threshold_value
-            threshold_label = f'Threshold (≥{threshold_value:.2f})'
-            ax.scatter(fpr[threshold_idx], tpr[threshold_idx], c='red', s=100, zorder=5, label=threshold_label)
+        # Plot operating point if metrics are provided
+        if metrics is not None and 'per_class' in metrics:
+            # For binary, we typically focus on the positive class (index 0 in our logic)
+            # metrics['per_class'] is keyed by class name
+            pos_class_str = str(positive_class)
+            if pos_class_str in metrics['per_class']:
+                cls_metrics = metrics['per_class'][pos_class_str]
+                # FPR = 1 - Specificity
+                op_fpr = 1 - cls_metrics['specificity']
+                op_tpr = cls_metrics['recall']
+                
+                threshold_label = ''
+                if threshold_value is not None:
+                     threshold_label += f'Thresh={threshold_value:.2f}'
+                
+                ax.scatter(op_fpr, op_tpr, c='red', s=100, zorder=5, label=threshold_label)
     else:
         fpr, tpr, roc_auc, classes, thresholds_dict = result
         
-        # Extract threshold values if provided
+        # Extract threshold values for label display only
         threshold_array = None
         if threshold_value is not None:
-            if isinstance(threshold_value, (np.ndarray, list)):
-                threshold_array = np.asarray(threshold_value)
-            elif isinstance(threshold_value, dict):
-                # Convert dict to array ordered by class index
-                threshold_array = np.array([threshold_value.get(str(classes[i]), None) for i in range(num_classes)])
+            threshold_array = np.asarray(threshold_value)
         
-        # Plot ROC curves for each class with combined label (AUC + norm factor)
+        # Plot ROC curves for each class
         for i in range(num_classes):
             # Build label with AUC and normalization factor if available
             if threshold_array is not None and len(threshold_array) == num_classes and threshold_array[i] is not None:
@@ -103,36 +102,19 @@ def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12, threshol
             else:
                 label = f"{classes[i]} (AUC={roc_auc[i]:.2f})"
             ax.plot(fpr[i], tpr[i], label=label, color=colors[i])
-        
-        # Plot threshold markers on ROC curves if provided (for multi-class)
-        if threshold_value is not None:
-            # threshold_value can be a numpy array or dict
-            if isinstance(threshold_value, (np.ndarray, list)):
-                # If it's an array, assume it's ordered by class index
-                threshold_array = np.asarray(threshold_value)
-                if len(threshold_array) == num_classes:
-                    for i in range(num_classes):
-                        # Find the point on the ROC curve closest to the threshold
-                        # The threshold corresponds to a probability, so we need to find
-                        # where on the ROC curve this threshold falls
-                        # ROC curve thresholds are in descending order of probability
-                        thresholds_roc = thresholds_dict[i]
-                        threshold_idx = np.argmin(np.abs(thresholds_roc - threshold_array[i]))
-                        # Mark the point on the curve (no separate label, already in main label)
-                        ax.scatter(fpr[i][threshold_idx], tpr[i][threshold_idx], 
-                                 c=colors[i], s=100, zorder=5, marker='s', 
-                                 edgecolors='black', linewidths=1.5)
-            elif isinstance(threshold_value, dict):
-                # If it's a dict, use class names as keys
-                for i, class_name in enumerate(classes):
-                    if str(class_name) in threshold_value:
-                        threshold_val = threshold_value[str(class_name)]
-                        thresholds_roc = thresholds_dict[i]
-                        threshold_idx = np.argmin(np.abs(thresholds_roc - threshold_val))
-                        # Mark the point on the curve (no separate label, already in main label)
-                        ax.scatter(fpr[i][threshold_idx], tpr[i][threshold_idx], 
-                                 c=colors[i], s=100, zorder=5, marker='s', 
-                                 edgecolors='black', linewidths=1.5)
+
+            # Plot actual operating point from metrics
+            if metrics is not None and 'per_class' in metrics:
+                class_str = str(classes[i])
+                if class_str in metrics['per_class']:
+                    cls_metrics = metrics['per_class'][class_str]
+                    # FPR = 1 - Specificity
+                    op_fpr = 1 - cls_metrics['specificity']
+                    op_tpr = cls_metrics['recall']
+                    
+                    ax.scatter(op_fpr, op_tpr, 
+                             c=colors[i], s=100, zorder=5, marker='s', 
+                             edgecolors='black', linewidths=1.5)
     
     ax.plot([0, 1], [0, 1], 'k--', label="Random Chance")
     ax.set_xlabel("False Positive Rate", fontsize=axis_label_size)
@@ -357,7 +339,7 @@ def create_per_class_metrics_table(metrics_dict, threshold_method):
         # Color F1 Score average red if threshold method is F1 Score
         avg_f1_score_value = f'<span style="color:red">{avg_f1_score:.4f}</span>' if threshold_method == "F1 Score" else f"{avg_f1_score:.4f}"
         
-        table += f"    | **Average** | {avg_n} | {avg_precision:.4f} | {avg_recall_value} | {avg_specificity:.4f} | {avg_youdens_j:.4f} | {avg_f1_score_value} |\n"
+        table += f"    | **Average** | {avg_n:.2f} | {avg_precision:.4f} | {avg_recall_value} | {avg_specificity:.4f} | {avg_youdens_j:.4f} | {avg_f1_score_value} |\n"
     
     return f"\n{table}"
 
