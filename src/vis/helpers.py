@@ -671,8 +671,8 @@ def add_interleaved_points_trace(
     all_points_data = []
     for group_key, group_df in grouped:
         color_group = group_key[0]
-        shape_group = group_key[1] if shape_by else None
-        opacity_group = group_key[2] if shape_by and opacity_by else (group_key[1] if opacity_by else None)
+        shape_group = group_key[1]
+        opacity_group = group_key[2]
         for idx, row in group_df.iterrows():
             all_points_data.append({
                 'x': row[axis_labels[0]],
