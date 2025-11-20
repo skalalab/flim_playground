@@ -339,13 +339,28 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                 
                 # Add R² to the table
                 table_md.append(f"**Regression R²:** {r2:.3f} (Slope: {reg_model.coef_[0]:.3f}, Intercept: {reg_model.intercept_:.3f})")
-        if fit_gmm: 
-            # Fit GMM for the current group
+
+        # Marginal density for X-axis
+        _plot_marginal_density(fig, x_data, 'x', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'yaxis': 'y2'})
+
+        # Marginal density for Y-axis
+        _plot_marginal_density(fig, y_data, 'y', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'xaxis': 'x2'})
+
+    # --- GMM fitting per color group (not per shape/opacity) ---
+    if fit_gmm:
+        for color_group in color_map.keys():
+            # Filter data for this color group using the helper column
+            group_df = df[df[GROUP_COL_NAME] == color_group]
+            
+            if group_df.empty or group_df[selected_x].nunique() < 2 or group_df[selected_y].nunique() < 2:
+                continue
+
+            # Fit GMM for the current COLOR group (aggregating all shapes/opacities)
             group_data_2d = group_df[[selected_x, selected_y]]
             if len(group_data_2d) > 1: # Need at least 2 points for GMM
                 best_gmm = _find_best_gmm(group_data_2d, max_components=fit_gmm_max_components, min_weight_threshold=fit_gmm_min_weight_threshold) 
                 if best_gmm and best_gmm.n_components > 1:
-                    table_md += ["\n**GMM Components:**"]
+                    table_md += [f"\n**{color_group} GMM Components:**"]
                     table_md.append("")
                     table_md.append(f"| Component | **{selected_x}** | **{selected_x}** | **{selected_y}** | **{selected_y}** | Weight |")
                     table_md.append(f"|------|-----|-----|-----|-----|------|")
@@ -373,12 +388,6 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                     st.write(f"No suitable GMM found for {color_group} with current constraints.")
             else:
                 st.write(f"\nSkipping GMM for group: {color_group} due to insufficient data (points: {len(group_data_2d)})")
-
-        # Marginal density for X-axis
-        _plot_marginal_density(fig, x_data, 'x', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'yaxis': 'y2'})
-
-        # Marginal density for Y-axis
-        _plot_marginal_density(fig, y_data, 'y', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'xaxis': 'x2'})
 
     # Note: Legend traces and hovermode are already added by add_interleaved_points_trace
     # Just update layout with additional settings
@@ -564,28 +573,16 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         hovertemplate="<b>%{text}</b>"
     )
     
-    # Note: hovermode='closest' is already set by add_interleaved_points_trace
-    # But we'll update it later with additional layout settings
-
-    for group_key, group_df in grouped_list:
-        # Unpack group_key for color, shape, opacity
-        color_group = group_key[0] if isinstance(group_key, tuple) else group_key
-        shape_group = None
-        opacity_group = None
-        key_idx = 1
-        if shape_by and shape_by in df.columns:
-            shape_group = group_key[key_idx] if len(group_key) > key_idx else None
-            key_idx += 1
-        if opacity_by and opacity_by in df.columns:
-            opacity_group = group_key[key_idx] if len(group_key) > key_idx else None
-        
-        if group_df.empty:
-            continue
-        
-        # Points are already added via add_interleaved_points_trace above
-        # Continue with per-group k-means clustering if needed
-
-        if k_means:
+    
+    # --- K-Means clustering per color group (not per shape/opacity) ---
+    if k_means:
+        for color_group in color_map.keys():
+            # Filter data for this color group using the helper column
+            group_df = df[df[GROUP_COL_NAME] == color_group]
+            
+            if group_df.empty:
+                continue
+                
             # standardize the data
             # --- 1) DO NOT overwrite raw G,S; fit on a standardized copy ---
             X_raw = group_df[[g_feature, s_feature]].to_numpy(copy=True)
@@ -594,10 +591,16 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
             # step 2: perform k-means clustering
             kmeans = KMeans(n_clusters=k_means_clusters, random_state=42)
             kmeans.fit(Xz)
-            group_df["k_means_cluster"] = kmeans.labels_
+            
             centers_raw = scaler.inverse_transform(kmeans.cluster_centers_)
+            
             # step 3: plot the convex hull
-            _plot_convex_hull(fig, group_df, g_feature, s_feature, "k_means_cluster", color_map.get(color_group, 'gray'), centers_raw, line_width=2)
+            # Create a temporary dataframe with cluster labels for plotting
+            group_df_with_clusters = group_df.copy()
+            group_df_with_clusters["k_means_cluster"] = kmeans.labels_
+            
+            _plot_convex_hull(fig, group_df_with_clusters, g_feature, s_feature, "k_means_cluster", color_map.get(color_group, 'gray'), centers_raw, line_width=2)
+            
             # Update the main dataframe with cluster labels
             assigned_labels = [f"{color_group}_group{label + 1}" for label in kmeans.labels_]
             df.loc[group_df.index, "k_means_cluster"] = assigned_labels
