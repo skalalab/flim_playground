@@ -154,6 +154,8 @@ def parse_metadata_file(metadata_df, fov_name_col):
                     has_flim = False
                 else:
                     has_flim = True
+            else:
+                has_flim = True
         available_file_types = get_file_types(input_type)
         for file_type in available_file_types:
             if f"{channel_name}_{file_type}" in metadata_df.columns and file_type != "IRF":
