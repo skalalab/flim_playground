@@ -44,20 +44,22 @@ pyinstaller Flim-Playground.spec --clean
 
 # Citation
 
-FLIM Playground is currently on [bioarchive](https://www.biorxiv.org/content/10.1101/2025.09.30.679625). If you used Data Extraction to get single cell features, or Data Analysis to explore your data to find data of interest, perform analysis, or pin down suitable hyperparameters (UMAP, classification options, etc.) and analysis methods, please cite us 🥳🎉🥂. 
+FLIM Playground is currently on [bioarchive](https://www.biorxiv.org/content/10.1101/2025.09.30.679625). If it contributed to your research—whether through Data Extraction for single-cell feature generation or through Data Analysis for data exploration, visualization, selection of analysis methods, or hyperparameter tuning (UMAP, clustering, classification, etc.)—please cite this work in your publication. Your citation directly supports us in maintaining and improving it ✨🎈🍾. 
 
 # TODO
 
 - [x] randomize the plot order of points so specific colors and shapes plotted later do not occlude early color and shape groups. 
 - [x] add multiple analysis config profile
 - [x] add cost matrix in evalutation time to penalize more on prediction error of minority class. 
-- [] add filters based on numerical user-specified feature range/cutoff (phasor draw gates to filter)
+- [x] add filters based on numerical user-specified feature range/cutoff 
+- [] phasor draw gates to filter
 - [] add representative lifetime feature maker in FOV comparison
 - [] add hierarchical clustering
 - [] add linear mixed effect model
 - [] add modality alignment
 - [] add confidence interval to effect size
 
+# Useful Commands
 ```bash
 streamlit run main.py # when in development
 ```

@@ -1,5 +1,7 @@
 import streamlit as st
 from src.vis.helpers import natural_tuple_sort
+import pandas as pd
+
 # Generic callback function to handle "All" logic and cascade resets
 def update_multiselect(key, options, categories_to_filter, current_category_index):
     current_selection = st.session_state.get(key, ["All"])
@@ -68,5 +70,74 @@ def filters_widget(df, categorical_cols):
         selected_values = st.session_state.get(key, ["All"])
         if "All" not in selected_values:
             final_filtered_df = final_filtered_df[final_filtered_df[category].isin(selected_values)]
+
+    numerical_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+    if numerical_cols:
+        # Layout for numerical filter controls
+        # Use a while loop to allow for multiple filters
+        
+        i = 0
+        while True:
+            # Layout for the current filter row
+            num_col1, num_col2, num_col3, num_col4 = st.columns([1, 0.5, 1, 0.5])
             
+            with num_col1:
+                feature = st.selectbox(f"Select Feature {i+1}", ["None"] + numerical_cols, key=f"num_filter_feature_{i}")
+            
+            if feature == "None":
+                break
+            
+            with num_col2:
+                op = st.selectbox("Operator", [">", "<="], key=f"num_filter_operator_{i}_{feature}")
+            
+            with num_col3:
+                if final_filtered_df.empty:
+                    st.warning("No data available.")
+                    break
+
+                # Determine min/max for the selected feature based on the CURRENT filtered dataframe
+                f_min = float(final_filtered_df[feature].min())
+                f_max = float(final_filtered_df[feature].max())
+                f_mean = float(final_filtered_df[feature].mean())
+                
+                # Handle case where min == max (single value)
+                if f_min == f_max:
+                    f_min -= 0.01
+                    f_max += 0.01
+                
+                # Widget key including feature to ensure uniqueness when feature changes
+                threshold_key = f"num_filter_threshold_{i}_{feature}"
+                
+                # Clamp existing session state value to new range if it exists
+                if threshold_key in st.session_state:
+                    current_val = st.session_state[threshold_key]
+                    if current_val < f_min:
+                        st.session_state[threshold_key] = f_min
+                    elif current_val > f_max:
+                        st.session_state[threshold_key] = f_max
+                
+                thresh = st.number_input(
+                    f"Threshold ({f_min:.2f} - {f_max:.2f})", 
+                    value=f_mean, 
+                    min_value=f_min, 
+                    max_value=f_max, 
+                    key=threshold_key
+                )
+            
+            # Apply the filter immediately so the next iteration uses the filtered data
+            if op == ">":
+                final_filtered_df = final_filtered_df[final_filtered_df[feature] > thresh]
+            else:
+                final_filtered_df = final_filtered_df[final_filtered_df[feature] <= thresh]
+            
+            with num_col4:
+                st.write("") # Spacer
+                st.write("")
+                add_another = st.checkbox("Add another", key=f"add_another_num_filter_{i}")
+            
+            if not add_another:
+                break
+                
+            i += 1
+
     return final_filtered_df
