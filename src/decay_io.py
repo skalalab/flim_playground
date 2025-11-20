@@ -9,17 +9,6 @@ import numpy as np
 from pathlib import Path
 import os
 
-def visualize_sdt(sdt_data):
-    """
-    Visualize the sdt data
-    """
-    import matplotlib.pyplot as plt
-    import streamlit as st
-    fig, ax = plt.subplots()
-    plt.imshow(sdt_data.sum(axis=-1))
-    plt.show()
-    st.pyplot(fig)
-
 def read_decay_metadata(filename):
     if filename.endswith(".ptu"):   
         ptu = PtuFile(filename)
@@ -106,63 +95,3 @@ def read_decay(filename, channel=-1):
     else:
         return None, f"Error reading decay data: {filename} is not a valid sdt or ptu file"
     return error_msg, decay_data
-
-def write_sdt(path_output, sdt_data, manufacturer="BH", resolution=256):
-    
-
-    # Requires the "sdtheader.dat" built header information
-    
-    ### Example1 : random dataset
-    #binary_data=(np.random.randint(100,size=[256*256*256])).astype(np.uint16)
-    
-    ### Example2 : any data set with 256x256x256 - uint16
-    # with open('badger.dat','rb') as fid:
-    #     binary_data=np.fromstring(fid.read(),np.uint16)    
-    
-    #phantom_data= binary_data.ravel().astype(np.uint16)
-
-    path_header = Path(f"./sdt_headers/header_{resolution}_{manufacturer}.dat")
-    
-    with open(path_header,'rb') as fid:
-        header_ = fid.read() # prebuilt header_file 
-    # combine header and data
-    phantom_data = header_ + sdt_data.astype(np.uint16).tobytes()
-    
-    with open(path_output,'wb') as fid:
-        fid.write(phantom_data)   
-
-
-def sdt_convert(src, destination=""):
-    """
-    Convert a sdt file to a numpy array
-    """
-    errormsg = ""
-    sdt_data = read_sdt(src)
-    # the last dimension is time 
-    if sdt_data.shape[-1] < 256:
-        errormsg += f"{src} data should be at least 8-bit! "
-        return errormsg
-    elif sdt_data.shape[-1] == 256:
-        errormsg += f"{src} data is already 8-bit! "
-        return errormsg
-    
-    
-    elif sdt_data.shape[-1] % 256 == 1:
-        errormsg += f"{src} data is not divisible by 256! "
-    else:
-        #visualize_sdt(sdt_data)
-        # Compute the grouping factor (how many neighbors to sum together)
-        factor = sdt_data.shape[-1] // 256
-       # visualize_timebin(sdt_data[0,0,:])
-        # Reshape the last dimension to group neighbors
-        new_shape = sdt_data.shape[:-1] + (256, factor)
-        reshaped_data = sdt_data.reshape(new_shape)
-        # Sum along the new axis
-        time_grouped_data = reshaped_data.sum(axis=-1)
-      #  visualize_timebin(time_grouped_data[0,0,:])
-        #visualize_sdt(time_grouped_data)
-       #  print(time_grouped_data.shape)
-        write_sdt(os.path.join(destination, Path(src).name), time_grouped_data, resolution=sdt_data.shape[1], manufacturer="Swabian")
-
-
-    return errormsg

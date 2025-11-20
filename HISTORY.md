@@ -2,7 +2,7 @@
 (The followings are not peer-reviewed and represent only my own thoughts.)
 The development history of FLIM Playground is interesting in its own right and, hopefully, shares common traits with other “platform-y” projects. By jotting down a few memorable milestones here, I want to remind myself that:
 - All of the architectural decisions grew out of synthesizing diverse needs by coming up with meaningful abstractions. The needs are specific, **data-driven**, and from them abstract hypothesis are constructed (**hypothesis-driven**), which will in turn place constraints on how people view things. This feedback loop is neither top-down—where a hypothesis dictates data analysis or even collection—nor bottom-up—where fragmented one-off solutions address isolated needs. Instead, it reflects a more sustained way of doing research (because loops by definition go indefinitely), which is precisely the type of research that FLIM Playground aims to facilitate. I am proud that it has been developed to try to exemplify this approach.
-- Those "loops" are iterations of a product, an artwork, a decision, a process of carving certainty out of ambiguity and possibility, propelled by constraints, tipped by imbalancedness between ideal and reality, tickled by the desire to approach perfection while reminding oneself of the unreachability of it.
+- Those "loops" are iterations of a product, an artwork, a decision, a process of carving certainty out of ambiguity and possibility, propelled by constraints, tipped by imbalancedness between ideal and reality, tickled by the desire to approach perfection while reminding oneself of its unreachability.
 
 It starts from the very specific need of identifying single-cell outliers in UMAP. 
 

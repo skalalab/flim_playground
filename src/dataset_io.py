@@ -21,6 +21,9 @@ happy_celebratory_emojis = [
     "🍾",  # Bottle with Popping Cork
     "👍",  # Thumbs Up
     "😉",
+    "💛", 
+    "🩵"
+
 ]
 sad_regretful_emojis = [
     "😥",  # Sad but Relieved Face
@@ -37,6 +40,8 @@ sad_regretful_emojis = [
     "🤔",
     "🤒",
     "🥶",
+    "😖",
+    "😫"
 ]
 
 # Choose a random happy/celebratory emoji

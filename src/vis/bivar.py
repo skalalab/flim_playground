@@ -342,8 +342,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         if fit_gmm: 
             # Fit GMM for the current group
             group_data_2d = group_df[[selected_x, selected_y]]
-            if len(group_data_2d) > 1: # Need at least 2 points for GMM, ideally more
-                best_gmm = _find_best_gmm(group_data_2d, max_components=fit_gmm_max_components, min_weight_threshold=fit_gmm_min_weight_threshold) # Example: try up to 2 components
+            if len(group_data_2d) > 1: # Need at least 2 points for GMM
+                best_gmm = _find_best_gmm(group_data_2d, max_components=fit_gmm_max_components, min_weight_threshold=fit_gmm_min_weight_threshold) 
                 if best_gmm and best_gmm.n_components > 1:
                     table_md += ["\n**GMM Components:**"]
                     table_md.append("")
