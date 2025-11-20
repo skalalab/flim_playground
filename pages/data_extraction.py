@@ -47,6 +47,7 @@ with col1:
     )
     if "FOV Metadata Extraction" in selected_step:
          # show decay input type
+        error_msg = ""
         if has_flim:
             st.write(f"Decay input type: {decay_input_type}")
         checkbox_cols = st.columns(len(channel_names))
@@ -67,7 +68,8 @@ with col1:
                     elif ch_num_components[channel_key] != 0: # do not ask now, will ask later when fitting
                         selected_ch_num_components[channel_name] = ch_num_components[channel_key]
         if len(selected_channels) == 0:
-            st.error(f"Please check at least one of the channels {sad_emoji}")
+            error_msg = "Please check at least one of the channels"
+            st.error(f"{error_msg} {sad_emoji}")
         else:
             if has_flim:
                 duration, time_bins, laser_rate = lifetime_data_config_widget(selected_ch_feature_extractors, decay_input_type)

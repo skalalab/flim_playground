@@ -373,6 +373,8 @@ def run_classification(df, method, splits, sampling_method, class_weight, thresh
         classifier = make_pipeline(StandardScaler(), SVC(kernel='linear', probability=True, random_state=random_state, class_weight=class_weight))
     elif method == "Logistic Regression":
         classifier = make_pipeline(StandardScaler(), LogisticRegression(random_state=random_state, max_iter=10000, class_weight=class_weight))
+    else:
+        return f"Unsupported classification method: {method}", None
     
     # adjust thresholds based on the threshold method
     tuned_classifier = None
