@@ -37,21 +37,20 @@ def calculate_roc_curve(num_classes, y_test, y_score, classes=None):
     y_test_binarized = label_binarize(y_test, classes=classes)
     if num_classes == 2:
         # For binary classification, use the first class (class at index 0) as the positive class
-        # label_binarize marks the second class as positive, so we invert the labels
-        # and use probabilities for the first class
-        y_test_first_class = 1 - y_test_binarized  # Invert: 1 = first class, 0 = second class
-        fpr, tpr, thresholds = roc_curve(y_test_first_class, y_score[:,0])  # Probabilities for the first class
+        # however, label_binarize marks the second class as positive, so labels need to be inverted
+        # Invert: 1 = first class, 0 = second class -> 0 = first class, 1 = second class
+        y_test_first_class = 1 - y_test_binarized  
+        fpr, tpr, _ = roc_curve(y_test_first_class, y_score[:,0])  # Probabilities for the first class
         roc_auc = auc(fpr, tpr)
-        return fpr, tpr, roc_auc, classes[0], thresholds  # Return thresholds as well
+        return fpr, tpr, roc_auc, classes[0]
     else:
         fpr = dict()
         tpr = dict()
         roc_auc = dict()
-        thresholds_dict = dict()
         for i in range(num_classes):
-            fpr[i], tpr[i], thresholds_dict[i] = roc_curve(y_test_binarized[:, i], y_score[:, i])
+            fpr[i], tpr[i], _ = roc_curve(y_test_binarized[:, i], y_score[:, i])
             roc_auc[i] = auc(fpr[i], tpr[i])
-        return fpr, tpr, roc_auc, classes, thresholds_dict
+        return fpr, tpr, roc_auc, classes
 
 def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12, metrics=None, threshold_value=None):
     classes = np.unique(y_test)
@@ -66,7 +65,7 @@ def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12, metrics=
         colors = plt.cm.tab20(np.linspace(0, 1, num_classes))
     
     if num_classes == 2:
-        fpr, tpr, roc_auc, positive_class, thresholds = result
+        fpr, tpr, roc_auc, positive_class = result
         # Show which class the ROC represents
         ax.plot(fpr, tpr, label=f"{positive_class} (AUC = {roc_auc:.2f})", color=colors[0])
         
@@ -83,11 +82,13 @@ def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12, metrics=
                 
                 threshold_label = ''
                 if threshold_value is not None:
-                     threshold_label += f'Thresh={threshold_value:.2f}'
+                    # in tuned_threshold_classifier's _predict_with_thresholds: the prediction of the 2nd class is >= threshold value. 
+                    # since we are plotting the ROC curve for the 1st class, we need to invert the threshold value
+                    threshold_label += f'Threshold ≥ {1 - threshold_value:.2f}'
                 
                 ax.scatter(op_fpr, op_tpr, c='red', s=100, zorder=5, label=threshold_label)
     else:
-        fpr, tpr, roc_auc, classes, thresholds_dict = result
+        fpr, tpr, roc_auc, classes = result
         
         # Extract threshold values for label display only
         threshold_array = None

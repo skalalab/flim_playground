@@ -1,4 +1,4 @@
-current_profile = "iris"
+current_profile = "wine"
 
 [profiles.iris]
 unique_row_id_col = "flower_id"
@@ -6,6 +6,14 @@ fov_name_col = ""
 categorical_cols = [ "species",]
 all_numerical_features = [ "sepal_length", "sepal_width", "petal_length", "petal_width",]
 
+[profiles.wine]
+unique_row_id_col = "cell_id"
+fov_name_col = "image_name"
+categorical_cols = [ "experiment", "treatment", "cell_line", "dish", "day", "hour", "condition", "replicate", "image_name",]
+all_numerical_features = []
+
 [profiles.iris.feature_groups]
 sepal = [ "sepal_width", "sepal_length",]
 petal = [ "petal_width", "petal_length",]
+
+[profiles.wine.feature_groups]
