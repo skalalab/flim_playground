@@ -14,12 +14,12 @@ https://github.com/user-attachments/assets/a01b8a22-1bc3-46f1-aa37-1c3191a6fa1a
 # Data Analysis Demo
 - Demo uses the inhibitor treatments on cancer cell lines (MCF7 and PANC-1) [dataset](./example_data/Data_Analysis/inhibitors.csv) extracted by Data Extraction:
 
-https://github.com/user-attachments/assets/19dab644-5977-45e8-b92b-47c6588a74bb
+https://github.com/user-attachments/assets/dd458784-aa29-4b29-b14f-d397d42c92cf
 
 ## Use Your Own Data in Data Analysis
-- Demo uses the [iris dataset](example_data/Data_Analysis/iris.csv):
+- Demo uses the [iris dataset](example_data/Data_Analysis/iris.csv) and the [wine quality dataset](example_data/Data_Analysis/wine_quality.csv):
   
-https://github.com/user-attachments/assets/b85cef5a-3c42-4b0e-a4fa-77968ad5a1f6
+https://github.com/user-attachments/assets/08b55f51-c7a6-4fa3-a00a-65f3fcd11cc6
 
 # Quick try 
 It is deployed at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). 
