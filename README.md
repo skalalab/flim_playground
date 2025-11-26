@@ -16,6 +16,10 @@ https://github.com/user-attachments/assets/a01b8a22-1bc3-46f1-aa37-1c3191a6fa1a
 
 https://github.com/user-attachments/assets/dd458784-aa29-4b29-b14f-d397d42c92cf
 
+## Data Analysis on mobile phone
+
+https://github.com/user-attachments/assets/246c13f3-a8ca-4c17-9e2c-0c5cf961e28a
+
 ## Use Your Own Data in Data Analysis
 - Demo uses the [iris dataset](example_data/Data_Analysis/iris.csv) and the [wine quality dataset](example_data/Data_Analysis/wine_quality.csv):
   
