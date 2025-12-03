@@ -623,11 +623,17 @@ def add_interleaved_points_trace(
     shape_by=None,
     opacity_by=None,
     hovertemplate="<b>%{text}</b>",
-    random_seed=None
+    random_seed=None,
+    num_batches=15
 ):
     """
-    Adds a single trace with interleaved (shuffled) points to prevent occlusion,
-    and creates legend traces in colormap order.
+    Adds multiple interleaved traces per color group to minimize occlusion
+    while maintaining legend interactivity.
+    
+    Strategy: Split each color group into N batches, then add traces in an 
+    interleaved pattern (batch1 of each color, batch2 of each color, etc.).
+    All batches of the same color share a legendgroup so clicking the legend
+    entry shows/hides all batches together.
     
     Parameters:
     -----------
@@ -655,6 +661,8 @@ def add_interleaved_points_trace(
         Hover template string
     random_seed : int or None
         Random seed for shuffling (for reproducibility)
+    num_batches : int
+        Number of batches to split each color group into (default: 15)
     
     Returns:
     --------
@@ -662,12 +670,13 @@ def add_interleaved_points_trace(
         The figure with traces added
     """
     import random
+    import math
     
     # Set random seed if provided
     if random_seed is not None:
         random.seed(random_seed)
     
-    # Collect all points first to group them by color
+    # Collect all points, grouped by color
     points_by_color = {}
     
     for group_key, group_df in grouped:
@@ -688,50 +697,83 @@ def add_interleaved_points_trace(
                 'opacity_group': opacity_group,
             })
     
-    # Create one trace per color group
-    # Sort color groups to match colormap order
+    # Shuffle points within each color group
+    for color_group in points_by_color:
+        random.shuffle(points_by_color[color_group])
+    
+    # Split each color group into batches
+    batches_by_color = {}
+    for color_group, points in points_by_color.items():
+        num_points = len(points)
+        # Adjust num_batches if there are fewer points
+        actual_batches = min(num_batches, max(1, num_points // 5))  # At least 5 points per batch
+        batch_size = math.ceil(num_points / actual_batches)
+        
+        batches = []
+        for i in range(actual_batches):
+            start_idx = i * batch_size
+            end_idx = min((i + 1) * batch_size, num_points)
+            if start_idx < num_points:
+                batches.append(points[start_idx:end_idx])
+        
+        batches_by_color[color_group] = batches
+    
+    # Get color groups in their natural order
     color_group_order = {color_group: i for i, color_group in enumerate(color_map.keys())}
     sorted_color_groups = sorted(points_by_color.keys(), key=lambda x: color_group_order.get(x, float('inf')))
     
-    for color_group in sorted_color_groups:
-        points = points_by_color[color_group]
-        
-        # Shuffle points within the color group to interleave shapes/opacities
-        random.shuffle(points)
-        
-        x_vals = [p['x'] for p in points]
-        y_vals = [p['y'] for p in points]
-        text_vals = [p['text'] for p in points]
-        customdata_vals = [p['customdata'] for p in points]
-        
-        # Map visual properties to arrays
-        marker_symbols = [shape_map[p['shape_group']] if p['shape_group'] is not None and shape_map else 'circle' for p in points]
-        marker_opacities = [opacity_map[p['opacity_group']] if p['opacity_group'] is not None and opacity_map else 0.8 for p in points]
-        
-        # Add <extra></extra> to hovertemplate to hide trace name from hover
-        if "<extra>" not in hovertemplate:
-            hover_without_trace = hovertemplate + "<extra></extra>"
-        else:
-            hover_without_trace = hovertemplate
+    # Add <extra></extra> to hovertemplate to hide trace name from hover
+    if "<extra>" not in hovertemplate:
+        hover_without_trace = hovertemplate + "<extra></extra>"
+    else:
+        hover_without_trace = hovertemplate
+    
+    # Find maximum number of batches across all colors
+    max_batches = max(len(batches) for batches in batches_by_color.values())
+    
+    # Interleave batches: add batch i from each color before moving to batch i+1
+    for batch_idx in range(max_batches):
+        for color_group in sorted_color_groups:
+            batches = batches_by_color[color_group]
             
-        fig.add_trace(
-            go.Scatter(
-                x=x_vals,
-                y=y_vals,
-                mode='markers',
-                text=text_vals,
-                customdata=customdata_vals,
-                hovertemplate=hover_without_trace,
-                name=str(color_group),
-                legendgroup=str(color_group),
-                marker=dict(
-                    color=color_map[color_group],
-                    symbol=marker_symbols,
-                    opacity=marker_opacities
-                ),
-                showlegend=True
-            ),
-        )
+            # Skip if this color doesn't have this many batches
+            if batch_idx >= len(batches):
+                continue
+            
+            batch_points = batches[batch_idx]
+            
+            # Build arrays for this batch
+            x_vals = [p['x'] for p in batch_points]
+            y_vals = [p['y'] for p in batch_points]
+            text_vals = [p['text'] for p in batch_points]
+            customdata_vals = [p['customdata'] for p in batch_points]
+            
+            # Map visual properties to arrays
+            marker_symbols = [shape_map[p['shape_group']] if p['shape_group'] is not None and shape_map else 'circle' for p in batch_points]
+            marker_opacities = [opacity_map[p['opacity_group']] if p['opacity_group'] is not None and opacity_map else 0.8 for p in batch_points]
+            
+            # Only show legend for the first batch of each color
+            show_in_legend = (batch_idx == 0)
+            
+            fig.add_trace(
+                go.Scatter(
+                    x=x_vals,
+                    y=y_vals,
+                    mode='markers',
+                    text=text_vals,
+                    customdata=customdata_vals,
+                    hovertemplate=hover_without_trace,
+                    name=str(color_group),
+                    legendgroup=str(color_group),  # All batches of same color share legendgroup
+                    marker=dict(
+                        color=color_map[color_group],
+                        symbol=marker_symbols,
+                        opacity=marker_opacities
+                    ),
+                    showlegend=show_in_legend,
+                    legendrank=color_group_order[color_group]
+                )
+            )
     
     # Add shape/opacity legends if needed
     add_point_legend_traces(fig, shape_map, opacity_map, shape_by=shape_by, opacity_by=opacity_by)
