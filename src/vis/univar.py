@@ -295,7 +295,11 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
     return fig, df
 
 def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None"):
-    connect_means = st.checkbox("Connect means", value=False, key=f"connect_means_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
+    col1, col2 = st.columns([0.2, 0.8])
+    with col1:
+        add_boxplot = st.checkbox("Add boxplot", value=False, key=f"add_boxplot_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
+    with col2:
+        connect_means = st.checkbox("Connect means", value=False, key=f"connect_means_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
     fig = go.Figure()
     COLOR_GROUP_COL_NAME = 'compare_group'
     # Use the new helper for color, shape, opacity
@@ -450,9 +454,12 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             legendgroup=color_group,
             text=group_df[cell_id_col],
             customdata=point_customdata,
-            hovertemplate=final_hovertemplate
+            hovertemplate=final_hovertemplate,
+            zorder=1
         ))
-    
+
+    # --- Loop 2: Boxplots (on top of points) ---
+
     if connect_means:
         if separate_groups:
             # Create a line for each separate group
@@ -588,6 +595,65 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             zeroline=False,
         )
     
+    # --- Loop 2: Boxplots (on top of points) ---
+    if add_boxplot:
+        for group_key, group_df in grouped_list:
+            # Always unpack group_key by position
+            color_group = group_key[0]
+            shape_group = group_key[1]
+            opacity_group = group_key[2]
+            separate_group = group_key[3]
+            
+            # Skip if not in our color groups
+            if color_group not in compare_groups:
+                continue
+                    
+            # Drop rows where the variable to plot is NaN
+            group_df = group_df.dropna(subset=[selected_var])
+            if group_df.empty:
+                continue
+
+            # --- Determine x-position ---
+            if separate_groups:
+                x_position = x_positions.get((separate_group, color_group))
+                if x_position is None: continue
+            else:
+                x_position = x_positions.get(color_group)
+                if x_position is None: continue
+            
+            marker_color = color_map[color_group]
+            trace_name = color_group
+            y_data = group_df[selected_var].values
+
+            # Calculate boxplot statistics manually to enforce 1.5 IQR whiskers
+            q1 = np.percentile(y_data, 25)
+            median = np.percentile(y_data, 50)
+            q3 = np.percentile(y_data, 75)
+            iqr = q3 - q1
+            lower_fence = q1 - 1.5 * iqr
+            upper_fence = q3 + 1.5 * iqr
+            mean_val = np.mean(y_data)
+
+            # Add Box trace (Mean as dashed line, Median as solid line)
+            fig.add_trace(go.Box(
+                x=[x_position], # Align with x-position
+                q1=[q1], 
+                median=[median], 
+                q3=[q3], 
+                lowerfence=[lower_fence], 
+                upperfence=[upper_fence], 
+                mean=[mean_val],
+                name=trace_name,
+                marker_color=marker_color,
+                fillcolor='rgba(0,0,0,0)', # Transparent fill
+                line=dict(color='grey', width=3), # Grey outlines (thick)
+                boxpoints=False, # Hide points in box trace
+                boxmean=True, # Show mean as dashed line
+                showlegend=False,
+                hoverinfo='y', # Show stats on hover
+                zorder=10
+            ))
+
     fig.update_layout(
         title=full_title,
         xaxis=xaxis_config,
