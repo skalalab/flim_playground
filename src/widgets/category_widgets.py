@@ -11,17 +11,19 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
         st.warning(f"The {fov_name_col} column is not found in the combined dataset. Please check the {fov_name_col} column.")
         return None
     exp_fov_name = combined_df.iloc[0][fov_name_col]
-    slots = exp_fov_name.split(delimiter)
+    if delimiter == "":
+        slots = [exp_fov_name]
+    else:
+        slots = exp_fov_name.split(delimiter)
     st.write("--------------------------------")
     st.write("Now your task is to map the categories to (combination of) slots.")
     st.info(f"Example fov_name: {exp_fov_name} has slots: {slots}")
     
     chosen_categories = st.multiselect("Choose Categorical features to populate", available_categories)
     
-    # Limit to maximum 4 categories
-    if len(chosen_categories) > len(slots) - 1: # because one of the slot has to be cell_label
-        st.warning(f"⚠️ Maximum {len(slots) - 1} categories can be selected. Only the first {len(slots) - 1} will be processed.")
-        chosen_categories = chosen_categories[: len(slots) - 1]
+    if len(chosen_categories) > len(slots):
+        st.warning(f"⚠️ Maximum {len(slots)} categories can be selected. Only the first {len(slots)} will be processed.")
+        chosen_categories = chosen_categories[: len(slots)]
     
     cat_label_map = {}
     
@@ -68,7 +70,12 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
     # add the chosen categories to the preview df and assign values based on the selected_indices from that category and concatenate them using delimiter
     for cat in chosen_categories:
         if cat_label_map[cat]:  # Only if user has selected slots for this category
-            preview_df[cat] = preview_df[fov_name_col].apply(lambda x: delimiter.join([x.split(delimiter)[i] for i in cat_label_map[cat]]))
+            if delimiter == "":
+                preview_df[cat] = preview_df[fov_name_col]  # no parsing when delimiter absent
+            else:
+                preview_df[cat] = preview_df[fov_name_col].apply(
+                    lambda x: delimiter.join([x.split(delimiter)[i] for i in cat_label_map[cat]])
+                )
         else:
             preview_df[cat] = ""  # Empty string if no slots selected
 
@@ -80,7 +87,12 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
         # use the cat_label_map to map the categories to the combined df
         for cat in chosen_categories:
             if cat_label_map[cat]:  # Only if user has selected slots for this category
-                combined_df[cat] = combined_df[fov_name_col].apply(lambda x: delimiter.join([x.split(delimiter)[i] for i in cat_label_map[cat]]))
+                if delimiter == "":
+                    combined_df[cat] = combined_df[fov_name_col]  # no parsing when delimiter absent
+                else:
+                    combined_df[cat] = combined_df[fov_name_col].apply(
+                        lambda x: delimiter.join([x.split(delimiter)[i] for i in cat_label_map[cat]])
+                    )
             else:
                 combined_df[cat] = ""  # Empty string if no slots selected
         # export the combined df
@@ -135,6 +147,10 @@ def find_available_dfs_widget(df_folder_path, delimiter):
                     st.warning(f"The {unique_cell_id_col} column in {file} has duplicate values. Please check the {unique_cell_id_col} column.")
                     continue
             existing_cell_ids.extend(cell_ids)
+
+            if delimiter == "":
+                available_csv_files.append(file)
+                continue
 
             fov_names_parts = [len(fov_name.split(delimiter)) for fov_name in fov_names]
             if fov_names_parts == []:
