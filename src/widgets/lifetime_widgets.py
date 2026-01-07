@@ -187,6 +187,8 @@ def choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name, 
         return "Error: Choose shift method not found for channel: " + channel_name, None
     if choose_shift_method == "fit free":
         error_msg, results = choose_shift_fit_free(metadata_df, time_bins, input_type, channel_name)
+        start = None
+        end = None
     else:
         try: 
             fitting_algo = metadata_dict["fitting_algo"]

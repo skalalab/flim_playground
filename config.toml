@@ -31,7 +31,7 @@ imaging_modality = "FLIM"
 
 [ch2]
 input_type = "Decay (3/4D) pixel-prefitted"
-channel_name = "fad"
+channel_name = "FAD"
 imaging_modality = "FLIM"
 
 ["Decay (3/4D) pixel-prefitted"]
@@ -64,7 +64,7 @@ num_components = 2
 selected_feature_extractors = [ "Lifetime fit",]
 
 [ch1."Decay (3/4D) pixel-prefitted"]
-selected_feature_extractors = [ "Lifetime fit",]
+selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 num_components = 2
 
 [ch1."Decay (2D)"]
@@ -76,7 +76,7 @@ num_components = 2
 selected_feature_extractors = [ "Lifetime fit free", "Lifetime fit", "Intensity morphology", "Intensity texture",]
 
 [ch2."Decay (3/4D) pixel-prefitted"]
-selected_feature_extractors = [ "Lifetime fit",]
+selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 num_components = 2
 
 [ch2."Decay (2D)"]
@@ -100,10 +100,10 @@ IRF = "Ch3_IRF_750__2024.txt"
 "Fluorescence Lifetime Standard" = "test.tiff"
 
 [ch1."Decay (3/4D) pixel-prefitted".input_suffixes]
-Mask = "_N_cellpose.tiff"
-Decay = "_N.uncompressed.sdt"
-"SPCImage t1" = "_N_t1.asc"
-IRF = "nadh_irf.txt"
+Mask = "_n_photons_cellpose.tiff"
+Decay = "_n.sdt"
+"SPCImage t1" = "_n_t1.asc"
+IRF = "Ch3_IRF_750__2024.txt"
 "Fluorescence Lifetime Standard" = "aa"
 
 [ch1."Decay (2D)".input_suffixes]
@@ -117,10 +117,10 @@ IRF = "Ch2_IRF_890__2024.txt"
 "Fluorescence Lifetime Standard" = "test.tif"
 
 [ch2."Decay (3/4D) pixel-prefitted".input_suffixes]
-Mask = "_N_cellpose.tiff"
-Decay = "_F.uncompressed.ptu"
-"SPCImage t1" = "_F_t1.asc"
-IRF = "fad_irf.txt"
+Mask = "_n_photons_cellpose.tiff"
+Decay = "_f.sdt"
+"SPCImage t1" = "_f_t1.asc"
+IRF = "Ch2_IRF_890__2024.txt"
 
 [ch2."Decay (2D)".input_suffixes]
 Decay = "_ch2.csv"
