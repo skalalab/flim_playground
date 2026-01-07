@@ -631,7 +631,9 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             q3 = np.percentile(y_data, 75)
             iqr = q3 - q1
             lower_fence = q1 - 1.5 * iqr
+            lower_fence = max(lower_fence, np.min(y_data))
             upper_fence = q3 + 1.5 * iqr
+            upper_fence = min(upper_fence, np.max(y_data))
             mean_val = np.mean(y_data)
 
             # Add Box trace (Mean as dashed line, Median as solid line)
