@@ -648,7 +648,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 name=trace_name,
                 marker_color=marker_color,
                 fillcolor='rgba(0,0,0,0)', # Transparent fill
-                line=dict(color='grey', width=3), # Grey outlines (thick)
+                line=dict(color=marker_color, width=3), # Color outlines (thick)
                 boxpoints=False, # Hide points in box trace
                 boxmean=True, # Show mean as dashed line
                 showlegend=False,
