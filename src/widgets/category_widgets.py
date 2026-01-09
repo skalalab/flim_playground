@@ -19,7 +19,7 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
     st.write("Now your task is to map the categories to (combination of) slots.")
     st.info(f"Example fov_name: {exp_fov_name} has slots: {slots}")
     
-    chosen_categories = st.multiselect("Choose Categorical features to populate", available_categories)
+    chosen_categories = st.multiselect("Choose Categorical features (specfied in Configuration @ Home tab) to populate", available_categories)
     
     if len(chosen_categories) > len(slots):
         st.warning(f"⚠️ Maximum {len(slots)} categories can be selected. Only the first {len(slots)} will be processed.")
