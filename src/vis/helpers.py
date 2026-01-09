@@ -254,7 +254,7 @@ def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_g
         align="center"
     )
 
-def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None, statistical_test: str = "None"):
+def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None, statistical_test: str = "None", global_data_range=None):
     """
     Adds effect size annotations to the figure.
     Manages selection of pairs, calculation of effect sizes, and calls annotation plotting.
@@ -263,6 +263,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
         position_map: Optional dict mapping group names to actual x-positions for separate sections
         selected_pairs: Optional pre-selected pairs to avoid showing the widget again
         threshold: Optional pre-set threshold to avoid showing the widget again
+        global_data_range: Optional tuple (global_min, global_max) for consistent spacing across sections
     """
     if not all_possible_pairs:
         return
@@ -303,8 +304,12 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
         drawn_annotations = []  # List to store details of drawn annotations for collision detection
 
         # --- Define vertical spacing parameters (relative to data range) ---
-        global_max_y = df[selected_var].max(skipna=True)
-        global_min_y = df[selected_var].min(skipna=True)
+        # Use global_data_range if provided for consistent spacing across separate sections
+        if global_data_range is not None:
+            global_min_y, global_max_y = global_data_range
+        else:
+            global_max_y = df[selected_var].max(skipna=True)
+            global_min_y = df[selected_var].min(skipna=True)
 
         if pd.isna(global_max_y) or pd.isna(global_min_y) or len(df[selected_var].dropna()) < 2:
             data_range_y = 1  # Default if overall data is all NaN or not enough points
@@ -383,8 +388,12 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
     if selected_pairs and effect_size_method == "None" and statistical_test != "None":
         drawn_annotations = []
 
-        global_max_y = df[selected_var].max(skipna=True)
-        global_min_y = df[selected_var].min(skipna=True)
+        # Use global_data_range if provided for consistent spacing across separate sections
+        if global_data_range is not None:
+            global_min_y, global_max_y = global_data_range
+        else:
+            global_max_y = df[selected_var].max(skipna=True)
+            global_min_y = df[selected_var].min(skipna=True)
         if pd.isna(global_max_y) or pd.isna(global_min_y) or len(df[selected_var].dropna()) < 2:
             data_range_y = 1
         else:
@@ -396,7 +405,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
             'offset_from_data_abs': 0.05 * data_range_y,
             'vertical_spacing_abs': 0.08 * data_range_y,
             'bracket_vertical_length_abs': 0.03 * data_range_y,
-            'text_offset_from_bracket_abs': 0.035 * data_range_y,
+            'text_offset_from_bracket_abs': 0.03 * data_range_y,
             'text_height_allowance_for_collision_abs': 0.04 * data_range_y
         }
 

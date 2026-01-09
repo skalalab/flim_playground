@@ -682,6 +682,11 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                                             key=f"cohens_d_thresh_{threshold_key_suffix}")
             
             if selected_pairs:  # Only proceed if user selected some pairs
+                # Calculate global data range ONCE for consistent spacing across all sections
+                global_min_y = df[selected_var].min(skipna=True)
+                global_max_y = df[selected_var].max(skipna=True)
+                global_data_range = (global_min_y, global_max_y)
+                
                 # Apply statistical annotations within each separate section
                 for section_info in separate_sections_info:
                     if len(section_info['combinations']) > 1:  # Need at least 2 groups for comparison
@@ -721,7 +726,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                                 position_map=section_position_map,
                                 selected_pairs=filtered_section_pairs,
                                 threshold=threshold,
-                                statistical_test=statistical_test
+                                statistical_test=statistical_test,
+                                global_data_range=global_data_range  # Pass global range for consistent spacing
                             )
         else:
             # Standard statistical annotations when no separate_by

@@ -57,6 +57,7 @@ FLIM Playground is currently on [bioarchive](https://www.biorxiv.org/content/10.
 - [x] tune classification thresholds based on user-specified metrics (to combat class inbalance). 
 - [x] add filters based on numerical user-specified feature range/cutoff 
 - [x] overlaying box plot to feature comparison
+- [] log scale for x-y axis
 - [] add the option to freeze the umap and let the user use filters to explore the subgroups in umap
 - [] add representative lifetime feature maker in FOV comparison
 - [] add hierarchical clustering
