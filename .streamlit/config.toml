@@ -13,3 +13,4 @@ developmentMode = false
 
 [client]
 showErrorDetails = false 
+showSidebarNavigation = false

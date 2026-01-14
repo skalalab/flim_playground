@@ -79,7 +79,7 @@ def check_browser_windows_open(port):
         import psutil
         
         # Browser process names
-        browser_names = ['chrome', 'firefox', 'edge', 'msedge', 'safari', 'opera', 'brave']
+        browser_names = ['chrome', 'firefox', 'edge', 'msedge', 'safari', 'opera', 'brave', 'comet']
         
         # Count browsers with active connections to our port
         connected_browsers = 0

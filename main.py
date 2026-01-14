@@ -3,7 +3,7 @@ from src.navigation import render_top_menu
 
 def main():
     """Main function to run the Streamlit app."""
-    st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
+    st.set_page_config(layout="wide")
     
     # Render the top menu on the main page
     render_top_menu()

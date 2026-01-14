@@ -12,7 +12,7 @@ from src.metadata import parse_metadata_file
 from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type, get_fit_free_calibration_method
 from src.file_io import load_image
 
-st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(layout="wide")
 # Render the top menu 
 render_top_menu()
 

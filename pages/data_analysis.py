@@ -15,7 +15,7 @@ from src.vis.helpers import apply_plot_styling
 from src.widgets.analysis_config_widgets import dataset_config_widget, get_fov_name_col_analysis, get_unique_row_id_col, get_categorical_cols_analysis
 from src.widgets.classification_widgets import classifier_options_widget, classification_plot_widget
 from src.classify import run_classification
-st.set_page_config(layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(layout="wide")
 render_top_menu()
 
 # initialize session_states

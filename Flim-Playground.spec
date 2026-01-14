@@ -3,7 +3,7 @@ from PyInstaller.utils.hooks import collect_all
 import streamlit_sortables
 import os
 
-datas = [('src', 'src'), ('pages', 'pages'), ('main.py', '.'), ('launcher.py', '.'), ('config.toml', '.'), ('analysis_config.toml', '.'), ('logo.png', '.')]
+datas = [('src', 'src'), ('pages', 'pages'), ('main.py', '.'), ('launcher.py', '.'), ('config.toml', '.'), ('analysis_config.toml', '.'), ('logo.png', '.'), ('.streamlit', '.streamlit')]
 binaries = []
 hiddenimports = ['pages.data_analysis', 'pages.data_extraction', 'pages.classification', 'psutil']
 
