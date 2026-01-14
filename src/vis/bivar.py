@@ -227,6 +227,46 @@ def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i):
 
 def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x, selected_y, color_by=[], shape_by=None, opacity_by=None, marginal_plot_type='gaussian fit', colormap="tab10"):
     GROUP_COL_NAME = 'unique_color_group'
+    # Create valid copy to allow modification
+    df = df.copy()
+
+    # Squeezed columns for log checks: smaller ratio for the first two
+    col_log_x, col_log_y, col1, col2, col3 = st.columns([0.8, 0.8, 2, 2, 2])
+    with col_log_x:
+        st.write("")
+        st.write("")
+        log_x = st.checkbox("log x", value=False)
+    with col_log_y:
+        st.write("")
+        st.write("")
+        log_y = st.checkbox("log y", value=False)
+    with col1:
+        selected_marginal_plot_type = st.selectbox(
+            'Marginal Plot Type',
+            ['gaussian fit', 'boxplot', 'violin'],
+            index=['gaussian fit', 'boxplot', 'violin'].index(marginal_plot_type), # Set default based on function arg
+            key=f'marginal_plot_type_selector_{selected_x}_{selected_y}' # More unique key
+        )
+    with col2:
+        st.write("")
+        st.write("")
+        fit_gmm = st.checkbox("2D Gaussian Mixture Model", value=False)
+    with col3:  
+        st.write("")
+        st.write("")
+        fit_regression = st.checkbox("Regression line", value=False)
+
+    if log_x:
+        if (df[selected_x] < 0).any():
+            st.error(f"Cannot apply log to {selected_x}: contains negative values.")
+        else:
+            df[selected_x] = np.log10(df[selected_x] + 1e-6)
+    if log_y:
+        if (df[selected_y] < 0).any():
+            st.error(f"Cannot apply log to {selected_y}: contains negative values.")
+        else:
+            df[selected_y] = np.log10(df[selected_y] + 1e-6)
+
     # Use the new helper for color, shape, opacity
     grouped, color_map, shape_map, opacity_map, group_keys = get_point_visual_mappings(
         df,
@@ -239,22 +279,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     )
     fig = go.Figure()
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        selected_marginal_plot_type = st.selectbox(
-            'Marginal Plot Type',
-            ['gaussian fit', 'boxplot', 'violin'],
-            index=['gaussian fit', 'boxplot', 'violin'].index(marginal_plot_type), # Set default based on function arg
-            key=f'marginal_plot_type_selector_{selected_x}_{selected_y}' # More unique key
-        )
-    with col2:
-        st.write("")
-        st.write("")
-        fit_gmm = st.checkbox("Fit a 2D Gaussian Mixture Model", value=False)
-    with col3:  
-        st.write("")
-        st.write("")
-        fit_regression = st.checkbox("Fit a regression line", value=False)
+
 
     if fit_gmm:
         fit_gmm_max_components, fit_gmm_min_weight_threshold = gmm_hyperParams_widget()
