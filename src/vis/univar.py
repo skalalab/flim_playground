@@ -338,7 +338,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
 
     return fig, df
 
-def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None"):
+def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None", custom_order=None):
     # Get theme color once at the start for all theme-aware elements
     theme_color = get_theme_color()
     
@@ -370,12 +370,31 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
     legend_entries = set()
     
     # Calculate x-positions for separate sections - only for existing combinations
+    
     if separate_groups:
         # First, find which combinations actually exist in the data
         existing_combinations = []
-        for separate_group in separate_groups:
+        
+        # Apply custom order to separate_groups if provided
+        ordered_separate_groups = list(separate_groups)
+        if custom_order and 'separate_groups' in custom_order:
+            # Filter to only include groups that are actually in the data, preserving data integrity
+            custom_sep = [g for g in custom_order['separate_groups'] if g in ordered_separate_groups]
+            # Add any missing groups at the end
+            remaining = [g for g in ordered_separate_groups if g not in custom_sep]
+            ordered_separate_groups = custom_sep + remaining
+
+        for separate_group in ordered_separate_groups:
             section_combinations = []
-            for color_group in compare_groups:
+            
+            # Apply custom order to compare_groups if provided
+            ordered_compare_groups = list(compare_groups)
+            if custom_order and 'compare_groups' in custom_order:
+                custom_cmp = [g for g in custom_order['compare_groups'] if g in ordered_compare_groups]
+                remaining_cmp = [g for g in ordered_compare_groups if g not in custom_cmp]
+                ordered_compare_groups = custom_cmp + remaining_cmp
+
+            for color_group in ordered_compare_groups:
                 combo_exists = any(
                     (separate_group in group_key if isinstance(group_key, tuple) else group_key == separate_group) and
                     (color_group in group_key if isinstance(group_key, tuple) else group_key == color_group)
@@ -411,15 +430,48 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             section_start = current_x
             section_end = current_x + len(section_combinations) - 1
             section_center = (section_start + section_end) / 2 if section_combinations else current_x
+            # The group name comes from the first element of the first combination in the section, 
+            # or we need to track it from ordered_separate_groups. 
+            # Since existing_combinations aligns with ordered_separate_groups...
+            group_name = ordered_separate_groups[section_idx]
+            
             separate_sections_info.append({
-                'group': separate_groups[section_idx],
+                'group': group_name,
                 'center': section_center,
                 'combinations': section_combinations
             })
             current_x += len(section_combinations)
     else:
         # Standard x-positions when no separate_by
-        x_positions = {color_group: idx for idx, color_group in enumerate(compare_groups)}
+        ordered_compare_groups = list(compare_groups)
+        if custom_order and 'compare_groups' in custom_order:
+            custom_cmp = [g for g in custom_order['compare_groups'] if g in ordered_compare_groups]
+            remaining_cmp = [g for g in ordered_compare_groups if g not in custom_cmp]
+            ordered_compare_groups = custom_cmp + remaining_cmp
+
+        x_positions = {color_group: idx for idx, color_group in enumerate(ordered_compare_groups)}
+
+    # Sort grouped_list based on the custom order to ensure legend matches x-axis
+    # Sort keys: (separate_group index, color_group index)
+    def group_sort_key(item):
+        g_key, _ = item
+        color_g = g_key[0]
+        separate_g = g_key[3]
+        
+        # Get indices with default fallback
+        c_idx = float('inf')
+        if color_g in ordered_compare_groups:
+            c_idx = ordered_compare_groups.index(color_g)
+            
+        s_idx = float('inf')
+        if separate_groups and separate_g in ordered_separate_groups:
+            s_idx = ordered_separate_groups.index(separate_g)
+        elif not separate_groups:
+            s_idx = 0
+            
+        return (s_idx, c_idx)
+
+    grouped_list.sort(key=group_sort_key)
 
     for group_key, group_df in grouped_list:
         # Always unpack group_key by position
@@ -504,8 +556,6 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             hovertemplate=final_hovertemplate,
             zorder=1
         ))
-
-    # --- Loop 2: Boxplots (on top of points) ---
 
     if connect_means:
         if separate_groups:
@@ -638,7 +688,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         # Standard x-axis configuration
         xaxis_config = dict(
             tickvals=list(range(len(compare_groups))),
-            ticktext=compare_groups,
+            ticktext=ordered_compare_groups,
             zeroline=False,
             tickfont=dict(color=theme_color),
         )
@@ -716,8 +766,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         hovermode='closest', # Hover behavior
         margin=dict(l=50, r=20, t=50, b=max(120, len(max(compare_groups, key=len, default=''))*5)), # Adjust bottom margin for section headers
     )
-    # --- 4. Add statistical annotations ---
 
+    # --- 4. Add statistical annotations ---
     if compare_pairs != [] and ((effect_size_method != "None" and mean_or_median is not None) or (statistical_test != "None")):
         if separate_groups:
             # Get user selection for statistical comparisons once (to avoid duplicate widget keys)

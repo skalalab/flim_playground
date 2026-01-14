@@ -1,11 +1,12 @@
 import streamlit as st
 import sys
 from pathlib import Path
+
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.dataset_io import load_csv, happy_emoji, sad_emoji
 from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget, twod_single_feature_select_widget
-from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget, visual_encoding_channels_widget, plot_config_widget, tsne_hyperParams_widget
+from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget, visual_encoding_channels_widget, plot_config_widget, tsne_hyperParams_widget, get_visual_group_keys, reorder_x_axis_widget
 from src.widgets.filter_widgets import filters_widget
 from src.navigation import render_top_menu
 from src.vis.multivar import dimension_reduction_plot
@@ -15,6 +16,7 @@ from src.vis.helpers import apply_plot_styling
 from src.widgets.analysis_config_widgets import dataset_config_widget, get_fov_name_col_analysis, get_unique_row_id_col, get_categorical_cols_analysis
 from src.widgets.classification_widgets import classifier_options_widget, classification_plot_widget
 from src.classify import run_classification
+
 st.set_page_config(layout="wide")
 render_top_menu()
 
@@ -124,7 +126,33 @@ with col2:
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, colormap=st.session_state.plot_colormap, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test)
+                        # Prepare groups for reordering
+                        custom_order = {}
+                        # We need to access the logic for determining groups to propose them for sorting
+                        # Since we can't easily run the internal logic of feature_comparison_plot without calling it,
+                        # we can infer the groups from the dataframe directly here.
+                        
+                        # Logic to determine keys for "separate_by" and "color_by"
+                        # We mimic the logic in feature_comparison_plot somewhat or we just pass the raw data
+                        # But to save state, we need to know what the groups are.
+                        from src.vis.helpers import natural_tuple_sort
+                        
+                        # Define the reordering UI *before* the plot or *after*? 
+                        # User said: "below the actual plot, I want to have an interactive setup... confirm button. After confirm the plot is rerendered"
+                        # So we render the plot first (with default or current session state order), then show widgets below.
+                        
+                        # Check session state for existing custom order
+                        session_key_sep, session_key_cmp = get_visual_group_keys(filtered_df, selected_var, color_by, separate_by)
+                        
+                        current_custom_order = {}
+                        if session_key_sep in st.session_state:
+                            current_custom_order['separate_groups'] = st.session_state[session_key_sep]
+                        if session_key_cmp in st.session_state:
+                            current_custom_order['compare_groups'] = st.session_state[session_key_cmp]
+
+                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, colormap=st.session_state.plot_colormap, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test, custom_order=current_custom_order)
+                        
+
                     elif method == "FOV Comparison":
                         fig = fov_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, colormap=st.session_state.plot_colormap)
                     elif method == "Feature Histogram":
@@ -200,6 +228,10 @@ with col2:
                         st.download_button(label="Download GMM Grouped Data", data=gmm_df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
                     elif method == "Phasor Plot" and "k_means_cluster" in kmeans_df.columns:
                         st.download_button(label="Download K-Means Clustered Data", data=kmeans_df.to_csv(index=False), file_name="kmeans_clustered_data.csv", mime="text/csv", key="kmeans_download")
+                if method == "Feature Comparison":
+                    # Widgets for reordering below
+                    reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by)
+
                 # 2. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots 
                 st.subheader("📊 Plot Styling")
                 # Get current values from session state as defaults for the widgets

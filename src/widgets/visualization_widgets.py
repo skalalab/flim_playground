@@ -1,6 +1,8 @@
 import streamlit as st
 import numpy as np
 
+from streamlit_sortables import sort_items
+
 def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False):
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
     color_by = []
@@ -216,3 +218,83 @@ def plot_config_widget(point_based=True, show_colormap=False):
                                   help="Choose color palette for categorical data")
     
     return point_size, axis_label_size, legend_size, colormap
+
+def get_custom_order_widget(items, key):
+    if sort_items is None:
+        st.warning("streamlit-sortables is not installed. Please install it to use this feature.")
+        return items
+    
+    # Custom CSS to ensure visibility in both light and dark modes
+    # We force a light card look with black text
+    custom_style = """
+    .sortable-item {
+        background-color: #f0f2f6;
+        color: black;
+        border: 1px solid #d6d6d6;
+        border-radius: 4px;
+        padding: 8px;
+        margin-bottom: 4px;
+    }
+    """
+    
+    sorted_items = sort_items(items, key=key)
+    return sorted_items
+
+def get_visual_group_keys(filtered_df, selected_var, color_by, separate_by):
+    """
+    Constructs the session state keys for retrieving and storing custom order.
+    Returns keys for separate groups and compare groups.
+    """
+    session_key_sep = f"custom_order_sep_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}"
+    session_key_cmp = f"custom_order_cmp_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}"
+    return session_key_sep, session_key_cmp
+
+def reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by):
+    """
+    Renders the widget for reordering x-axis groups and updates session state.
+    Use this function *after* plotting to allow the user to adjust the order for next render.
+    """
+    from src.vis.helpers import natural_tuple_sort
+    
+    st.write("---")
+    st.subheader("↔️ Reorder X-axis Groups")
+    
+    session_key_sep, session_key_cmp = get_visual_group_keys(filtered_df, selected_var, color_by, separate_by)
+
+    # specific to streamlit-sortables: it may not render correctly inside a collapsed expander because of 0 height
+    # We use a checkbox to trigger a rerun and render it only when visible
+    show_order_config = st.checkbox("Configure Order", value=False)
+    
+    if show_order_config:
+        # Color groups (Compare groups)
+        # Grouping logic
+        group_by_cols = color_by if color_by else []
+        if not group_by_cols:
+            temp_df_groups = ["all_data"]
+        else:
+            temp_df_groups = filtered_df[group_by_cols].astype(str).agg('::'.join, axis=1).unique()
+        
+        cmp_groups = natural_tuple_sort(temp_df_groups, delimiter='::')
+        
+        # Merge with existing stored order to preserve relative ordering of known items while adding new ones
+        if session_key_cmp in st.session_state:
+            stored = st.session_state[session_key_cmp]
+            cmp_groups = [g for g in stored if g in cmp_groups] + [g for g in cmp_groups if g not in stored]
+
+        # Initialize version in session state if not present
+        version_key = f"sort_version_{'_'.join(color_by)}"
+        if version_key not in st.session_state:
+            st.session_state[version_key] = 0
+            
+        st.write(f"**Reorder Groups ({', '.join(color_by) if color_by else 'All Data'})**")
+        
+        # Use version in key to force re-mount when confirmed
+        widget_key = f"sort_cmp_{'_'.join(color_by)}_{st.session_state[version_key]}"
+        new_cmp_order = get_custom_order_widget(cmp_groups, key=widget_key)
+        
+        if st.button("Confirm Reordering"):
+            if new_cmp_order:
+                st.session_state[session_key_cmp] = new_cmp_order
+                # Increment version to force re-render next time
+                st.session_state[version_key] += 1
+            st.rerun()

@@ -250,7 +250,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     with col2:
         st.write("")
         st.write("")
-        fit_gmm = st.checkbox("Fit a 2D Gaussian Mixture Model", value=True)
+        fit_gmm = st.checkbox("Fit a 2D Gaussian Mixture Model", value=False)
     with col3:  
         st.write("")
         st.write("")
@@ -432,8 +432,7 @@ def _plot_convex_hull(
     label_col="k_means_cluster",
     polygon_color="#1f77b4",
     centers_raw=None,
-    line_width=2
-):
+    line_width=2):
     """
     Overlay per-cluster convex hull polygons (same color) and black × centroids
     onto an existing Plotly figure.
