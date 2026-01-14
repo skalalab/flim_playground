@@ -7,7 +7,7 @@ import pandas as pd
 import umap
 import plotly.graph_objects as go
 import streamlit as st
-from .helpers import get_point_visual_mappings, add_interleaved_points_trace
+from .helpers import get_point_visual_mappings, add_interleaved_points_trace, get_theme_color
 import threading  
   
 @st.cache_data()
@@ -86,12 +86,29 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
         hovertemplate="<b>%{text}</b>"
     )
 
+    # Get theme color for axis styling
+    theme_color = get_theme_color()
+    
     # Update axis labels to include explained variance
     if exp_var is not None: 
-        fig.update_xaxes(title_text=f"{axis_labels[0]}({exp_var[0]:.2f}%)")
-        fig.update_yaxes(title_text=f"{axis_labels[1]}({exp_var[1]:.2f}%)")
+        fig.update_xaxes(
+            title=dict(text=f"{axis_labels[0]}({exp_var[0]:.2f}%)", font=dict(color=theme_color)),
+            tickfont=dict(color=theme_color)
+        )
+        fig.update_yaxes(
+            title=dict(text=f"{axis_labels[1]}({exp_var[1]:.2f}%)", font=dict(color=theme_color)),
+            tickfont=dict(color=theme_color),
+            showgrid=True
+        )
     else:
-        fig.update_xaxes(title_text=f"{axis_labels[0]}")
-        fig.update_yaxes(title_text=f"{axis_labels[1]}")
+        fig.update_xaxes(
+            title=dict(text=f"{axis_labels[0]}", font=dict(color=theme_color)),
+            tickfont=dict(color=theme_color)
+        )
+        fig.update_yaxes(
+            title=dict(text=f"{axis_labels[1]}", font=dict(color=theme_color)),
+            tickfont=dict(color=theme_color),
+            showgrid=True
+        )
 
     return fig

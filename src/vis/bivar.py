@@ -1,4 +1,4 @@
-from .helpers import _find_best_gmm, get_point_visual_mappings, add_interleaved_points_trace
+from .helpers import _find_best_gmm, get_point_visual_mappings, add_interleaved_points_trace, get_theme_color
 import plotly.graph_objects as go
 import numpy as np
 from scipy.stats import gaussian_kde, pearsonr, chi2
@@ -77,7 +77,7 @@ def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, 
                 points=False # Hide points for a cleaner look
             ))
 
-def _create_phasor_background(fig, f=0.08):
+def _create_phasor_background(fig, theme_color, f=0.08):
     """
     Helper function to create the phasor semicircle, axes, annotations, and lifetime markers.
     Adds these elements to the provided figure.
@@ -91,7 +91,7 @@ def _create_phasor_background(fig, f=0.08):
         x=x_curve,
         y=y_curve,
         mode='lines',
-        line=dict(color='black'),
+        line=dict(color=theme_color),
         name='Curve', 
         hoverinfo='skip',# Hide the hover info for this trace
         showlegend=False 
@@ -102,7 +102,7 @@ def _create_phasor_background(fig, f=0.08):
         x=[0, 0],
         y=[0, 0.5],
         mode='lines',
-        line=dict(color='gray', width=2),
+        line=dict(color=theme_color, width=2),
         name='S Axis',
         hoverinfo='skip',
         showlegend=False
@@ -113,7 +113,7 @@ def _create_phasor_background(fig, f=0.08):
         x=[0, 1],
         y=[0, 0],
         mode='lines',
-        line=dict(color='gray', width=2),
+        line=dict(color=theme_color, width=2),
         name='G Axis',
         hoverinfo='skip',
         showlegend=False
@@ -126,7 +126,7 @@ def _create_phasor_background(fig, f=0.08):
         y=0.5,
         text="0.5",
         showarrow=False,
-        font=dict(size=12, color='gray'),
+        font=dict(size=12, color=theme_color),
         xanchor='right',
         yanchor='middle'
     )
@@ -137,7 +137,7 @@ def _create_phasor_background(fig, f=0.08):
         y=-0.02,
         text="0",
         showarrow=False,
-        font=dict(size=12, color='gray'),
+        font=dict(size=12, color=theme_color),
         xanchor='center',
         yanchor='top'
     )
@@ -148,7 +148,7 @@ def _create_phasor_background(fig, f=0.08):
         y=-0.02,
         text="1",
         showarrow=False,
-        font=dict(size=12, color='gray'),
+        font=dict(size=12, color=theme_color),
         xanchor='center',
         yanchor='top'
     )
@@ -162,7 +162,7 @@ def _create_phasor_background(fig, f=0.08):
         x=x_points,
         y=y_points,
         mode='markers',
-        marker=dict(size=8, color='black'),
+        marker=dict(size=7, color=theme_color),
         name='Lifetime Markers', 
         hoverinfo='skip', # Hide the hover info for this trace,
         showlegend=False
@@ -179,7 +179,7 @@ def _create_phasor_background(fig, f=0.08):
             y=label_coords[i][1],
             text=lifetime_labels[i],
             showarrow=False,
-            font=dict(size=12),
+            font=dict(size=12, color=theme_color),
             xanchor='left'
         )
     
@@ -189,7 +189,7 @@ def _create_phasor_background(fig, f=0.08):
         y=0.5,
         text=f"f = {f * 1000} MHz",
         showarrow=False,
-        font=dict(size=15, color='black'),
+        font=dict(size=15, color=theme_color),
         xanchor='left'
     )
 
@@ -391,13 +391,27 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
 
     # Note: Legend traces and hovermode are already added by add_interleaved_points_trace
     # Just update layout with additional settings
+    theme_color = get_theme_color()
     fig.update_layout(
-        title=f'2D Distribution of {selected_x} and {selected_y} by {", ".join(color_by)}',
-        xaxis_title=selected_x,
-        yaxis_title=selected_y,
+        title=dict(
+            text=f'2D Distribution of {selected_x} and {selected_y} by {", ".join(color_by)}',
+            font=dict(color=theme_color)
+        ),
+        xaxis=dict(
+            title=dict(text=selected_x, font=dict(color=theme_color)),
+            tickfont=dict(color=theme_color),
+            domain=[0, 0.9], 
+            showgrid=False, 
+            zeroline=False
+        ),
+        yaxis=dict(
+            title=dict(text=selected_y, font=dict(color=theme_color)),
+            tickfont=dict(color=theme_color),
+            domain=[0, 0.9], 
+            showgrid=True, 
+            zeroline=False
+        ),
         # Configure axes for marginal plots
-        xaxis=dict(domain=[0, 0.9], showgrid=False, zeroline=False), # Main x-axis, reduced slightly
-        yaxis=dict(domain=[0, 0.9], showgrid=False, zeroline=False), # Main y-axis, reduced slightly
         xaxis2=dict(domain=[0.9, 1], showgrid=False, zeroline=False, showticklabels=False), # Marginal y-density's x-axis
         yaxis2=dict(domain=[0.9, 1], showgrid=False, zeroline=False, showticklabels=False), # Marginal x-density's y-axis
         # Removed bargap and barmode as they are for histograms
@@ -414,6 +428,7 @@ def _plot_convex_hull(
     df,
     g_col,
     s_col,
+    theme_color,
     label_col="k_means_cluster",
     polygon_color="#1f77b4",
     centers_raw=None,
@@ -482,7 +497,7 @@ def _plot_convex_hull(
         x=centers_raw[:, 0],
         y=centers_raw[:, 1],
         mode="markers",
-        marker=dict(symbol="x", size=14, line=dict(width=1.5, color="black"), color=polygon_color),
+        marker=dict(symbol="x", size=14, line=dict(width=1.5, color=theme_color), color=polygon_color),
         hovertemplate="<b>Centroid</b><br>G: %{x:.2f}<br>S: %{y:.2f}<extra></extra>",
         name="Centroids",
         showlegend=False
@@ -491,6 +506,9 @@ def _plot_convex_hull(
 
 def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, colormap="tab10", f=0.08, harmonic=1):
 
+    # Get theme color once at the start for all theme-aware elements
+    theme_color = get_theme_color()
+    
     # Create the figure
     fig = go.Figure()
 
@@ -508,10 +526,10 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
     df = df[df[g_feature].notna() & df[s_feature].notna()]
 
     fig.update_layout(
-        title=f'{selected_channel} {harmonic_str} Harmonic Phasor',
+        title=dict(text=f'{selected_channel} {harmonic_str} Harmonic Phasor', font=dict(size=20, family='Arial', color=theme_color)),
         xaxis=dict(
             range=[-0.05, 1.05],
-            title='g',
+            title=dict(text='g', font=dict(color=theme_color), standoff=5),
             showgrid=False,
             zeroline=False,
             showline=False,
@@ -520,21 +538,20 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         ),
         yaxis=dict(
             range=[-0.05, 0.55],
-            title='s',
+            title=dict(text='s', font=dict(color=theme_color), standoff=0),
             showgrid=False,
             zeroline=False,
             showline=False,
             showticklabels=False
         ),
         font=dict(size=15),
-        title_font=dict(size=20, family='Arial', color='black'),
         autosize=True,
-        margin=dict(l=0, r=10, t=50, b=60),  # Increased bottom margin for x-axis title
+        margin=dict(l=30, r=10, t=50, b=40),
         hovermode='closest'
     )
 
     # Create phasor background (semicircle, axes, annotations, lifetime markers)
-    _create_phasor_background(fig, f)
+    _create_phasor_background(fig, theme_color, f)
     
     # plot the phasor coordinates
     GROUP_COL_NAME = 'unique_color_group'
@@ -599,7 +616,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
             group_df_with_clusters = group_df.copy()
             group_df_with_clusters["k_means_cluster"] = kmeans.labels_
             
-            _plot_convex_hull(fig, group_df_with_clusters, g_feature, s_feature, "k_means_cluster", color_map.get(color_group, 'gray'), centers_raw, line_width=2)
+            _plot_convex_hull(fig, group_df_with_clusters, g_feature, s_feature, theme_color, "k_means_cluster", color_map.get(color_group, 'gray'), centers_raw, line_width=2)
             
             # Update the main dataframe with cluster labels
             assigned_labels = [f"{color_group}_group{label + 1}" for label in kmeans.labels_]

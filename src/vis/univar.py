@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 from itertools import combinations
 import numpy as np
 from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, comparison_pair_widget
-from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces
+from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, get_theme_color
 
 def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab10"):
     if (df[fov_name_col] == "missing fov name").any():
@@ -110,14 +110,31 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10"):
             )
         ))
 
+    theme_color = get_theme_color()
     fig.update_layout(
-        title=f'Frequency histogram of {selected_var} by {", ".join(color_by)}',
-        xaxis_title=selected_var,
-        yaxis_title='Count',
-        legend_title_text='Groups',
+        title=dict(
+            text=f'Frequency histogram of {selected_var} by {", ".join(color_by)}',
+            font=dict(color=theme_color)
+        ),
+        xaxis=dict(
+            title=dict(text=selected_var, font=dict(color=theme_color)),
+            tickfont=dict(color=theme_color),
+            showgrid=False,
+            zeroline=False
+        ),
+        yaxis=dict(
+            title=dict(text='Count', font=dict(color=theme_color)),
+            tickfont=dict(color=theme_color),
+            showgrid=True,
+            zeroline=False
+        ),
         hovermode='x unified', # Good for comparing counts at specific x-values
+        hoverlabel=dict(
+            bgcolor="white" if theme_color == "black" else "rgb(30, 30, 30)",
+            font=dict(color=theme_color, size=13),
+            bordercolor=theme_color
+        ),
         margin=dict(l=50, r=20, t=50, b=80)
-        # Removed barmode='overlay'
     )
     # remove the column after plotting
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
@@ -260,6 +277,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
                         # Add annotation above the threshold line
                         fig.add_annotation(
                             x=threshold, y=max(pdf) * 1.05, text=f"Threshold ({threshold:.2f})", showarrow=False, align="center",
+                            font=dict(color=theme_color)
                         )
                         st.markdown(f"Threshold for <span style='color:{color_map[color_group]}'>{color_group}</span> between component {sorted_indices[i]+1} and component {sorted_indices[i+1]+1}: **{threshold:.2f}**", unsafe_allow_html=True)
 
@@ -289,12 +307,41 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
     if h_index_msg != "": 
         st.info(h_index_msg)    
     
+    theme_color = get_theme_color()
+    fig.update_layout(
+        title=dict(
+            text=f'Gaussian Mixture Model fit of {selected_var} by {", ".join(color_by)}',
+            font=dict(color=theme_color)
+        ),
+        xaxis=dict(
+            title=dict(text=selected_var, font=dict(color=theme_color)),
+            tickfont=dict(color=theme_color),
+            showgrid=False,
+            zeroline=False
+        ),
+        yaxis=dict(
+            title=dict(text='Probability Density', font=dict(color=theme_color)),
+            tickfont=dict(color=theme_color),
+            showgrid=True,
+            zeroline=False
+        ),
+        hoverlabel=dict(
+            bgcolor="white" if theme_color == "black" else "rgb(30, 30, 30)",
+            font=dict(color=theme_color, size=13),
+            bordercolor=theme_color
+        ),
+        margin=dict(l=50, r=20, t=50, b=80)
+    )
+    
     # remove the column after plotting
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
 
     return fig, df
 
 def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None"):
+    # Get theme color once at the start for all theme-aware elements
+    theme_color = get_theme_color()
+    
     col1, col2 = st.columns([0.2, 0.8])
     with col1:
         add_boxplot = st.checkbox("Add boxplot", value=False, key=f"add_boxplot_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
@@ -495,8 +542,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                         y=y_coords,
                         mode='lines+markers',
                         name=f'Mean ({section_group_name})',
-                        line=dict(color='gray', width=1, dash='solid'),
-                        marker=dict(size=8, color='gray', symbol='x'),
+                        line=dict(width=1, dash='solid', color=theme_color),
+                        marker=dict(size=8, symbol='x', color=theme_color),
                         showlegend=True
                     ))
         else: # No separate_by
@@ -523,8 +570,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                     y=y_coords,
                     mode='lines+markers',
                     name='Mean',
-                    line=dict(color='gray', width=2, dash='solid'),
-                    marker=dict(size=8, color='black', symbol='x'),
+                    line=dict(width=2, dash='solid', color=theme_color),
+                    marker=dict(size=8, symbol='x', color=theme_color),
                     showlegend=False
                 ))
 
@@ -547,9 +594,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             fig.add_vline(
                 x=line_x,
                 line_dash="dash",
-                line_color="gray",
-                line_width=2,
-                opacity=0.7
+                line_color=theme_color,
+                line_width=2
             )
     
     # Build title with visual encoding information
@@ -586,6 +632,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             tickvals=x_tick_positions_actual,
             ticktext=x_tick_labels_actual,
             zeroline=False,
+            tickfont=dict(color=theme_color),
         )
     else:
         # Standard x-axis configuration
@@ -593,6 +640,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             tickvals=list(range(len(compare_groups))),
             ticktext=compare_groups,
             zeroline=False,
+            tickfont=dict(color=theme_color),
         )
     
     # --- Loop 2: Boxplots (on top of points) ---
@@ -648,7 +696,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 name=trace_name,
                 marker_color=marker_color,
                 fillcolor='rgba(0,0,0,0)', # Transparent fill
-                line=dict(color='grey', width=3), # Color outlines (thick)
+                line=dict(color=theme_color, width=3), # Theme-aware color outlines
                 boxpoints=False, # Hide points in box trace
                 boxmean=True, # Show mean as dashed line
                 showlegend=False,
@@ -657,9 +705,13 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             ))
 
     fig.update_layout(
-        title=full_title,
+        title=dict(text=full_title, font=dict(color=theme_color)),
         xaxis=xaxis_config,
-        yaxis=dict(title=selected_var, showline=False),
+        yaxis=dict(
+            title=dict(text=selected_var, font=dict(color=theme_color)),
+            showline=False,
+            tickfont=dict(color=theme_color)
+        ),
         showlegend=True, # Show legend entries based on the 'name' of each go.Box trace
         hovermode='closest', # Hover behavior
         margin=dict(l=50, r=20, t=50, b=max(120, len(max(compare_groups, key=len, default=''))*5)), # Adjust bottom margin for section headers
@@ -721,6 +773,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                                 compare_groups=section_color_groups,
                                 group_col_name=COLOR_GROUP_COL_NAME,
                                 all_possible_pairs=section_compare_pairs,
+                                annotation_color=theme_color,
                                 effect_size_method=effect_size_method,
                                 mean_or_median=mean_or_median,
                                 position_map=section_position_map,
@@ -738,6 +791,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 compare_groups=compare_groups,
                 group_col_name=COLOR_GROUP_COL_NAME,
                 all_possible_pairs=compare_pairs,
+                annotation_color=theme_color,
                 effect_size_method=effect_size_method,
                 mean_or_median=mean_or_median,
                 statistical_test=statistical_test

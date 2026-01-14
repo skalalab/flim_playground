@@ -13,10 +13,14 @@ from streamlit_theme import st_theme
 def get_theme_color():
     """Get plot color based on current system theme (light/dark mode).
     
+    Uses a unique key for st_theme() to avoid duplicate component errors,
+    and always fetches the current theme to respond to theme changes.
+    
     Returns:
         str: 'black' for light mode, 'white' for dark mode.
     """
-    theme = st_theme()
+    # Use a unique key to avoid duplicate element ID errors
+    theme = st_theme(key="theme_color_detector")
     # Default to dark mode color if theme detection fails
     if theme is None or theme.get("base") == "dark":
         return "white"
@@ -148,7 +152,7 @@ def _calculate_effect_size(group1_data, group2_data, method: str, mean_or_median
 def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_groups_list, 
                                  drawn_annotations_list, positioning_metrics, 
                                  original_df, data_column_name, group_column_name_in_df, 
-                                 overall_min_y_val, data_range_y, position_map=None,
+                                 overall_min_y_val, data_range_y, annotation_color, position_map=None,
                                  star_text: str = None, show_effect_size: bool = True):
     """
     Adds a single effect size annotation (bracket and text) to the figure,
@@ -239,18 +243,18 @@ def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_g
 
     if final_y_bracket_top is None: # Should not happen if fallback is implemented
         return
-
+    
     # Add bracket lines
     fig.add_shape(
         type="line", x0=x_start_new, y0=final_y_bracket_top,
         x1=x_end_new, y1=final_y_bracket_top,
-        line=dict(width=1.5, color='gray')
+        line=dict(width=1.5, color=annotation_color)
     )
     for x_pos_single in [x_start_new, x_end_new]:
         fig.add_shape(
             type="line", x0=x_pos_single, y0=final_y_bracket_top,
             x1=x_pos_single, y1=final_y_bracket_top - bracket_vertical_length_abs,
-            line=dict(width=1.5, color='gray')
+            line=dict(width=1.5, color=annotation_color)
         )
     # Build annotation text based on requested display
     if show_effect_size and star_text:
@@ -264,11 +268,11 @@ def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_g
 
     fig.add_annotation(
         x=(x_start_new + x_end_new) / 2, y=final_y_text_annotation_center,
-        text=annotation_text, showarrow=False, font=dict(size=12),
+        text=annotation_text, showarrow=False, font=dict(size=12, color=annotation_color),
         align="center"
     )
 
-def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None, statistical_test: str = "None", global_data_range=None):
+def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, annotation_color, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None, statistical_test: str = "None", global_data_range=None):
     """
     Adds effect size annotations to the figure.
     Manages selection of pairs, calculation of effect sizes, and calls annotation plotting.
@@ -389,6 +393,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
                     group_column_name_in_df=group_col_name,
                     overall_min_y_val=global_min_y, # Pass global_min_y for fallback
                     data_range_y=data_range_y, # Pass data_range_y for context if needed inside, though metrics are now absolute
+                    annotation_color=annotation_color,
                     position_map=position_map,
                     star_text=stars,
                     show_effect_size=True
@@ -447,6 +452,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
                 group_column_name_in_df=group_col_name,
                 overall_min_y_val=global_min_y,
                 data_range_y=data_range_y,
+                annotation_color=annotation_color,
                 position_map=position_map,
                 star_text=stars,
                 show_effect_size=False
@@ -591,8 +597,14 @@ def get_point_visual_mappings(
 # Function to apply plot styling to any figure
 def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     """Apply consistent styling to plotly figures"""
+    # Names of traces that should keep their original marker sizes
+    skip_trace_names = {'Lifetime Markers'}
+    
     # Update marker sizes for all scatter and box traces
     for trace in fig.data:
+        # Skip traces that should maintain their original sizes
+        if hasattr(trace, 'name') and trace.name in skip_trace_names:
+            continue
         if hasattr(trace, 'marker') and trace.marker:
             if trace.type == 'scatter':
                 trace.marker.size = point_size
