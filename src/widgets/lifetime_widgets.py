@@ -3,6 +3,7 @@ import math
 import pandas as pd
 import numpy as np
 from plotly import graph_objects as go
+from src.vis.helpers import get_theme_color
 from src.choose_shift import choose_shift_fit_free, choose_shift_fit
 from src.fit_helper import forward_pass, irf_shift, nll_poisson, chi_square
 
@@ -11,6 +12,9 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
     # combines image_name and shift from results into a df
     # kflow decay_id is the cell_name, otherwise it is the image_name
     plot_df =  pd.DataFrame({"decay_id": results["decay_id"], "shift": results["shift"]})
+    # Get theme-aware color
+    color = get_theme_color()
+    
     cols = st.columns(2)
     with cols[0]:
         fig = go.Figure()
@@ -21,10 +25,10 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
             jitter=0.3,
             pointpos=0,
             marker=dict(
-                color='black',
+                color=color,
                 size=10,
                 opacity=1,
-                line=dict(width=0.5, color='DarkSlateGrey')
+                line=dict(width=0.5, color=color)
             ),
             fillcolor='rgba(0,0,0,0)',
             line_color='rgba(0,0,0,0)',
@@ -32,15 +36,31 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
             customdata=plot_df["decay_id"], # Assign image_name to customdata
             hovertemplate="<b>Shift</b>: %{y}<br>%{hovertext}<extra></extra>",
         ))
+        # Set hover label colors based on theme
+        hover_bgcolor = "rgba(50, 50, 50, 0.9)" if color == "white" else "rgba(255, 255, 255, 0.9)"
         fig.update_layout(
             title=dict(
                 text=f"Shifts for {channel_name} channel",
                 x=0.5,  # Center the title horizontally
-                xanchor='center'  # Anchor the title to its center point
+                xanchor='center',  # Anchor the title to its center point
+                font=dict(color=color)
             ),
             yaxis_title="Shift (bins)",
             showlegend=False, # Hide legend for single trace
             hovermode='closest', # Enable hover mode
+            hoverlabel=dict(
+                bgcolor=hover_bgcolor,
+                font=dict(color=color),
+                bordercolor=color
+            ),
+            xaxis=dict(
+                tickfont=dict(color=color),
+                title=dict(font=dict(color=color))
+            ),
+            yaxis=dict(
+                tickfont=dict(color=color),
+                title=dict(font=dict(color=color))
+            ),
         )
         if choose_shift_method == "fit free":
             st.plotly_chart(fig) # no event for fit free
@@ -155,24 +175,49 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
                 annotation_text += f"<b>t3: {t3_data * 1000:.2f} ps</b><br>"
             annotation_text += f"<b>NLL: {nll:.2f}</b><br>"
             annotation_text += f"<b>χ²: {chiq:.2f}</b>"
+            # Set annotation colors based on theme
+            annotation_bgcolor = "rgba(50, 50, 50, 0.8)" if color == "white" else "rgba(255, 255, 255, 0.8)"
             fig2.add_annotation(
                     text=annotation_text,
                     xref="paper", yref="paper",
-                    x=0.5 if log_y else 0.98, y=0.02 if log_y else 0.98,
-                    xanchor="center" if log_y else "right", yanchor="bottom" if log_y else "top",
+                    x=1.02, y=0.5,  # Position outside plot, below legend
+                    xanchor="left", yanchor="top",
                     showarrow=False,
-                    bgcolor="rgba(255, 255, 255, 0.8)",
-                    bordercolor="black",
+                    bgcolor=annotation_bgcolor,
+                    bordercolor=color,
                     borderwidth=1,
-                    font=dict(size=12)
+                    font=dict(size=12, color=color),
+                    align="left"
             )
 
             fig2.update_layout(
-                title=f"Decay Curve and Fitted Line for {clicked_shift_identifier}",
+                title=dict(
+                    text=f"Decay Curve and Fitted Line for {clicked_shift_identifier}",
+                    font=dict(color=color)
+                ),
                 xaxis_title="Time (ns)",
                 yaxis_title="Intensity (log)" if log_y else "Intensity",
                 yaxis_type="log" if log_y else "linear",
                 showlegend=True,
+                legend=dict(
+                    x=1.02, y=1.0,  # Position legend outside plot, top right
+                    xanchor="left", yanchor="top",
+                    font=dict(color=color)
+                ),
+                margin=dict(r=150),  # Add right margin for annotation and legend
+                hoverlabel=dict(
+                    bgcolor=annotation_bgcolor,
+                    font=dict(color=color),
+                    bordercolor=color
+                ),
+                xaxis=dict(
+                    tickfont=dict(color=color),
+                    title=dict(font=dict(color=color))
+                ),
+                yaxis=dict(
+                    tickfont=dict(color=color),
+                    title=dict(font=dict(color=color))
+                ),
             )
             st.plotly_chart(fig2, use_container_width=True)
 

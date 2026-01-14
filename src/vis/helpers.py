@@ -8,6 +8,20 @@ import pandas as pd
 from src.widgets.visualization_widgets import comparison_pair_widget
 import re
 import plotly.graph_objects as go
+from streamlit_theme import st_theme
+
+def get_theme_color():
+    """Get plot color based on current system theme (light/dark mode).
+    
+    Returns:
+        str: 'black' for light mode, 'white' for dark mode.
+    """
+    theme = st_theme()
+    # Default to dark mode color if theme detection fails
+    if theme is None or theme.get("base") == "dark":
+        return "white"
+    else:
+        return "black"
 
 def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
     """
