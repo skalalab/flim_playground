@@ -13,7 +13,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
     # kflow decay_id is the cell_name, otherwise it is the image_name
     plot_df =  pd.DataFrame({"decay_id": results["decay_id"], "shift": results["shift"]})
     # Get theme-aware color
-    color = get_theme_color()
+    color = get_theme_color(key=f"theme_shift_{channel_name}")
     
     cols = st.columns(2)
     with cols[0]:

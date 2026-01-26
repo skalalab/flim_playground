@@ -10,17 +10,20 @@ import re
 import plotly.graph_objects as go
 from streamlit_theme import st_theme
 
-def get_theme_color():
+def get_theme_color(key="theme_color_detector"):
     """Get plot color based on current system theme (light/dark mode).
     
     Uses a unique key for st_theme() to avoid duplicate component errors,
     and always fetches the current theme to respond to theme changes.
     
+    Args:
+        key (str): Unique key for the st_theme component. Defaults to "theme_color_detector".
+    
     Returns:
         str: 'black' for light mode, 'white' for dark mode.
     """
     # Use a unique key to avoid duplicate element ID errors
-    theme = st_theme(key="theme_color_detector")
+    theme = st_theme(key=key)
     # Default to dark mode color if theme detection fails
     if theme is None or theme.get("base") == "dark":
         return "white"

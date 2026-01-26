@@ -87,7 +87,7 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
     )
 
     # Get theme color for axis styling
-    theme_color = get_theme_color()
+    theme_color = get_theme_color(key=f"theme_dim_red_{method}")
     
     # Update axis labels to include explained variance
     if exp_var is not None: 

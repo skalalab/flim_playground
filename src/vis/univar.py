@@ -110,7 +110,7 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10"):
             )
         ))
 
-    theme_color = get_theme_color()
+    theme_color = get_theme_color(key=f"theme_hist_{selected_var}")
     fig.update_layout(
         title=dict(
             text=f'Frequency histogram of {selected_var} by {", ".join(color_by)}',
@@ -307,7 +307,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
     if h_index_msg != "": 
         st.info(h_index_msg)    
     
-    theme_color = get_theme_color()
+    theme_color = get_theme_color(key=f"theme_gmm_{selected_var}")
     fig.update_layout(
         title=dict(
             text=f'Gaussian Mixture Model fit of {selected_var} by {", ".join(color_by)}',
@@ -338,9 +338,8 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
 
     return fig, df
 
-def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None", custom_order=None):
     # Get theme color once at the start for all theme-aware elements
-    theme_color = get_theme_color()
+    theme_color = get_theme_color(key=f"theme_compare_{selected_var}")
     
     col1, col2 = st.columns([0.2, 0.8])
     with col1:
