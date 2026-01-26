@@ -338,6 +338,8 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
 
     return fig, df
 
+def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None", custom_order=None):
+
     # Get theme color once at the start for all theme-aware elements
     theme_color = get_theme_color(key=f"theme_compare_{selected_var}")
     
