@@ -256,14 +256,11 @@ def reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by):
     """
     from src.vis.helpers import natural_tuple_sort
     
-    st.write("---")
-    st.subheader("↔️ Reorder X-axis Groups")
-    
     session_key_sep, session_key_cmp = get_visual_group_keys(filtered_df, selected_var, color_by, separate_by)
 
     # specific to streamlit-sortables: it may not render correctly inside a collapsed expander because of 0 height
     # We use a checkbox to trigger a rerun and render it only when visible
-    show_order_config = st.checkbox("Configure Order", value=False)
+    show_order_config = st.checkbox("Reorder X-axis Groups", value=False)
     
     if show_order_config:
         # Color groups (Compare groups)

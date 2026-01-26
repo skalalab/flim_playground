@@ -1,4 +1,4 @@
-current_profile = "pdl1"
+current_profile = "iris"
 
 [profiles.wine]
 unique_row_id_col = "wine_id"

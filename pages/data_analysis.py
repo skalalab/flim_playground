@@ -156,11 +156,24 @@ with col2:
                     elif method == "FOV Comparison":
                         fig = fov_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, colormap=st.session_state.plot_colormap)
                     elif method == "Feature Histogram":
-                        # create a switch to select between GMM and histogram
-                        apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, help="Fit Gaussian Mixture Models\
-                        for each color group on the selected feature with 1 to 5 components (fit on raw distribution, not on the histograms). \
-                        Choose the one in which all the components are at least of x% weight and has the lowest BIC score. \
-                        The default x% is 10%.")
+                        # Log transform and GMM checkboxes on same row
+                        col_log, col_gmm = st.columns([0.15, 0.85])
+                        with col_log:
+                            log_x = st.checkbox("Log X", value=False, key=f"log_x_hist_{selected_var}")
+                        with col_gmm:
+                            apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, help="Fit Gaussian Mixture Models\
+                            for each color group on the selected feature with 1 to 5 components (fit on raw distribution, not on the histograms). \
+                            Choose the one in which all the components are at least of x% weight and has the lowest BIC score. \
+                            The default x% is 10%.")
+                        
+                        # Apply log transform if requested (consistent with bivar.py)
+                        if log_x:
+                            import numpy as np
+                            if (filtered_df[selected_var] < 0).any():
+                                st.error(f"Cannot apply log to {selected_var}: contains negative values.")
+                            else:
+                                filtered_df = filtered_df.copy()
+                                filtered_df[selected_var] = np.log10(filtered_df[selected_var] + 1e-6)
                         if apply_gmm:
                             fig, gmm_df = feature_gmm_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap)
                             data_export_ready = True

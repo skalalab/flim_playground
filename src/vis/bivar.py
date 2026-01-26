@@ -235,11 +235,11 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     with col_log_x:
         st.write("")
         st.write("")
-        log_x = st.checkbox("log x", value=False)
+        log_x = st.checkbox("Log X", value=False)
     with col_log_y:
         st.write("")
         st.write("")
-        log_y = st.checkbox("log y", value=False)
+        log_y = st.checkbox("Log Y", value=False)
     with col1:
         selected_marginal_plot_type = st.selectbox(
             'Marginal Plot Type',
@@ -417,20 +417,25 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     # Note: Legend traces and hovermode are already added by add_interleaved_points_trace
     # Just update layout with additional settings
     theme_color = get_theme_color(key=f"theme_2d_{selected_x}_{selected_y}")
+    
+    # Set axis labels based on log transform
+    x_axis_label = f"log₁₀({selected_x})" if log_x else selected_x
+    y_axis_label = f"log₁₀({selected_y})" if log_y else selected_y
+    
     fig.update_layout(
         title=dict(
             text=f'2D Distribution of {selected_x} and {selected_y} by {", ".join(color_by)}',
             font=dict(color=theme_color)
         ),
         xaxis=dict(
-            title=dict(text=selected_x, font=dict(color=theme_color)),
+            title=dict(text=x_axis_label, font=dict(color=theme_color)),
             tickfont=dict(color=theme_color),
             domain=[0, 0.9], 
             showgrid=False, 
             zeroline=False
         ),
         yaxis=dict(
-            title=dict(text=selected_y, font=dict(color=theme_color)),
+            title=dict(text=y_axis_label, font=dict(color=theme_color)),
             tickfont=dict(color=theme_color),
             domain=[0, 0.9], 
             showgrid=True, 

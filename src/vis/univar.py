@@ -343,11 +343,24 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
     # Get theme color once at the start for all theme-aware elements
     theme_color = get_theme_color(key=f"theme_compare_{selected_var}")
     
-    col1, col2 = st.columns([0.2, 0.8])
+    col1, col2, col3 = st.columns([0.15, 0.2, 0.65])
     with col1:
-        add_boxplot = st.checkbox("Add boxplot", value=False, key=f"add_boxplot_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
+        log_y = st.checkbox("Log Y", value=False, key=f"log_y_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
     with col2:
+        add_boxplot = st.checkbox("Add boxplot", value=False, key=f"add_boxplot_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
+    with col3:
         connect_means = st.checkbox("Connect means", value=False, key=f"connect_means_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
+    
+    # Create a working copy to avoid modifying the original dataframe
+    df = df.copy()
+    
+    # Apply log transform if requested (consistent with bivar.py)
+    if log_y:
+        if (df[selected_var] < 0).any():
+            st.error(f"Cannot apply log to {selected_var}: contains negative values.")
+        else:
+            df[selected_var] = np.log10(df[selected_var] + 1e-6)
+    
     fig = go.Figure()
     COLOR_GROUP_COL_NAME = 'compare_group'
     # Use the new helper for color, shape, opacity
@@ -755,11 +768,14 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 zorder=10
             ))
 
+    # Set y-axis label based on log transform
+    y_axis_label = f"log₁₀({selected_var})" if log_y else selected_var
+    
     fig.update_layout(
         title=dict(text=full_title, font=dict(color=theme_color)),
         xaxis=xaxis_config,
         yaxis=dict(
-            title=dict(text=selected_var, font=dict(color=theme_color)),
+            title=dict(text=y_axis_label, font=dict(color=theme_color)),
             showline=False,
             tickfont=dict(color=theme_color)
         ),
@@ -839,13 +855,14 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 fig=fig,
                 df=df,
                 selected_var=selected_var,
-                compare_groups=compare_groups,
+                compare_groups=ordered_compare_groups,  # Use ordered groups for correct bracket positioning
                 group_col_name=COLOR_GROUP_COL_NAME,
                 all_possible_pairs=compare_pairs,
                 annotation_color=theme_color,
                 effect_size_method=effect_size_method,
                 mean_or_median=mean_or_median,
-                statistical_test=statistical_test
+                statistical_test=statistical_test,
+                position_map=x_positions  # Pass position map for correct y-range calculation after reordering
             )
 
     # Drop the temporary group column if it exists
