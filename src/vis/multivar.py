@@ -111,4 +111,12 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
             showgrid=True
         )
 
+    # Lock axis range to prevent rescaling when toggling legend items
+    x_data = df_reduced[axis_labels[0]]
+    y_data = df_reduced[axis_labels[1]]
+    x_padding = (x_data.max() - x_data.min()) * 0.05
+    y_padding = (y_data.max() - y_data.min()) * 0.05
+    fig.update_xaxes(range=[x_data.min() - x_padding, x_data.max() + x_padding])
+    fig.update_yaxes(range=[y_data.min() - y_padding, y_data.max() + y_padding])
+
     return fig

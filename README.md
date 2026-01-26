@@ -60,7 +60,7 @@ FLIM Playground is currently on [bioarchive](https://www.biorxiv.org/content/10.
 - [x] based on the light/dark mode, the plot title, axis labels, and tick labels need to be adjusted
 - [x] add an interactive way in feature comparison to reorder the x-axis groups
 - [x] log scale for x-y axis in 2d scatter plot, y-axis in feature comparison and x-axis in feature histogram
-- [] add the option to freeze the umap and let the user use filters to explore the subgroups in umap
+- [x] freeze the umap axis limits so that the user can use legend toggles to explore the subgroups in umap
 - [] add representative lifetime feature maker in FOV comparison
 - [] add hierarchical clustering
 - [] add linear mixed effect model
