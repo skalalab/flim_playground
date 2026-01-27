@@ -377,7 +377,17 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
     grouped_list = list(grouped_sep)
     group_keys = [group_key for group_key, _ in grouped_list]
     compare_groups = list(color_map.keys())
-    compare_pairs = list(combinations(compare_groups, 2))
+    
+    # Apply custom order early so compare_pairs uses the reordered groups
+    # This is critical for Glass's Delta where the first group in the pair is the control
+    ordered_compare_groups = list(compare_groups)
+    if custom_order and 'compare_groups' in custom_order:
+        custom_cmp = [g for g in custom_order['compare_groups'] if g in ordered_compare_groups]
+        remaining_cmp = [g for g in ordered_compare_groups if g not in custom_cmp]
+        ordered_compare_groups = custom_cmp + remaining_cmp
+    
+    # Generate pairs from ordered groups so Glass's Delta uses correct control group
+    compare_pairs = list(combinations(ordered_compare_groups, 2))
     point_size = 5   
     
     # Track legend entries to avoid duplicates
@@ -401,13 +411,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         for separate_group in ordered_separate_groups:
             section_combinations = []
             
-            # Apply custom order to compare_groups if provided
-            ordered_compare_groups = list(compare_groups)
-            if custom_order and 'compare_groups' in custom_order:
-                custom_cmp = [g for g in custom_order['compare_groups'] if g in ordered_compare_groups]
-                remaining_cmp = [g for g in ordered_compare_groups if g not in custom_cmp]
-                ordered_compare_groups = custom_cmp + remaining_cmp
-
+            # Use ordered_compare_groups (already set with custom order at function start)
             for color_group in ordered_compare_groups:
                 combo_exists = any(
                     (separate_group in group_key if isinstance(group_key, tuple) else group_key == separate_group) and
@@ -457,12 +461,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             current_x += len(section_combinations)
     else:
         # Standard x-positions when no separate_by
-        ordered_compare_groups = list(compare_groups)
-        if custom_order and 'compare_groups' in custom_order:
-            custom_cmp = [g for g in custom_order['compare_groups'] if g in ordered_compare_groups]
-            remaining_cmp = [g for g in ordered_compare_groups if g not in custom_cmp]
-            ordered_compare_groups = custom_cmp + remaining_cmp
-
+        # ordered_compare_groups is already set with custom order at function start
         x_positions = {color_group: idx for idx, color_group in enumerate(ordered_compare_groups)}
 
     # Sort grouped_list based on the custom order to ensure legend matches x-axis
