@@ -7,3 +7,6 @@ test.py
 .venv/
 logo/
 sdt_headers/
+analysis_config.toml
+config.toml
+!.streamlit/config.toml
