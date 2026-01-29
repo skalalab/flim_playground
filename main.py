@@ -122,6 +122,8 @@ def main():
 
     # init file types for each input type (more inclusive, will exclude some file types later based on the selected feature extractors)
     for input_type in all_flim_decay_input_types + intensity_only_input_types:
+        if input_type not in cfg:
+            cfg[input_type] = {}
         if "file_types" not in cfg[input_type]:
             if input_type == "Decay (3/4D)":
                 cfg[input_type]["file_types"] = ["Decay", "IRF", "Mask",]
