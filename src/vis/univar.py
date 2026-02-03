@@ -148,6 +148,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
     # add the choice to do "intersection thresholding" or "hard assignment"
     intersection_threshold = st.checkbox("Use intersection as threshold", value=False, key="intersection_threshold", help="If checked, the point where the two Gaussian distributions intersect will be used as the threshold. If not checked, each data will be assigned to the component with the highest posterior probability.")
     fig = go.Figure()
+    theme_color = get_theme_color(key=f"theme_gmm_{selected_var}")
     # fit a Gaussian Mixture Model (GMM) to each color group
     
     # Collect tables for two-column display
@@ -307,7 +308,6 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
     if h_index_msg != "": 
         st.info(h_index_msg)    
     
-    theme_color = get_theme_color(key=f"theme_gmm_{selected_var}")
     fig.update_layout(
         title=dict(
             text=f'Gaussian Mixture Model fit of {selected_var} by {", ".join(color_by)}',
