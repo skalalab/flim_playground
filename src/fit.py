@@ -84,6 +84,8 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
                     result = lmfit_minimize(objective, result_global.params, args=(decay_curve, irf, time_axis, start, end, fitting_algo), method=wls_optimizer, **wls_fit_options)
                 else: # global
                     result = result_global
+            else:
+                raise ValueError(f"Unsupported fitting algorithm: {fitting_algo}. Use 'MLE' or 'LS'.")
         except Exception as e:
             print(f"Error fitting curve {i}: {e}")
             result = None

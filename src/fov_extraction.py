@@ -60,6 +60,8 @@ def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, i
         except Exception as e:
             return f"Error reading the {channel_name} decay file: {metadata[f'{channel_name}_Decay']}: {e}", pd.DataFrame()
         intensity_image = np.sum(decay, axis=-1)
+    else:
+        return f"Error: Unsupported input type '{input_type}' for intensity texture features on {channel_name}.", pd.DataFrame()
     if intensity_image.shape != mask.shape:
         return f"Error: {channel_name} intensity image has a different shape than the mask: {intensity_image.shape} != {mask.shape}", pd.DataFrame()
     for mask_id in mask_ids:
@@ -428,6 +430,8 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         return "", single_cell_fit_features_fov
     elif fit_free:
         return "", single_cell_fit_free_features_fov
+    else:
+        return "Error: Neither lifetime fit nor fit free analysis was requested.", pd.DataFrame()
 
 @st.cache_data
 def fov_extraction(metadata, metadata_dict):

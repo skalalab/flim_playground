@@ -103,6 +103,7 @@ with col1:
                     st.error(f"Error reading the uploaded CSV file: {e}")
                     metadata_df = None # Ensure metadata_df is None if reading fail
 
+        metadata_dict = None
         if metadata_df is not None:
             error_msg, metadata_dict = parse_metadata_file(metadata_df, fov_name_col)
             if error_msg == "":
@@ -313,7 +314,7 @@ with col2:
                 
                 # Step 4: Finalize processing ( fluorescence lifetime standard validation moved here)
                 finalize_fov_processing("", fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, selected_ch_feature_extractors, fit_free_calibration_method, fluorescence_lifetime_standard_lifetime)
-    elif "Numeric Feature Extraction" in selected_step and st.session_state["choosing_shift"] and metadata_df is not None:
+    elif "Numeric Feature Extraction" in selected_step and st.session_state["choosing_shift"] and metadata_df is not None and metadata_dict is not None:
         channel_shifts = {}
         for channel_name in metadata_dict["channels_shift"]:
             error_msg, shifts = choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name=channel_name)
@@ -344,7 +345,7 @@ with col2:
             st.session_state["shift_ready"] = False
             st.rerun()
                 
-    elif "Numeric Feature Extraction" in selected_step and st.session_state["shift_ready"] and metadata_df is not None:
+    elif "Numeric Feature Extraction" in selected_step and st.session_state["shift_ready"] and metadata_df is not None and metadata_dict is not None:
         single_cell_features = fov_extraction_widget(metadata_df, metadata_dict)
         if not single_cell_features.empty:
             st.success(f"Field of view features with ✅ are extracted successfully {happy_emoji}! FOVs with error messages are excluded. The first few rows of the features are shown below.")

@@ -31,7 +31,8 @@ def load_image(path: Union[str, pathlib.PurePath]) -> np.ndarray:
         return read_asc(path)
     if path.suffix in [".tiff", ".tif"]:
         return tifffile.imread(path)
-    
+    raise ValueError(f"Unsupported file extension '{path.suffix}'. Supported: .asc, .tiff, .tif")
+
 def read_asc(path):
     """
     Reads in an asc file into a numpy ndarray
