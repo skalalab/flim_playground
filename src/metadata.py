@@ -6,7 +6,7 @@ def get_ch_info(metadata_df):
     # use the {channel_name}_input_type column name to get available channels
     available_channels = [col for col in metadata_df.columns if col.endswith("_input_type")]
     available_channels = [col.split("_input_type")[0] for col in available_channels]
-    available_channels = list(set(available_channels))
+    available_channels = list(dict.fromkeys(available_channels))
     if len(available_channels) == 0:
         return f"No channels found in metadata file.", None
     metadata_dict = {}
