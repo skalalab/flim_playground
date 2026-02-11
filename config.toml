@@ -1,6 +1,6 @@
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
-categorical_cols = [ "cell_line", "replicate",]
+categorical_cols = [ "treatment", "hours", "cell_line", "dish"]
 flim_decay_input_type = "Decay (3/4D)"
 intensity_only_input_type = "Intensity (2D)"
 num_channels = 2
