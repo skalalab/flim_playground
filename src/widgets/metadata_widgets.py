@@ -234,30 +234,41 @@ def check_raw_decay_data(fov_df, channel_name):
         return "Error: No mask data found. Please check the data.", []
 
     shape_list = []
+    shape_to_files = {}  # shape -> list of decay file paths
     laser_rep_time_list = []
+    laser_rep_time_to_files = {}  # laser_rep_time -> list of decay file paths
     for i, row in fov_df.iterrows():
-        error_msg, decay_data = read_decay(row[decay_column_name])
+        decay_path = row[decay_column_name]
+        error_msg, decay_data = read_decay(decay_path)
         if error_msg != "":
             return error_msg, [], None, None
-        shape_list.append(decay_data.shape)
-        error_msg, laser_rep_time = read_decay_metadata(row[decay_column_name])
+        shape = decay_data.shape
+        shape_list.append(shape)
+        shape_to_files.setdefault(shape, []).append(decay_path)
+        error_msg, laser_rep_time = read_decay_metadata(decay_path)
         if error_msg != "":
             return error_msg, [], None, None
         laser_rep_time_list.append(laser_rep_time)
-        shape_list.append(decay_data.shape)
+        laser_rep_time_to_files.setdefault(laser_rep_time, []).append(decay_path)
 
     # check for the consistency of the shape, a tuple
     if len(set(shape_list)) > 1:
-        shape_counts = Counter(shape_list)
         error_msg = f"Inconsistent decay data shapes found for {channel_name} decay: \n"
-        for shape, count in shape_counts.items():
-            error_msg += f"- Shape {shape} appears {count} times.\n"
+        for shape, files in shape_to_files.items():
+            error_msg += f"- Shape {shape} ({len(files)} file(s)):\n"
+            basenames = [os.path.basename(f) for f in files]
+            for i in range(0, len(basenames), 2):
+                line = ", ".join(basenames[i : i + 2])
+                error_msg += f"  - {line}\n"
         return error_msg, [], None, None
     if len(set(laser_rep_time_list)) > 1:
-        laser_rep_time_counts = Counter(laser_rep_time_list)
         error_msg = f"Inconsistent laser rep time found for {channel_name} decay: \n"
-        for laser_rep_time, count in laser_rep_time_counts.items():
-            error_msg += f"- Laser rep time {laser_rep_time} appears {count} times.\n"
+        for laser_rep_time, files in laser_rep_time_to_files.items():
+            error_msg += f"- Laser rep time {laser_rep_time} ({len(files)} file(s)):\n"
+            basenames = [os.path.basename(f) for f in files]
+            for i in range(0, len(basenames), 2):
+                line = ", ".join(basenames[i : i + 2])
+                error_msg += f"  - {line}\n"
         return error_msg, [], None, None
     else:
         # get the first shape: CYXT or YXT
