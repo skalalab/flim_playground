@@ -357,7 +357,73 @@ def create_metrics_table(metrics_dict):
     """
     return create_overall_accuracy_table(metrics_dict), create_per_class_metrics_table(metrics_dict)
 
-def run_classification(df, method, splits, sampling_method, class_weight, threshold_method, random_state=42):
+
+def _build_classifier(method, class_weight, classifier_params, random_state):
+    params = dict(classifier_params or {})
+
+    if method == "Random Forest":
+        params.pop("class_weight", None)
+        params.pop("random_state", None)
+        return RandomForestClassifier(random_state=random_state, class_weight=class_weight, **params)
+    if method == "Gradient Boosting":
+        params.pop("random_state", None)
+        return GradientBoostingClassifier(random_state=random_state, **params)
+    if method == "SVM":
+        params.pop("probability", None)
+        params.pop("class_weight", None)
+        params.pop("random_state", None)
+        svm_params = {
+            "kernel": "linear",
+            "probability": True,
+            "random_state": random_state,
+            "class_weight": class_weight,
+        }
+        svm_params.update(params)
+        return make_pipeline(StandardScaler(), SVC(**svm_params))
+    if method == "Logistic Regression":
+        params.pop("class_weight", None)
+        params.pop("random_state", None)
+        solver = params.get("solver", "lbfgs")
+        regularization = str(params.pop("regularization", "l2")).lower()
+
+        allowed_regularization_by_solver = {
+            "lbfgs": ["l2", "none"],
+            "liblinear": ["l1", "l2"],
+            "newton-cg": ["l2", "none"],
+            "newton-cholesky": ["l2", "none"],
+            "sag": ["l2", "none"],
+            "saga": ["l1", "l2", "elasticnet", "none"],
+        }
+        allowed_regularization = allowed_regularization_by_solver.get(solver, ["l2"])
+        if regularization not in allowed_regularization:
+            raise ValueError(f"Regularization '{regularization}' is not supported by solver '{solver}'")
+
+        logistic_params = {
+            "random_state": random_state,
+            "max_iter": 10000,
+            "class_weight": class_weight,
+        }
+        allowed_logistic_params = {"solver", "C", "max_iter", "tol", "fit_intercept", "l1_ratio"}
+        logistic_params.update({k: v for k, v in params.items() if k in allowed_logistic_params})
+
+        # scikit-learn 1.8+ path: drive regularization with l1_ratio/C.
+        if regularization == "l2":
+            logistic_params["l1_ratio"] = 0.0
+        elif regularization == "l1":
+            logistic_params["l1_ratio"] = 1.0
+        elif regularization == "elasticnet":
+            logistic_params["l1_ratio"] = float(logistic_params.get("l1_ratio", 0.5))
+        elif regularization == "none":
+            # Near-unregularized setting without triggering deprecation warnings.
+            logistic_params["C"] = 1e12
+            logistic_params["l1_ratio"] = 0.0
+
+        return make_pipeline(StandardScaler(), LogisticRegression(**logistic_params))
+
+    raise ValueError(f"Unsupported classification method: {method}")
+
+
+def run_classification(df, method, splits, sampling_method, class_weight, threshold_method, classifier_params=None, random_state=42):
     error_msg, X_train, X_test, y_train, y_test = prepare_data(df, splits, sampling_method, random_state)
     if error_msg:
         return error_msg, None
@@ -365,57 +431,53 @@ def run_classification(df, method, splits, sampling_method, class_weight, thresh
         class_weight = 'balanced'
     else:
         class_weight = None
-    if method == "Random Forest":
-        classifier = RandomForestClassifier(random_state=random_state, class_weight=class_weight)
-    elif method == "Gradient Boosting":
-        classifier = GradientBoostingClassifier(random_state=random_state)
-    elif method == "SVM":
-        classifier = make_pipeline(StandardScaler(), SVC(kernel='linear', probability=True, random_state=random_state, class_weight=class_weight))
-    elif method == "Logistic Regression":
-        classifier = make_pipeline(StandardScaler(), LogisticRegression(random_state=random_state, max_iter=10000, class_weight=class_weight))
-    else:
-        return f"Unsupported classification method: {method}", None
+    try:
+        classifier = _build_classifier(method, class_weight, classifier_params, random_state)
+    except Exception as e:
+        return f"Error creating {method} model: {e}", None
     
     # adjust thresholds based on the threshold method
     tuned_classifier = None
     threshold_values = None
-    
-    if threshold_method == "None":
-        # Use default threshold (0.5 for binary classification)
-        classifier.fit(X_train, y_train)
-        threshold_values = 0.5 if len(np.unique(y_train)) == 2 else None
-    elif threshold_method in ["Balanced Accuracy", "F1 Score"]:
-        # Map threshold method to scoring metric
-        scoring_map = {
-            "Balanced Accuracy": "balanced_accuracy",
-            "F1 Score": "f1_macro"
-        }
-        # Create a deep copy of the classifier for tuning
-        classifier_copy = deepcopy(classifier)
-        tuned_classifier = TunedThresholdClassifierCV(
-            classifier_copy, 
-            scoring=scoring_map[threshold_method],
-            random_state=random_state
-        ).fit(X_train, y_train)
-        # Extract thresholds (binary: best_threshold_, multi-class: best_thresholds_)
-        if tuned_classifier.n_classes_ == 2:
-            threshold_values = tuned_classifier.best_threshold_
+
+    try:
+        if threshold_method == "None":
+            # Use default threshold (0.5 for binary classification)
+            threshold_values = 0.5 if len(np.unique(y_train)) == 2 else None
+        elif threshold_method in ["Balanced Accuracy", "F1 Score"]:
+            # Map threshold method to scoring metric
+            scoring_map = {
+                "Balanced Accuracy": "balanced_accuracy",
+                "F1 Score": "f1_macro"
+            }
+            # Create a deep copy of the classifier for tuning
+            classifier_copy = deepcopy(classifier)
+            tuned_classifier = TunedThresholdClassifierCV(
+                classifier_copy, 
+                scoring=scoring_map[threshold_method],
+                random_state=random_state
+            ).fit(X_train, y_train)
+            # Extract thresholds (binary: best_threshold_, multi-class: best_thresholds_)
+            if tuned_classifier.n_classes_ == 2:
+                threshold_values = tuned_classifier.best_threshold_
+            else:
+                threshold_values = tuned_classifier.best_thresholds_
+        
+        # Fit the original classifier if not already fitted
+        if tuned_classifier is None:
+            classifier.fit(X_train, y_train)
+        
+        # Get predictions and probabilities
+        if tuned_classifier is not None:
+            y_pred = tuned_classifier.predict(X_test)
+            y_score = tuned_classifier.predict_proba(X_test)
+            # Use the tuned classifier as the main classifier
+            classifier = tuned_classifier.estimator
         else:
-            threshold_values = tuned_classifier.best_thresholds_
-    
-    # Fit the original classifier if not already fitted
-    if tuned_classifier is None:
-        classifier.fit(X_train, y_train)
-    
-    # Get predictions and probabilities
-    if tuned_classifier is not None:
-        y_pred = tuned_classifier.predict(X_test)
-        y_score = tuned_classifier.predict_proba(X_test)
-        # Use the tuned classifier as the main classifier
-        classifier = tuned_classifier.estimator
-    else:
-        y_pred = classifier.predict(X_test)
-        y_score = classifier.predict_proba(X_test)
+            y_pred = classifier.predict(X_test)
+            y_score = classifier.predict_proba(X_test)
+    except Exception as e:
+        return f"Error training {method}: {e}", None
 
     # Calculate comprehensive metrics
     metrics = calculate_metrics(y_test, y_pred)

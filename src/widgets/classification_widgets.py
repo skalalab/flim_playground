@@ -4,14 +4,174 @@ from src.dataset_io import happy_emoji, sad_emoji
 from src.classify import plot_confusion_matrix, plot_roc_curve, plot_feature_importance, create_overall_accuracy_table, create_per_class_metrics_table
 from src.widgets.visualization_widgets import plot_config_widget
 
+CLASSIFIER_OPTIONS = ["Random Forest", "Gradient Boosting", "SVM", "Logistic Regression"]
+
+
+def _classifier_prefix(classifier):
+    return f"clf_{classifier.lower().replace(' ', '_')}"
+
+
+def _random_forest_hyperparams_widget(prefix):
+    params = {}
+    row1_col1, row1_col2 = st.columns(2)
+    with row1_col1:
+        params["n_estimators"] = st.slider("n_estimators", min_value=50, max_value=1000, value=100, step=50, key=f"{prefix}_n_estimators")
+    with row1_col2:
+        max_depth_raw = st.number_input("max_depth (0=None)", min_value=0, value=0, step=1, key=f"{prefix}_max_depth")
+        params["max_depth"] = None if max_depth_raw == 0 else int(max_depth_raw)
+
+    with st.expander("Advanced settings", expanded=False):
+        adv1_col1, adv1_col2 = st.columns(2)
+        with adv1_col1:
+            params["min_samples_split"] = st.number_input("min_samples_split", min_value=2, value=2, step=1, key=f"{prefix}_min_samples_split")
+        with adv1_col2:
+            params["min_samples_leaf"] = st.number_input("min_samples_leaf", min_value=1, value=1, step=1, key=f"{prefix}_min_samples_leaf")
+
+        adv2_col1, _ = st.columns(2)
+        with adv2_col1:
+            max_features_option = st.selectbox("max_features", ["sqrt", "log2", "None"], key=f"{prefix}_max_features")
+            params["max_features"] = None if max_features_option == "None" else max_features_option
+
+    return params
+
+
+def _gradient_boosting_hyperparams_widget(prefix):
+    params = {}
+    row1_col1, row1_col2 = st.columns(2)
+    with row1_col1:
+        params["n_estimators"] = st.slider("n_estimators", min_value=50, max_value=1000, value=100, step=50, key=f"{prefix}_n_estimators")
+    with row1_col2:
+        params["learning_rate"] = st.number_input("learning_rate", min_value=0.01, max_value=2.0, value=0.1, step=0.01, format="%.2f", key=f"{prefix}_learning_rate")
+
+    with st.expander("Advanced settings", expanded=False):
+        adv1_col1, adv1_col2 = st.columns(2)
+        with adv1_col1:
+            params["max_depth"] = st.number_input("max_depth", min_value=1, value=3, step=1, key=f"{prefix}_max_depth")
+        with adv1_col2:
+            params["subsample"] = st.slider("subsample", min_value=0.1, max_value=1.0, value=1.0, step=0.05, key=f"{prefix}_subsample")
+
+    return params
+
+
+def _svm_hyperparams_widget(prefix):
+    params = {}
+    row1_col1, row1_col2 = st.columns(2)
+    with row1_col1:
+        params["kernel"] = st.selectbox("kernel", ["linear", "rbf", "poly", "sigmoid"], key=f"{prefix}_kernel")
+    with row1_col2:
+        params["C"] = st.number_input(
+            "C",
+            min_value=0.01,
+            max_value=1000.0,
+            value=1.0,
+            step=0.1,
+            help="SVM regularization coefficient. Higher C = weaker regularization (fits training data more closely); lower C = stronger regularization.",
+            key=f"{prefix}_C",
+        )
+
+    with st.expander("Advanced settings", expanded=False):
+        adv1_col1, adv1_col2 = st.columns(2)
+        with adv1_col1:
+            gamma_mode = st.selectbox("gamma", ["scale", "auto", "custom"], key=f"{prefix}_gamma_mode")
+            if gamma_mode == "custom":
+                params["gamma"] = st.number_input("gamma value", min_value=1e-06, max_value=10.0, value=0.1, step=0.01, format="%.4f", key=f"{prefix}_gamma_value")
+            else:
+                params["gamma"] = gamma_mode
+        with adv1_col2:
+            params["tol"] = st.number_input("tol", min_value=1e-05, max_value=0.1, value=0.001, step=1e-04, format="%.4f", key=f"{prefix}_tol")
+
+        if params["kernel"] == "poly":
+            adv2_col1, adv2_col2 = st.columns(2)
+            with adv2_col1:
+                params["degree"] = st.number_input("degree", min_value=2, max_value=8, value=3, step=1, key=f"{prefix}_degree")
+            with adv2_col2:
+                params["coef0"] = st.number_input("coef0", min_value=-5.0, max_value=5.0, value=0.0, step=0.1, key=f"{prefix}_coef0")
+        elif params["kernel"] == "sigmoid":
+            adv2_col1, _ = st.columns(2)
+            with adv2_col1:
+                params["coef0"] = st.number_input("coef0", min_value=-5.0, max_value=5.0, value=0.0, step=0.1, key=f"{prefix}_coef0")
+
+    return params
+
+
+def _logistic_hyperparams_widget(prefix):
+    params = {}
+    regularization_options_by_solver = {
+        "lbfgs": ["l2", "none"],
+        "liblinear": ["l1", "l2"],
+        "newton-cg": ["l2", "none"],
+        "newton-cholesky": ["l2", "none"],
+        "sag": ["l2", "none"],
+        "saga": ["l1", "l2", "elasticnet", "none"],
+    }
+
+    row1_col1, row1_col2 = st.columns(2)
+    with row1_col1:
+        params["solver"] = st.selectbox("solver", ["lbfgs", "liblinear", "newton-cg", "newton-cholesky", "sag", "saga"], key=f"{prefix}_solver")
+    with row1_col2:
+        params["C"] = st.number_input(
+            "C",
+            min_value=0.01,
+            max_value=1000.0,
+            value=1.0,
+            step=0.1,
+            help="Inverse regularization strength in Logistic Regression. Higher C = weaker regularization; lower C = stronger regularization.",
+            key=f"{prefix}_C",
+        )
+
+    with st.expander("Advanced settings", expanded=False):
+        adv1_col1, adv1_col2 = st.columns(2)
+        with adv1_col1:
+            params["max_iter"] = st.number_input("max_iter", min_value=100, max_value=50000, value=10000, step=100, key=f"{prefix}_max_iter")
+        with adv1_col2:
+            params["tol"] = st.number_input("tol", min_value=1e-06, max_value=0.1, value=1e-04, step=1e-04, format="%.5f", key=f"{prefix}_tol")
+
+        adv3_col1, adv3_col2 = st.columns(2)
+        with adv3_col1:
+            regularization_options = regularization_options_by_solver[params["solver"]]
+            default_regularization = "l2" if "l2" in regularization_options else regularization_options[0]
+            regularization_key = f"{prefix}_regularization"
+            if regularization_key in st.session_state and st.session_state[regularization_key] not in regularization_options:
+                st.session_state[regularization_key] = default_regularization
+            regularization = st.selectbox(
+                "regularization",
+                regularization_options,
+                index=regularization_options.index(default_regularization),
+                key=regularization_key,
+            )
+            params["regularization"] = regularization
+        with adv3_col2:
+            params["fit_intercept"] = st.checkbox("fit_intercept", value=True, key=f"{prefix}_fit_intercept")
+
+        if params["solver"] == "saga" and params["regularization"] == "elasticnet":
+            adv4_col1, _ = st.columns(2)
+            with adv4_col1:
+                params["l1_ratio"] = st.slider("l1_ratio", min_value=0.0, max_value=1.0, value=0.5, step=0.05, key=f"{prefix}_l1_ratio")
+
+    return params
+
+
+def classifier_hyperparams_widget(classifier):
+    prefix = _classifier_prefix(classifier)
+    if classifier == "Random Forest":
+        return _random_forest_hyperparams_widget(prefix)
+    if classifier == "Gradient Boosting":
+        return _gradient_boosting_hyperparams_widget(prefix)
+    if classifier == "SVM":
+        return _svm_hyperparams_widget(prefix)
+    return _logistic_hyperparams_widget(prefix)
+
+
 def classifier_options_widget(df, categorical_cols, fov_name_col, selected_features, classifier, splits):
     classify_by_options = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1 and category != fov_name_col]
+
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         if len(classify_by_options) > 0:
             classify_by_options = st.multiselect("Classify by", classify_by_options, default=classify_by_options[-1])
     with col2:
         sampling_method = st.selectbox("Sampling method", ["None", "Undersampling", "Oversampling"], help="Undersampling: Randomly remove samples from the majority class. Oversampling: Randomly duplicate samples from the minority class.")
+
     with col3:
         # Hide class_weight option for Gradient Boosting (not supported)
         if classifier != "Gradient Boosting":
@@ -23,6 +183,10 @@ def classifier_options_widget(df, categorical_cols, fov_name_col, selected_featu
     with col4:
         threshold_method = st.selectbox("Threshold tuning based on", ["None", "Balanced Accuracy", "F1 Score"])
 
+    if len(classify_by_options) == 0:
+        return "Please select at least one category for classification.", None, None, None, None
+
+    df = df.copy()
     df['classes'] = df[classify_by_options].agg('_'.join, axis=1)
     classes = df['classes'].unique()
     if len(classes) <= 1:
