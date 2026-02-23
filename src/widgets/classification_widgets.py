@@ -59,12 +59,11 @@ def _svm_hyperparams_widget(prefix):
     with row1_col1:
         params["kernel"] = st.selectbox("kernel", ["linear", "rbf", "poly", "sigmoid"], key=f"{prefix}_kernel")
     with row1_col2:
-        params["C"] = st.number_input(
+        c_options = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+        params["C"] = st.select_slider(
             "C",
-            min_value=0.01,
-            max_value=1000.0,
+            options=c_options,
             value=1.0,
-            step=0.1,
             help="SVM regularization coefficient. Higher C = weaker regularization (fits training data more closely); lower C = stronger regularization.",
             key=f"{prefix}_C",
         )
@@ -109,12 +108,11 @@ def _logistic_hyperparams_widget(prefix):
     with row1_col1:
         params["solver"] = st.selectbox("solver", ["lbfgs", "liblinear", "newton-cg", "newton-cholesky", "sag", "saga"], key=f"{prefix}_solver")
     with row1_col2:
-        params["C"] = st.number_input(
+        c_options = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+        params["C"] = st.select_slider(
             "C",
-            min_value=0.01,
-            max_value=1000.0,
+            options=c_options,
             value=1.0,
-            step=0.1,
             help="Inverse regularization strength in Logistic Regression. Higher C = weaker regularization; lower C = stronger regularization.",
             key=f"{prefix}_C",
         )
