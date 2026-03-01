@@ -37,8 +37,8 @@ def chi_square(fitted, data, start, end, num_free_params):
     # crop out the region of interest by time gates
     data_slice = data[start:end]
     fitted_slice = fitted[start:end]
-    # keep only the positive-count bins 
-    valid = (data_slice > 0) & (fitted_slice > 0)
+    # keep only bins where fitted > 0 to avoid division by zero
+    valid = (fitted_slice > 0)
     data_slice = data_slice[valid] 
     fitted_slice = fitted_slice[valid]
     residuals = data_slice - fitted_slice
