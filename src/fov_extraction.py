@@ -361,7 +361,7 @@ def extract_intensity_sum_2d(channel_name, decay_curves, single_cell_features_fo
     return single_cell_features_fov
 
 
-def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method=None, fluorescence_lifetime_standard_image=None, fluorescence_lifetime_standard_lifetime=None, fluorescence_lifetime_standard_time_axis=None):
+def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method=None, fluorescence_lifetime_standard_image=None, fluorescence_lifetime_standard_lifetime=None, fluorescence_lifetime_standard_time_axis=None, fixed_lifetimes=None):
     need_to_fit = False
 
     if "prefitted" not in input_type or fit_free:
@@ -407,7 +407,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
     
     channel_progress_callback = create_progress_callback(channel_progress)
     if need_to_fit:
-        results = fit_curves(duration, time_bins, list(decay_curves.values()), shifted_irf, num_components, fitting_algo, fitting_mode, start=start, end=end, _progress_callback=channel_progress_callback)
+        results = fit_curves(duration, time_bins, list(decay_curves.values()), shifted_irf, num_components, fitting_algo, fitting_mode, start=start, end=end, fixed_lifetimes=fixed_lifetimes, _progress_callback=channel_progress_callback)
         warning_msg, single_cell_fit_features_fov = extract_fit_results(channel_name, decay_curves, results, num_components)
         if warning_msg != "":
             st.warning(warning_msg)
@@ -484,7 +484,8 @@ def fov_extraction(metadata, metadata_dict):
                 fluorescence_lifetime_standard_time_axis = None
 
             if fit or fit_free:
-                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method, fluorescence_lifetime_standard_image=fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime=fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis=fluorescence_lifetime_standard_time_axis)
+                fixed_lifetimes = metadata_dict[channel_name].get("fixed_lifetimes", {})
+                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method, fluorescence_lifetime_standard_image=fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime=fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis=fluorescence_lifetime_standard_time_axis, fixed_lifetimes=fixed_lifetimes)
                 if error_msg != "":
                     st.error(error_msg)
                     continue

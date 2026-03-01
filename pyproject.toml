@@ -54,3 +54,8 @@ dependencies = [
     "urllib3==2.6.3",
     "watchdog==6.0.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+]

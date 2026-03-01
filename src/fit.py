@@ -3,28 +3,52 @@ from lmfit import minimize as lmfit_minimize
 from lmfit import Parameters
 from src.fit_helper import objective
 
-def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode="hybrid", fit_shift=False, shift_guess=None, start=0, end=-1, _progress_callback=None):
+def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode="hybrid", fit_shift=False, shift_guess=None, start=0, end=-1, fixed_lifetimes=None, _progress_callback=None):
+    """
+    fixed_lifetimes: optional dict mapping 't1'/'t2'/'t3' to a fixed value in ns,
+                     or None/0 to leave that component free.
+                     Example: {'t1': 0.4, 't2': None}  → fix τ1, fit τ2 freely.
+    """
     
     num_curves = len(decay_curves)
     params = Parameters()
+    _fl = fixed_lifetimes or {}  # shorthand
+
+    def _get_fixed(key):
+        """Return a fixed value (float) if the user specified one, else None."""
+        val = _fl.get(key)
+        return float(val) if (val is not None and float(val) > 0) else None
+
     # initialize the parameters
     amp1_data = np.zeros(num_curves)
     params.add('amp1', min=0.001)
     t1_data = np.zeros(num_curves)
-    params.add('t1', value=0.400, min=0.001, max=duration)
+    _t1_fixed = _get_fixed('t1')
+    if _t1_fixed is not None:
+        params.add('t1', value=_t1_fixed, vary=False)
+    else:
+        params.add('t1', value=0.400, min=0.001, max=duration)
     offset_data = np.zeros(num_curves)
     params.add('offset', min=0.0, max=1000000)
     if num_components > 1:
         amp2_data = np.zeros(num_curves)
         params.add('amp2', min=0.001)
         t2_data = np.zeros(num_curves)
-        params.add('t2', value=2.5, min=0.001, max=duration)
-        
+        _t2_fixed = _get_fixed('t2')
+        if _t2_fixed is not None:
+            params.add('t2', value=_t2_fixed, vary=False)
+        else:
+            params.add('t2', value=2.5, min=0.001, max=duration)
+
     if num_components > 2:
         amp3_data = np.zeros(num_curves)
         params.add('amp3', min=0.001)
         t3_data = np.zeros(num_curves)
-        params.add('t3', min=0.001, max=duration)
+        _t3_fixed = _get_fixed('t3')
+        if _t3_fixed is not None:
+            params.add('t3', value=_t3_fixed, vary=False)
+        else:
+            params.add('t3', min=0.001, max=duration)
 
     if fit_shift:
         shift_data = np.zeros(num_curves)
@@ -101,10 +125,12 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
             t2 = result.params['t2'].value
             amp1 = result.params['amp1'].value
             amp2 = result.params['amp2'].value
-            # make sure t1 is the shorter lifetime component and its amplitude
-            if t1 > t2:
-                t1, t2 = t2, t1
-                amp1, amp2 = amp2, amp1
+            # Only sort free components; fixed components stay in their assigned slot
+            if _t1_fixed is None and _t2_fixed is None:
+                # both free: ensure t1 < t2
+                if t1 > t2:
+                    t1, t2 = t2, t1
+                    amp1, amp2 = amp2, amp1
             amp1_data[i] = amp1
             t1_data[i] = t1
             amp2_data[i] = amp2
@@ -116,9 +142,10 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
             amp1 = result.params['amp1'].value
             amp2 = result.params['amp2'].value
             amp3 = result.params['amp3'].value
-            # sort the lifetimes and keep amplitudes aligned
-            lifetime_amp_pairs = sorted([(t1, amp1), (t2, amp2), (t3, amp3)], key=lambda x: x[0])
-            (t1, amp1), (t2, amp2), (t3, amp3) = lifetime_amp_pairs
+            # Only sort free components; fixed components stay in their assigned slot
+            if _t1_fixed is None and _t2_fixed is None and _t3_fixed is None:
+                lifetime_amp_pairs = sorted([(t1, amp1), (t2, amp2), (t3, amp3)], key=lambda x: x[0])
+                (t1, amp1), (t2, amp2), (t3, amp3) = lifetime_amp_pairs
 
             amp1_data[i] = amp1
             t1_data[i] = t1

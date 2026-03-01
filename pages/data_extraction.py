@@ -9,7 +9,7 @@ from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.lifetime_widgets import fit_options_widget, choose_shift_widget
 from src.metadata import parse_metadata_file
-from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type, get_fit_free_calibration_method
+from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type, get_fit_free_calibration_method, get_fixed_lifetimes
 from src.file_io import load_image
 
 st.set_page_config(layout="wide")
@@ -225,6 +225,12 @@ def prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components):
             fov_df[f"{channel_name}_{feature_extractor}"] = True
         if has_flim and channel_name in selected_ch_num_components:
             fov_df[f"{channel_name}_num_components"] = selected_ch_num_components[channel_name]
+        # Write fixed-lifetime columns from config defaults (Step 1)
+        if "Lifetime fit" in selected_ch_feature_extractors.get(channel_key, []):
+            fixed_lts = get_fixed_lifetimes(channel_key, input_types[channel_key])
+            for t_key in ["t1", "t2", "t3"]:
+                val = fixed_lts.get(t_key)  # None or float
+                fov_df[f"{channel_name}_fixed_{t_key}"] = val
     
     return fov_df
 
@@ -333,6 +339,12 @@ with col2:
                     metadata_df[f"{channel_name}_end"] = metadata_dict[channel_name]["end"]
                 if "num_components" in metadata_dict[channel_name]:
                     metadata_df[f"{channel_name}_num_components"] = metadata_dict[channel_name]["num_components"]
+                # Persist any session-level fixed-lifetime overrides back to the metadata CSV
+                fixed_lts = metadata_dict[channel_name].get("fixed_lifetimes", {})
+                for t_key in ["t1", "t2", "t3"]:
+                    col = f"{channel_name}_fixed_{t_key}"
+                    if t_key in fixed_lts:
+                        metadata_df[col] = fixed_lts[t_key]  # float or None
             
             if "fitting_algo" in metadata_dict:
                 metadata_df["fitting_algo"] = metadata_dict["fitting_algo"]

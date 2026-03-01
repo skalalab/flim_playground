@@ -243,7 +243,8 @@ def choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name, 
             end = metadata_dict[channel_name]["end"]
         except:
             return "Error: Fitting algorithm or mode or number of components not found for channel: " + channel_name, None
-        error_msg, results = choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, input_type, channel_name, start=start, end=end)
+        fixed_lifetimes = metadata_dict[channel_name].get("fixed_lifetimes", {})
+        error_msg, results = choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, input_type, channel_name, start=start, end=end, fixed_lifetimes=fixed_lifetimes)
     if error_msg != "":
         return error_msg, None
     
@@ -335,6 +336,37 @@ def fit_options_widget(metadata_dict):
         start, end = start_end_widget(metadata_dict["time_bins"], channel_name)
         metadata_dict[channel_name]["start"] = start
         metadata_dict[channel_name]["end"] = end
+
+        # Fixed-lifetime controls (only relevant when num_components > 1)
+        n_comp = channel_components[channel_name]
+        existing_fixed = metadata_dict[channel_name].get("fixed_lifetimes", {})
+        fixed_lifetimes = {}
+        if n_comp > 1:
+            st.write(f"**Fix τ for {channel_name}** *(set 0 or uncheck to fit freely)*")
+            fix_cols = st.columns(n_comp)
+            for comp_i in range(1, n_comp + 1):
+                t_key = f"t{comp_i}"
+                prev_val = existing_fixed.get(t_key) or 0.0
+                with fix_cols[comp_i - 1]:
+                    do_fix = st.checkbox(
+                        f"Fix τ{comp_i}",
+                        value=(prev_val > 0),
+                        key=f"{channel_name}_fix_t{comp_i}"
+                    )
+                    if do_fix:
+                        fixed_val = st.number_input(
+                            f"τ{comp_i} (ns)",
+                            value=float(prev_val) if prev_val > 0 else 0.4,
+                            min_value=0.001,
+                            max_value=100.0,
+                            step=0.01,
+                            format="%.3f",
+                            key=f"{channel_name}_fixed_val_t{comp_i}"
+                        )
+                        fixed_lifetimes[t_key] = fixed_val
+                    else:
+                        fixed_lifetimes[t_key] = None
+        metadata_dict[channel_name]["fixed_lifetimes"] = fixed_lifetimes
     
     return metadata_dict
 

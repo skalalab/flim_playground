@@ -176,6 +176,30 @@ def main():
             if "Lifetime fit" in selected_feature_extractors:
                 num_components = st.number_input(f"Number of components for {custom_channel_name}", value=cfg[channel_key][input_type].get("num_components", 1), min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis")
                 cfg[channel_key][input_type]["num_components"] = num_components
+                # Fixed-lifetime defaults (per component)
+                if num_components > 1:
+                    if "fixed_lifetimes" not in cfg[channel_key][input_type]:
+                        cfg[channel_key][input_type]["fixed_lifetimes"] = {}
+                    st.caption("Fix lifetime components (ns) — set 0 to fit freely:")
+                    fix_cols = st.columns(num_components)
+                    for comp_i in range(1, num_components + 1):
+                        t_key = f"t{comp_i}"
+                        existing = cfg[channel_key][input_type]["fixed_lifetimes"].get(t_key, 0.0) or 0.0
+                        with fix_cols[comp_i - 1]:
+                            fixed_val = st.number_input(
+                                f"Fix τ{comp_i} (ns)",
+                                value=float(existing),
+                                min_value=0.0,
+                                max_value=100.0,
+                                step=0.01,
+                                format="%.3f",
+                                key=f"{channel_key}_{input_type}_fixed_t{comp_i}",
+                                help=f"Set > 0 to fix τ{comp_i} to this value. 0 = free parameter."
+                            )
+                            cfg[channel_key][input_type]["fixed_lifetimes"][t_key] = fixed_val if fixed_val > 0 else None
+                else:
+                    # 1-component: no fixing needed, clear any stale config
+                    cfg[channel_key][input_type]["fixed_lifetimes"] = {}
             # Initialize the input section for this channel if it doesn't exist
             if "input_suffixes" not in cfg[channel_key][input_type]:
                 cfg[channel_key][input_type]["input_suffixes"] = {}

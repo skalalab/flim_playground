@@ -36,7 +36,7 @@ def choose_shift_fit_free(metadata_df, time_bins, input_type, channel_name):
     return "", results
 
 @st.cache_data
-def choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, input_type, channel_name, start, end):
+def choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, input_type, channel_name, start, end, fixed_lifetimes=None):
     error_msg, decay_curves = get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=True)
     if error_msg != "":
         return error_msg, None
@@ -44,15 +44,12 @@ def choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_a
     if error_msg != "":
         return error_msg, None
     shift_guess = guess_shift(irf, decay_curves.values())
-    # Create a separate copy for original display (also floored for consistent log plotting)
-    #original_decays = [decay.copy() for decay in decay_curves.values()]
-  #   sample_decays = _floor_decay_curves(list(decay_curves.values()))
     sample_decays = list(decay_curves.values())
     # get the shift progress bar
     st.info(f"Estimating shifts for {channel_name} channel using {len(decay_curves)} sample curves...")
     shift_progress = st.progress(0)
     shift_progress_callback = create_progress_callback(shift_progress)
-    results = fit_curves(duration, time_bins, sample_decays, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, start=start, end=end, _progress_callback=shift_progress_callback)
+    results = fit_curves(duration, time_bins, sample_decays, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, start=start, end=end, fixed_lifetimes=fixed_lifetimes, _progress_callback=shift_progress_callback)
     shift_progress.empty()  # Remove progress bar when done
     results["decay_curves"] = sample_decays
     #results["original_decay_curves"] = original_decays

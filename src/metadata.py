@@ -62,6 +62,17 @@ def get_ch_info(metadata_df):
             if "prefitted" not in input_type:
                 # use fitting to find the shift, if it is already fitted, then do not use fitting to find shift (if needed)
                 metadata_dict["channels_shift"][channel_name] = "fit"
+            # Read fixed-lifetime columns (optional — may or may not be present in CSV)
+            import pandas as _pd
+            fixed_lifetimes = {}
+            for t_key in ["t1", "t2", "t3"]:
+                col = f"{channel_name}_fixed_{t_key}"
+                if col in metadata_df.columns:
+                    val = metadata_df[col].iloc[0]
+                    fixed_lifetimes[t_key] = None if (_pd.isna(val) or val == 0) else float(val)
+                else:
+                    fixed_lifetimes[t_key] = None
+            metadata_dict[channel_name]["fixed_lifetimes"] = fixed_lifetimes
         if "Lifetime fit free" in selected_feature_extractors:
             fit_free = True
             if channel_name not in metadata_dict["channels_shift"]:

@@ -161,3 +161,16 @@ def get_fit_free_calibration_method(input_type: str) -> str:
         return method, fluorescence_lifetime_standard_lifetime
     else:
         return method, ""
+
+def get_fixed_lifetimes(channel_key: str, input_type: str) -> dict:
+    """Return the fixed-lifetime dict for a channel/input_type pair.
+
+    Keys are 't1', 't2', 't3'; values are float (ns) when fixed, or None when free.
+    Returns an empty dict when no constraints are stored.
+    """
+    cfg = load_config()
+    raw = cfg.get(channel_key, {}).get(input_type, {}).get("fixed_lifetimes", {})
+    result = {}
+    for key, val in raw.items():
+        result[key] = float(val) if (val is not None and float(val) > 0) else None
+    return result
