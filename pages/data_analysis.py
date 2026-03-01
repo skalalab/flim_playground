@@ -244,12 +244,12 @@ with col2:
                 if method == "2D Feature Distribution":
                     col2_1, col2_2 = st.columns([1, 1])
                     with col2_1:
-                       st.plotly_chart(fig, use_container_width=True)
+                       st.plotly_chart(fig, width='stretch')
                     with col2_2:
                         if table_md != []:
                             st.markdown(table_md, unsafe_allow_html=True)
                 else:
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                 # 1. Data export (if applicable)
                 if data_export_ready:
                     # available for download

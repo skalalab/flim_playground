@@ -143,7 +143,7 @@ with col1:
                         )
                     col1_1, col1_2 = st.columns(2)
                     with col1_1:
-                        if st.button("Confirm and Start Analysis", use_container_width=True):
+                        if st.button("Confirm and Start Analysis", width='stretch'):
                             # Update metadata_df in session state
                             st.session_state["last_extracted_metadata"] = metadata_df
                             st.session_state["choosing_shift"] = False
@@ -152,7 +152,7 @@ with col1:
                     
                     if shift_needed and shifts_are_present:
                         with col1_2:
-                            if st.button("Go back and find shift", use_container_width=True):
+                            if st.button("Go back and find shift", width='stretch'):
                                 st.session_state["choosing_shift"] = True
                                 st.session_state["shift_ready"] = False
                                 # remove shift columns from metadata_df in session state
@@ -163,7 +163,7 @@ with col1:
                                 st.rerun()
                         # have a download button to download the metadata file
                         if st.session_state["last_extracted_metadata_filepath"] is not None:
-                            download = st.button("Download updated metadata", use_container_width=True, help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
+                            download = st.button("Download updated metadata", width='stretch', help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
                             if download:
                                 try:
                                     metadata_df.to_csv(st.session_state["last_extracted_metadata_filepath"], index=False)
@@ -173,7 +173,7 @@ with col1:
                                 except Exception as e:
                                     st.error(f"❌ Error saving file: {str(e)}")
                         else:
-                            st.download_button(label="Download updated metadata", data=metadata_df.to_csv(index=False), file_name=f"fov_metadata_{time.strftime('%Y%m%d_%H%M%S')}.csv", key=f"download_metadata_{time.time()}", use_container_width=True, help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
+                            st.download_button(label="Download updated metadata", data=metadata_df.to_csv(index=False), file_name=f"fov_metadata_{time.strftime('%Y%m%d_%H%M%S')}.csv", key=f"download_metadata_{time.time()}", width='stretch', help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
             else:
                 st.error(f"Error: {error_msg}")
 

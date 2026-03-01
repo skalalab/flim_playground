@@ -433,6 +433,48 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
     else:
         return "Error: Neither lifetime fit nor fit free analysis was requested.", pd.DataFrame()
 
+
+def extract_intensity_features(metadata, channel_name, fov_col_name, input_type,
+                                selected_feature_extractors, extracted_morphology_masks):
+    """Extract intensity morphology and/or texture features for a channel.
+
+    Shared by both FLIM and Intensity-only branches so the logic lives in one
+    place.  Returns (feature_dfs, error_occurred) where *feature_dfs* is a list
+    of DataFrames (possibly empty) and *error_occurred* is True if the mask
+    could not be loaded.
+    """
+    int_morph = "Intensity morphology" in selected_feature_extractors
+    int_texture = "Intensity texture" in selected_feature_extractors
+    feature_dfs = []
+
+    if not (int_morph or int_texture):
+        return feature_dfs, False
+
+    try:
+        mask = load_image(metadata[f"{channel_name}_Mask"])
+    except Exception as e:
+        st.error(f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}")
+        return feature_dfs, True  # signal caller to skip this channel
+
+    if int_morph:
+        # Avoid re-extracting morphology if the same mask file was already processed
+        if metadata[f"{channel_name}_Mask"] not in extracted_morphology_masks:
+            extracted_morphology_masks.append(metadata[f"{channel_name}_Mask"])
+            error_msg, morph_df = get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask)
+            if error_msg != "":
+                st.error(error_msg)
+            else:
+                feature_dfs.append(morph_df)
+
+    if int_texture:
+        error_msg, texture_df = get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type)
+        if error_msg != "":
+            st.error(error_msg)
+        else:
+            feature_dfs.append(texture_df)
+
+    return feature_dfs, False
+
 @st.cache_data
 def fov_extraction(metadata, metadata_dict):
     """
@@ -490,52 +532,21 @@ def fov_extraction(metadata, metadata_dict):
                     st.error(error_msg)
                     continue
                 fov_feature_dfs.append(single_cell_lifetime_features)
-            int_morph = "Intensity morphology" in selected_feature_extractors
-            int_texture = "Intensity texture" in selected_feature_extractors
-            if int_morph or int_texture:
-                try:
-                    mask = load_image(metadata[f"{channel_name}_Mask"])
-                except Exception as e:
-                    st.error(f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}")
-                    continue
-                if int_morph:
-                    # check if the morphology features are already extracted for this mask
-                    if metadata[f"{channel_name}_Mask"] not in extracted_morphology_masks:
-                        extracted_morphology_masks.append(metadata[f"{channel_name}_Mask"])
-                        error_msg, single_cell_morph_features_fov = get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask)
-                        if error_msg != "":
-                            st.error(error_msg)
-                        else:
-                            fov_feature_dfs.append(single_cell_morph_features_fov)
-                if int_texture:
-                        error_msg, single_cell_texture_features_fov = get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type)
-                        if error_msg != "":
-                            st.error(error_msg)
-                        else:
-                            fov_feature_dfs.append(single_cell_texture_features_fov)
+            intensity_dfs, mask_error = extract_intensity_features(
+                metadata, channel_name, fov_col_name, input_type,
+                selected_feature_extractors, extracted_morphology_masks
+            )
+            if mask_error:
+                continue
+            fov_feature_dfs.extend(intensity_dfs)
         elif imaging_modality == "Intensity-only":
-            if input_type == "Intensity (2D)":
-                int_morph = "Intensity morphology" in selected_feature_extractors
-                int_texture = "Intensity texture" in selected_feature_extractors
-                try:
-                    mask = load_image(metadata[f"{channel_name}_Mask"])
-                except Exception as e:
-                    st.error(f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}")
-                    continue
-                if int_morph:
-                    if metadata[f"{channel_name}_Mask"] not in extracted_morphology_masks:
-                        extracted_morphology_masks.append(metadata[f"{channel_name}_Mask"])
-                        error_msg, single_cell_morph_features_fov = get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask)
-                        if error_msg != "":
-                            st.error(error_msg)
-                        else:
-                            fov_feature_dfs.append(single_cell_morph_features_fov)
-                if int_texture:
-                    error_msg, single_cell_texture_features_fov = get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type)
-                    if error_msg != "":
-                        st.error(error_msg)
-                    else:
-                        fov_feature_dfs.append(single_cell_texture_features_fov)
+            intensity_dfs, mask_error = extract_intensity_features(
+                metadata, channel_name, fov_col_name, input_type,
+                selected_feature_extractors, extracted_morphology_masks
+            )
+            if mask_error:
+                continue
+            fov_feature_dfs.extend(intensity_dfs)
 
     # Combine all channel DataFrames in one operation
     single_cell_features_fov = pd.concat(fov_feature_dfs, axis=1) if fov_feature_dfs else pd.DataFrame()

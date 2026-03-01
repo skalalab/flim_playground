@@ -219,7 +219,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
                     title=dict(font=dict(color=color))
                 ),
             )
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
 
 def choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name, log_y=True):
     error_msg = ""
@@ -342,7 +342,7 @@ def fit_options_widget(metadata_dict):
         existing_fixed = metadata_dict[channel_name].get("fixed_lifetimes", {})
         fixed_lifetimes = {}
         if n_comp > 1:
-            st.write(f"**Fix τ for {channel_name}** *(set 0 or uncheck to fit freely)*")
+            st.write(f"**Fix τ for {channel_name}** *(uncheck to fit freely)*")
             fix_cols = st.columns(n_comp)
             for comp_i in range(1, n_comp + 1):
                 t_key = f"t{comp_i}"
