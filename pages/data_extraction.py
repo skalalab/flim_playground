@@ -108,15 +108,16 @@ with col1:
             error_msg, metadata_dict = parse_metadata_file(metadata_df, fov_name_col)
             if error_msg == "":
                 st.success("✅ Features to be extracted confirmed.")
-                decay_input_type = metadata_dict["decay_input_type"]
+                # Only relevant when at least one channel is FLIM; not set for intensity-only metadata
+                decay_input_type = metadata_dict["decay_input_type"] if "decay_input_type" in metadata_dict else None
                 shift_needed = len(metadata_dict["channels_shift"]) > 0
                 shifts_are_present = all(f"{ch}_shift" in metadata_df.columns for ch in metadata_dict["channels_shift"])
                 # Defensive reset: if shifts are required but missing, do not allow extraction yet
                 if shift_needed and not shifts_are_present and st.session_state.get("shift_ready", False):
                     st.session_state["shift_ready"] = False
                 if shift_needed and not shifts_are_present:
-                        # if there are channels to be fitted, show the fitting options: spcimage is already fitted
-                    if "Lifetime fit" in metadata_dict and len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
+                        # if there are channels to be fitted, show the fitting options: spcimage is already fitted (only for FLIM)
+                    if decay_input_type is not None and "Lifetime fit" in metadata_dict and len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
                         st.info("Please specify the following fitting options.")
                         metadata_dict= fit_options_widget(metadata_dict)
                     col1_1, col1_2 = st.columns(2)
