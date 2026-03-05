@@ -34,10 +34,16 @@ You can try out analysis modules in the **Data Analysis** section using this sam
 - Releases for Mac OS 26, Windows 11 (look for the latest ones)
 ## Option 2: Build from source
 ### Clone the repo
-Navigate into the repository once cloned. 
+```bash
+git clone https://github.com/skalalab/flim_playground.git
+```
+Then Navigate into the repository once cloned. 
+
 ### Install the python environment
 - Install `uv` if not yet installed
 - run `uv sync`
+- then run `source .venv/bin/activate` to activate the virtual environment (works in Mac OS, Linux distributions, and Windows Git bash)
+
 ### Build
 ```bash
 pyinstaller Flim-Playground.spec --clean
