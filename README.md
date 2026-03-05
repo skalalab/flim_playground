@@ -31,7 +31,7 @@ You can try out analysis modules in the **Data Analysis** section using this sam
 
 # Install
 ## Option 1: Download from Releases
-- Releases for Mac OS 26, Windows 11 (look for the latest ones)
+- Releases for Mac OS 26, Windows 11 (look for the latest ones), Ubuntu 24.04 LTS
 ## Option 2: Build from source
 ### Clone the repo
 ```bash
