@@ -61,6 +61,11 @@ def _get_sample_decay_curves(decays: pd.DataFrame, n_samples: int, max_intensity
     sorted_indices = np.argsort(decay_intensity)[::-1]
     filtered_indices = [idx for idx in sorted_indices if decay_intensity[idx] < max_intensity]
 
+    # Fallback: if intensity filter removed all cells, ignore the cap and
+    # take the n_samples brightest curves so shift estimation still works.
+    if len(filtered_indices) == 0:
+        filtered_indices = list(sorted_indices)
+
     if len(filtered_indices) < n_samples:
         top_indices = filtered_indices
     else:
