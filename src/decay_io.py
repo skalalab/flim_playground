@@ -9,6 +9,7 @@ import numpy as np
 from pathlib import Path
 import os
 
+
 def read_decay_metadata(filename):
     if not filename or not isinstance(filename, (str, os.PathLike)):
         return "Error: No decay file path provided.", None
@@ -49,44 +50,57 @@ def read_sdt(filename, channel=-1):
         sdt = SdtFile(filename)
     except Exception as e:
         return f"Error reading {filename}: file may be corrupted or truncated ({e})", None
+
     if len(sdt.data) == 0:
         return f"Error: {filename} contains no data blocks. The file may be empty or corrupted.", None
     if len(sdt.data) != 1:
-        return f"Error: {filename} has {len(sdt.data)} data blocks (expected 1). It should be one field of view at a single time point (maybe multiple channels).", None
-    else:
-        # get the x, y, t, c
-        try:
-            x = int(sdt.measure_info[0].scan_x)
-            y = int(sdt.measure_info[0].scan_y)
-            t = int(sdt.measure_info[0].adc_re)
-        except Exception:
-            return f"Error: {filename} has no scan_x, scan_y, or adc_re", None
-        if x <= 0 or y <= 0 or t <= 0:
-            return f"Error: {filename} has invalid dimensions (x={x}, y={y}, t={t}). All must be > 0.", None
-        decay_data = sdt.data[0]
-        try: 
-            c = sdt.measure_info[0].image_rx
-        except:
-            c = 1
-        
-        # checks if the data shape is consistent with the x, y, t, c
-        shape_multiplier = x * y * t * c
-        actual_shape_multiplier = np.prod(decay_data.shape)
-        if shape_multiplier != actual_shape_multiplier:
-            return f"Error: {filename} has inconsistent data shape with the metadata", None
-        else:
-            # reshpe the data to CYXT
-            if c == 1:
-                decay_data = decay_data.reshape(y, x, t)
-            else:
-                decay_data = decay_data.reshape(c, y, x, t)
-        if channel != -1:
-            num_channels = decay_data.shape[0] if c > 1 else 1
-            if channel < 0 or channel >= num_channels:
-                return f"Error: Channel index {channel} out of range for {filename} (available: 0-{num_channels - 1})", None
-            decay_data = decay_data[channel]
+        return (
+            f"Error: {filename} has {len(sdt.data)} data blocks (expected 1). "
+            f"It should be one field of view at a single time point "
+            f"(maybe multiple channels)."
+        ), None
 
-        return "", decay_data
+    try:
+        x = int(sdt.measure_info[0].scan_x)
+        y = int(sdt.measure_info[0].scan_y)
+        t = int(sdt.measure_info[0].adc_re)
+    except Exception:
+        return f"Error: {filename} has no scan_x, scan_y, or adc_re", None
+    if x <= 0 or y <= 0 or t <= 0:
+        return (
+            f"Error: {filename} has invalid dimensions "
+            f"(x={x}, y={y}, t={t}). All must be > 0."
+        ), None
+
+    decay_data = sdt.data[0]
+    try:
+        c = int(sdt.measure_info[0].image_rx)
+    except Exception:
+        c = 1
+
+    shape_multiplier = x * y * t * c
+    actual_shape_multiplier = np.prod(decay_data.shape)
+    if shape_multiplier != actual_shape_multiplier:
+        return (
+            f"Error: {filename} has inconsistent data shape with the metadata "
+            f"(expected {shape_multiplier}, got {actual_shape_multiplier})"
+        ), None
+
+    if c == 1:
+        decay_data = decay_data.reshape(y, x, t)
+    else:
+        decay_data = decay_data.reshape(c, y, x, t)
+
+    if channel != -1:
+        num_channels = decay_data.shape[0] if c > 1 else 1
+        if channel < 0 or channel >= num_channels:
+            return (
+                f"Error: Channel index {channel} out of range for "
+                f"{filename} (available: 0-{num_channels - 1})"
+            ), None
+        decay_data = decay_data[channel]
+
+    return "", decay_data
 
 def read_ptu(filename, channel=-1):
     try:

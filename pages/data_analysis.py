@@ -69,7 +69,11 @@ with col1:
         instruction_text,
         type=["csv"],
     )
-    df, feature_groups_dict, upload_complete = load_csv(uploaded_csv, categorical_cols, use_data_extraction=use_data_extraction)
+    try:
+        df, feature_groups_dict, upload_complete = load_csv(uploaded_csv, categorical_cols, use_data_extraction=use_data_extraction)
+    except Exception as e:
+        st.error(f"Failed to process the uploaded CSV: {e}")
+        df, feature_groups_dict, upload_complete = None, None, False
     st.session_state.vis_df = df
 
     if upload_complete:
@@ -194,8 +198,14 @@ with col2:
                         st.write(f"No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Phasor Plot":
                     if selected_channel is not None and selected_harmonic is not None and f is not None:
-                        fig, kmeans_df = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap, f=f, harmonic=selected_harmonic)
-                        data_export_ready = True
+                        feature_prefix = "Lifetime fit free_" + selected_channel + ": "
+                        g_col = f"{feature_prefix}G(1st)" if selected_harmonic == 1 else f"{feature_prefix}G(2nd)"
+                        s_col = f"{feature_prefix}S(1st)" if selected_harmonic == 1 else f"{feature_prefix}S(2nd)"
+                        if g_col not in filtered_df.columns or s_col not in filtered_df.columns:
+                            st.error(f"Required phasor columns ({g_col}, {s_col}) not found in your data.")
+                        else:
+                            fig, kmeans_df = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap, f=f, harmonic=selected_harmonic)
+                            data_export_ready = True
                     else:
                         st.write("Your data does not contain the required features for phasor plot.")
                                    
@@ -208,8 +218,11 @@ with col2:
                         filtered_df = filtered_df[filtered_df[selected_features].notna().all(axis=1)]
                         
                         if len(filtered_df) > 0:
-                            # plot the reduced data
-                            fig = dimension_reduction_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_features=selected_features, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by, colormap=st.session_state.plot_colormap, method=dr_method, hyperParam_dict=hyperParam_dict)
+                            try:
+                                fig = dimension_reduction_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_features=selected_features, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by, colormap=st.session_state.plot_colormap, method=dr_method, hyperParam_dict=hyperParam_dict)
+                            except Exception as e:
+                                st.error(f"Dimension reduction failed: {e}. Check that selected features don't contain constant or all-NaN columns.")
+                                fig = None
                         else:
                             st.write(f"No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Classification":
