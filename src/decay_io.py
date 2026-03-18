@@ -11,20 +11,25 @@ import os
 
 def read_decay_metadata(filename):
     if filename.endswith(".ptu"):   
-        ptu = PtuFile(filename)
+        try:
+            ptu = PtuFile(filename)
+        except Exception as e:
+            return f"Error reading {filename}: file may be corrupted or truncated ({e})", None
         try:
             laser_rep_rate = ptu.tags['TTResult_SyncRate']
-            # convert to GHz and then to get the period in ns
             laser_rep_time = 1 / laser_rep_rate * 1e9
-        except:
+        except Exception:
             return f"Error: Cannot extract laser rep time from {filename}", None
     elif filename.endswith(".sdt"):
-        sdt = SdtFile(filename)
+        try:
+            sdt = SdtFile(filename)
+        except Exception as e:
+            return f"Error reading {filename}: file may be corrupted or truncated ({e})", None
         try:        
             tac_r = sdt.measure_info[0].tac_r
             tac_g = sdt.measure_info[0].tac_g
             laser_rep_time = tac_r / tac_g * 1e9
-        except:
+        except Exception:
             return f"Error: Cannot extract laser rep time from {filename}", None
     else:
         return f"Error reading decay metadata: {filename} is not a valid sdt or ptu file", None
@@ -32,7 +37,10 @@ def read_decay_metadata(filename):
 
 
 def read_sdt(filename, channel=-1):
-    sdt = SdtFile(filename)
+    try:
+        sdt = SdtFile(filename)
+    except Exception as e:
+        return f"Error reading {filename}: file may be corrupted or truncated ({e})", None
     if len(sdt.data) != 1:
         return f"Error: {filename} has multiple time frames. It should be on one field of view at a single time point (maybe multiple channels).", None
     else:
@@ -66,8 +74,10 @@ def read_sdt(filename, channel=-1):
         return "", decay_data
 
 def read_ptu(filename, channel=-1):
-   
-    ptu = PtuFile(filename)
+    try:
+        ptu = PtuFile(filename)
+    except Exception as e:
+        return f"Error reading {filename}: file may be corrupted or truncated ({e})", None
     if ptu.shape[0] != 1:
         return f"Error: {filename} has multiple time frames. It should be on one field of view at a single time point (maybe multiple channels).", None
     else:
