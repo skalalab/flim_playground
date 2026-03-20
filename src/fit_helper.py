@@ -1,8 +1,12 @@
 import numpy as np
 from scipy.signal import convolve
-def irf_shift(irf, shift):
+def upsample_irf(irf, scale=10):
+    return np.interp(np.linspace(0, len(irf), len(irf)*scale), np.arange(len(irf)), irf)
+
+def irf_shift(irf, shift, irf_upsampled=None):
     scale = 10
-    irf_upsampled = np.interp(np.linspace(0, len(irf), len(irf)*scale), np.arange(len(irf)), irf)
+    if irf_upsampled is None:
+        irf_upsampled = upsample_irf(irf, scale)
     # shift the irf curve
     irf_shifted = np.roll(irf_upsampled, int(shift * scale))
     # downsample the irf curve back to original size
@@ -31,7 +35,7 @@ def nll_poisson(fitted, data, start, end):
     likelihood = -np.sum(data[start:end] * np.log(fitted[start:end]) - fitted[start:end])
     return likelihood
 
-def chi_square(fitted, data, start, end, num_free_params):
+def reduced_chi_square(fitted, data, start, end, num_free_params):
     if end == -1 or end > len(data):
         end = len(data) 
     # crop out the region of interest by time gates
@@ -46,13 +50,13 @@ def chi_square(fitted, data, start, end, num_free_params):
     chiq = tmp_chiq.sum() / (len(data_slice) - num_free_params) 
     return chiq
 
-def objective(params, data, irf, time_axis, start=0, end=-1, fitting_algo="MLE"):
+def objective(params, data, irf, time_axis, start=0, end=-1, fitting_algo="MLE", irf_upsampled=None):
     if 'shift' in params:
         shift = params['shift']
-        irf = irf_shift(irf, shift)
+        irf = irf_shift(irf, shift, irf_upsampled=irf_upsampled)
     # otherwise, the irf should be already shifted
     if end == -1 or end > len(data):
-        end = len(data) - 1
+        end = len(data)
     amp1 = params['amp1']
     t1 = params['t1']
     offset = params['offset']
@@ -66,7 +70,8 @@ def objective(params, data, irf, time_axis, start=0, end=-1, fitting_algo="MLE")
     if fitting_algo == "MLE": 
         return nll_poisson(fitted, data, start, end)
     elif fitting_algo == "LS":
-        residuals = data[start:end] - fitted[start:end]
+        weights = np.sqrt(np.maximum(data[start:end], 1))
+        residuals = (data[start:end] - fitted[start:end]) / weights
         return residuals
 
 
