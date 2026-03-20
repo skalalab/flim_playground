@@ -5,7 +5,7 @@ import numpy as np
 from plotly import graph_objects as go
 from src.vis.helpers import get_theme_color
 from src.choose_shift import choose_shift_fit_free, choose_shift_fit
-from src.fit_helper import forward_pass, irf_shift, nll_poisson, chi_square
+from src.fit_helper import forward_pass, irf_shift, nll_poisson, reduced_chi_square
 
 def display_shift_data_widget(results, channel_name, choose_shift_method, time_axis=None, period=None, num_components=None, log_y=True, start=None, end=None, fixed_lifetimes=None):
     
@@ -153,7 +153,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
             nll = nll_poisson(fitted_curve, decay_curves[idx], start=start, end=end)
             # free params: k amplitudes + k lifetimes + offset + shift = 2k+2, minus any fixed lifetimes
             num_fixed = sum(1 for v in (fixed_lifetimes or {}).values() if v is not None and v > 0)
-            chiq = chi_square(fitted_curve, decay_curves[idx], start=start, end=end, num_free_params=num_components*2+2-num_fixed)
+            chiq = reduced_chi_square(fitted_curve, decay_curves[idx], start=start, end=end, num_free_params=num_components*2+2-num_fixed)
 
             fig2.add_trace(go.Scatter(
                 x=time_axis,

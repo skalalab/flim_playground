@@ -4,7 +4,7 @@ from skimage.measure import regionprops
 from src.file_io import get_decay_curves, load_image, get_irf
 from src.decay_io import read_decay
 from src.fit import fit_curves
-from src.fit_helper import create_progress_callback, irf_shift
+from src.fit_helper import create_progress_callback, irf_shift, forward_pass, reduced_chi_square
 import streamlit as st
 from phasorpy import phasor, lifetime
 from src.cell_texture import granularity, radial_distribution, mass_displacement
@@ -213,19 +213,25 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
    
     return "", single_cell_fit_features_fov
 
-def extract_fit_results(channel_name, decay_curves, results, num_components):
+def extract_fit_results(channel_name, decay_curves, results, num_components, shifted_irf, time_axis, start, end, fixed_lifetimes=None):
     """
     Extract fitting results for a specific channel and store them in single_cell_features_img
-    
+
     Args:
         channel_name
-        cell_ids: list of cell ids
-        single_cell_features_img: dictionary of single cell features
-        results: fitting result dictionary for one cell   
+        decay_curves: dict of cell_id -> decay curve
+        results: fitting result dictionary from fit_curves
         num_components: number of fitting components
+        shifted_irf: the shifted IRF used for fitting
+        time_axis: time axis array
+        start: start time gate index
+        end: end time gate index
+        fixed_lifetimes: dict of fixed lifetime values
     """
     single_cell_features_fov = {}
     fit_feature_prefix = f"Lifetime fit_{channel_name}: "
+    num_fixed = sum(1 for v in (fixed_lifetimes or {}).values() if v is not None and v > 0)
+    num_free_params = num_components * 2 + 1 - num_fixed  # k amps + k taus + offset, minus fixed
     warning_msg = ""
     for i, cell_id in enumerate(decay_curves.keys()):
         if cell_id not in single_cell_features_fov:
@@ -234,6 +240,18 @@ def extract_fit_results(channel_name, decay_curves, results, num_components):
         single_cell_features_fov[cell_id][f"{channel_name}_amp1"] = results["amp1"][i]
         single_cell_features_fov[cell_id][f"{fit_feature_prefix}t1"] = results["t1"][i] * 1000  # Convert to ps
         single_cell_features_fov[cell_id][f"{channel_name}_offset"] = results["offset"][i]
+        # Compute reduced chi-square from fitted curve
+        fitted_curve = forward_pass(
+            amp1=results["amp1"][i], t1=results["t1"][i], offset=results["offset"][i],
+            shifted_irf=shifted_irf, time_axis=time_axis,
+            amp2=results["amp2"][i] if num_components > 1 else None,
+            t2=results["t2"][i] if num_components > 1 else None,
+            amp3=results["amp3"][i] if num_components > 2 else None,
+            t3=results["t3"][i] if num_components > 2 else None,
+        )
+        single_cell_features_fov[cell_id][f"{channel_name}_reduced_chi_square"] = reduced_chi_square(
+            fitted_curve, decay_curves[cell_id], start, end, num_free_params
+        )
         if num_components == 2:
             single_cell_features_fov[cell_id][f"{channel_name}_amp2"] = results["amp2"][i]
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}t2"] = results["t2"][i] * 1000  # Convert to ps
@@ -411,7 +429,9 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
     channel_progress_callback = create_progress_callback(channel_progress)
     if need_to_fit:
         results = fit_curves(duration, time_bins, list(decay_curves.values()), shifted_irf, num_components, fitting_algo, fitting_mode, start=start, end=end, fixed_lifetimes=fixed_lifetimes, _progress_callback=channel_progress_callback)
-        warning_msg, single_cell_fit_features_fov = extract_fit_results(channel_name, decay_curves, results, num_components)
+        period = duration / time_bins
+        time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
+        warning_msg, single_cell_fit_features_fov = extract_fit_results(channel_name, decay_curves, results, num_components, shifted_irf, time_axis, start, end, fixed_lifetimes)
         if warning_msg != "":
             st.warning(warning_msg)
         # convert to dataframe
