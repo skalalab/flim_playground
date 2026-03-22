@@ -7,7 +7,6 @@ from src.config import get_default_file_suffixes, get_spc_output_suffix, get_def
 from src.dataset_io import happy_emoji, sad_emoji
 from src.decay_io import read_decay, read_decay_metadata
 from src.file_io import load_image
-from collections import Counter
 from datetime import datetime
 
 def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_components, selected_feature_extractors):
@@ -47,7 +46,7 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
                     help_msg = None
                 suffix = st.text_input(f"{file_type}", default_suffix, key=f"{channel_name}_{input_type}_{file_type}_suffix", help=help_msg)
                 if suffix == "":
-                    error_msg += f"Please provide a suffix for {file_type}! "
+                    error_msg += f"Please provide a suffix for {file_type} {sad_emoji}"
                 else:
                     actual_file_suffix[channel_name][file_type] = suffix
         if "prefitted" in input_type and error_msg == "": # write the spc outputs' suffixes for this channel
@@ -65,7 +64,7 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
 
     # check for duplicates in t1_suffix_list
     if len(set(t1_suffix_list)) != len(t1_suffix_list):
-        error_msg += f"Duplicate t1 suffixes found: {t1_suffix_list} {sad_emoji}"
+        error_msg += f"Duplicate t1 suffixes found: {t1_suffix_list} {sad_emoji}\n"
 
     # output info message for channels that share the same mask suffix
     mask_suffix_seen = {}
