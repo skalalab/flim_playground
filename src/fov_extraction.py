@@ -344,7 +344,10 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         phi = np.arctan2(S, G) 
         m = np.sqrt(G**2 + S**2)
         tau_phase = 1/w * np.tan(phi)
-        tau_m = 1/w * np.sqrt(1/m**2 - 1)
+        if m > 0 and m < 1:
+            tau_m = 1/w * np.sqrt(1/m**2 - 1)
+        else:
+            tau_m = np.nan
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}G(1st)"] = G
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}S(1st)"] = S
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}Tau_phase"] = tau_phase
@@ -415,7 +418,10 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         single_cell_fit_features_fov = pd.DataFrame.from_dict(single_cell_fit_features_fov, orient='index')
     channel_container.empty()  # Remove both text and progress bar when done
     if fit_free:
-        laser_rate = metadata["laser_rate"]
+        try:
+            laser_rate = metadata["laser_rate"]
+        except (KeyError, TypeError):
+            return "Error: laser_rate not found in metadata. Ensure it was set during FOV Metadata Extraction.", pd.DataFrame()
         if calibration_method == None:
             return f"Error: Calibration method is not provided for {channel_name}", pd.DataFrame()
         error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf, fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis)

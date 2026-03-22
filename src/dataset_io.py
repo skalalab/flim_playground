@@ -59,7 +59,7 @@ def load_csv(uploaded_csv, categorical_cols, use_data_extraction=True):
         # check and fix the uploaded csv 
     if uploaded_csv is not None:
         # Read the uploaded data, explicitly preventing the first column from being used as the index
-        df = pd.read_csv(uploaded_csv, index_col=False)
+        df = pd.read_csv(uploaded_csv, index_col=False, low_memory=False)
         df, warning_msg, error_msg = check_and_fix_df(df, categorical_cols, use_data_extraction=use_data_extraction)
 
         if error_msg != "":
@@ -181,7 +181,26 @@ def get_features(df, categorical_cols, use_data_extraction=True):
     unique_row_id_col = get_unique_row_id_col(use_data_extraction)
     fov_name_col = get_fov_name_col_analysis(use_data_extraction)
     warning_msg = error_msg = ""
-    # convert 
+
+    # Attempt to convert non-categorical object columns to numeric.
+    # Only accept the conversion when <= 1% of non-null values are
+    # non-numeric (i.e. the column is overwhelmingly numeric with a few
+    # stray strings like "N/A").  Columns with more than 1% non-numeric
+    # values are left untouched (likely genuinely categorical/text).
+    skip_cols = set([unique_row_id_col, fov_name_col] + list(categorical_cols))
+    for col in df.columns:
+        if col not in skip_cols and not pd.api.types.is_numeric_dtype(df[col]):
+            converted = pd.to_numeric(df[col], errors='coerce')
+            non_null_original = int(df[col].notna().sum())
+            if non_null_original == 0:
+                continue
+            num_coerced = non_null_original - int(converted.notna().sum())
+            coerced_pct = num_coerced / non_null_original
+            if coerced_pct <= 0.01:
+                if num_coerced > 0:
+                    warning_msg += f"Warning: {num_coerced} non-numeric value{'s' if num_coerced > 1 else ''} in '{col}' were converted to NaN.<br>"
+                df[col] = converted
+
     numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
     if use_data_extraction:
         feature_groups_dict = get_feature_groups_data_extraction(numeric_cols)

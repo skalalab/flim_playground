@@ -228,9 +228,9 @@ def check_raw_decay_data(fov_df, channel_name):
     decay_column_name = f"{channel_name}_Decay"
     mask_column_name = f"{channel_name}_Mask"
     if decay_column_name not in fov_df.columns:
-        return "Error: No decay data found. Please check the data.", []
+        return "Error: No decay data found. Please check the data.", [], None, None
     if mask_column_name not in fov_df.columns:
-        return "Error: No mask data found. Please check the data.", []
+        return "Error: No mask data found. Please check the data.", [], None, None
 
     shape_list = []
     shape_to_files = {}  # shape -> list of decay file paths
