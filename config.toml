@@ -1,9 +1,9 @@
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
-categorical_cols = [ "treatment", "hours", "cell_line", "dish",]
+categorical_cols = [ "time_point", "replicate", "marker", "cell_type",]
 flim_decay_input_type = "Decay (2D)"
 intensity_only_input_type = "Intensity (2D)"
-num_channels = 2
+num_channels = 1
 unique_cell_id_col = "cell_id"
 fov_name_col = "image_name"
 
@@ -30,7 +30,7 @@ file_types = [ "Decay", "IRF", "Mask", "SPCImage t1",]
 
 ["Decay (2D)"]
 file_types = [ "Decay", "IRF",]
-laser_rate = 0.08
+laser_rate = 0.05
 fit_free_calibration = "IRF"
 available_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
 duration = 20.0
@@ -39,7 +39,7 @@ time_bins = 1024
 [ch1]
 imaging_modality = "FLIM"
 input_type = "Decay (2D)"
-channel_name = "NAD(P)H"
+channel_name = "standard"
 
 [ch2]
 imaging_modality = "FLIM"
@@ -54,6 +54,9 @@ num_components = 2
 selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
 num_components = 2
 
+[ch1."Intensity (2D)"]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
+
 [ch2."Decay (3/4D)"]
 selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture", "Lifetime fit",]
 num_components = 2
@@ -64,18 +67,20 @@ num_components = 2
 
 [ch1."Decay (3/4D)".input_suffixes]
 Decay = ".sdt"
-IRF = "ch3_irf.txt"
-Mask = "-Ch1-_photonsallmacro.tiff"
+IRF = "LOCI_IRF.txt"
+Mask = "_mask.tiff"
 
 [ch1."Decay (3/4D)".fixed_lifetimes]
-t1 = 0.4
 
 [ch1."Decay (2D)".fixed_lifetimes]
-t1 = 0.4
 
 [ch1."Decay (2D)".input_suffixes]
 Decay = ".csv"
 IRF = "IRF.txt"
+
+[ch1."Intensity (2D)".input_suffixes]
+"Intensity (2D)" = "_00000005_WaveFront.tiff"
+Mask = "_WaveFront_cellpose.tiff"
 
 [ch2."Decay (3/4D)".input_suffixes]
 Decay = ".sdt"
