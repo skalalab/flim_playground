@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.signal import convolve
+
 def upsample_irf(irf, scale=10):
     return np.interp(np.linspace(0, len(irf), len(irf)*scale), np.arange(len(irf)), irf)
 
@@ -25,7 +25,7 @@ def forward_pass(amp1, t1, offset, shifted_irf, time_axis, amp2=None, t2=None, a
     else:
         decay = amp1 * np.exp(-time_axis / t1) 
     # convolve the decay with the shifted IRF, finally add the offset
-    convolved_decay = convolve(decay, shifted_irf)[:len(time_axis)] + offset
+    convolved_decay = np.convolve(decay, shifted_irf)[:len(time_axis)] + offset
     
     return convolved_decay
 def nll_poisson(fitted, data, start, end):
