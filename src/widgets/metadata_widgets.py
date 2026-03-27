@@ -97,7 +97,7 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
     # Single recursive scan to get all files
 
     path = Path(folder_path)
-    all_files = [str(file) for file in path.rglob("*") if file.is_file()]
+    all_files = [str(file) for file in path.rglob("*") if file.is_file() and not file.name.startswith("fov_metadata")]
     
     if len(all_files) == 0:
         st.warning(f"No files found in folder: **{folder_path}**.")

@@ -7,6 +7,7 @@ from typing import Union
 from src.decay_io import read_decay
 from src.config import get_fov_name_col
 import pandas as pd
+import os
 
 def load_image(path: Union[str, pathlib.PurePath]) -> np.ndarray:
     """
@@ -139,11 +140,16 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
                 decays = pd.read_csv(decay_path)    
             except Exception as e:
                 return f"Error reading the histogram file for {fov_name_col} {fov_name} at {decay_path}: {e}", None
+            non_numeric = decays.select_dtypes(exclude="number").columns.tolist()
+            if non_numeric:
+                return f"Decay file {os.path.basename(decay_path)} contains non-numeric columns. Expected all columns to be numeric time bins.", None
+
             if len(decays.shape) != 2:
                 return f"Decay data mismatch. Expected 2D data, got {decays.shape}.", None
+                
             if decays.shape[1] != time_bins:
                 return f"Decay time bins mismatch. Decay time bins: {decays.shape[1]}, time bins: {time_bins}.", None 
-
+            
             if shift:
                 # get sample decay curves from each kflow experiment, totoalling at 30 samples 
                 # Use integer division to get number of samples per image, ensuring at least 1 sample
