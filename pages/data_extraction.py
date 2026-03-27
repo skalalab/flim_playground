@@ -87,6 +87,9 @@ with col1:
                 st.error(error_msg)
             else:
                 folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the raw data that is needed for the selected data extraction type." , key="fov_metadata_folder_path")
+                if folder_path and st.button("Rescan folder", help="Re-read files from disk, ignoring cached results"):
+                    load_list_data_from_folder_widget.clear()
+                    st.rerun()
     elif "Numeric Feature Extraction" in selected_step:
         metadata_df = None
         if st.session_state["last_extracted_metadata_filepath"] is not None:
@@ -206,7 +209,7 @@ def load_and_validate_fovs(folder_path, actual_file_suffix):
     if len(fovs) == 0:
         st.warning("No data found in the folder. Please check the path and the file suffixes.")
         return None
-    
+
     st.success(f"Field of Views with ✅ are loaded successfully {happy_emoji}. FOVs with ❌ (if any) will **not** be recorded. Here is the preview of the FOVs and metadata recorded:")
     return fovs
 
