@@ -137,17 +137,17 @@ with col1:
                             st.session_state["shift_ready"] = False
                             st.rerun()
                 else:
-                    if "fitting_mode" in metadata_df.columns: 
+                    if "fitting_mode" in metadata_df.columns:
                         metadata_df["fitting_mode"] = st.selectbox(
-                            "Fitting Mode", 
-                            ["Hybrid", "Global", "Local"], 
-                            index=0, 
+                            "Fitting Mode",
+                            ["Hybrid", "Local"],
+                            index=0,
                             key="fitting_mode_update",
-                            help="Hybrid: use global fit to get a good initial guess, then use local fit to refine the fit. Global: use global fit to get the best fit. Local: use local fit to get the best fit."
+                            help="Hybrid: global search for initial guess, then local refinement per cell (robust). Local: warm-start on summed decay, then local fit per cell (faster)."
                         )
                     col1_1, col1_2 = st.columns(2)
                     with col1_1:
-                        if st.button("Confirm and Start Analysis", width='stretch'):
+                        if st.button("Confirm and Start", width='stretch'):
                             # Update metadata_df in session state
                             st.session_state["last_extracted_metadata"] = metadata_df
                             st.session_state["choosing_shift"] = False
