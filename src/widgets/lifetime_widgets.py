@@ -292,12 +292,16 @@ def fit_options_widget(metadata_dict):
             help="MLE: Maximum Likelihood Estimation. LS: Least Squares."
         )
     with cols1[1]:
+        needs_shift = len(metadata_dict.get("channels_shift", {})) > 0
+        mode_options = ["Hybrid"] if needs_shift else ["Hybrid", "Local"]
         fitting_mode = st.selectbox(
-            "Fitting Mode", 
-            ["Hybrid", "Global", "Local"], 
-            index=0, 
+            "Fitting Mode",
+            mode_options,
+            index=0,
             key="fitting_mode",
-            help="Hybrid: use global fit to get a good initial guess, then use local fit to refine the fit. Global: use global fit to get the best fit. Local: use local fit to get the best fit."
+            help="Hybrid: global search for initial guess, then local refinement per cell (robust)."
+                + ("" if needs_shift
+                   else " Local: warm-start on summed decay, then local fit per cell (faster).")
         )
     
    
