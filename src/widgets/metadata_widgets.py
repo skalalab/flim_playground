@@ -281,6 +281,11 @@ def check_raw_decay_data(fov_df, channel_name):
             for i in range(shape[0]):
                 if np.any(decay_data[i]):
                     non_zero_channels.append(i)
+            if len(non_zero_channels) == 0:
+                return (
+                    f"All {shape[0]} channel(s) in the {channel_name} decay "
+                    f"files are entirely zero. Please check the data."
+                ), [], None, None
             return "", non_zero_channels, shape[1:], laser_rep_time
 
 def check_raw_2D_decay_data(fov_df, channel_name):
