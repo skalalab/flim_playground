@@ -430,26 +430,11 @@ with col2:
                     # Widgets for reordering below
                     reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by)
 
-                # 2. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots 
+                # 2. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots
+                # Widgets use key= to write directly to session state; Streamlit reruns naturally on change
                 st.subheader("📊 Plot Styling")
-                # Get current values from session state as defaults for the widgets
-                show_colormap = len(color_by) > 0  # Show colormap only when color_by is not empty
-                new_point_size, new_axis_label_size, new_legend_size, new_colormap = plot_config_widget(point_based=point_based, show_colormap=show_colormap)
-                style_changed = False
-                if new_point_size != st.session_state.plot_point_size:
-                    st.session_state.plot_point_size = new_point_size
-                    style_changed = True
-                if new_axis_label_size != st.session_state.plot_axis_label_size:
-                    st.session_state.plot_axis_label_size = new_axis_label_size
-                    style_changed = True
-                if new_legend_size != st.session_state.plot_legend_size:
-                    st.session_state.plot_legend_size = new_legend_size
-                    style_changed = True   
-                if new_colormap != st.session_state.plot_colormap:
-                    st.session_state.plot_colormap = new_colormap
-                    style_changed = True
-                if style_changed:
-                    st.rerun()
+                show_colormap = len(color_by) > 0
+                plot_config_widget(point_based=point_based, show_colormap=show_colormap)
 
                 # 3. Export as Python Script
                 _extra = {}

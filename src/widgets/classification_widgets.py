@@ -243,8 +243,9 @@ def classification_plot_widget(results, classification_method, threshold_method)
     
     st.markdown("---")  # Divider between tables and plot controls
     
-    # Get current values from session state as defaults for the widgets
-    _, axis_label_size, legend_size, _ = plot_config_widget(point_based=False)
+    plot_config_widget(point_based=False)
+    axis_label_size = st.session_state.get("plot_axis_label_size", 18)
+    legend_size = st.session_state.get("plot_legend_size", 16)
 
     # Now generate the plots with the selected styles
     cols = st.columns(2)

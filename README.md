@@ -64,6 +64,7 @@ FLIM Playground is currently on [bioarchive](https://www.biorxiv.org/content/10.
 - [x] log scale for x-y axis in 2d scatter plot, y-axis in feature comparison and x-axis in feature histogram
 - [x] freeze the umap axis limits so that the user can use legend toggles to explore the subgroups in umap
 - [x] parallel fitting 
+- [x] export Data Analysis as a standalone Python script (reproducible matplotlib script from current configs from the shared interface and module-specific settings)
 - [] add hierarchical clustering
 - [] add linear mixed effect model
 - [] add modality alignment

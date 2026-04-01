@@ -169,55 +169,52 @@ def phasor_params_widget(feature_groups_dict):
 
 def plot_config_widget(point_based=True, show_colormap=False):
     """
-    widgets to change point, axis label font, legend font size, and colormap
+    Widgets to change point, axis label font, legend font size, and colormap.
+    Uses key= parameters to write directly to session state — no manual
+    compare-and-rerun needed. Streamlit reruns naturally when the user changes a value.
     """
-    # Get current values from session state or use defaults
-    current_point_size = st.session_state.get("plot_point_size", 5)
-    current_axis_label_size = st.session_state.get("plot_axis_label_size", 14)
-    current_legend_size = st.session_state.get("plot_legend_size", 12)
-    current_colormap = st.session_state.get("plot_colormap", "tab10")
-    
     # Determine number of columns based on what widgets to show
     num_cols = 0
     if point_based:
-        num_cols += 1  # point size
+        num_cols += 1
     num_cols += 2  # axis label size and legend size
     if show_colormap:
-        num_cols += 1  # colormap
-    
+        num_cols += 1
+
     cols = st.columns(num_cols)
     col_idx = 0
-    
-    # Point size widget
-    point_size = current_point_size
+
+    # Point size widget — key= binds directly to session state
     if point_based:
         with cols[col_idx]:
-            point_size = st.number_input("Point Size", value=current_point_size, min_value=1, step=1)
+            st.number_input("Point Size", value=st.session_state.get("plot_point_size", 5),
+                          min_value=1, step=1, key="plot_point_size")
         col_idx += 1
-    
+
     # Axis label size widget
     with cols[col_idx]:
-        axis_label_size = st.number_input("Axis Label Font Size", value=current_axis_label_size, min_value=8, step=1)
+        st.number_input("Axis Label Font Size", value=st.session_state.get("plot_axis_label_size", 18),
+                       min_value=8, step=1, key="plot_axis_label_size")
     col_idx += 1
-    
+
     # Legend size widget
     with cols[col_idx]:
-        legend_size = st.number_input("Legend Font Size", value=current_legend_size, min_value=8, step=1)
+        st.number_input("Legend Font Size", value=st.session_state.get("plot_legend_size", 16),
+                       min_value=8, step=1, key="plot_legend_size")
     col_idx += 1
-    
-    # Colormap widget (only shown when color_by is not empty)
-    colormap = current_colormap
+
+    # Colormap widget
     if show_colormap:
         colormap_options = [
-            "tab10", "tab20", "colorblind", "Set1", "Set2", "Set3", "Pastel1", "Pastel2", 
+            "tab10", "tab20", "colorblind", "Set1", "Set2", "Set3", "Pastel1", "Pastel2",
             "Accent", "viridis", "plasma", "inferno", "magma", "cividis"
         ]
+        current_colormap = st.session_state.get("plot_colormap", "tab10")
         with cols[col_idx]:
-            colormap = st.selectbox("Color Map", colormap_options, 
-                                  index=colormap_options.index(current_colormap) if current_colormap in colormap_options else 1,
-                                  help="Choose color palette for categorical data")
-    
-    return point_size, axis_label_size, legend_size, colormap
+            st.selectbox("Color Map", colormap_options,
+                        index=colormap_options.index(current_colormap) if current_colormap in colormap_options else 0,
+                        key="plot_colormap",
+                        help="Choose color palette for categorical data")
 
 def get_custom_order_widget(items, key):
     if sort_items is None:
