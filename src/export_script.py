@@ -314,9 +314,9 @@ def _build_footer(state: dict) -> str:
 # Save & Show
 # ============================================================
 plt.tight_layout()
-plt.savefig("{fname}.png", dpi=300, bbox_inches="tight")
+plt.savefig("{fname}.svg", format="svg", bbox_inches="tight")
 plt.show()
-print("Figure saved to {fname}.png")
+print("Figure saved to {fname}.svg")
 """
 
 
@@ -1156,10 +1156,10 @@ print(f"Balanced Accuracy: {{metrics['balanced_accuracy']:.4f}}")
 # --- Plots ---
 fig_roc = plot_roc_curve(y_test, y_score, axis_label_size=AXIS_LABEL_SIZE,
                          legend_size=LEGEND_SIZE, metrics=metrics, threshold_value=threshold_values)
-fig_roc.savefig("roc_curve.png", dpi=300, bbox_inches="tight")
+fig_roc.savefig("roc_curve.svg", format="svg", bbox_inches="tight")
 
 fig_cm = plot_confusion_matrix(y_test, y_pred, axis_label_size=AXIS_LABEL_SIZE, legend_size=LEGEND_SIZE)
-fig_cm.savefig("confusion_matrix.png", dpi=300, bbox_inches="tight")
+fig_cm.savefig("confusion_matrix.svg", format="svg", bbox_inches="tight")
 
 # Feature importance
 saved_fi = False
@@ -1168,9 +1168,9 @@ if hasattr(classifier, 'named_steps'):
     actual_clf = list(classifier.named_steps.values())[-1]
 if hasattr(actual_clf, 'feature_importances_'):
     fig_fi = plot_feature_importance(actual_clf, feature_cols, axis_label_size=AXIS_LABEL_SIZE, bar_label_size=LEGEND_SIZE)
-    fig_fi.savefig("feature_importance.png", dpi=300, bbox_inches="tight")
+    fig_fi.savefig("feature_importance.svg", format="svg", bbox_inches="tight")
     saved_fi = True
 
 plt.show()
-print("Figures saved: roc_curve.png, confusion_matrix.png" + (", feature_importance.png" if saved_fi else ""))
+print("Figures saved: roc_curve.svg, confusion_matrix.svg" + (", feature_importance.svg" if saved_fi else ""))
 """
