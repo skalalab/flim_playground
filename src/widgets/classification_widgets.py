@@ -166,7 +166,7 @@ def classifier_options_widget(df, categorical_cols, fov_name_col, selected_featu
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         if len(classify_by_options) > 0:
-            classify_by_options = st.multiselect("Classify by", classify_by_options, default=classify_by_options[-1])
+            classify_by_options = st.multiselect("Classify by", classify_by_options, default=classify_by_options[-1], key="classify_by_multiselect")
     with col2:
         sampling_method = st.selectbox("Sampling method", ["None", "Undersampling", "Oversampling"], help="Undersampling: Randomly remove samples from the majority class. Oversampling: Randomly duplicate samples from the minority class.")
 

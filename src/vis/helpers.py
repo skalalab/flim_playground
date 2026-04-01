@@ -152,9 +152,66 @@ def _calculate_effect_size(group1_data, group2_data, method: str, mean_or_median
         st.warning(f"Unsupported effect size method: {method}")
         return None
 
-def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_groups_list, 
-                                 drawn_annotations_list, positioning_metrics, 
-                                 original_df, data_column_name, group_column_name_in_df, 
+def _compute_bracket_position(x_start, x_end, region_max_y, positioning_metrics, drawn_annotations_list):
+    """Compute bracket y-position with collision detection. Framework-agnostic (pure math).
+
+    Args:
+        x_start, x_end: Horizontal span of the bracket.
+        region_max_y: Maximum y value in the spanned data region.
+        positioning_metrics: Dict with offset_from_data_abs, vertical_spacing_abs,
+            bracket_vertical_length_abs, text_offset_from_bracket_abs,
+            text_height_allowance_for_collision_abs.
+        drawn_annotations_list: List of previously drawn annotations (modified in-place).
+
+    Returns:
+        (y_bracket_top, y_text_center, bracket_length) or None if positioning fails.
+    """
+    offset_abs = positioning_metrics['offset_from_data_abs']
+    spacing_abs = positioning_metrics['vertical_spacing_abs']
+    bracket_h = positioning_metrics['bracket_vertical_length_abs']
+    text_offset = positioning_metrics['text_offset_from_bracket_abs']
+    text_h = positioning_metrics['text_height_allowance_for_collision_abs']
+
+    y_candidate = region_max_y + offset_abs
+
+    for iteration in range(50):
+        y_text_center = y_candidate + text_offset + (text_h / 2)
+        y_bottom = y_candidate - bracket_h
+        y_top = y_text_center + (text_h / 2)
+
+        collision = False
+        for ann in drawn_annotations_list:
+            x_overlap = max(x_start, ann['x_start']) < min(x_end, ann['x_end'])
+            if x_overlap:
+                y_overlap = max(y_bottom, ann['y_bottom']) < min(y_top, ann['y_top'])
+                if y_overlap:
+                    y_candidate = ann['y_top'] + spacing_abs
+                    collision = True
+                    break
+
+        if not collision:
+            drawn_annotations_list.append({
+                'x_start': x_start, 'x_end': x_end,
+                'y_bottom': y_bottom, 'y_top': y_top,
+                'y_bracket_draw': y_candidate, 'y_text_draw': y_text_center
+            })
+            return y_candidate, y_text_center, bracket_h
+
+    # Fallback
+    y_text_center = y_candidate + text_offset + (text_h / 2)
+    y_bottom = y_candidate - bracket_h
+    y_top = y_text_center + (text_h / 2)
+    drawn_annotations_list.append({
+        'x_start': x_start, 'x_end': x_end,
+        'y_bottom': y_bottom, 'y_top': y_top,
+        'y_bracket_draw': y_candidate, 'y_text_draw': y_text_center
+    })
+    return y_candidate, y_text_center, bracket_h
+
+
+def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_groups_list,
+                                 drawn_annotations_list, positioning_metrics,
+                                 original_df, data_column_name, group_column_name_in_df,
                                  overall_min_y_val, data_range_y, annotation_color, position_map=None,
                                  star_text: str = None, show_effect_size: bool = True):
     """
@@ -162,15 +219,12 @@ def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_g
     handling y-positioning and collision detection.
     """
     if position_map is not None:
-        # Use actual positions from position_map for separate sections
         x_positions = [position_map[pair_strings[0]], position_map[pair_strings[1]]]
         x_start_new = min(x_positions)
         x_end_new = max(x_positions)
-        # For position_map, we need to find which groups are in the spanned region
-        spanned_group_names = [group for group, pos in position_map.items() 
+        spanned_group_names = [group for group, pos in position_map.items()
                              if pos >= x_start_new and pos <= x_end_new]
     else:
-        # Use group indices for regular plots
         x_indices = [compare_groups_list.index(pair_strings[0]), compare_groups_list.index(pair_strings[1])]
         x_start_new = min(x_indices)
         x_end_new = max(x_indices)
@@ -180,74 +234,19 @@ def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_g
 
     if pd.isna(current_region_max_y):
         current_region_max_y = overall_min_y_val
-        if pd.isna(current_region_max_y): # Fallback if overall_min_y is also NaN
+        if pd.isna(current_region_max_y):
             current_region_max_y = 0
 
-
-    # Use pre-calculated absolute positioning metrics
-    offset_from_data_abs = positioning_metrics['offset_from_data_abs']
-    vertical_spacing_abs = positioning_metrics['vertical_spacing_abs']
-    bracket_vertical_length_abs = positioning_metrics['bracket_vertical_length_abs']
-    text_offset_from_bracket_abs = positioning_metrics['text_offset_from_bracket_abs']
-    text_height_allowance_for_collision_abs = positioning_metrics['text_height_allowance_for_collision_abs']
-
-    y_candidate_bracket_top = current_region_max_y + offset_from_data_abs
-    final_y_bracket_top = None
-    final_y_text_annotation_center = None
-    max_iterations = 50 # Max attempts to find a clear spot
-
-    for iteration in range(max_iterations):
-        proposed_y_bracket_top = y_candidate_bracket_top
-        proposed_y_text_center = proposed_y_bracket_top + text_offset_from_bracket_abs + (text_height_allowance_for_collision_abs / 2)
-        
-        # Calculate the bounding box of the new annotation
-        new_ann_y_bottom = proposed_y_bracket_top - bracket_vertical_length_abs
-        new_ann_y_top = proposed_y_text_center + (text_height_allowance_for_collision_abs / 2)
-
-        collision_found = False
-        for existing_ann in drawn_annotations_list:
-            # Check for x-overlap: True if the horizontal spans of annotations overlap
-            x_overlap = max(x_start_new, existing_ann['x_start']) < min(x_end_new, existing_ann['x_end'])
-            if x_overlap:
-                # Check for y-overlap: True if the vertical spans of annotations overlap
-                y_overlap = max(new_ann_y_bottom, existing_ann['y_bottom']) < min(new_ann_y_top, existing_ann['y_top'])
-                if y_overlap:
-                    # Collision detected, propose a new y_candidate_bracket_top above the existing annotation
-                    y_candidate_bracket_top = existing_ann['y_top'] + vertical_spacing_abs
-                    collision_found = True
-                    break 
-        
-        if not collision_found:
-            final_y_bracket_top = proposed_y_bracket_top
-            final_y_text_annotation_center = proposed_y_text_center
-            drawn_annotations_list.append({
-                'x_start': x_start_new, 'x_end': x_end_new,
-                'y_bottom': new_ann_y_bottom, 'y_top': new_ann_y_top,
-                'y_bracket_draw': final_y_bracket_top, 
-                'y_text_draw': final_y_text_annotation_center
-            })
-            break # Found a spot
-        
-        if iteration == max_iterations - 1:
-            # Fallback if no optimal position is found after max_iterations
-            st.warning(f"Could not find optimal position for annotation {pair_strings}, using fallback.")
-            # Use the last proposed y_candidate_bracket_top, which might overlap
-            final_y_bracket_top = y_candidate_bracket_top 
-            final_y_text_annotation_center = y_candidate_bracket_top + text_offset_from_bracket_abs + (text_height_allowance_for_collision_abs / 2)
-            # Recalculate y_bottom and y_top for the fallback annotation
-            new_ann_y_bottom_fb = final_y_bracket_top - bracket_vertical_length_abs
-            new_ann_y_top_fb = final_y_text_annotation_center + (text_height_allowance_for_collision_abs / 2)
-            drawn_annotations_list.append({
-                'x_start': x_start_new, 'x_end': x_end_new,
-                'y_bottom': new_ann_y_bottom_fb, 'y_top': new_ann_y_top_fb,
-                'y_bracket_draw': final_y_bracket_top, 
-                'y_text_draw': final_y_text_annotation_center
-            })
-
-    if final_y_bracket_top is None: # Should not happen if fallback is implemented
+    result = _compute_bracket_position(
+        x_start_new, x_end_new, current_region_max_y,
+        positioning_metrics, drawn_annotations_list
+    )
+    if result is None:
         return
-    
-    # Add bracket lines
+
+    final_y_bracket_top, final_y_text_annotation_center, bracket_vertical_length_abs = result
+
+    # Add bracket lines (Plotly)
     fig.add_shape(
         type="line", x0=x_start_new, y0=final_y_bracket_top,
         x1=x_end_new, y1=final_y_bracket_top,
@@ -259,7 +258,7 @@ def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_g
             x1=x_pos_single, y1=final_y_bracket_top - bracket_vertical_length_abs,
             line=dict(width=1.5, color=annotation_color)
         )
-    # Build annotation text based on requested display
+    # Build annotation text
     if show_effect_size and star_text:
         annotation_text = f"{effect_size_value:.2f}{star_text}"
     elif show_effect_size and not star_text:

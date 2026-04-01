@@ -235,11 +235,11 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     with col_log_x:
         st.write("")
         st.write("")
-        log_x = st.checkbox("Log X", value=False)
+        log_x = st.checkbox("Log X", value=False, key=f"log_x_2d_{selected_x}_{selected_y}")
     with col_log_y:
         st.write("")
         st.write("")
-        log_y = st.checkbox("Log Y", value=False)
+        log_y = st.checkbox("Log Y", value=False, key=f"log_y_2d_{selected_x}_{selected_y}")
     with col1:
         selected_marginal_plot_type = st.selectbox(
             'Marginal Plot Type',
@@ -250,11 +250,11 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     with col2:
         st.write("")
         st.write("")
-        fit_gmm = st.checkbox("2D Gaussian Mixture Model", value=False)
-    with col3:  
+        fit_gmm = st.checkbox("2D Gaussian Mixture Model", value=False, key=f"fit_gmm_2d_{selected_x}_{selected_y}")
+    with col3:
         st.write("")
         st.write("")
-        fit_regression = st.checkbox("Regression line", value=False)
+        fit_regression = st.checkbox("Regression line", value=False, key=f"fit_regression_2d_{selected_x}_{selected_y}")
 
     if log_x:
         if (df[selected_x] < 0).any():
@@ -598,10 +598,10 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
     with col1:
         st.write("")
         st.write("")
-        k_means = st.checkbox("Perform K-Means clustering", value=False)
+        k_means = st.checkbox("Perform K-Means clustering", value=False, key=f"k_means_phasor_{selected_channel}")
     if k_means:
         with col2:
-            k_means_clusters = st.number_input("Number of clusters", value=2, min_value=1, max_value=8, step=1)
+            k_means_clusters = st.number_input("Number of clusters", value=2, min_value=1, max_value=8, step=1, key=f"k_means_clusters_phasor_{selected_channel}")
 
     # Convert grouped iterator to list so we can iterate multiple times
     grouped_list = list(grouped)

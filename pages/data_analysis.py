@@ -16,6 +16,7 @@ from src.vis.helpers import apply_plot_styling
 from src.widgets.analysis_config_widgets import dataset_config_widget, get_fov_name_col_analysis, get_unique_row_id_col, get_categorical_cols_analysis
 from src.widgets.classification_widgets import CLASSIFIER_OPTIONS, classifier_hyperparams_widget, classifier_options_widget, classification_plot_widget
 from src.classify import run_classification
+from src.export_script import generate_script
 
 st.set_page_config(layout="wide")
 render_top_menu()
@@ -31,6 +32,152 @@ if "plot_legend_size" not in st.session_state:
     st.session_state.plot_legend_size = 16
 if "plot_colormap" not in st.session_state:
     st.session_state.plot_colormap = "tab10"
+
+def _collect_categorical_filters(categorical_cols, df):
+    """Read categorical filter selections from session state."""
+    filters = {}
+    categories_to_filter = [c for c in categorical_cols if c in df.columns and df[c].nunique() > 1]
+    for cat in categories_to_filter:
+        sel = st.session_state.get(f"{cat}_multiselect", ["All"])
+        if "All" not in sel and sel:
+            filters[cat] = list(sel)
+    return filters
+
+def _collect_numerical_filters():
+    """Read numerical filter conditions from session state."""
+    num_filters = []
+    i = 0
+    while True:
+        feat = st.session_state.get(f"num_filter_feature_{i}")
+        if feat is None or feat == "None":
+            break
+        op = st.session_state.get(f"num_filter_operator_{i}_{feat}", ">")
+        thresh = st.session_state.get(f"num_filter_threshold_{i}_{feat}")
+        if thresh is not None:
+            num_filters.append((feat, op, float(thresh)))
+        if not st.session_state.get(f"add_another_num_filter_{i}", False):
+            break
+        i += 1
+    return num_filters
+
+def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, **extra_params):
+    """Render the export-as-script download button with full state collection."""
+    # Shared state
+    state = {
+        "csv_filename": uploaded_csv.name if uploaded_csv else "data.csv",
+        "unique_row_id_col": get_unique_row_id_col(st.session_state.get("_use_data_extraction", True)),
+        "fov_name_col": get_fov_name_col_analysis(st.session_state.get("_use_data_extraction", True)),
+        "method": method,
+        "categorical_filters": _collect_categorical_filters(categorical_cols, st.session_state.vis_df) if st.session_state.vis_df is not None else {},
+        "numerical_filters": _collect_numerical_filters(),
+        "color_by": color_by if color_by else [],
+        "opacity_by": opacity_by,
+        "shape_by": shape_by,
+        "separate_by": separate_by,
+        "point_size": st.session_state.plot_point_size,
+        "axis_label_size": st.session_state.plot_axis_label_size,
+        "legend_size": st.session_state.plot_legend_size,
+        "colormap": st.session_state.plot_colormap,
+    }
+
+    # Method-specific params
+    mp = {}
+    if method == "Feature Comparison":
+        sv = extra_params.get("selected_var") or st.session_state.get("_fc_selected_var")
+        key_suffix = f"_{sv}_{'_'.join(color_by)}_{separate_by or ''}" if sv else ""
+        # Capture custom x-axis order from session state
+        custom_order = {}
+        if st.session_state.vis_df is not None and sv:
+            from src.widgets.visualization_widgets import get_visual_group_keys
+            try:
+                session_key_sep, session_key_cmp = get_visual_group_keys(
+                    st.session_state.vis_df, sv, color_by, separate_by
+                )
+                if session_key_sep in st.session_state:
+                    custom_order["separate_groups"] = list(st.session_state[session_key_sep])
+                if session_key_cmp in st.session_state:
+                    custom_order["compare_groups"] = list(st.session_state[session_key_cmp])
+            except Exception:
+                pass
+        mp = {
+            "selected_var": sv,
+            "effect_size_method": extra_params.get("effect_size_method", st.session_state.get("_fc_effect_size", "None")),
+            "mean_or_median": extra_params.get("mean_or_median"),
+            "statistical_test": extra_params.get("statistical_test", "None"),
+            "log_y": st.session_state.get(f"log_y{key_suffix}", False),
+            "add_boxplot": st.session_state.get(f"add_boxplot{key_suffix}", False),
+            "connect_means": st.session_state.get(f"connect_means{key_suffix}", False),
+            "effect_size_threshold": 0.0,
+            "custom_order": custom_order if custom_order else None,
+        }
+    elif method == "Feature Histogram":
+        sv = extra_params.get("selected_var") or st.session_state.get("_fh_selected_var")
+        mp = {
+            "selected_var": sv,
+            "log_x": st.session_state.get(f"log_x_hist_{sv}", False) if sv else False,
+            "apply_gmm": extra_params.get("apply_gmm", False),
+            "intersection_threshold": st.session_state.get("intersection_threshold", False),
+        }
+    elif method == "FOV Comparison":
+        mp = {"selected_var": extra_params.get("selected_var")}
+    elif method == "2D Feature Distribution":
+        sx = extra_params.get("selected_x")
+        sy = extra_params.get("selected_y")
+        mp = {
+            "selected_x": sx,
+            "selected_y": sy,
+            "log_x": st.session_state.get(f"log_x_2d_{sx}_{sy}", False) if sx and sy else False,
+            "log_y": st.session_state.get(f"log_y_2d_{sx}_{sy}", False) if sx and sy else False,
+            "marginal_plot_type": st.session_state.get(f"marginal_plot_type_selector_{sx}_{sy}", "gaussian fit") if sx and sy else "gaussian fit",
+            "fit_regression": st.session_state.get(f"fit_regression_2d_{sx}_{sy}", False) if sx and sy else False,
+            "fit_gmm_2d": st.session_state.get(f"fit_gmm_2d_{sx}_{sy}", False) if sx and sy else False,
+        }
+    elif method == "Phasor Plot":
+        ch = extra_params.get("selected_channel")
+        mp = {
+            "selected_channel": ch,
+            "phasor_harmonic": extra_params.get("phasor_harmonic"),
+            "phasor_f": extra_params.get("phasor_f"),
+            "k_means": st.session_state.get(f"k_means_phasor_{ch}", False) if ch else False,
+            "k_means_clusters": st.session_state.get(f"k_means_clusters_phasor_{ch}", 2) if ch else 2,
+        }
+    elif method == "Dimension Reduction":
+        mp = {
+            "selected_features": extra_params.get("selected_features", []),
+            "dr_method": extra_params.get("dr_method", "PCA"),
+            "hyperParam_dict": extra_params.get("hyperParam_dict", {}),
+        }
+    elif method == "Classification":
+        # Read classify_by from the classification widget's session state
+        classify_by = list(st.session_state.get("classify_by_multiselect", []))
+        mp = {
+            "selected_features": extra_params.get("selected_features", []),
+            "classification_method": extra_params.get("classification_method"),
+            "splits": extra_params.get("splits", 0.7),
+            "sampling_method": extra_params.get("sampling_method", "None"),
+            "class_weight": extra_params.get("class_weight", "None"),
+            "threshold_method": extra_params.get("threshold_method", "None"),
+            "classifier_params": extra_params.get("classifier_params", {}),
+            "classify_by": classify_by,
+            "classify_classes": extra_params.get("classify_classes", []),
+        }
+
+    state["method_params"] = mp
+
+    @st.fragment
+    def _render_export_button(state, method):
+        script_text = generate_script(state)
+        dataset_name = state["csv_filename"].rsplit(".", 1)[0]
+        fname = f"{dataset_name}_{method.lower().replace(' ', '_')}_analysis.py"
+        st.download_button(
+            label="Export the entire analysis as a Python script",
+            data=script_text,
+            file_name=fname,
+            mime="text/x-python",
+            key=f"export_script_{method}",
+        )
+
+    _render_export_button(state, method)
 
 multivar_methods = ["Dimension Reduction", "Classification"] #"Align Modalities"]
 # methods to visualize based on a single feature
@@ -61,6 +208,7 @@ with col1:
             available_methods,
         )
     use_data_extraction = st.checkbox("**Use Dataset from Data Extraction**", value=True)
+    st.session_state._use_data_extraction = use_data_extraction
     unique_row_id_col = get_unique_row_id_col(use_data_extraction)
     fov_name_col = get_fov_name_col_analysis(use_data_extraction)
     categorical_cols = get_categorical_cols_analysis(use_data_extraction)
@@ -251,7 +399,13 @@ with col2:
                             st.error(error_msg)
                         else:
                             classification_plot_widget(results, classification_method, threshold_method)
-                    
+                            _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by,
+                                                  classification_method=classification_method, splits=splits,
+                                                  sampling_method=sampling_method, class_weight=apply_class_weight,
+                                                  threshold_method=threshold_method, classifier_params=classifier_params,
+                                                  selected_features=selected_features,
+                                                  classify_classes=df_classify['classes'].unique().tolist())
+
             if fig is not None: 
                 fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size) 
                 if method == "2D Feature Distribution":
@@ -296,8 +450,35 @@ with col2:
                     style_changed = True
                 if style_changed:
                     st.rerun()
-                               
-        else: 
+
+                # 3. Export as Python Script
+                _extra = {}
+                if method in univar_methods:
+                    _extra["selected_var"] = selected_var
+                    if method == "Feature Comparison":
+                        _extra["effect_size_method"] = selected_effect_size_method
+                        _extra["mean_or_median"] = mean_or_median
+                        _extra["statistical_test"] = statistical_test
+                    elif method == "Feature Histogram":
+                        try:
+                            _extra["apply_gmm"] = apply_gmm
+                        except NameError:
+                            _extra["apply_gmm"] = False
+                elif method in bivar_methods:
+                    if "2D" in method:
+                        _extra["selected_x"] = selected_x
+                        _extra["selected_y"] = selected_y
+                    elif method == "Phasor Plot":
+                        _extra["selected_channel"] = selected_channel
+                        _extra["phasor_harmonic"] = selected_harmonic
+                        _extra["phasor_f"] = f
+                elif method == "Dimension Reduction":
+                    _extra["selected_features"] = selected_features
+                    _extra["dr_method"] = dr_method
+                    _extra["hyperParam_dict"] = hyperParam_dict
+                _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, **_extra)
+
+        else:
             st.markdown(f"<h5 style='text-align: center; color: red'>No data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)
 
     else:
