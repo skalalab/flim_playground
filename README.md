@@ -6,6 +6,11 @@
 
 FLIM Playground allows you to extract single-cell features from fluorescence lifetime imaging microscopy (FLIM) raw data (**Data Extraction**) and analyze extracted features or your own datasets using a built-in repertoire of visual-analytic modules (**Data Analysis**).
 
+## Latest features
+
+- 📜 **Export Data Analysis as a Python script** — Download a standalone, editable Python script that reproduces all analysis settings you see in FLIM Playground; also saves figures as publication-ready SVG.
+- 🚀 **Parallel curve fitting** — Lifetime curve fitting in Data Extraction runs across CPU cores via multiprocessing, so large batches finish much faster than sequential fitting.
+
 # Data Extraction Demo
 - Demo uses the T cell activation [dataset](example_data/Data_Extraction/T_cell_activation) from this [paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11425855/):
 
