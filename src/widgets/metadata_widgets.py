@@ -3,7 +3,13 @@ import os
 import numpy as np
 import pandas as pd
 from pathlib import Path
-from src.config import get_default_file_suffixes, get_spc_output_suffix, get_default_2D_decay_config, get_default_laser_rate
+from src.config import (
+    get_default_file_suffixes,
+    get_spc_output_suffix,
+    get_default_2D_decay_config,
+    get_default_laser_rate,
+    get_fov_name_col,
+)
 from src.dataset_io import happy_emoji, sad_emoji
 from src.decay_io import read_decay, read_decay_metadata
 from src.file_io import load_image
@@ -236,7 +242,10 @@ def check_raw_decay_data(fov_df, channel_name):
     shape_to_files = {}  # shape -> list of decay file paths
     laser_rep_time_list = []
     laser_rep_time_to_files = {}  # laser_rep_time -> list of decay file paths
-    for i, row in fov_df.iterrows():
+    fov_name_col = get_fov_name_col()
+    empty_fov_labels = []
+    channel_has_signal = None  # set on first 4D decay; used if all FOVs agree on 4D shape
+    for idx, row in fov_df.iterrows():
         decay_path = row[decay_column_name]
         error_msg, decay_data = read_decay(decay_path)
         if error_msg != "":
@@ -249,6 +258,19 @@ def check_raw_decay_data(fov_df, channel_name):
             return error_msg, [], None, None
         laser_rep_time_list.append(laser_rep_time)
         laser_rep_time_to_files.setdefault(laser_rep_time, []).append(decay_path)
+
+        # Only aggregate when this row matches the first row's shape (avoids
+        # resizing channel_has_signal if later files differ in channel count).
+        if len(shape) == 4 and shape == shape_list[0]:
+            if channel_has_signal is None:
+                channel_has_signal = np.zeros(shape[0], dtype=bool)
+            fov_label = row[fov_name_col] if fov_name_col in fov_df.columns else idx
+            if not np.any(decay_data):
+                empty_fov_labels.append(str(fov_label))
+            else:
+                for c in range(shape[0]):
+                    if np.any(decay_data[c]):
+                        channel_has_signal[c] = True
 
     # check for the consistency of the shape, a tuple
     if len(set(shape_list)) > 1:
@@ -276,16 +298,13 @@ def check_raw_decay_data(fov_df, channel_name):
         if len(shape) == 3:
             return "", [-1], shape, laser_rep_time
         elif len(shape) == 4:
-            # get all non-zero channels
-            non_zero_channels = []
-            for i in range(shape[0]):
-                if np.any(decay_data[i]):
-                    non_zero_channels.append(i)
-            if len(non_zero_channels) == 0:
+            if len(empty_fov_labels) > 0:
+                listed = ", ".join(empty_fov_labels)
                 return (
-                    f"All {shape[0]} channel(s) in the {channel_name} decay "
-                    f"files are entirely zero. Please check the data."
+                    f"{len(empty_fov_labels)} field(s) of view have entirely zero "
+                    f"{channel_name} decay data ({listed}). Please check the data."
                 ), [], None, None
+            non_zero_channels = [c for c in range(shape[0]) if channel_has_signal[c]]
             return "", non_zero_channels, shape[1:], laser_rep_time
 
 def check_raw_2D_decay_data(fov_df, channel_name):
