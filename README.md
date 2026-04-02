@@ -8,8 +8,8 @@ FLIM Playground allows you to extract single-cell features from fluorescence lif
 
 ## Latest features
 
-- 📜 **Export Data Analysis as a Python script** — Download a standalone, editable Python script that reproduces all analysis settings you see in FLIM Playground; also saves figures as publication-ready SVG.
-- 🚀 **Parallel curve fitting** — Lifetime curve fitting in Data Extraction runs across CPU cores via multiprocessing, so large batches finish much faster than sequential fitting.
+- 📜 **Export Data Analysis as a Python script** — Download a standalone, editable Python script that reproduces all *Data Analysis* settings you see in FLIM Playground; also saves figures as publication-ready SVG.
+- 🚀 **Parallel curve fitting** — Lifetime curve fitting in *Data Extraction* runs across CPU cores via multiprocessing, so large batches finish much faster than sequential fitting.
 
 # Data Extraction Demo
 - Demo uses the T cell activation [dataset](example_data/Data_Extraction/T_cell_activation) from this [paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11425855/):
@@ -59,17 +59,6 @@ FLIM Playground is currently on [bioarchive](https://www.biorxiv.org/content/10.
 
 # TODO
 
-- [x] randomize the plot order of points so specific colors and shapes plotted later do not occlude early color and shape groups. 
-- [x] add multiple analysis config profile.
-- [x] tune classification thresholds based on user-specified metrics (to combat class inbalance). 
-- [x] add filters based on numerical user-specified feature range/cutoff 
-- [x] overlaying box plot to feature comparison
-- [x] based on the light/dark mode, the plot title, axis labels, and tick labels need to be adjusted
-- [x] add an interactive way in feature comparison to reorder the x-axis groups
-- [x] log scale for x-y axis in 2d scatter plot, y-axis in feature comparison and x-axis in feature histogram
-- [x] freeze the umap axis limits so that the user can use legend toggles to explore the subgroups in umap
-- [x] parallel fitting 
-- [x] export Data Analysis as a standalone Python script (reproducible matplotlib script from current configs from the shared interface and module-specific settings)
 - [] add hierarchical clustering
 - [] add linear mixed effect model
 - [] add modality alignment
