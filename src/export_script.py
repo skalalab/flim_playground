@@ -393,101 +393,116 @@ ax.legend(fontsize=LEGEND_SIZE)
 def _build_feature_histogram(state: dict) -> str:
     from src.vis.helpers import _find_best_gmm, find_intersection
 
-    gmm_section = ""
-    if state.get("method_params", {}).get("apply_gmm"):
+    has_gmm = state.get("method_params", {}).get("apply_gmm", False)
+
+    if has_gmm:
         gmm_src = _extract_source(_find_best_gmm, find_intersection)
-        gmm_section = f"""
-if APPLY_GMM:
-    # ============================================================
-    # Gaussian Mixture Model Overlay (extracted from FLIM Playground)
-    # ============================================================
-{textwrap.indent(gmm_src, '    ')}
+        return _build_visual_encoding(state, overlap_point=False) + f"""
+# ============================================================
+# Gaussian Mixture Model Fit (extracted from FLIM Playground)
+# ============================================================
+{gmm_src}
 
-    if "GMM_group" not in df.columns:
-        df["GMM_group"] = np.nan
+df = df[df[SELECTED_VAR].notna()]
 
-    for g in color_groups:
-        group_mask = df["_color_group"] == g
-        gdata = df.loc[group_mask, SELECTED_VAR].dropna()
-        if len(gdata) < 3:
-            continue
-        gmm = _find_best_gmm(gdata.values)
-        if gmm is None:
-            print(f"  {{g}}: No valid GMM found with current constraints.")
-            continue
+if LOG_X:
+    if (df[SELECTED_VAR] < 0).any():
+        print(f"WARNING: Cannot apply log to {{SELECTED_VAR}}: contains negative values.")
+    else:
+        df[SELECTED_VAR] = np.log10(df[SELECTED_VAR] + 1e-6)
 
-        x_range = np.linspace(gdata.min(), gdata.max(), 1000).reshape(-1, 1)
-        logprob = gmm.score_samples(x_range)
-        pdf = np.exp(logprob)
-        responsibilities = gmm.predict_proba(x_range)
-        pdf_individual = responsibilities * pdf[:, np.newaxis]
+fig, ax = plt.subplots(figsize=(10, 6))
 
-        scale = len(gdata) * bin_width
-        ax.plot(x_range.flatten(), pdf * scale, color=color_map[g][:3], linewidth=2, label=f"{{g}} GMM")
+if "GMM_group" not in df.columns:
+    df["GMM_group"] = np.nan
 
-        pi = gmm.weights_
-        mu = gmm.means_.flatten()
-        sigma = np.sqrt(gmm.covariances_.ravel())
-        sorted_idx = np.argsort(mu)
+for g in color_groups:
+    group_mask = df["_color_group"] == g
+    gdata = df.loc[group_mask, SELECTED_VAR].dropna()
+    if len(gdata) < 3:
+        continue
+    gmm = _find_best_gmm(gdata.values)
+    if gmm is None:
+        print(f"  {{g}}: No valid GMM found with current constraints.")
+        continue
 
-        print(f"  {{g}}: Best GMM has {{gmm.n_components}} component(s)")
-        print(f"    | Component | Mean     | Std. Dev. | Weight |")
-        print(f"    |-----------|----------|-----------|--------|")
+    x_range = np.linspace(gdata.min(), gdata.max(), 1000).reshape(-1, 1)
+    logprob = gmm.score_samples(x_range)
+    pdf = np.exp(logprob)
+    responsibilities = gmm.predict_proba(x_range)
+    pdf_individual = responsibilities * pdf[:, np.newaxis]
+
+    ax.plot(x_range.flatten(), pdf, color=color_map[g][:3], linewidth=2, label=f"{{g}} GMM")
+
+    pi = gmm.weights_
+    mu = gmm.means_.flatten()
+    sigma = np.sqrt(gmm.covariances_.ravel())
+    sorted_idx = np.argsort(mu)
+
+    print(f"  {{g}}: Best GMM has {{gmm.n_components}} component(s)")
+    print(f"    | Component | Mean     | Std. Dev. | Weight |")
+    print(f"    |-----------|----------|-----------|--------|")
+    for rank, idx in enumerate(sorted_idx):
+        print(f"    | {{rank+1}}         | {{mu[idx]:.4f}} | {{sigma[idx]:.4f}}  | {{pi[idx]:.3f}}  |")
+
+    if gmm.n_components > 1:
+        dash_styles = ['--', ':', '-.', (0, (5, 10)), (0, (3, 5, 1, 5))]
+        gmm_overall_mean = np.sum(pi * mu)
+        means_std = np.std(mu, ddof=1)
+        h_index = 0.0
+
         for rank, idx in enumerate(sorted_idx):
-            print(f"    | {{rank+1}}         | {{mu[idx]:.4f}} | {{sigma[idx]:.4f}}  | {{pi[idx]:.3f}}  |")
+            ax.plot(x_range.flatten(), pdf_individual[:, idx],
+                   linestyle=dash_styles[rank % len(dash_styles)],
+                   color=color_map[g][:3], alpha=0.6, linewidth=1.5,
+                   label=f"{{g}} Component {{rank+1}}")
+            entropy_term = -pi[idx] * np.log(pi[idx])
+            distance_term = np.abs(mu[idx] - gmm_overall_mean) / means_std if means_std > 0 else 0
+            h_index += entropy_term * distance_term
 
-        if gmm.n_components > 1:
-            dash_styles = ['--', ':', '-.', (0, (5, 10)), (0, (3, 5, 1, 5))]
-            gmm_overall_mean = np.sum(pi * mu)
-            means_std = np.std(mu, ddof=1)
-            h_index = 0.0
+        print(f"    H-index: {{h_index:.3f}}")
 
-            for rank, idx in enumerate(sorted_idx):
-                ax.plot(x_range.flatten(), pdf_individual[:, idx] * scale,
-                       linestyle=dash_styles[rank % len(dash_styles)],
-                       color=color_map[g][:3], alpha=0.6, linewidth=1.5,
-                       label=f"{{g}} Component {{rank+1}}")
-                entropy_term = -pi[idx] * np.log(pi[idx])
-                distance_term = np.abs(mu[idx] - gmm_overall_mean) / means_std if means_std > 0 else 0
-                h_index += entropy_term * distance_term
+        pi_sorted, mu_sorted, sigma_sorted = pi[sorted_idx], mu[sorted_idx], sigma[sorted_idx]
+        data_indices = gdata.index
 
-            print(f"    H-index: {{h_index:.3f}}")
+        intersection_ok = INTERSECTION_THRESHOLD
+        thresholds = []
+        if INTERSECTION_THRESHOLD:
+            for i in range(len(mu_sorted) - 1):
+                try:
+                    t = find_intersection(pi_sorted[i], mu_sorted[i], sigma_sorted[i],
+                                          pi_sorted[i+1], mu_sorted[i+1], sigma_sorted[i+1])
+                    thresholds.append(t)
+                except Exception:
+                    print(f"    Warning: No intersection found between components {{i+1}} and {{i+2}}, using hard assignment.")
+                    intersection_ok = False
+                    break
 
-            pi_sorted, mu_sorted, sigma_sorted = pi[sorted_idx], mu[sorted_idx], sigma[sorted_idx]
-            data_indices = gdata.index
+            if intersection_ok:
+                thresholds = np.sort(thresholds)
+                for i, t in enumerate(thresholds):
+                    ax.axvline(x=t, color=color_map[g][:3], linestyle='--', alpha=0.5, linewidth=2)
+                    ax.text(t, ax.get_ylim()[1] * 0.95, f"Threshold: {{t:.2f}}",
+                           ha='center', fontsize=9, color=color_map[g][:3])
+                    print(f"    Threshold between component {{i+1}} and {{i+2}}: {{t:.4f}}")
+                subpopulation_labels = np.digitize(gdata.values, bins=thresholds)
+                subpopulation_labels = sorted_idx[subpopulation_labels]
+        if not intersection_ok:
+            data_2d = gdata.values.reshape(-1, 1)
+            subpopulation_labels = gmm.predict(data_2d)
 
-            intersection_ok = INTERSECTION_THRESHOLD
-            thresholds = []
-            if INTERSECTION_THRESHOLD:
-                for i in range(len(mu_sorted) - 1):
-                    try:
-                        t = find_intersection(pi_sorted[i], mu_sorted[i], sigma_sorted[i],
-                                              pi_sorted[i+1], mu_sorted[i+1], sigma_sorted[i+1])
-                        thresholds.append(t)
-                    except Exception:
-                        print(f"    Warning: No intersection found between components {{i+1}} and {{i+2}}, using hard assignment.")
-                        intersection_ok = False
-                        break
+        assigned_labels = [f"{{g}}_group{{label + 1}}" for label in subpopulation_labels]
+        df.loc[data_indices, "GMM_group"] = assigned_labels
+    else:
+        df.loc[gdata.index, "GMM_group"] = f"{{g}}_group1"
 
-                if intersection_ok:
-                    thresholds = np.sort(thresholds)
-                    for i, t in enumerate(thresholds):
-                        ax.axvline(x=t, color=color_map[g][:3], linestyle='--', alpha=0.5, linewidth=2)
-                        ax.text(t, ax.get_ylim()[1] * 0.95, f"Threshold: {{t:.2f}}",
-                               ha='center', fontsize=9, color=color_map[g][:3])
-                        print(f"    Threshold between component {{i+1}} and {{i+2}}: {{t:.4f}}")
-                    subpopulation_labels = np.digitize(gdata.values, bins=thresholds)
-                    subpopulation_labels = sorted_idx[subpopulation_labels]
-            if not intersection_ok:
-                data_2d = gdata.values.reshape(-1, 1)
-                subpopulation_labels = gmm.predict(data_2d)
-
-            assigned_labels = [f"{{g}}_group{{label + 1}}" for label in subpopulation_labels]
-            df.loc[data_indices, "GMM_group"] = assigned_labels
-        else:
-            df.loc[gdata.index, "GMM_group"] = f"{{g}}_group1"
+ax.set_xlabel(SELECTED_VAR, fontsize=AXIS_LABEL_SIZE)
+ax.set_ylabel("Probability Density", fontsize=AXIS_LABEL_SIZE)
+ax.tick_params(axis='both', labelsize=LEGEND_SIZE)
+ax.legend(fontsize=LEGEND_SIZE)
 """
 
+    # No GMM — plain histogram
     return _build_visual_encoding(state, overlap_point=False) + """
 # ============================================================
 # Feature Histogram
@@ -530,7 +545,7 @@ ax.set_xlabel(SELECTED_VAR, fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("Count", fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='both', labelsize=LEGEND_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
-""" + gmm_section
+"""
 
 
 def _build_feature_comparison(state: dict) -> str:
