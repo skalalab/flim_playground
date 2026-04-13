@@ -9,6 +9,7 @@ from typing import Iterable
 import numpy as np
 import pandas as pd
 import streamlit as st
+from sklearn.preprocessing import StandardScaler
 
 
 _LOCAL_SCOT_ALIGNMENT_CACHE: dict[tuple[object, ...], pd.DataFrame] = {}
@@ -373,6 +374,15 @@ def _clamp_k(requested_k: int, n_rows_a: int, n_rows_b: int) -> int:
     return max(1, min(int(requested_k), n_rows_a - 1, n_rows_b - 1))
 
 
+def _standard_scale_modalities(
+    features_a: np.ndarray, features_b: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """Z-score features within each modality separately (same idea as redoxPlot joint_space)."""
+    scaled_a = StandardScaler().fit_transform(features_a)
+    scaled_b = StandardScaler().fit_transform(features_b)
+    return scaled_a.astype(np.float32), scaled_b.astype(np.float32)
+
+
 def _serialize_dataframe(df: pd.DataFrame) -> str:
     normalized_df = df.copy().where(pd.notna(df), None)
     payload = {
@@ -415,12 +425,11 @@ def _run_scot_alignment_cached(
     metadata_a = _deserialize_dataframe(metadata_a_payload)
     metadata_b = _deserialize_dataframe(metadata_b_payload)
 
-    aligner = SCOTv2(
-        [
-            features_a.to_numpy(dtype=np.float32),
-            features_b.to_numpy(dtype=np.float32),
-        ]
+    xa, xb = _standard_scale_modalities(
+        features_a.to_numpy(),
+        features_b.to_numpy(),
     )
+    aligner = SCOTv2([xa, xb])
     aligned = aligner.align(
         normalize=True,
         k=k,
@@ -492,12 +501,11 @@ def run_scot_alignment(
     from src.scot.scotv2 import SCOTv2
 
     aligner_cls = SCOTv2 if aligner_cls is None else aligner_cls
-    aligner = aligner_cls(
-        [
-            alignment_data.features_a.to_numpy(dtype=np.float32),
-            alignment_data.features_b.to_numpy(dtype=np.float32),
-        ]
+    xa, xb = _standard_scale_modalities(
+        alignment_data.features_a.to_numpy(),
+        alignment_data.features_b.to_numpy(),
     )
+    aligner = aligner_cls([xa, xb])
     aligned = aligner.align(
         normalize=True,
         k=k,
