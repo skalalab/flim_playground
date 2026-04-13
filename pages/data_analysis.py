@@ -1,12 +1,23 @@
 import streamlit as st
 import sys
+import time
 from pathlib import Path
 
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.dataset_io import load_csv, happy_emoji, sad_emoji
-from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget, twod_single_feature_select_widget
-from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget, visual_encoding_channels_widget, plot_config_widget, tsne_hyperParams_widget, get_visual_group_keys, reorder_x_axis_widget
+from src.modality_alignment import (
+    apply_filter_to_alignment_data,
+    classify_alignment_prep_issue,
+    get_numeric_feature_options,
+    infer_alignment_id_columns,
+    infer_shared_categorical_columns,
+    load_alignment_csv,
+    prepare_alignment_data,
+    run_scot_alignment,
+)
+from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget, twod_single_feature_select_widget, feature_multiselect_widget
+from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget, scot_hyperParams_widget, visual_encoding_channels_widget, plot_config_widget, tsne_hyperParams_widget, get_visual_group_keys, reorder_x_axis_widget
 from src.widgets.filter_widgets import filters_widget
 from src.navigation import render_top_menu
 from src.vis.multivar import dimension_reduction_plot
@@ -32,6 +43,34 @@ if "plot_legend_size" not in st.session_state:
     st.session_state.plot_legend_size = 16
 if "plot_colormap" not in st.session_state:
     st.session_state.plot_colormap = "tab10"
+
+def _render_compact_file_uploader_style():
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stFileUploader"] {
+            margin-bottom: 0.25rem;
+        }
+        div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] {
+            padding: 0.7rem 0.9rem;
+            min-height: 5rem;
+        }
+        div[data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"] button {
+            padding: 0.35rem 0.9rem;
+        }
+        div[data-testid="stFileUploaderDropzoneInstructions"] > div {
+            gap: 0.15rem;
+        }
+        div[data-testid="stFileUploaderDropzoneInstructions"] span {
+            font-size: 0.95rem;
+        }
+        div[data-testid="stFileUploaderFile"] {
+            padding-top: 0.2rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 def _collect_categorical_filters(categorical_cols, df):
     """Read categorical filter selections from session state."""
@@ -179,10 +218,37 @@ def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opac
 
     _render_export_button(state, method)
 
-multivar_methods = ["Dimension Reduction", "Classification"] #"Align Modalities"]
+multivar_methods = ["Dimension Reduction", "Classification", "Modality Alignment"]
 # methods to visualize based on a single feature
 univar_methods = ["Feature Comparison", "Feature Histogram", "FOV Comparison"]
 bivar_methods = ["2D Feature Distribution", "Phasor Plot"]
+
+upload_complete = False
+uploaded_csv = None
+df = feature_groups_dict = None
+selected_var = "Select"
+selected_x = selected_y = "Select"
+selected_channel = selected_harmonic = f = None
+selected_features = []
+hyperParam_dict = {}
+dr_method = "UMAP"
+classification_method = None
+splits = 0.7
+classifier_params = {}
+selected_effect_size_method = "None"
+mean_or_median = None
+statistical_test = "None"
+unique_row_id_col = ""
+fov_name_col = ""
+categorical_cols = []
+use_data_extraction = True
+alignment_data = None
+alignment_filter_categorical_cols = []
+alignment_plot_categorical_cols = []
+alignment_dr_method = "UMAP"
+alignment_dr_hyperparams = {}
+alignment_scot_params = {}
+
 col1, col2 = st.columns([0.4, 1])
 with col1:
     cols = st.columns([0.6, 1])
@@ -207,62 +273,230 @@ with col1:
             "Methods",
             available_methods,
         )
-    use_data_extraction = st.checkbox("**Use Dataset from Data Extraction**", value=True)
-    st.session_state._use_data_extraction = use_data_extraction
-    unique_row_id_col = get_unique_row_id_col(use_data_extraction)
-    fov_name_col = get_fov_name_col_analysis(use_data_extraction)
-    categorical_cols = get_categorical_cols_analysis(use_data_extraction)
-    instruction_text = "Upload the CSV file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "**Use the right panel to configure before loading your data ===>**"
-    uploaded_csv = st.file_uploader(
-        instruction_text,
-        type=["csv"],
-    )
-    try:
-        df, feature_groups_dict, upload_complete = load_csv(uploaded_csv, categorical_cols, use_data_extraction=use_data_extraction)
-    except Exception as e:
-        st.error(f"Failed to process the uploaded CSV: {e}")
-        df, feature_groups_dict, upload_complete = None, None, False
-    st.session_state.vis_df = df
+    if method != "Modality Alignment":
+        use_data_extraction = st.checkbox("**Use Dataset from Data Extraction**", value=True)
+        st.session_state._use_data_extraction = use_data_extraction
+        unique_row_id_col = get_unique_row_id_col(use_data_extraction)
+        fov_name_col = get_fov_name_col_analysis(use_data_extraction)
+        categorical_cols = get_categorical_cols_analysis(use_data_extraction)
+        instruction_text = "Upload the CSV file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "**Use the right panel to configure before loading your data ===>**"
+        uploaded_csv = st.file_uploader(
+            instruction_text,
+            type=["csv"],
+        )
+        try:
+            df, feature_groups_dict, upload_complete = load_csv(uploaded_csv, categorical_cols, use_data_extraction=use_data_extraction)
+        except Exception as e:
+            st.error(f"Failed to process the uploaded CSV: {e}")
+            df, feature_groups_dict, upload_complete = None, None, False
+        st.session_state.vis_df = df
 
-    if upload_complete:
-        if method in univar_methods:
-            selected_var = single_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
-            if method == "Feature Comparison":
-                ef_col1, ef_col2 = st.columns(2)
-                mean_or_median = None
-                with ef_col1:
-                    selected_effect_size_method = st.radio("Effect size method", ["None", "Glass's Delta", "Cohen's d"], index=0)
-                with ef_col2:
-                    if selected_effect_size_method != "None":
-                        mean_or_median = st.radio("Mean or Median", ["Mean", "Median"])
-                statistical_test = st.radio("Statistical Comparison between Two Groups", ["None", "Independent t-test", "Welch's t-test"], index=0)
-               
-        elif method in bivar_methods:
-            if "2D" in method:
-                selected_x, selected_y = twod_single_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
-            elif method == "Phasor Plot":
-                selected_channel, selected_harmonic, f = phasor_params_widget(feature_groups_dict)
-        elif method in multivar_methods:
-            selected_features = multi_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
-            if method == "Dimension Reduction":                
-                dr_method = st.radio("Dimension Reduction Method", ["UMAP", "PCA", "t-SNE"], horizontal=True)
-                if dr_method == "UMAP":
-                    hyperParam_dict = umap_hyperParams_widget()
-                elif dr_method == "t-SNE":
-                    hyperParam_dict = tsne_hyperParams_widget()
+        if upload_complete:
+            if method in univar_methods:
+                selected_var = single_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
+                if method == "Feature Comparison":
+                    ef_col1, ef_col2 = st.columns(2)
+                    mean_or_median = None
+                    with ef_col1:
+                        selected_effect_size_method = st.radio("Effect size method", ["None", "Glass's Delta", "Cohen's d"], index=0)
+                    with ef_col2:
+                        if selected_effect_size_method != "None":
+                            mean_or_median = st.radio("Mean or Median", ["Mean", "Median"])
+                    statistical_test = st.radio("Statistical Comparison between Two Groups", ["None", "Independent t-test", "Welch's t-test"], index=0)
+
+            elif method in bivar_methods:
+                if "2D" in method:
+                    selected_x, selected_y = twod_single_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
+                elif method == "Phasor Plot":
+                    selected_channel, selected_harmonic, f = phasor_params_widget(feature_groups_dict)
+            elif method in multivar_methods:
+                selected_features = multi_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
+                if method == "Dimension Reduction":
+                    dr_method = st.radio("Dimension Reduction Method", ["UMAP", "PCA", "t-SNE"], horizontal=True)
+                    if dr_method == "UMAP":
+                        hyperParam_dict = umap_hyperParams_widget()
+                    elif dr_method == "t-SNE":
+                        hyperParam_dict = tsne_hyperParams_widget()
+                    else:
+                        hyperParam_dict = {}
+                elif method == "Classification":
+                    cols = st.columns(2)
+                    with cols[0]:
+                        classification_method = st.radio("Classifier", CLASSIFIER_OPTIONS)
+                    with cols[1]:
+                        splits = st.slider("Train size (proportion of training data)", 0.5, 0.9, 0.7, 0.1)
+                    st.markdown("**Classifier Hyperparameters**")
+                    classifier_params = classifier_hyperparams_widget(classification_method)
+    else:
+        use_data_extraction = False
+        st.session_state._use_data_extraction = False
+        unique_row_id_col = "cell_id"
+        fov_name_col = "cell_id"
+        _render_compact_file_uploader_style()
+        upload_cols = st.columns(2)
+        with upload_cols[0]:
+            uploaded_csv_a = st.file_uploader("Upload Modality A CSV", type=["csv"], key="modality_alignment_upload_a")
+        with upload_cols[1]:
+            uploaded_csv_b = st.file_uploader("Upload Modality B CSV", type=["csv"], key="modality_alignment_upload_b")
+
+        df_a = df_b = None
+        if uploaded_csv_a is not None:
+            df_a, warnings_a = load_alignment_csv(uploaded_csv_a)
+            for warning in warnings_a:
+                st.warning(f"Modality A: {warning}")
+        if uploaded_csv_b is not None:
+            df_b, warnings_b = load_alignment_csv(uploaded_csv_b)
+            for warning in warnings_b:
+                st.warning(f"Modality B: {warning}")
+
+        st.session_state.vis_df = None
+        if df_a is not None and df_b is not None:
+            try:
+                id_col_a, id_col_b = infer_alignment_id_columns(df_a, df_b)
+                st.caption(
+                    f"Automatically inferred row ID columns: Modality A `{id_col_a}` and Modality B `{id_col_b}`."
+                )
+            except Exception as e:
+                st.error(f"Failed to infer modality alignment ID columns: {e}")
+                id_col_a = id_col_b = None
+
+            if id_col_a and id_col_b:
+                alignment_filter_categorical_cols = infer_shared_categorical_columns(
+                    df_a,
+                    df_b,
+                    id_col_a,
+                    id_col_b,
+                )
+                if not alignment_filter_categorical_cols:
+                    st.caption("No shared non-numeric metadata columns were found. Filters will only use numeric feature thresholds.")
+
+                feature_cols = st.columns(2)
+                feature_options_a = get_numeric_feature_options(df_a, id_col_a, alignment_filter_categorical_cols)
+                feature_options_b = get_numeric_feature_options(df_b, id_col_b, alignment_filter_categorical_cols)
+                with feature_cols[0]:
+                    selected_features_a = feature_multiselect_widget(
+                        "Modality A features",
+                        feature_options_a,
+                        key="modality_alignment_features_a",
+                        help="Select one or more columns corresponding to Modality A features.",
+                    )
+                with feature_cols[1]:
+                    selected_features_b = feature_multiselect_widget(
+                        "Modality B features",
+                        feature_options_b,
+                        key="modality_alignment_features_b",
+                        help="Select one or more columns corresponding to Modality B features.",
+                    )
+
+                if len(selected_features_a) >= 2 and len(selected_features_b) >= 2:
+                    try:
+                        alignment_data = prepare_alignment_data(
+                            df_a,
+                            df_b,
+                            id_col_a=id_col_a,
+                            id_col_b=id_col_b,
+                            categorical_cols=alignment_filter_categorical_cols,
+                            features_a=selected_features_a,
+                            features_b=selected_features_b,
+                        )
+                        upload_complete = True
+                        st.session_state.vis_df = alignment_data.filter_df
+                        if alignment_data.dropped_na_rows_a > 0:
+                            st.warning(
+                                f"Dropped {alignment_data.dropped_na_rows_a} Modality A row(s) with missing selected feature values before alignment."
+                            )
+                        if alignment_data.dropped_na_rows_b > 0:
+                            st.warning(
+                                f"Dropped {alignment_data.dropped_na_rows_b} Modality B row(s) with missing selected feature values before alignment."
+                            )
+                        st.write(f"Modality data uploaded successfully {happy_emoji}")
+                    except Exception as e:
+                        severity, message = classify_alignment_prep_issue(e)
+                        if severity == "warning":
+                            st.warning(message)
+                        else:
+                            st.error(f"Failed to prepare modality alignment inputs: {message}")
+
+            if upload_complete and alignment_data is not None:
+                with st.expander("SCOT Hyperparameters", expanded=False):
+                    alignment_scot_params = scot_hyperParams_widget()
+                st.markdown("**2D Visualization (after Alignment)**")
+                alignment_dr_method = st.radio(
+                    "Dimension Reduction Method",
+                    ["UMAP", "PCA", "t-SNE"],
+                    horizontal=True,
+                    key="modality_alignment_dr_method",
+                )
+                if alignment_dr_method == "UMAP":
+                    alignment_dr_hyperparams = umap_hyperParams_widget()
+                elif alignment_dr_method == "t-SNE":
+                    alignment_dr_hyperparams = tsne_hyperParams_widget()
                 else:
-                    hyperParam_dict = {}
-            elif method == "Classification":
-                cols = st.columns(2)
-                with cols[0]:
-                    classification_method = st.radio("Classifier", CLASSIFIER_OPTIONS)
-                with cols[1]:
-                    splits = st.slider("Train size (proportion of training data)", 0.5, 0.9, 0.7, 0.1)
-                st.markdown("**Classifier Hyperparameters**")
-                classifier_params = classifier_hyperparams_widget(classification_method)
+                    alignment_dr_hyperparams = {}
+                alignment_filter_cols = list(alignment_filter_categorical_cols)
+                alignment_plot_categorical_cols = ["modality"] + [
+                    col for col in alignment_filter_categorical_cols if col != "modality"
+                ]
+            else:
+                st.info("Select at least two numeric features for each modality to prepare the alignment input.")
+        else:
+            st.info("Upload both modality CSVs to configure the alignment workflow.")
     
 with col2:
-    if upload_complete:
+    if method == "Modality Alignment":
+        if upload_complete and alignment_data is not None:
+            filtered_alignment_df = filters_widget(alignment_data.filter_df, alignment_filter_cols)
+            if not filtered_alignment_df.empty:
+                try:
+                    color_by, opacity_by, shape_by, separate_by = visual_encoding_channels_widget(
+                        filtered_alignment_df,
+                        alignment_plot_categorical_cols,
+                        color_based=True,
+                        point_based=True,
+                        separate_by_available=False,
+                    )
+                    start_time = time.perf_counter()
+                    with st.status("Running modality alignment...", expanded=False) as alignment_status:
+                        alignment_status.update(label="Applying filters to both modalities...")
+                        filtered_alignment_data = apply_filter_to_alignment_data(alignment_data, filtered_alignment_df)
+                        alignment_status.update(label="Running SCOT alignment...")
+                        aligned_df = run_scot_alignment(filtered_alignment_data, alignment_scot_params)
+                        scot_feature_cols = [col for col in aligned_df.columns if col.startswith("SCOT")]
+                        alignment_status.update(label=f"Projecting aligned space with {alignment_dr_method}...")
+                        fig = dimension_reduction_plot(
+                            aligned_df,
+                            unique_row_id_col="cell_id",
+                            fov_name_col="cell_id",
+                            selected_features=scot_feature_cols,
+                            colored_by=color_by,
+                            opacity_by=opacity_by,
+                            shape_by=shape_by,
+                            colormap=st.session_state.plot_colormap,
+                            method=alignment_dr_method,
+                            hyperParam_dict=alignment_dr_hyperparams,
+                        )
+                        alignment_status.update(label="Finalizing plot...")
+                        fig = apply_plot_styling(
+                            fig,
+                            st.session_state.plot_point_size,
+                            st.session_state.plot_axis_label_size,
+                            st.session_state.plot_legend_size,
+                        )
+                        elapsed = time.perf_counter() - start_time
+                        alignment_status.update(
+                            label=f"Modality alignment complete in {elapsed:.1f}s.",
+                            state="complete",
+                        )
+                    st.plotly_chart(fig, width='stretch')
+                    st.subheader("📊 Plot Styling")
+                    plot_config_widget(point_based=True, show_colormap=len(color_by) > 0)
+                except Exception as e:
+                    st.error(f"Modality alignment failed: {e}")
+            else:
+                st.markdown(f"<h5 style='text-align: center; color: red'>No modality data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)
+        else:
+            st.info("Upload two modality CSVs and configure their schema to begin.")
+    elif upload_complete:
         # click_ready: boolean to check if the plot is ready for click events
         data_export_ready = False
         filtered_df = filters_widget(st.session_state.vis_df, categorical_cols)

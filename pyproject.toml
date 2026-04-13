@@ -47,6 +47,7 @@ dependencies = [
     "threadpoolctl==3.6.0",
     "tifffile>=2025.3.30",
     "toml==0.10.2",
+    "torch>=2.7.0",
     "tornado==6.5.5",
     "typing-extensions==4.13.2",
     "tzdata==2025.2",

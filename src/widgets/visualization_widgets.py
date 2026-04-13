@@ -77,6 +77,59 @@ def tsne_hyperParams_widget():
         tsne_hyperParams_dict["early_exaggeration"] = early_exaggeration
     return tsne_hyperParams_dict
 
+
+def scot_hyperParams_widget():
+    scot_hyperParams_dict = {}
+    col1, col2 = st.columns(2)
+    with col1:
+        k = st.number_input(
+            "k",
+            value=20,
+            min_value=1,
+            step=1,
+            help="Neighborhood size used to build each modality's local graph. Lower values emphasize local structure; higher values smooth across broader neighborhoods.",
+        )
+        scot_hyperParams_dict["k"] = int(k)
+    with col2:
+        eps = st.number_input(
+            "eps",
+            value=0.005,
+            min_value=0.0001,
+            step=0.001,
+            format="%.4f",
+            help="OT solver smoothing strength. Higher values are more stable but blur correspondences; lower values are sharper but can be less stable.",
+        )
+        scot_hyperParams_dict["eps"] = float(eps)
+
+    col3, col4 = st.columns(2)
+    with col3:
+        rho = st.number_input(
+            "rho",
+            value=0.1,
+            min_value=0.0001,
+            step=0.1,
+            format="%.4f",
+            help="Matching strictness between modalities. Higher values enforce tighter mass matching; lower values allow more mismatch tolerance.",
+        )
+        scot_hyperParams_dict["rho"] = float(rho)
+    with col4:
+        out_dim = st.number_input(
+            "out_dim",
+            value=10,
+            min_value=2,
+            step=1,
+            help="Number of dimensions in the shared SCOT latent space before the final 2D projection. Larger values preserve more structure but add computation.",
+        )
+        scot_hyperParams_dict["out_dim"] = int(out_dim)
+
+    scot_hyperParams_dict["projection_method"] = st.radio(
+        "Projection Method",
+        ["embedding", "barycentric"],
+        horizontal=True,
+        help="Choose how SCOT projects the paired modalities into a shared space.",
+    )
+    return scot_hyperParams_dict
+
 def comparison_pair_widget(available_pairs):
     # Create more descriptive labels for each pair
     pair_labels = []

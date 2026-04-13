@@ -3,6 +3,57 @@ import streamlit as st
 This module contains functions to create single and multiple selection widgets. 
 """
 
+def expand_all_selection(selected, feature_list):
+    """Expand the sentinel 'All' selection to the full feature list."""
+    return list(feature_list) if "All" in selected else list(selected)
+
+
+def normalize_feature_multiselect_state(current_selection, feature_list):
+    """Normalize stored selections so the widget keeps the app's canonical 'All' behavior."""
+    if len(feature_list) <= 1:
+        if not feature_list:
+            return []
+        valid = [value for value in (current_selection or []) if value in feature_list]
+        return valid or list(feature_list)
+
+    options = ["All"] + list(feature_list)
+    valid_selection = [value for value in (current_selection or []) if value in options]
+    if not valid_selection:
+        return ["All"]
+    if "All" in valid_selection and len(valid_selection) > 1:
+        if valid_selection[-1] == "All":
+            return ["All"]
+        valid_selection = [value for value in valid_selection if value != "All"]
+    if len(valid_selection) == len(feature_list):
+        return ["All"]
+    return valid_selection
+
+
+def feature_multiselect_widget(label, feature_list, key, help=None):
+    """Shared multiselect with the app's standard 'All' behavior."""
+    if len(feature_list) > 1:
+        options = ["All"] + list(feature_list)
+        default = ["All"]
+    else:
+        options = list(feature_list)
+        default = list(feature_list)
+
+    current_selection = st.session_state.get(key, default)
+    normalized_selection = normalize_feature_multiselect_state(current_selection, feature_list)
+    if current_selection != normalized_selection:
+        st.session_state[key] = normalized_selection
+
+    selected = st.multiselect(
+        label,
+        options=options,
+        key=key,
+        on_change=update_multiselect_feature,
+        args=(key, options),
+        help=help,
+    )
+    return expand_all_selection(selected, feature_list)
+
+
 def update_multiselect_feature(key, options):
     """Callback function to handle "All" logic for feature selection widgets"""
     current_selection = st.session_state.get(key, ["All"])
@@ -135,10 +186,11 @@ def multi_feature_select_widget(feature_groups_dict, data_extraction=True, n_per
                     help=f"Select one or more columns corresponding to {feature_group} features."
                 )
                 if "All" in selected:
+                    expanded = expand_all_selection(selected, feature_list)
                     if data_extraction:
-                        selected_features.extend([f"{feature_group}: {col}" for col in feature_list]) if "Uncategorized" not in feature_group else selected_features.extend(feature_list)
+                        selected_features.extend([f"{feature_group}: {col}" for col in expanded]) if "Uncategorized" not in feature_group else selected_features.extend(expanded)
                     else:
-                        selected_features.extend(feature_list)
+                        selected_features.extend(expanded)
                 else:
                     if data_extraction:
                         selected_features.extend([f"{feature_group}: {col}" for col in selected]) if "Uncategorized" not in feature_group else selected_features.extend(selected)
