@@ -231,7 +231,11 @@ with col1:
                 ef_col1, ef_col2 = st.columns(2)
                 mean_or_median = None
                 with ef_col1:
-                    selected_effect_size_method = st.radio("Effect size method", ["None", "Glass's Delta", "Cohen's d"], index=0)
+                    selected_effect_size_method = st.radio(
+                        "Effect size method",
+                        ["None", "Glass's Delta", "Absolute Cohen's d"],
+                        index=0,
+                    )
                 with ef_col2:
                     if selected_effect_size_method != "None":
                         mean_or_median = st.radio("Mean or Median", ["Mean", "Median"])

@@ -53,7 +53,7 @@ def glass_delta(group1, group2, mean_or_median):
     return diff / group1_sd
 
 def cohens_d(group1, group2, mean_or_median):
-    """Compute Cohen's d for two independent samples."""
+    """Compute absolute Cohen's d (|d|) for two independent samples."""
     # sample sizes
     n1, n2 = len(group1), len(group2)
    
@@ -69,7 +69,7 @@ def cohens_d(group1, group2, mean_or_median):
         mad_1, mad_2 = median_abs_deviation(group1, scale="normal"), median_abs_deviation(group2, scale="normal")
         pooled_sd = np.sqrt(((n1 - 1) * mad_1**2 + (n2 - 1) * mad_2**2) /
                      (n1 + n2 - 2))
-    return diff / pooled_sd
+    return abs(diff / pooled_sd)
 
 def create_opacity_mapping(groups, min_opacity=0.3, max_opacity=1.0):
     """Create opacity mapping for groups with evenly spaced values, preserving natural order"""
@@ -145,7 +145,7 @@ def _calculate_effect_size(group1_data, group2_data, method: str, mean_or_median
         return None
     if method == "Glass's Delta":
         return glass_delta(group1_data, group2_data, mean_or_median)
-    elif method == "Cohen's d":
+    elif method == "Absolute Cohen's d":
         # Ensure cohens_d function is available and handles data appropriately
         return cohens_d(group1_data, group2_data, mean_or_median)
     else:
@@ -368,9 +368,15 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
             if effect_size_method == "Glass's Delta":
                 threshold = st.number_input("Glass's Delta Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05, 
                                             key=f"glass_delta_thresh_{threshold_key_suffix}")
-            elif effect_size_method == "Cohen's d":
-                threshold = st.number_input("Cohen's d Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05,
-                                            key=f"cohens_d_thresh_{threshold_key_suffix}")
+            elif effect_size_method == "Absolute Cohen's d":
+                threshold = st.number_input(
+                    "Absolute Cohen's d threshold",
+                    value=0.7,
+                    min_value=0.0,
+                    max_value=3.0,
+                    step=0.05,
+                    key=f"cohens_d_thresh_{threshold_key_suffix}",
+                )
 
         for pair in sorted_pairs:
             group1_data = df[df[group_col_name] == pair[0]][selected_var].dropna()
