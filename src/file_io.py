@@ -137,7 +137,7 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
 
         elif input_type == "Decay (2D)":
             try:
-                decays = pd.read_csv(decay_path)    
+                decays = pd.read_csv(decay_path, header=None)    
             except Exception as e:
                 return f"Error reading the histogram file for {fov_name_col} {fov_name} at {decay_path}: {e}", None
             non_numeric = decays.select_dtypes(exclude="number").columns.tolist()
@@ -183,7 +183,7 @@ def get_irf(metadata_df, channel_name, time_bins):
     
     try:
         if str(irf_path).endswith(".csv"):
-            irf = pd.read_csv(irf_path)
+            irf = np.loadtxt(irf_path, delimiter=",").flatten()
         else:
             irf = np.loadtxt(irf_path)
     except Exception as e:
