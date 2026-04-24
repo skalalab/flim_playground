@@ -21,6 +21,7 @@ authors:
     affiliation: "Morgridge Institute for Research"
     orcid: "https://orcid.org/0000-0002-6432-2389"
 repository-code: "https://github.com/skalalab/flim_playground"
+url: "https://skalalab.github.io/flim_playground_doc/"
 license: MIT
 version: "1.6.0"
 date-released: "2026-04-24"

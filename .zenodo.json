@@ -51,6 +51,11 @@
       "identifier": "https://github.com/skalalab/flim_playground",
       "relation": "isSupplementTo",
       "scheme": "url"
+    },
+    {
+      "identifier": "https://skalalab.github.io/flim_playground_doc/",
+      "relation": "isDocumentedBy",
+      "scheme": "url"
     }
   ]
 }
