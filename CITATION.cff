@@ -1,4 +1,5 @@
 cff-version: 1.2.0
+doi: "10.5281/zenodo.19744706"
 title: "FLIM Playground: An interactive, end-to-end graphical user interface for analyzing single-cell fluorescence lifetime data"
 message: "If you use this software, please cite it using the metadata below and the companion preprint."
 type: software
