@@ -4,6 +4,11 @@
   <img src="logo.png" alt="FLIM Playground Logo">
 </p>
 
+<!-- TODO: after your first Zenodo release, replace XXXXXXX below with the concept (all-versions) DOI number shown at https://zenodo.org/account/settings/github/ -->
+<p align="center">
+  <a href="https://doi.org/10.5281/zenodo.XXXXXXX"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.XXXXXXX.svg" alt="DOI"></a>
+</p>
+
 FLIM Playground allows you to extract single-cell features from fluorescence lifetime imaging microscopy (FLIM) raw data (**Data Extraction**) and analyze extracted features or your own datasets using a built-in repertoire of visual-analytic modules (**Data Analysis**).
 
 ## Latest features
@@ -55,7 +60,15 @@ pyinstaller Flim-Playground.spec --clean
 
 # Citation
 
-FLIM Playground is currently on [bioarchive](https://www.biorxiv.org/content/10.1101/2025.09.30.679625). If it contributed to your research—whether through Data Extraction for single-cell feature extraction or through Data Analysis for data exploration, visualization, selection of analysis methods, or hyperparameter tuning (UMAP, clustering, classification, etc.)—please cite this work in your publication. Your citation directly supports us in maintaining and improving it ✨🎈🍾. 
+If FLIM Playground contributed to your research — whether through **Data Extraction** for single-cell feature extraction or through **Data Analysis** for data exploration, visualization, selection of analysis methods, or hyperparameter tuning (UMAP, clustering, classification, etc.) — please cite **both** the software and the preprint. Your citation directly supports us in maintaining and improving it ✨🎈🍾.
+
+**Software (all versions):**
+<!-- TODO: replace XXXXXXX with the concept DOI after the first Zenodo release. -->
+> Zhao W., Samimi K., Skala M.C., Datta R. *FLIM Playground* [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.XXXXXXX
+
+**Preprint:**
+> Zhao W., Samimi K., Skala M.C., Datta R. *FLIM Playground: An interactive, end-to-end graphical user interface for analyzing single-cell fluorescence lifetime data.* bioRxiv 2025. https://doi.org/10.1101/2025.09.30.679625
+
 
 # TODO
 

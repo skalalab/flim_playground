@@ -1,0 +1,55 @@
+cff-version: 1.2.0
+title: "FLIM Playground: An interactive, end-to-end graphical user interface for analyzing single-cell fluorescence lifetime data"
+message: "If you use this software, please cite it using the metadata below and the companion preprint."
+type: software
+authors:
+  - family-names: Zhao
+    given-names: Wenxuan
+    affiliation: "Morgridge Institute for Research"
+    orcid: "https://orcid.org/0009-0004-1952-6093"
+  - family-names: Samimi
+    given-names: Kayvan
+    affiliation: "Morgridge Institute for Research"
+    orcid: "https://orcid.org/0000-0002-2566-612X"
+  - family-names: Skala
+    given-names: Melissa
+    name-particle: C.
+    affiliation: "Morgridge Institute for Research"
+    orcid: "https://orcid.org/0000-0002-6320-7637"
+  - family-names: Datta
+    given-names: Rupsa
+    affiliation: "Morgridge Institute for Research"
+    orcid: "https://orcid.org/0000-0002-6432-2389"
+repository-code: "https://github.com/skalalab/flim_playground"
+license: MIT
+version: "1.6.0"
+date-released: "2026-04-24"
+keywords:
+  - FLIM
+  - fluorescence lifetime imaging
+  - single-cell analysis
+  - phasor analysis
+  - curve fitting
+  - morphology analysis
+  - texture analysis
+  - data analysis
+  - data extraction
+  - classification
+  - interactive visualization
+  - bioimage analysis
+preferred-citation:
+  type: article
+  title: "FLIM Playground: An interactive, end-to-end graphical user interface for analyzing single-cell fluorescence lifetime data"
+  authors:
+    - family-names: Zhao
+      given-names: Wenxuan
+    - family-names: Samimi
+      given-names: Kayvan
+    - family-names: Skala
+      given-names: Melissa
+      name-particle: C.
+    - family-names: Datta
+      given-names: Rupsa
+  year: 2025
+  journal: bioRxiv
+  doi: "10.1101/2025.09.30.679625"
