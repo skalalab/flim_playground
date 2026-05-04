@@ -604,10 +604,19 @@ def get_point_visual_mappings(
 
 # Function to apply plot styling to any figure
 def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
-    """Apply consistent styling to plotly figures"""
+    """Apply consistent styling to plotly figures.
+
+    Data-point markers are sized by ``point_size``, while legend markers are
+    sized by ``legend_size`` (matching the legend font). Plotly normally ties
+    the legend marker size to each trace's ``marker.size`` (``itemsizing='trace'``),
+    so we decouple the two by hiding the legend on real data traces and
+    adding "ghost" traces (no plotted points) whose ``marker.size`` is set
+    to ``legend_size``. Existing ghost legend traces (e.g. shape/opacity
+    entries) are also resized to ``legend_size``.
+    """
     # Names of traces that should keep their original marker sizes
     skip_trace_names = {'Lifetime Markers'}
-    
+
     # Update marker sizes for all scatter and box traces
     for trace in fig.data:
         # Skip traces that should maintain their original sizes
@@ -618,7 +627,7 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
                 trace.marker.size = point_size
             elif trace.type == 'box' and trace.marker:
                 trace.marker.size = point_size
-    
+
     # Update annotation font sizes to match axis label size
     if fig.layout.annotations:
         for annotation in fig.layout.annotations:
@@ -626,7 +635,7 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
                 annotation.font.size = axis_label_size
             else:
                 annotation.font = dict(size=axis_label_size)
-    
+
     # Update layout with axis and legend font sizes
     fig.update_layout(
         xaxis=dict(
@@ -641,6 +650,62 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
             font=dict(size=legend_size)
         )
     )
+
+    # Replace each color-trace legend entry with a ghost trace whose marker
+    # size equals legend_size, and resize any pre-existing ghost legend
+    # traces (shape/opacity entries) to match.
+    ghost_traces = []
+    seen_legendgroups = set()
+    for trace in fig.data:
+        if trace.type != 'scatter':
+            continue
+        if hasattr(trace, 'name') and trace.name in skip_trace_names:
+            continue
+        if not getattr(trace, 'showlegend', True):
+            continue
+
+        x_attr = getattr(trace, 'x', None)
+        x_data = list(x_attr) if x_attr is not None else []
+        is_ghost = len(x_data) > 0 and all(v is None for v in x_data)
+        if is_ghost:
+            if trace.marker:
+                trace.marker.size = legend_size
+            continue
+
+        legendgroup = trace.legendgroup or trace.name
+        if legendgroup in seen_legendgroups:
+            trace.showlegend = False
+            continue
+        seen_legendgroups.add(legendgroup)
+
+        marker_color = trace.marker.color if trace.marker else None
+        marker_symbol = trace.marker.symbol if trace.marker else 'circle'
+        if isinstance(marker_symbol, (list, tuple, np.ndarray)):
+            marker_symbol = marker_symbol[0] if len(marker_symbol) > 0 else 'circle'
+        marker_opacity = trace.marker.opacity if trace.marker else 1.0
+        if isinstance(marker_opacity, (list, tuple, np.ndarray)):
+            marker_opacity = marker_opacity[0] if len(marker_opacity) > 0 else 1.0
+
+        ghost_traces.append(go.Scatter(
+            x=[None], y=[None],
+            mode='markers',
+            name=trace.name,
+            legendgroup=trace.legendgroup,
+            marker=dict(
+                color=marker_color,
+                symbol=marker_symbol,
+                opacity=marker_opacity,
+                size=legend_size,
+            ),
+            showlegend=True,
+            legendrank=getattr(trace, 'legendrank', None),
+            hoverinfo='skip',
+        ))
+        trace.showlegend = False
+
+    for ghost in ghost_traces:
+        fig.add_trace(ghost)
+
     return fig
 
 def _estimate_density_1d(y_values, bw_method='scott'):
