@@ -13,6 +13,12 @@ from src.vis.multivar import dimension_reduction_plot
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
 from src.vis.univar import fov_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
 from src.vis.helpers import apply_plot_styling
+from src.vis.plot_defaults import (
+    DEFAULT_AXIS_LABEL_FONT_SIZE,
+    DEFAULT_COLORMAP,
+    DEFAULT_LEGEND_FONT_SIZE,
+    DEFAULT_POINT_SIZE,
+)
 from src.widgets.analysis_config_widgets import dataset_config_widget, get_fov_name_col_analysis, get_unique_row_id_col, get_categorical_cols_analysis
 from src.widgets.classification_widgets import CLASSIFIER_OPTIONS, classifier_hyperparams_widget, classifier_options_widget, classification_plot_widget
 from src.classify import run_classification
@@ -25,13 +31,13 @@ render_top_menu()
 if "vis_df" not in st.session_state:
     st.session_state.vis_df = None
 if "plot_point_size" not in st.session_state:
-    st.session_state.plot_point_size = 5
+    st.session_state.plot_point_size = DEFAULT_POINT_SIZE
 if "plot_axis_label_size" not in st.session_state:
-    st.session_state.plot_axis_label_size = 18
+    st.session_state.plot_axis_label_size = DEFAULT_AXIS_LABEL_FONT_SIZE
 if "plot_legend_size" not in st.session_state:
-    st.session_state.plot_legend_size = 16
+    st.session_state.plot_legend_size = DEFAULT_LEGEND_FONT_SIZE
 if "plot_colormap" not in st.session_state:
-    st.session_state.plot_colormap = "tab10"
+    st.session_state.plot_colormap = DEFAULT_COLORMAP
 
 def _collect_categorical_filters(categorical_cols, df):
     """Read categorical filter selections from session state."""

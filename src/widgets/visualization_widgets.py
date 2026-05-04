@@ -3,6 +3,13 @@ import numpy as np
 
 from streamlit_sortables import sort_items
 
+from src.vis.plot_defaults import (
+    DEFAULT_AXIS_LABEL_FONT_SIZE,
+    DEFAULT_COLORMAP,
+    DEFAULT_LEGEND_FONT_SIZE,
+    DEFAULT_POINT_SIZE,
+)
+
 def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False):
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
     color_by = []
@@ -187,19 +194,19 @@ def plot_config_widget(point_based=True, show_colormap=False):
     # Point size widget — key= binds directly to session state
     if point_based:
         with cols[col_idx]:
-            st.number_input("Point Size", value=st.session_state.get("plot_point_size", 5),
+            st.number_input("Point Size", value=st.session_state.get("plot_point_size", DEFAULT_POINT_SIZE),
                           min_value=1, step=1, key="plot_point_size")
         col_idx += 1
 
     # Axis label size widget
     with cols[col_idx]:
-        st.number_input("Axis Label Font Size", value=st.session_state.get("plot_axis_label_size", 18),
+        st.number_input("Axis Label Font Size", value=st.session_state.get("plot_axis_label_size", DEFAULT_AXIS_LABEL_FONT_SIZE),
                        min_value=8, step=1, key="plot_axis_label_size")
     col_idx += 1
 
     # Legend size widget
     with cols[col_idx]:
-        st.number_input("Legend Font Size", value=st.session_state.get("plot_legend_size", 16),
+        st.number_input("Legend Font Size", value=st.session_state.get("plot_legend_size", DEFAULT_LEGEND_FONT_SIZE),
                        min_value=8, step=1, key="plot_legend_size")
     col_idx += 1
 
@@ -209,7 +216,7 @@ def plot_config_widget(point_based=True, show_colormap=False):
             "tab10", "tab20", "colorblind", "Set1", "Set2", "Set3", "Pastel1", "Pastel2",
             "Accent", "viridis", "plasma", "inferno", "magma", "cividis"
         ]
-        current_colormap = st.session_state.get("plot_colormap", "tab10")
+        current_colormap = st.session_state.get("plot_colormap", DEFAULT_COLORMAP)
         with cols[col_idx]:
             st.selectbox("Color Map", colormap_options,
                         index=colormap_options.index(current_colormap) if current_colormap in colormap_options else 0,

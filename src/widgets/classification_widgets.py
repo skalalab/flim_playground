@@ -3,6 +3,7 @@ from itertools import combinations
 from src.dataset_io import happy_emoji, sad_emoji
 from src.classify import plot_confusion_matrix, plot_roc_curve, plot_feature_importance, create_overall_accuracy_table, create_per_class_metrics_table
 from src.widgets.visualization_widgets import plot_config_widget
+from src.vis.plot_defaults import DEFAULT_AXIS_LABEL_FONT_SIZE, DEFAULT_LEGEND_FONT_SIZE
 
 CLASSIFIER_OPTIONS = ["Random Forest", "Gradient Boosting", "SVM", "Logistic Regression"]
 
@@ -244,8 +245,8 @@ def classification_plot_widget(results, classification_method, threshold_method)
     st.markdown("---")  # Divider between tables and plot controls
     
     plot_config_widget(point_based=False)
-    axis_label_size = st.session_state.get("plot_axis_label_size", 18)
-    legend_size = st.session_state.get("plot_legend_size", 16)
+    axis_label_size = st.session_state.get("plot_axis_label_size", DEFAULT_AXIS_LABEL_FONT_SIZE)
+    legend_size = st.session_state.get("plot_legend_size", DEFAULT_LEGEND_FONT_SIZE)
 
     # Now generate the plots with the selected styles
     cols = st.columns(2)

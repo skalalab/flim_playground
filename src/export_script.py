@@ -14,6 +14,13 @@ import re
 import textwrap
 from datetime import datetime
 
+from src.vis.plot_defaults import (
+    DEFAULT_AXIS_LABEL_FONT_SIZE,
+    DEFAULT_COLORMAP,
+    DEFAULT_LEGEND_FONT_SIZE,
+    DEFAULT_POINT_SIZE,
+)
+
 
 # Prepended to every exported analysis script (same message as README.md # Citation).
 _EXPORT_SCRIPT_CITATION = """\
@@ -201,10 +208,10 @@ def _build_config_section(state: dict) -> str:
         "# Configuration \u2014 edit these values to customize the analysis",
         "# " + "=" * 60,
         f'CSV_PATH = {state.get("csv_filename", "data.csv")!r}  # Run this script in the same directory as your data',
-        f"POINT_SIZE = {state.get('point_size', 5)}",
-        f"AXIS_LABEL_SIZE = {state.get('axis_label_size', 18)}",
-        f"LEGEND_SIZE = {state.get('legend_size', 16)}",
-        f"COLORMAP = {state.get('colormap', 'tab10')!r}",
+        f"POINT_SIZE = {state.get('point_size', DEFAULT_POINT_SIZE)}",
+        f"AXIS_LABEL_SIZE = {state.get('axis_label_size', DEFAULT_AXIS_LABEL_FONT_SIZE)}",
+        f"LEGEND_SIZE = {state.get('legend_size', DEFAULT_LEGEND_FONT_SIZE)}",
+        f"COLORMAP = {state.get('colormap', DEFAULT_COLORMAP)!r}",
         f"COLOR_BY = {state.get('color_by', [])!r}",
         f"SHAPE_BY = {state.get('shape_by')!r}",
         f"OPACITY_BY = {state.get('opacity_by')!r}",
