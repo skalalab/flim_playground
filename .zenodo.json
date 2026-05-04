@@ -1,0 +1,61 @@
+{
+  "upload_type": "software",
+  "title": "FLIM Playground: An interactive, end-to-end graphical user interface for analyzing single-cell fluorescence lifetime data",
+  "description": "FLIM Playground extracts single-cell features from fluorescence lifetime imaging microscopy (FLIM) raw data (Data Extraction) and analyzes extracted features or user-supplied datasets with built-in visual-analytic modules (Data Analysis). See README for details.",
+  "creators": [
+    {
+      "name": "Zhao, Wenxuan",
+      "affiliation": "Morgridge Institute for Research",
+      "orcid": "0009-0004-1952-6093"
+    },
+    {
+      "name": "Samimi, Kayvan",
+      "affiliation": "Morgridge Institute for Research",
+      "orcid": "0000-0002-2566-612X"
+    },
+    {
+      "name": "Skala, Melissa C.",
+      "affiliation": "Morgridge Institute for Research",
+      "orcid": "0000-0002-6320-7637"
+    },
+    {
+      "name": "Datta, Rupsa",
+      "affiliation": "Morgridge Institute for Research",
+      "orcid": "0000-0002-6432-2389"
+    }
+  ],
+  "license": "MIT",
+  "access_right": "open",
+  "keywords": [
+    "FLIM",
+    "fluorescence lifetime imaging",
+    "single-cell analysis",
+    "phasor analysis",
+    "curve fitting",
+    "morphology analysis",
+    "texture analysis",
+    "data analysis",
+    "data extraction",
+    "classification",
+    "interactive visualization",
+    "bioimage analysis"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "10.1101/2025.09.30.679625",
+      "relation": "isSupplementTo",
+      "scheme": "doi",
+      "resource_type": "publication-preprint"
+    },
+    {
+      "identifier": "https://github.com/skalalab/flim_playground",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    },
+    {
+      "identifier": "https://skalalab.github.io/flim_playground_doc/",
+      "relation": "isDocumentedBy",
+      "scheme": "url"
+    }
+  ]
+}
