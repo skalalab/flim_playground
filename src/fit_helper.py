@@ -4,6 +4,32 @@ from scipy.signal import fftconvolve
 def upsample_irf(irf, scale=10):
     return np.interp(np.linspace(0, len(irf), len(irf)*scale), np.arange(len(irf)), irf)
 
+def irf_fwhm_bins(irf):
+    """Full Width at Half Maximum of the IRF main peak, in bins.
+
+    Walks left/right from the peak until the value drops below half-max,
+    returning the contiguous half-max region's width. This isolates the
+    main peak even when after-pulses or shoulders also exceed half-max,
+    as long as they're separated from the peak by a sub-half-max gap.
+
+    Used as the natural length scale for the shift-fit halfwidth: shifts
+    smaller than the IRF's own width still represent meaningful IRF/decay
+    alignment, while larger shifts move the IRF off the data entirely.
+    """
+    irf = np.asarray(irf, dtype=float)
+    peak = float(irf.max())
+    if peak <= 0:
+        raise ValueError("IRF max is non-positive; cannot compute FWHM.")
+    p = int(np.argmax(irf))
+    half = peak / 2.0
+    L = p
+    while L > 0 and irf[L - 1] >= half:
+        L -= 1
+    R = p
+    while R < len(irf) - 1 and irf[R + 1] >= half:
+        R += 1
+    return max(2, R - L + 1)
+
 def irf_shift(irf, shift, irf_upsampled=None):
     scale = 10
     if irf_upsampled is None:

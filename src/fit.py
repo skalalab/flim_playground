@@ -6,12 +6,12 @@ import numpy as np
 import psutil
 from lmfit import minimize as lmfit_minimize
 from lmfit import Parameters
-from src.fit_helper import objective, upsample_irf
+from src.fit_helper import objective, upsample_irf, irf_fwhm_bins
 
 _MIN_CURVES_FOR_PARALLEL = 10
 
 
-def _init_params(duration, time_bins, num_components, num_curves, fit_shift, shift_guess, fixed_lifetimes):
+def _init_params(duration, time_bins, num_components, num_curves, fit_shift, shift_guess, shift_halfwidth, fixed_lifetimes):
     """Build lmfit Parameters and allocate result arrays."""
     params = Parameters()
     _fl = fixed_lifetimes or {}
@@ -57,7 +57,9 @@ def _init_params(duration, time_bins, num_components, num_curves, fit_shift, shi
 
     if fit_shift:
         arrays["shift"] = np.full(num_curves, np.nan)
-        params.add('shift', value=shift_guess or 0, min=-time_bins / 2, max=time_bins / 2)
+        center = float(shift_guess) if shift_guess is not None else 0.0
+        params.add('shift', value=center,
+                   min=center - shift_halfwidth, max=center + shift_halfwidth)
 
     return params, arrays, fixed
 
@@ -212,14 +214,20 @@ def _fit_single_curve_worker(args):
         return (i, None)
 
 
-def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode="Hybrid", fit_shift=False, shift_guess=None, start=0, end=-1, fixed_lifetimes=None, _progress_callback=None):
+def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_algo, fitting_mode="Hybrid", fit_shift=False, shift_guess=None, shift_halfwidth=None, start=0, end=-1, fixed_lifetimes=None, _progress_callback=None):
     """
     fixed_lifetimes: optional dict mapping 't1'/'t2'/'t3' to a fixed value in ns,
                      or None/0 to leave that component free.
                      Example: {'t1': 0.4, 't2': None}  → fix τ1, fit τ2 freely.
+    shift_halfwidth: optional float, half-width of the shift parameter's bounds
+                     in bins (bounds = [shift_guess ± halfwidth]). When None and
+                     fit_shift=True, defaults to the IRF's FWHM in bins —
+                     adapts to detector physics with no hardcoded constant.
     """
     num_curves = len(decay_curves)
-    params, arrays, fixed = _init_params(duration, time_bins, num_components, num_curves, fit_shift, shift_guess, fixed_lifetimes)
+    if fit_shift and shift_halfwidth is None:
+        shift_halfwidth = irf_fwhm_bins(irf)
+    params, arrays, fixed = _init_params(duration, time_bins, num_components, num_curves, fit_shift, shift_guess, shift_halfwidth, fixed_lifetimes)
 
     period = duration / time_bins
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
