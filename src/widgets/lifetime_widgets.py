@@ -198,7 +198,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
                     font=dict(color=color)
                 ),
                 xaxis_title="Time (ns)",
-                yaxis_title="Intensity (log)" if log_y else "Intensity",
+                yaxis_title="Intensity (log scale)" if log_y else "Intensity",
                 yaxis_type="log" if log_y else "linear",
                 showlegend=True,
                 legend=dict(

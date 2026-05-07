@@ -1,5 +1,4 @@
 import numpy as np
-from scipy.signal import fftconvolve
 
 def upsample_irf(irf, scale=10):
     return np.interp(np.linspace(0, len(irf), len(irf)*scale), np.arange(len(irf)), irf)
@@ -28,7 +27,8 @@ def irf_fwhm_bins(irf):
     R = p
     while R < len(irf) - 1 and irf[R + 1] >= half:
         R += 1
-    return max(2, R - L + 1)
+    # returns the 2 times of the FWHM just to be safe
+    return max(2, 2*(R - L))
 
 def irf_shift(irf, shift, irf_upsampled=None):
     scale = 10
@@ -46,12 +46,12 @@ def irf_shift(irf, shift, irf_upsampled=None):
 def forward_pass(amp1, t1, offset, shifted_irf, time_axis, amp2=None, t2=None, amp3=None, t3=None):
     #t_i is in ns
     if amp2 is not None and amp3 is not None and t2 is not None and t3 is not None:
-        decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2) +  amp3 * np.exp(-time_axis / t3)
+        decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2) +  amp3 * np.exp(-time_axis / t3) + offset
     elif amp2 is not None and t2 is not None:
-        decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2) 
+        decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2) + offset
     else:
-        decay = amp1 * np.exp(-time_axis / t1) 
-    convolved_decay = fftconvolve(decay, shifted_irf)[:len(time_axis)] + offset
+        decay = amp1 * np.exp(-time_axis / t1) + offset
+    convolved_decay = np.fft.ifft(np.fft.fft(decay) * np.fft.fft(shifted_irf)).real
     
     return convolved_decay
 def nll_poisson(fitted, data, start, end):
