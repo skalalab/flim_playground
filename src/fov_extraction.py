@@ -154,7 +154,9 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
         
         intensity_images[f"{fit_feature_prefix}a1"] = a1
         intensity_images[f"{fit_feature_prefix}t2"] = t2
-    
+        if num_components == 2:
+            intensity_images[f"{channel_name}_a2"] = 100 - a1
+
     if num_components == 3:
         try:
             a2 = load_image(metadata[f"{channel_name}_a2"])
@@ -173,6 +175,7 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
         
         intensity_images[f"{fit_feature_prefix}a2"] = a2
         intensity_images[f"{fit_feature_prefix}t3"] = t3
+        intensity_images[f"{channel_name}_a3"] = 100 - a1 - a2
 
     if num_components == 1:
         tm = t1 
@@ -262,8 +265,9 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
             if total_amp == 0:
                 warning_msg += f"Warning: {cell_id} has a total amplitude of 0. "
                 continue
-            single_cell_features_fov[cell_id][f"{fit_feature_prefix}a1"] = (amp1 / total_amp) * 100
-            # single_cell_features_fov[cell_id][f"{channel_name}_a2"] = (amp2 / total_amp) * 100
+            a1_pct = (amp1 / total_amp) * 100
+            single_cell_features_fov[cell_id][f"{fit_feature_prefix}a1"] = a1_pct
+            single_cell_features_fov[cell_id][f"{channel_name}_a2"] = 100 - a1_pct
             # Calculate mean lifetime (in original units, not converted)
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm"] = ((amp1 / total_amp) * results["t1"][i] + (amp2 / total_amp) * results["t2"][i]) * 1000
             
@@ -279,9 +283,11 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
             if total_amp == 0:
                 warning_msg += f"Warning: {cell_id} has a total amplitude of 0. "
                 continue
-            single_cell_features_fov[cell_id][f"{fit_feature_prefix}a1"] = (amp1 / total_amp) * 100
-            single_cell_features_fov[cell_id][f"{fit_feature_prefix}a2"] = (amp2 / total_amp) * 100
-           # single_cell_features_fov[cell_id][f"{lifetime_feature_prefix}_a3"] = (amp3 / total_amp) * 100
+            a1_pct = (amp1 / total_amp) * 100
+            a2_pct = (amp2 / total_amp) * 100
+            single_cell_features_fov[cell_id][f"{fit_feature_prefix}a1"] = a1_pct
+            single_cell_features_fov[cell_id][f"{fit_feature_prefix}a2"] = a2_pct
+            single_cell_features_fov[cell_id][f"{channel_name}_a3"] = 100 - a1_pct - a2_pct
             # Calculate mean lifetime for 3 components (in original units, not converted)
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm"] = ((amp1 / total_amp) * results["t1"][i] + (amp2 / total_amp) * results["t2"][i] + (amp3 / total_amp) * results["t3"][i]) * 1000
 
