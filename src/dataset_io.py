@@ -60,7 +60,9 @@ def load_csv(uploaded_csv, categorical_cols, use_data_extraction=True):
     if uploaded_csv is not None:
         # Read the uploaded data, explicitly preventing the first column from being used as the index
         df = pd.read_csv(uploaded_csv, index_col=False, low_memory=False)
-        df, warning_msg, error_msg = check_and_fix_df(df, categorical_cols, use_data_extraction=use_data_extraction)
+        unique_row_id_col = get_unique_row_id_col(use_data_extraction)
+        fov_name_col = get_fov_name_col_analysis(use_data_extraction)
+        df, warning_msg, error_msg = check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col)
 
         if error_msg != "":
             st.markdown(f"<h5 style='text-align: center; color: red'>{error_msg}</h5>", unsafe_allow_html=True)
@@ -170,24 +172,18 @@ def get_feature_groups_user_defined(cols):
             feature_groups_dict["Uncategorized Features"] = uncategorized
     return feature_groups_dict
 
-def get_features(df, categorical_cols, use_data_extraction=True):
+def coerce_majority_numeric_cols(df, skip_cols):
     """
-    Extract all numeric features from the dataframe. Group them (by channel) based on the feature extractors:
-    - morphology (mask morphology)
-    - texture (texture features)
-    - lifetime fit variables
-    - lifetime fit free variables
-    """
-    unique_row_id_col = get_unique_row_id_col(use_data_extraction)
-    fov_name_col = get_fov_name_col_analysis(use_data_extraction)
-    warning_msg = error_msg = ""
+    Attempt to convert non-categorical object columns to numeric.
+    Only accept the conversion when <= 1% of non-null values are
+    non-numeric (i.e. the column is overwhelmingly numeric with a few
+    stray strings like "N/A").  Columns with more than 1% non-numeric
+    values are left untouched (likely genuinely categorical/text).
 
-    # Attempt to convert non-categorical object columns to numeric.
-    # Only accept the conversion when <= 1% of non-null values are
-    # non-numeric (i.e. the column is overwhelmingly numeric with a few
-    # stray strings like "N/A").  Columns with more than 1% non-numeric
-    # values are left untouched (likely genuinely categorical/text).
-    skip_cols = set([unique_row_id_col, fov_name_col] + list(categorical_cols))
+    Must stay free of Streamlit/config dependencies — it is embedded verbatim
+    into exported analysis scripts via inspect.getsource().
+    """
+    warning_msg = ""
     for col in df.columns:
         if col not in skip_cols and not pd.api.types.is_numeric_dtype(df[col]):
             converted = pd.to_numeric(df[col], errors='coerce')
@@ -200,6 +196,22 @@ def get_features(df, categorical_cols, use_data_extraction=True):
                 if num_coerced > 0:
                     warning_msg += f"Warning: {num_coerced} non-numeric value{'s' if num_coerced > 1 else ''} in '{col}' were converted to NaN.<br>"
                 df[col] = converted
+    return df, warning_msg
+
+def get_features(df, categorical_cols, use_data_extraction=True):
+    """
+    Extract all numeric features from the dataframe. Group them (by channel) based on the feature extractors:
+    - morphology (mask morphology)
+    - texture (texture features)
+    - lifetime fit variables
+    - lifetime fit free variables
+    """
+    unique_row_id_col = get_unique_row_id_col(use_data_extraction)
+    fov_name_col = get_fov_name_col_analysis(use_data_extraction)
+    error_msg = ""
+
+    skip_cols = set([unique_row_id_col, fov_name_col] + list(categorical_cols))
+    df, warning_msg = coerce_majority_numeric_cols(df, skip_cols)
 
     numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
     if use_data_extraction:
@@ -231,11 +243,14 @@ def get_features(df, categorical_cols, use_data_extraction=True):
     
     return df, feature_groups_dict, warning_msg, error_msg
 
-def check_and_fix_df(df, categorical_cols, use_data_extraction=True):
+def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
     """
-    check for df's metadata: 
+    check for df's metadata:
     - single-cell unique_identifier
     - fill in na values for categorical columns
+
+    Must stay free of Streamlit/config dependencies — it is embedded verbatim
+    into exported analysis scripts via inspect.getsource().
     """
     warning_msg = error_msg = ""
     df = df.reset_index(drop=True)
@@ -264,7 +279,6 @@ def check_and_fix_df(df, categorical_cols, use_data_extraction=True):
         df = df.loc[:, ~df.columns.duplicated(keep='first')]
         
     # handle the required unique cell identifier column
-    unique_row_id_col = get_unique_row_id_col(use_data_extraction)
     if unique_row_id_col not in df.columns:
         error_msg += f"Error: {unique_row_id_col} column is missing in the uploaded file. It is required. \n"
         return None, warning_msg, error_msg
@@ -285,7 +299,6 @@ def check_and_fix_df(df, categorical_cols, use_data_extraction=True):
         
     # make sure unique_row_id_col is of type str
     df[unique_row_id_col] = df[unique_row_id_col].astype(str)
-    fov_name_col = get_fov_name_col_analysis(use_data_extraction)
     if fov_name_col not in df.columns:
         df[fov_name_col] = df[unique_row_id_col].apply(safe_split_with_logging)
     else: 

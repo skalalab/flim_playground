@@ -87,6 +87,26 @@ def create_shape_map(groups):
 
 
 # ---------------------------------------------------------------------------
+# State-capture helpers (used by pages/data_analysis.py)
+# ---------------------------------------------------------------------------
+
+def get_effect_size_threshold_capture(session_state, effect_size_method, selected_var, separate_by):
+    """Read the effect-size threshold the app's widgets wrote to session state.
+
+    Mirrors the widget keys and defaults in src/vis/helpers.py (non-separate
+    path) and src/vis/univar.py (separate path): the key suffix is the selected
+    variable; Glass's Delta defaults to 0.7 on both paths, Absolute Cohen's d
+    defaults to 0.7 (0.5 when separate_by is active).
+    """
+    if effect_size_method == "Glass's Delta":
+        return float(session_state.get(f"glass_delta_thresh_{selected_var}", 0.7))
+    if effect_size_method == "Absolute Cohen's d":
+        default = 0.5 if separate_by else 0.7
+        return float(session_state.get(f"cohens_d_thresh_{selected_var}", default))
+    return 0.0
+
+
+# ---------------------------------------------------------------------------
 # Main entry point
 # ---------------------------------------------------------------------------
 
@@ -215,6 +235,9 @@ def _build_config_section(state: dict) -> str:
         f"COLOR_BY = {state.get('color_by', [])!r}",
         f"SHAPE_BY = {state.get('shape_by')!r}",
         f"OPACITY_BY = {state.get('opacity_by')!r}",
+        f"UNIQUE_ROW_ID_COL = {state.get('unique_row_id_col', 'cell_id')!r}",
+        f"FOV_NAME_COL = {state.get('fov_name_col', 'image_name')!r}",
+        f"CATEGORICAL_COLS = {state.get('categorical_cols', [])!r}",
     ]
 
     if method in ("Feature Comparison", "Feature Histogram", "FOV Comparison"):
@@ -228,6 +251,7 @@ def _build_config_section(state: dict) -> str:
         lines.append(f"ADD_BOXPLOT = {mp.get('add_boxplot', False)!r}")
         lines.append(f"CONNECT_MEANS = {mp.get('connect_means', False)!r}")
         lines.append(f"EFFECT_SIZE_THRESHOLD = {mp.get('effect_size_threshold', 0.0)!r}")
+        lines.append(f"SELECTED_PAIRS = {mp.get('selected_pairs')!r}  # None → annotate all pairs; else list of 'group1 vs group2' labels")
         custom_order = mp.get("custom_order")
         if custom_order:
             lines.append(f"CUSTOM_ORDER = {custom_order!r}  # Reorder: compare_groups and/or separate_groups")
@@ -237,6 +261,9 @@ def _build_config_section(state: dict) -> str:
         lines.append(f"LOG_X = {mp.get('log_x', False)!r}")
         lines.append(f"APPLY_GMM = {mp.get('apply_gmm', False)!r}")
         lines.append(f"INTERSECTION_THRESHOLD = {mp.get('intersection_threshold', False)!r}")
+        lines.append(f"BIN_WIDTH = {mp.get('bin_width')!r}  # None → numpy 'auto' bin width")
+        lines.append(f"GMM_MAX_COMPONENTS = {mp.get('gmm_max_components', 3)!r}")
+        lines.append(f"GMM_MIN_WEIGHT_THRESHOLD = {mp.get('gmm_min_weight_threshold', 0.1)!r}")
     elif method == "2D Feature Distribution":
         lines.append(f"SELECTED_X = {mp.get('selected_x')!r}")
         lines.append(f"SELECTED_Y = {mp.get('selected_y')!r}")
@@ -245,6 +272,8 @@ def _build_config_section(state: dict) -> str:
         lines.append(f"MARGINAL_PLOT_TYPE = {mp.get('marginal_plot_type', 'gaussian fit')!r}")
         lines.append(f"FIT_REGRESSION = {mp.get('fit_regression', False)!r}")
         lines.append(f"FIT_GMM_2D = {mp.get('fit_gmm_2d', False)!r}")
+        lines.append(f"GMM_MAX_COMPONENTS = {mp.get('gmm_max_components', 3)!r}")
+        lines.append(f"GMM_MIN_WEIGHT_THRESHOLD = {mp.get('gmm_min_weight_threshold', 0.1)!r}")
     elif method == "Phasor Plot":
         lines.append(f"PHASOR_CHANNEL = {mp.get('selected_channel')!r}")
         lines.append(f"PHASOR_HARMONIC = {mp.get('phasor_harmonic', 1)!r}")
@@ -271,7 +300,32 @@ def _build_config_section(state: dict) -> str:
 
 
 def _build_data_loading(state: dict) -> str:
-    return "\n# " + "=" * 60 + "\n# Data Loading\n# " + "=" * 60 + "\ndf = pd.read_csv(CSV_PATH)\n"
+    from src.dataset_io import (
+        check_and_fix_df,
+        coerce_majority_numeric_cols,
+        match_col_name,
+        safe_split_with_logging,
+    )
+
+    loading_src = _extract_source(match_col_name, safe_split_with_logging,
+                                  check_and_fix_df, coerce_majority_numeric_cols)
+    divider = "# " + "=" * 60
+    return f"""
+{divider}
+# Data Loading — runs the same normalization functions as the app (src/dataset_io.py)
+{divider}
+{loading_src}
+
+df = pd.read_csv(CSV_PATH, index_col=False, low_memory=False)
+df, _warning_msg, _error_msg = check_and_fix_df(df, CATEGORICAL_COLS, UNIQUE_ROW_ID_COL, FOV_NAME_COL)
+if _error_msg:
+    raise SystemExit(_error_msg.strip())
+df, _coerce_warning = coerce_majority_numeric_cols(
+    df, set([UNIQUE_ROW_ID_COL, FOV_NAME_COL] + list(CATEGORICAL_COLS)))
+_warning_msg += _coerce_warning
+if _warning_msg:
+    print(_warning_msg.replace("<br>", "\\n").strip())
+"""
 
 
 def _build_filters(state: dict) -> str:
@@ -428,7 +482,8 @@ for g in color_groups:
     gdata = df.loc[group_mask, SELECTED_VAR].dropna()
     if len(gdata) < 3:
         continue
-    gmm = _find_best_gmm(gdata.values)
+    gmm = _find_best_gmm(gdata.values, max_components=GMM_MAX_COMPONENTS,
+                         min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD)
     if gmm is None:
         print(f"  {{g}}: No valid GMM found with current constraints.")
         continue
@@ -525,15 +580,19 @@ if LOG_X:
 fig, ax = plt.subplots(figsize=(10, 6))
 
 all_vals = df[SELECTED_VAR].dropna().values
-_, bin_edges = np.histogram(all_vals, bins='auto')
-bin_width = bin_edges[1] - bin_edges[0] if len(bin_edges) > 1 else 1.0
+if BIN_WIDTH is not None:
+    bin_width = float(BIN_WIDTH)
+else:
+    _, _auto_edges = np.histogram(all_vals, bins='auto')
+    bin_width = _auto_edges[1] - _auto_edges[0] if len(_auto_edges) > 1 else 1.0
+# Common bin edges shared by all groups (mirrors the app's histogram widget)
+bin_edges = np.arange(all_vals.min(), all_vals.max() + bin_width + 1e-9, bin_width)
 
 for g in color_groups:
     gdata = df[df["_color_group"] == g][SELECTED_VAR].dropna().values
     if len(gdata) == 0:
         continue
-    bins = np.arange(gdata.min(), gdata.max() + bin_width, bin_width)
-    counts, edges = np.histogram(gdata, bins=bins)
+    counts, edges = np.histogram(gdata, bins=bin_edges)
     centers = (edges[:-1] + edges[1:]) / 2
     ax.plot(centers, counts, label=g, color=color_map[g][:3], linewidth=2)
 
@@ -721,8 +780,8 @@ if CONNECT_MEANS:
 for boundary in section_boundaries:
     ax.axvline(x=boundary, linestyle='--', color='gray', alpha=0.5, linewidth=1)
 
-# --- Effect size annotations ---
-if EFFECT_SIZE_METHOD != "None":
+# --- Effect size / statistical test annotations ---
+if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
     from itertools import combinations
     for sec_group in ordered_separate_groups:
         if sec_group is not None:
@@ -736,6 +795,10 @@ if EFFECT_SIZE_METHOD != "None":
             continue
 
         pairs = list(combinations(sec_color_groups, 2))
+        if SELECTED_PAIRS is not None:
+            pairs = [p for p in pairs
+                     if f"{{p[0]}} vs {{p[1]}}" in SELECTED_PAIRS
+                     or f"{{p[1]}} vs {{p[0]}}" in SELECTED_PAIRS]
         all_y = sec_df[SELECTED_VAR].dropna()
         data_range = all_y.max() - all_y.min()
         if data_range == 0:
@@ -757,14 +820,6 @@ if EFFECT_SIZE_METHOD != "None":
             if len(g1_data) == 0 or len(g2_data) == 0:
                 continue
 
-            if EFFECT_SIZE_METHOD == "Glass's Delta":
-                es = glass_delta(g1_data, g2_data, MEAN_OR_MEDIAN)
-            else:
-                es = cohens_d(g1_data, g2_data, MEAN_OR_MEDIAN)
-
-            if abs(es) < EFFECT_SIZE_THRESHOLD:
-                continue
-
             star = ""
             if STATISTICAL_TEST != "None":
                 equal_var = (STATISTICAL_TEST == "Independent t-test")
@@ -776,6 +831,17 @@ if EFFECT_SIZE_METHOD != "None":
                     elif pval <= 0.05: star = "*"
                 except Exception:
                     pass
+
+            if EFFECT_SIZE_METHOD != "None":
+                if EFFECT_SIZE_METHOD == "Glass's Delta":
+                    es = glass_delta(g1_data, g2_data, MEAN_OR_MEDIAN)
+                else:
+                    es = cohens_d(g1_data, g2_data, MEAN_OR_MEDIAN)
+                if abs(es) < EFFECT_SIZE_THRESHOLD:
+                    continue
+                txt = f"{{es:.2f}}{{star}}" if star else f"\\u0394={{es:.2f}}"
+            else:
+                txt = star  # statistical test only — star-only annotation
 
             key1 = (sec_group, pair[0]) if sec_group is not None else pair[0]
             key2 = (sec_group, pair[1]) if sec_group is not None else pair[1]
@@ -799,10 +865,6 @@ if EFFECT_SIZE_METHOD != "None":
                    [y_bracket_top - bracket_h, y_bracket_top, y_bracket_top, y_bracket_top - bracket_h],
                    color='black', linewidth=1.5, zorder=4)
 
-            if star:
-                txt = f"{{es:.2f}}{{star}}"
-            else:
-                txt = f"\\u0394={{es:.2f}}"
             ax.text((x_start + x_end) / 2, y_text_center,
                    txt, ha='center', va='bottom', fontsize=10, zorder=4)
 
@@ -926,7 +988,8 @@ if FIT_GMM_2D:
         if len(gdf) < 3:
             continue
         X_gmm = gdf[[SELECTED_X, SELECTED_Y]].values
-        best_gmm = _find_best_gmm(X_gmm, max_components=3)
+        best_gmm = _find_best_gmm(X_gmm, max_components=GMM_MAX_COMPONENTS,
+                                  min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD)
 
         if best_gmm is not None:
             for i in range(best_gmm.n_components):
