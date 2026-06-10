@@ -61,11 +61,11 @@ pyinstaller Flim-Playground.spec --clean
 
 If FLIM Playground contributed to your research — whether through **Data Extraction** for single-cell feature extraction or through **Data Analysis** for data exploration, visualization, selection of analysis methods, or hyperparameter tuning (UMAP, clustering, classification, etc.) — please cite **both** the software version you used and the preprint. Your citation directly supports us in maintaining and improving it ✨🎈🍾.
 
+**Publication:**
+> Zhao, W., Samimi, K., Skala, M.C., and Datta, R. (2026). FLIM Playground: An interactive, end-to-end graphical user interface for analyzing single cells with fluorescence lifetime imaging microscopy. Cell Rep. Methods. https://doi.org/10.1016/j.crmeth.2026.101484
+
 **Software: the latest version**
 > Zhao W., Samimi K., Skala M.C., Datta R. *FLIM Playground* [Computer software]. Zenodo. https://doi.org/10.5281/zenodo.19744706
-
-**Preprint:**
-> Zhao W., Samimi K., Skala M.C., Datta R. *FLIM Playground: An interactive, end-to-end graphical user interface for analyzing single-cell fluorescence lifetime data.* bioRxiv 2025. https://doi.org/10.1101/2025.09.30.679625
 
 **Raw data used in the paper:**
 > Zhao, W., Samimi, K., Skala, M. C., & Datta, R. (2026). *Example and validation datasets for FLIM Playground* [Data set]. Zenodo. https://doi.org/10.5281/zenodo.19774943
