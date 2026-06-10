@@ -111,7 +111,7 @@ def comparison_pair_widget(available_pairs):
     return selected_pairs
 
 
-def histogram_bin_width_widget(x_data): 
+def histogram_bin_width_widget(x_data, key=None):
     # x_data: 1D numpy array of data to be binned (already na dropped)
     # use np's automatic binning logic by not specifying nbins explicitly in np.histogram
     # Calculate bins using numpy based on the overall data range
@@ -124,7 +124,7 @@ def histogram_bin_width_widget(x_data):
         min_val = x_data.min()
         max_val = x_data.max()
         range = max_val - min_val
-        bin_width = st.number_input(label="Bin Width", max_value=range/3, value=default_bin_width, step=range/50,)
+        bin_width = st.number_input(label="Bin Width", max_value=range/3, value=default_bin_width, step=range/50, key=key)
         # Add a small epsilon to max_val to ensure the rightmost edge includes the max value
         epsilon = 1e-9
         # Calculate common bin edges based on the user-provided bin_width
@@ -135,9 +135,9 @@ def histogram_bin_width_widget(x_data):
 def gmm_hyperParams_widget():
     col3, col4 = st.columns(2)
     with col3:
-        fit_gmm_max_components = st.slider("Max Components", min_value=2, max_value=5, value=3, step=1) 
+        fit_gmm_max_components = st.slider("Max Components", min_value=2, max_value=5, value=3, step=1, key="fit_gmm_max_components")
     with col4:
-        fit_gmm_min_weight_threshold = st.slider("Min Weight Threshold", min_value=0.0, max_value=0.3, value=0.1, step=0.1)
+        fit_gmm_min_weight_threshold = st.slider("Min Weight Threshold", min_value=0.0, max_value=0.3, value=0.1, step=0.1, key="fit_gmm_min_weight_threshold")
     return fit_gmm_max_components, fit_gmm_min_weight_threshold
 
 def phasor_params_widget(feature_groups_dict):

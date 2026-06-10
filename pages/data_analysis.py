@@ -22,7 +22,7 @@ from src.vis.plot_defaults import (
 from src.widgets.analysis_config_widgets import dataset_config_widget, get_fov_name_col_analysis, get_unique_row_id_col, get_categorical_cols_analysis
 from src.widgets.classification_widgets import CLASSIFIER_OPTIONS, classifier_hyperparams_widget, classifier_options_widget, classification_plot_widget
 from src.classify import run_classification
-from src.export_script import generate_script
+from src.export_script import generate_script, get_effect_size_threshold_capture
 
 st.set_page_config(layout="wide")
 render_top_menu()
@@ -80,6 +80,7 @@ def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opac
         "opacity_by": opacity_by,
         "shape_by": shape_by,
         "separate_by": separate_by,
+        "categorical_cols": list(categorical_cols) if categorical_cols else [],
         "point_size": st.session_state.plot_point_size,
         "axis_label_size": st.session_state.plot_axis_label_size,
         "legend_size": st.session_state.plot_legend_size,
@@ -90,6 +91,7 @@ def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opac
     mp = {}
     if method == "Feature Comparison":
         sv = extra_params.get("selected_var") or st.session_state.get("_fc_selected_var")
+        es_method = extra_params.get("effect_size_method", st.session_state.get("_fc_effect_size", "None"))
         key_suffix = f"_{sv}_{'_'.join(color_by)}_{separate_by or ''}" if sv else ""
         # Capture custom x-axis order from session state
         custom_order = {}
@@ -107,13 +109,15 @@ def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opac
                 pass
         mp = {
             "selected_var": sv,
-            "effect_size_method": extra_params.get("effect_size_method", st.session_state.get("_fc_effect_size", "None")),
+            "effect_size_method": es_method,
             "mean_or_median": extra_params.get("mean_or_median"),
             "statistical_test": extra_params.get("statistical_test", "None"),
             "log_y": st.session_state.get(f"log_y{key_suffix}", False),
             "add_boxplot": st.session_state.get(f"add_boxplot{key_suffix}", False),
             "connect_means": st.session_state.get(f"connect_means{key_suffix}", False),
-            "effect_size_threshold": 0.0,
+            "effect_size_threshold": get_effect_size_threshold_capture(st.session_state, es_method, sv, separate_by),
+            # "A vs B" labels from comparison_pair_widget; None → all pairs
+            "selected_pairs": list(st.session_state["compare_pairs"]) if "compare_pairs" in st.session_state else None,
             "custom_order": custom_order if custom_order else None,
         }
     elif method == "Feature Histogram":
@@ -123,6 +127,10 @@ def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opac
             "log_x": st.session_state.get(f"log_x_hist_{sv}", False) if sv else False,
             "apply_gmm": extra_params.get("apply_gmm", False),
             "intersection_threshold": st.session_state.get("intersection_threshold", False),
+            "bin_width": (float(st.session_state[f"hist_bin_width_{sv}"])
+                          if sv and f"hist_bin_width_{sv}" in st.session_state else None),
+            "gmm_max_components": int(st.session_state.get("fit_gmm_max_components", 3)),
+            "gmm_min_weight_threshold": float(st.session_state.get("fit_gmm_min_weight_threshold", 0.1)),
         }
     elif method == "FOV Comparison":
         mp = {"selected_var": extra_params.get("selected_var")}
@@ -137,6 +145,8 @@ def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opac
             "marginal_plot_type": st.session_state.get(f"marginal_plot_type_selector_{sx}_{sy}", "gaussian fit") if sx and sy else "gaussian fit",
             "fit_regression": st.session_state.get(f"fit_regression_2d_{sx}_{sy}", False) if sx and sy else False,
             "fit_gmm_2d": st.session_state.get(f"fit_gmm_2d_{sx}_{sy}", False) if sx and sy else False,
+            "gmm_max_components": int(st.session_state.get("fit_gmm_max_components", 3)),
+            "gmm_min_weight_threshold": float(st.session_state.get("fit_gmm_min_weight_threshold", 0.1)),
         }
     elif method == "Phasor Plot":
         ch = extra_params.get("selected_channel")

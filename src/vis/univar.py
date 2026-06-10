@@ -64,7 +64,7 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10"):
    
     fig = go.Figure()
 
-    bin_edges = histogram_bin_width_widget(df[selected_var])
+    bin_edges = histogram_bin_width_widget(df[selected_var], key=f"hist_bin_width_{selected_var}")
 
     for color_group in unique_color_groups:
         group_df = df[df[GROUP_COL_NAME] == color_group]
