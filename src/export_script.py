@@ -220,7 +220,6 @@ def _build_preamble(state: dict) -> str:
     if method == "Feature Comparison":
         extra.append("from scipy.stats import gaussian_kde, ttest_ind, median_abs_deviation")
     elif method == "Feature Histogram":
-        extra.append("from scipy.stats import skew")
         if mp.get("apply_gmm"):
             extra += ["from sklearn.mixture import GaussianMixture",
                       "from scipy.stats import norm", "from scipy.optimize import brentq"]
@@ -625,8 +624,8 @@ for g in color_groups:
 
         assigned_labels = [f"{{g}}_group{{label + 1}}" for label in subpopulation_labels]
         df.loc[data_indices, "GMM_group"] = assigned_labels
-    else:
-        df.loc[gdata.index, "GMM_group"] = f"{{g}}_group1"
+    # No else: a single-component group is left unlabeled, matching the app
+    # (univar.py assigns GMM_group only inside the n_components>1 branch).
 
 if SAVE_DERIVED_DATA:
     df.drop(columns=["_color_group"]).to_csv("gmm_grouped_data.csv", index=False)
@@ -670,15 +669,23 @@ for g in color_groups:
     centers = (edges[:-1] + edges[1:]) / 2
     ax.plot(centers, counts, label=g, color=color_map[g][:3], linewidth=2)
 
-    from scipy.stats import skew as scipy_skew
-    sk = scipy_skew(gdata)
-    direction = "right" if sk > 0 else "left"
-    if abs(sk) > 1:
-        desc = f"strongly {direction}-skewed"
-    elif abs(sk) > 0.5:
-        desc = f"moderately {direction}-skewed"
-    else:
+    # Bias-corrected skewness (pandas .skew()) + the app's 7-way label ladder
+    # (univar.py:74-87) — keep both identical to the app.
+    sk = pd.Series(gdata).skew()
+    if sk < -1:
+        desc = "strongly left-skewed"
+    elif sk < -0.5:
+        desc = "moderately left-skewed"
+    elif sk < -0.25:
         desc = "approximately symmetric"
+    elif sk <= 0.25:
+        desc = "almost symmetric"
+    elif sk <= 0.5:
+        desc = "approximately symmetric"
+    elif sk <= 1:
+        desc = "moderately right-skewed"
+    else:
+        desc = "strongly right-skewed"
     print(f"  {g}: skewness = {sk:.3f} ({desc})")
 
 ax.set_xlabel(SELECTED_VAR, fontsize=AXIS_LABEL_SIZE)
@@ -1059,7 +1066,9 @@ if FIT_GMM_2D:
         best_gmm = _find_best_gmm(X_gmm, max_components=GMM_MAX_COMPONENTS,
                                   min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD)
 
-        if best_gmm is not None:
+        # Ellipses + per-point labels only when the GMM has >1 component (bivar.py);
+        # a unimodal best-fit draws no overlay.
+        if best_gmm is not None and best_gmm.n_components > 1:
             for i in range(best_gmm.n_components):
                 mean = best_gmm.means_[i]
                 cov = best_gmm.covariances_[i]
@@ -1074,9 +1083,8 @@ if FIT_GMM_2D:
                 ax_main.plot(*mean, '+', color=color_map[g][:3], markersize=15, markeredgewidth=2)
 
             # per-point component membership, as the app assigns it
-            if best_gmm.n_components > 1:
-                subpopulation_labels = best_gmm.predict(X_gmm)
-                df.loc[gdf.index, "2D_GMM_group"] = [f"{{g}}_group{{label + 1}}" for label in subpopulation_labels]
+            subpopulation_labels = best_gmm.predict(X_gmm)
+            df.loc[gdf.index, "2D_GMM_group"] = [f"{{g}}_group{{label + 1}}" for label in subpopulation_labels]
 
     if SAVE_DERIVED_DATA:
         df.drop(columns=["_color_group"]).to_csv("2D_gmm_data.csv", index=False)
@@ -1155,7 +1163,9 @@ else:
             # per-point cluster membership, as the app assigns it
             df.loc[gdf.index, "k_means_cluster"] = [f"{g}_group{label + 1}" for label in labels]
 
-            cluster_colors = plt.colormaps['tab10'](np.linspace(0, 1, K_MEANS_CLUSTERS))
+            # All of a group's hulls/centroids share that group's color
+            # (bivar.py _plot_convex_hull passes the group color), not a per-cluster ramp.
+            group_color = color_map[g][:3]
             for ci in range(K_MEANS_CLUSTERS):
                 cluster_pts = coords[labels == ci]
                 if len(cluster_pts) >= 3:
@@ -1164,13 +1174,13 @@ else:
                         hull_pts = cluster_pts[hull.vertices]
                         hull_pts = np.vstack([hull_pts, hull_pts[0]])
                         ax.fill(hull_pts[:, 0], hull_pts[:, 1],
-                               alpha=0.15, color=cluster_colors[ci], zorder=1)
+                               alpha=0.15, color=group_color, zorder=1)
                         ax.plot(hull_pts[:, 0], hull_pts[:, 1],
-                               color=cluster_colors[ci], linewidth=1.5, zorder=1)
+                               color=group_color, linewidth=1.5, zorder=1)
                     except Exception:
                         pass
                 ax.plot(centers[ci, 0], centers[ci, 1], 'x',
-                       color=cluster_colors[ci], markersize=12, markeredgewidth=2, zorder=4)
+                       color=group_color, markersize=12, markeredgewidth=2, zorder=4)
 
         if SAVE_DERIVED_DATA:
             df.drop(columns=["_color_group"]).to_csv("kmeans_clustered_data.csv", index=False)
