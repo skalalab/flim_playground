@@ -533,6 +533,21 @@ def _plot_convex_hull(
     ))
     return fig
 
+def phasor_kmeans(X_raw, n_clusters, random_state=42):
+    """Standardize raw (G, S) coordinates, K-Means cluster them, and return
+    (labels, cluster centers transformed back to raw coordinates).
+
+    n_init=10 keeps the best of 10 seeded k-means++ restarts so clusters are
+    stable. Must stay free of Streamlit dependencies — it is embedded verbatim
+    into exported analysis scripts via inspect.getsource().
+    """
+    scaler = StandardScaler().fit(X_raw)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
+    kmeans.fit(scaler.transform(X_raw))
+    centers_raw = scaler.inverse_transform(kmeans.cluster_centers_)
+    return kmeans.labels_, centers_raw
+
+
 def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, colormap="tab10", f=0.08, harmonic=1):
 
     # Get theme color once at the start for all theme-aware elements
@@ -629,26 +644,19 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
             if group_df.empty:
                 continue
                 
-            # standardize the data
-            # --- 1) DO NOT overwrite raw G,S; fit on a standardized copy ---
+            # cluster on a standardized copy — raw G,S stay untouched
             X_raw = group_df[[g_feature, s_feature]].to_numpy(copy=True)
-            scaler = StandardScaler().fit(X_raw)
-            Xz = scaler.transform(X_raw)
-            # step 2: perform k-means clustering
-            kmeans = KMeans(n_clusters=k_means_clusters, random_state=42)
-            kmeans.fit(Xz)
-            
-            centers_raw = scaler.inverse_transform(kmeans.cluster_centers_)
-            
-            # step 3: plot the convex hull
+            labels, centers_raw = phasor_kmeans(X_raw, k_means_clusters)
+
+            # plot the convex hull
             # Create a temporary dataframe with cluster labels for plotting
             group_df_with_clusters = group_df.copy()
-            group_df_with_clusters["k_means_cluster"] = kmeans.labels_
-            
+            group_df_with_clusters["k_means_cluster"] = labels
+
             _plot_convex_hull(fig, group_df_with_clusters, g_feature, s_feature, theme_color, "k_means_cluster", color_map.get(color_group, 'gray'), centers_raw, line_width=2)
-            
+
             # Update the main dataframe with cluster labels
-            assigned_labels = [f"{color_group}_group{label + 1}" for label in kmeans.labels_]
+            assigned_labels = [f"{color_group}_group{label + 1}" for label in labels]
             df.loc[group_df.index, "k_means_cluster"] = assigned_labels
     
     # Note: Legend traces and hovermode are already added by add_interleaved_points_trace
