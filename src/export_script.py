@@ -226,9 +226,11 @@ def _build_preamble(state: dict) -> str:
                       "from scipy.stats import norm", "from scipy.optimize import brentq"]
     elif method == "2D Feature Distribution":
         extra.append("from scipy.stats import gaussian_kde")
+        # Pearson r + p is reported for every color group (like the app), so import
+        # it unconditionally; only the regression line itself is gated.
+        extra.append("from scipy.stats import pearsonr")
         if mp.get("fit_regression"):
-            extra += ["from sklearn.linear_model import LinearRegression",
-                      "from scipy.stats import pearsonr"]
+            extra.append("from sklearn.linear_model import LinearRegression")
         if mp.get("fit_gmm_2d"):
             extra += ["from sklearn.mixture import GaussianMixture",
                       "from matplotlib.patches import Ellipse", "from scipy.stats import chi2"]
@@ -1027,22 +1029,23 @@ for g in color_groups:
         except Exception:
             pass
 
-if FIT_REGRESSION:
-    from sklearn.linear_model import LinearRegression
-    from scipy.stats import pearsonr
-    for g in color_groups:
-        gdf = df[df["_color_group"] == g].dropna(subset=[SELECTED_X, SELECTED_Y])
-        if len(gdf) < 2:
-            continue
+# Pearson r + p is reported per color group unconditionally, matching the app's
+# always-on correlation readout; the regression line + R² stay gated.
+for g in color_groups:
+    gdf = df[df["_color_group"] == g].dropna(subset=[SELECTED_X, SELECTED_Y])
+    if len(gdf) < 2:
+        continue
+    r_val, p_val = pearsonr(gdf[SELECTED_X], gdf[SELECTED_Y])
+    print(f"  {{g}}: Pearson r={{r_val:.4f}}, p={{p_val:.2e}}")
+    if FIT_REGRESSION:
         X_reg = gdf[SELECTED_X].values.reshape(-1, 1)
         y_reg = gdf[SELECTED_Y].values
         model = LinearRegression().fit(X_reg, y_reg)
         r2 = model.score(X_reg, y_reg)
-        r_val, p_val = pearsonr(gdf[SELECTED_X], gdf[SELECTED_Y])
         x_line = np.linspace(X_reg.min(), X_reg.max(), 100)
         ax_main.plot(x_line, model.predict(x_line.reshape(-1, 1)), '--',
                     color=color_map[g][:3], linewidth=2)
-        print(f"  {{g}}: R\\u00b2={{r2:.4f}}, Pearson r={{r_val:.4f}}, p={{p_val:.2e}}")
+        print(f"    R\\u00b2={{r2:.4f}}")
 
 if FIT_GMM_2D:
     from matplotlib.patches import Ellipse
