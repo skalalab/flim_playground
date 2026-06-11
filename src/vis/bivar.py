@@ -309,21 +309,13 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     # But we'll update it later with additional layout settings
 
     table_md = []
-    for group_key, group_df in grouped_list:
-        # Unpack group_key for color, shape, opacity
-        color_group = group_key[0] if isinstance(group_key, tuple) else group_key
-        shape_group = None
-        opacity_group = None
-        key_idx = 1
-        if shape_by and shape_by in df.columns:
-            shape_group = group_key[key_idx] if len(group_key) > key_idx else None
-            key_idx += 1
-        if opacity_by and opacity_by in df.columns:
-            opacity_group = group_key[key_idx] if len(group_key) > key_idx else None
+    # Per-group analysis keys on COLOR groups only — never per shape/opacity
+    # sub-group — matching the GMM block below, phasor k-means, feature-comparison
+    # statistics, and the exported script. shape/opacity affect point styling only.
+    for color_group in color_map.keys():
+        group_df = df[df[GROUP_COL_NAME] == color_group]
         if group_df.empty or group_df[selected_x].nunique() < 2 or group_df[selected_y].nunique() < 2:
             continue
-        # Points are already added via add_interleaved_points_trace above
-        # Continue with per-group analyses
 
         # annotate the correlation coefficient and p-value of the current group
         corr_coef, p_value = pearsonr(group_df[selected_x], group_df[selected_y])
