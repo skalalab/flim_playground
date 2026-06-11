@@ -418,6 +418,9 @@ def _build_visual_encoding(state: dict, overlap_point: bool = True) -> str:
                               scatter_with_encodings, add_encoding_legend_entries)
 
     alpha_expr = "0.6 if len(color_groups) > 1 else 1.0" if overlap_point else "1.0"
+    # Effective point alpha = color alpha × 0.8 marker opacity (the app's
+    # add_interleaved_points_trace default when no opacity channel is set).
+    base_alpha_expr = "(0.6 if len(color_groups) > 1 else 1.0) * 0.8" if overlap_point else "0.8"
 
     group_code = f"""
 # ============================================================
@@ -434,6 +437,7 @@ else:
 
 color_groups = natural_tuple_sort(df["_color_group"].unique().tolist())
 color_map = create_color_map(color_groups, COLORMAP, alpha={alpha_expr})
+BASE_ALPHA = {base_alpha_expr}
 
 shape_map = {{}}
 if SHAPE_BY:
@@ -482,31 +486,35 @@ fig, ax = plt.subplots(figsize=(12, 6))
 
 # FOVs in CSV appearance order, matching the app (univar.py: df[fov_name_col].unique())
 fovs = df[fov_col].unique().tolist()
+if (df[fov_col] == "missing fov name").any():
+    print("WARNING: Could not find the FOV column in your dataset.")
 positions = []
 tick_labels = []
 
 offset = 0
 for fov_i, fov in enumerate(fovs):
     fov_df = df[df[fov_col] == fov]
-    group_data = []
-    group_colors = []
-    for g in color_groups:
-        gdf = fov_df[fov_df["_color_group"] == g]
-        group_data.append(gdf[SELECTED_VAR].dropna().values)
-        group_colors.append(color_map[g][:3])
+    # Only (color, FOV) combos that actually have data get a box + slot, matching the app.
+    present = [(g, fov_df[fov_df["_color_group"] == g][SELECTED_VAR].dropna().values)
+               for g in color_groups]
+    present = [(g, d) for g, d in present if len(d) > 0]
+    if not present:
+        continue
 
-    bp = ax.boxplot(group_data, positions=list(range(offset, offset + len(color_groups))),
+    pos = list(range(offset, offset + len(present)))
+    bp = ax.boxplot([d for _, d in present], positions=pos,
                     widths=0.6, patch_artist=True, manage_ticks=False)
-    for patch, c in zip(bp['boxes'], group_colors):
+    for patch, (g, _) in zip(bp['boxes'], present):
+        c = color_map[g][:3]
         patch.set_facecolor((*c, 0.5))
         patch.set_edgecolor(c)
     for element in ('whiskers', 'caps', 'medians'):
         for line in bp[element]:
             line.set_color('black')
 
-    tick_labels.extend([f"{fov}\\n{g}" for g in color_groups])
-    positions.extend(range(offset, offset + len(color_groups)))
-    offset += len(color_groups) + 1
+    tick_labels.extend([f"{fov}\\n{g}" for g, _ in present])
+    positions.extend(pos)
+    offset += len(present) + 1
 
 ax.set_xticks(positions)
 ax.set_xticklabels(tick_labels, fontsize=max(6, AXIS_LABEL_SIZE - 6), rotation=45, ha='right')
@@ -700,7 +708,7 @@ def _build_feature_comparison(state: dict) -> str:
 
     effect_size_src = _extract_source(glass_delta, cohens_d, _compute_bracket_position)
 
-    return _build_visual_encoding(state) + f"""
+    return _build_visual_encoding(state, overlap_point=False) + f"""
 # ============================================================
 # Feature Comparison — Sina Plot
 # ============================================================
@@ -711,8 +719,11 @@ from scipy.stats import gaussian_kde, ttest_ind, median_abs_deviation
 
 df = df[df[SELECTED_VAR].notna()]
 if LOG_Y:
-    df = df.copy()
-    df[SELECTED_VAR] = np.log10(df[SELECTED_VAR] + 1e-6)
+    if (df[SELECTED_VAR] < 0).any():
+        print(f"WARNING: Cannot apply log to {{SELECTED_VAR}}: contains negative values.")
+    else:
+        df = df.copy()
+        df[SELECTED_VAR] = np.log10(df[SELECTED_VAR] + 1e-6)
 
 # --- Separate_by logic ---
 separate_groups = [None]
@@ -822,11 +833,13 @@ if ADD_BOXPLOT:
             if len(gdata) == 0:
                 continue
             bp = ax.boxplot([gdata], positions=[x_pos], widths=0.5, patch_artist=True,
-                          manage_ticks=False, showfliers=False, zorder=1)
+                          manage_ticks=False, showfliers=False, showmeans=True, meanline=True, zorder=1)
             bp['boxes'][0].set_facecolor('none')
             bp['boxes'][0].set_edgecolor('black')
             bp['medians'][0].set_color('black')
             bp['medians'][0].set_linewidth(2)
+            bp['means'][0].set_color('black')
+            bp['means'][0].set_linestyle('--')
 
 # --- Connect means ---
 if CONNECT_MEANS:
@@ -872,7 +885,8 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
             pairs = [p for p in pairs
                      if f"{{p[0]}} vs {{p[1]}}" in SELECTED_PAIRS
                      or f"{{p[1]}} vs {{p[0]}}" in SELECTED_PAIRS]
-        all_y = sec_df[SELECTED_VAR].dropna()
+        # Bracket spacing uses the GLOBAL data range (one scale across all sections), like the app.
+        all_y = df[SELECTED_VAR].dropna()
         data_range = all_y.max() - all_y.min()
         if data_range == 0:
             data_range = 1.0
@@ -998,10 +1012,11 @@ for g in color_groups:
     scatter_with_encodings(ax_main, gdf[SELECTED_X], gdf[SELECTED_Y],
                            color_map[g][:3], label, POINT_SIZE,
                            shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
-                           opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map)
+                           opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
+                           base_alpha=BASE_ALPHA)
     legend_entries.add(g)
 
-    if ax_top is not None and len(gdf) > 1:
+    if ax_top is not None and gdf[SELECTED_X].nunique() > 1 and gdf[SELECTED_Y].nunique() > 1:
         from scipy.stats import gaussian_kde
         try:
             x_vals = gdf[SELECTED_X].dropna().values
@@ -1019,7 +1034,7 @@ for g in color_groups:
         except Exception:
             pass
 
-    if ax_right is not None and len(gdf) > 1:
+    if ax_right is not None and gdf[SELECTED_X].nunique() > 1 and gdf[SELECTED_Y].nunique() > 1:
         try:
             y_vals = gdf[SELECTED_Y].dropna().values
             kde_y = gaussian_kde(y_vals)
@@ -1040,7 +1055,8 @@ for g in color_groups:
 # always-on correlation readout; the regression line + R² stay gated.
 for g in color_groups:
     gdf = df[df["_color_group"] == g].dropna(subset=[SELECTED_X, SELECTED_Y])
-    if len(gdf) < 2:
+    # Skip constant-x or constant-y groups, matching the app's nunique<2 guard.
+    if gdf[SELECTED_X].nunique() < 2 or gdf[SELECTED_Y].nunique() < 2:
         continue
     r_val, p_val = pearsonr(gdf[SELECTED_X], gdf[SELECTED_Y])
     print(f"  {{g}}: Pearson r={{r_val:.4f}}, p={{p_val:.2e}}")
@@ -1060,7 +1076,9 @@ if FIT_GMM_2D:
 
     for g in color_groups:
         gdf = df[df["_color_group"] == g].dropna(subset=[SELECTED_X, SELECTED_Y])
-        if len(gdf) < 3:
+        # >=3 points (safety floor the app lacks) and non-constant in both axes
+        # (the app's nunique<2 guard).
+        if len(gdf) < 3 or gdf[SELECTED_X].nunique() < 2 or gdf[SELECTED_Y].nunique() < 2:
             continue
         X_gmm = gdf[[SELECTED_X, SELECTED_Y]].values
         best_gmm = _find_best_gmm(X_gmm, max_components=GMM_MAX_COMPONENTS,
@@ -1090,8 +1108,8 @@ if FIT_GMM_2D:
         df.drop(columns=["_color_group"]).to_csv("2D_gmm_data.csv", index=False)
         print("2D GMM data saved to 2D_gmm_data.csv")
 
-ax_main.set_xlabel(SELECTED_X, fontsize=AXIS_LABEL_SIZE)
-ax_main.set_ylabel(SELECTED_Y, fontsize=AXIS_LABEL_SIZE)
+ax_main.set_xlabel(f"log₁₀({{SELECTED_X}})" if LOG_X else SELECTED_X, fontsize=AXIS_LABEL_SIZE)
+ax_main.set_ylabel(f"log₁₀({{SELECTED_Y}})" if LOG_Y else SELECTED_Y, fontsize=AXIS_LABEL_SIZE)
 ax_main.tick_params(axis='both', labelsize=LEGEND_SIZE)
 add_encoding_legend_entries(ax_main, shape_map, opacity_map, POINT_SIZE)
 ax_main.legend(fontsize=LEGEND_SIZE)
@@ -1125,8 +1143,9 @@ for tau in [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
     g_marker = 1.0 / (1.0 + wt**2)
     s_marker = wt / (1.0 + wt**2)
     ax.plot(g_marker, s_marker, 'ko', markersize=5, zorder=3)
-    ax.annotate(f"{tau}ns", (g_marker, s_marker), textcoords="offset points",
-               xytext=(5, 5), fontsize=8, zorder=3)
+    if tau in (0.5, 1, 2, 3, 4, 5):  # app annotates only the first six (bivar.py)
+        ax.annotate(f"{tau} ns", (g_marker, s_marker), textcoords="offset points",
+                   xytext=(5, 5), fontsize=8, zorder=3)
 
 ax.axhline(y=0, color='gray', linewidth=0.5)
 ax.axvline(x=0, color='gray', linewidth=0.5)
@@ -1145,7 +1164,8 @@ else:
         gdf = plot_df[plot_df["_color_group"] == g]
         scatter_with_encodings(ax, gdf[g_col], gdf[s_col], color_map[g][:3], g, POINT_SIZE,
                                shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
-                               opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map)
+                               opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
+                               base_alpha=BASE_ALPHA)
 
     add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
 
@@ -1213,8 +1233,8 @@ if DR_METHOD == "PCA":
     from sklearn.decomposition import PCA
     reducer = PCA(n_components=2, random_state=42)
     X_reduced = reducer.fit_transform(X_scaled)
-    xlabel = f"PC1 ({reducer.explained_variance_ratio_[0]*100:.1f}%)"
-    ylabel = f"PC2 ({reducer.explained_variance_ratio_[1]*100:.1f}%)"
+    xlabel = f"PC1({reducer.explained_variance_ratio_[0]*100:.2f}%)"
+    ylabel = f"PC2({reducer.explained_variance_ratio_[1]*100:.2f}%)"
 elif DR_METHOD == "UMAP":
     import umap
     n_neighbors = HYPER_PARAMS.get("n_neighbors", 15)
@@ -1222,7 +1242,7 @@ elif DR_METHOD == "UMAP":
     reducer = umap.UMAP(n_components=2, n_neighbors=n_neighbors, min_dist=min_dist,
                         metric='euclidean', random_state=42)
     X_reduced = reducer.fit_transform(X_scaled)
-    xlabel, ylabel = "UMAP 1", "UMAP 2"
+    xlabel, ylabel = "UMAP1", "UMAP2"
 elif DR_METHOD == "t-SNE":
     from sklearn.manifold import TSNE
     perplexity = HYPER_PARAMS.get("perplexity", 15)
@@ -1230,7 +1250,7 @@ elif DR_METHOD == "t-SNE":
     reducer = TSNE(n_components=2, perplexity=perplexity,
                    early_exaggeration=early_exaggeration, random_state=42)
     X_reduced = reducer.fit_transform(X_scaled)
-    xlabel, ylabel = "t-SNE 1", "t-SNE 2"
+    xlabel, ylabel = "t-SNE1", "t-SNE2"
 
 df = df.copy()
 df["_dr_x"] = X_reduced[:, 0]
@@ -1242,7 +1262,8 @@ for g in color_groups:
     gdf = df[df["_color_group"] == g]
     scatter_with_encodings(ax, gdf["_dr_x"], gdf["_dr_y"], color_map[g][:3], g, POINT_SIZE,
                            shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
-                           opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map)
+                           opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
+                           base_alpha=BASE_ALPHA)
 
 ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel(ylabel, fontsize=AXIS_LABEL_SIZE)
@@ -1289,7 +1310,8 @@ if CLASSIFY_CLASSES:
     else:
         df = df[df["classes"].isin(CLASSIFY_CLASSES)]
 
-df = df[df[feature_cols].notna().all(axis=1) & df["classes"].notna()]
+# No feature-NaN drop: the app passes rows straight to sklearn (which rejects NaN),
+# so the export must not silently train on a reduced subset — it errors the same way.
 
 n_classes = df["classes"].nunique()
 if n_classes < 2:
