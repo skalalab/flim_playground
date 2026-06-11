@@ -26,11 +26,20 @@ from src.vis.plot_defaults import (
 _EXPORT_SCRIPT_CITATION = """\
 # Citation
 #
-# FLIM Playground is currently on bioRxiv (https://www.biorxiv.org/content/10.1101/2025.09.30.679625).
-# If it contributed to your research—whether through Data Extraction for single-cell feature extraction
-# or through Data Analysis for data exploration, visualization, selection of analysis methods, or
-# hyperparameter tuning (UMAP, clustering, classification, etc.)—please cite this work in your
-# publication. Your citation directly supports us in maintaining and improving it ✨🎈🍾.
+# If FLIM Playground contributed to your research—whether through Data Extraction for single-cell
+# feature extraction or through Data Analysis for data exploration, visualization, selection of
+# analysis methods, or hyperparameter tuning (UMAP, clustering, classification, etc.)—please cite
+# both the software version you used and the publication. Your citation directly supports us in
+# maintaining and improving it ✨🎈🍾.
+#
+# Publication:
+#   Zhao, W., Samimi, K., Skala, M.C., and Datta, R. (2026). FLIM Playground: An interactive,
+#   end-to-end graphical user interface for analyzing single cells with fluorescence lifetime
+#   imaging microscopy. Cell Rep. Methods. https://doi.org/10.1016/j.crmeth.2026.101484
+#
+# Software (the latest version):
+#   Zhao W., Samimi K., Skala M.C., Datta R. FLIM Playground [Computer software]. Zenodo.
+#   https://doi.org/10.5281/zenodo.19744706
 #
 """
 
@@ -84,6 +93,56 @@ def create_shape_map(groups):
     """Map group names to Matplotlib marker symbols."""
     MPL_MARKERS = ['o', 's', 'D', 'P', 'X', '^', 'v', 'p', 'h', '8', '*', 'd']
     return {g: MPL_MARKERS[i % len(MPL_MARKERS)] for i, g in enumerate(groups)}
+
+
+def scatter_with_encodings(ax, x, y, color, label, point_size,
+                           shape_vals=None, shape_map=None,
+                           opacity_vals=None, opacity_map=None,
+                           base_alpha=0.7, linewidths=0.3, zorder=2):
+    """Scatter one color group's points, sub-grouped by shape/opacity values.
+
+    Matplotlib cannot vary marker style within a single scatter call, so each
+    (shape, opacity) combination becomes its own call — mirroring the app's
+    per-point symbol/opacity arrays (helpers.add_interleaved_points_trace).
+    Only the first non-empty sub-group carries the legend label.
+    """
+    import numpy as np
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    if len(x) == 0:
+        ax.scatter([], [], c=[color], s=point_size, alpha=base_alpha,
+                   edgecolors='DarkSlateGrey', linewidths=linewidths,
+                   label=label, zorder=zorder)
+        return
+    use_shape = shape_vals is not None and bool(shape_map)
+    use_opacity = opacity_vals is not None and bool(opacity_map)
+    shape_arr = np.asarray([str(v) for v in shape_vals]) if use_shape else None
+    opacity_arr = np.asarray([str(v) for v in opacity_vals]) if use_opacity else None
+    labeled = False
+    for shape_key in (list(shape_map) if use_shape else [None]):
+        for opacity_key in (list(opacity_map) if use_opacity else [None]):
+            mask = np.ones(len(x), dtype=bool)
+            if use_shape:
+                mask &= shape_arr == shape_key
+            if use_opacity:
+                mask &= opacity_arr == opacity_key
+            if not mask.any():
+                continue
+            ax.scatter(x[mask], y[mask], c=[color], s=point_size,
+                       alpha=opacity_map[opacity_key] if use_opacity else base_alpha,
+                       marker=shape_map[shape_key] if use_shape else 'o',
+                       edgecolors='DarkSlateGrey', linewidths=linewidths,
+                       label=label if not labeled else None, zorder=zorder)
+            labeled = True
+
+
+def add_encoding_legend_entries(ax, shape_map, opacity_map, point_size):
+    """Add gray proxy legend entries for opacity and shape groups
+    (mirrors the app's helpers.add_point_legend_traces: opacity first, then shape)."""
+    for group, alpha in (opacity_map or {}).items():
+        ax.scatter([], [], c='gray', alpha=alpha, marker='o', s=point_size, label=str(group))
+    for group, marker in (shape_map or {}).items():
+        ax.scatter([], [], c='gray', alpha=0.8, marker=marker, s=point_size, label=str(group))
 
 
 # ---------------------------------------------------------------------------
@@ -264,6 +323,8 @@ def _build_config_section(state: dict) -> str:
         lines.append(f"BIN_WIDTH = {mp.get('bin_width')!r}  # None → numpy 'auto' bin width")
         lines.append(f"GMM_MAX_COMPONENTS = {mp.get('gmm_max_components', 3)!r}")
         lines.append(f"GMM_MIN_WEIGHT_THRESHOLD = {mp.get('gmm_min_weight_threshold', 0.1)!r}")
+        if mp.get("apply_gmm"):
+            lines.append("SAVE_DERIVED_DATA = False  # True → also write gmm_grouped_data.csv (the app's download button)")
     elif method == "2D Feature Distribution":
         lines.append(f"SELECTED_X = {mp.get('selected_x')!r}")
         lines.append(f"SELECTED_Y = {mp.get('selected_y')!r}")
@@ -274,12 +335,16 @@ def _build_config_section(state: dict) -> str:
         lines.append(f"FIT_GMM_2D = {mp.get('fit_gmm_2d', False)!r}")
         lines.append(f"GMM_MAX_COMPONENTS = {mp.get('gmm_max_components', 3)!r}")
         lines.append(f"GMM_MIN_WEIGHT_THRESHOLD = {mp.get('gmm_min_weight_threshold', 0.1)!r}")
+        if mp.get("fit_gmm_2d"):
+            lines.append("SAVE_DERIVED_DATA = False  # True → also write 2D_gmm_data.csv (the app's download button)")
     elif method == "Phasor Plot":
         lines.append(f"PHASOR_CHANNEL = {mp.get('selected_channel')!r}")
         lines.append(f"PHASOR_HARMONIC = {mp.get('phasor_harmonic', 1)!r}")
         lines.append(f"PHASOR_F = {mp.get('phasor_f', 0.08)!r}")
         lines.append(f"K_MEANS = {mp.get('k_means', False)!r}")
         lines.append(f"K_MEANS_CLUSTERS = {mp.get('k_means_clusters', 2)!r}")
+        if mp.get("k_means"):
+            lines.append("SAVE_DERIVED_DATA = False  # True → also write kmeans_clustered_data.csv (the app's download button)")
     elif method == "Dimension Reduction":
         lines.append(f"SELECTED_FEATURES = {mp.get('selected_features', [])!r}")
         lines.append(f"DR_METHOD = {mp.get('dr_method', 'PCA')!r}")
@@ -347,8 +412,9 @@ def _build_visual_encoding(state: dict, overlap_point: bool = True) -> str:
 
     # Extract computation from actual source (include tuple_natural_key which natural_tuple_sort depends on)
     helpers_src = _extract_source(natural_key, tuple_natural_key, natural_tuple_sort, create_opacity_mapping)
-    # Extract Matplotlib-adapted color/shape maps from this module
-    mpl_src = _extract_source(create_color_map, create_shape_map)
+    # Extract Matplotlib-adapted color/shape maps and scatter helpers from this module
+    mpl_src = _extract_source(create_color_map, create_shape_map,
+                              scatter_with_encodings, add_encoding_legend_entries)
 
     alpha_expr = "0.6 if len(color_groups) > 1 else 1.0" if overlap_point else "1.0"
 
@@ -413,7 +479,8 @@ df = df[df[SELECTED_VAR].notna()]
 
 fig, ax = plt.subplots(figsize=(12, 6))
 
-fovs = natural_tuple_sort(df[fov_col].unique().tolist())
+# FOVs in CSV appearance order, matching the app (univar.py: df[fov_name_col].unique())
+fovs = df[fov_col].unique().tolist()
 positions = []
 tick_labels = []
 
@@ -474,8 +541,9 @@ if LOG_X:
 
 fig, ax = plt.subplots(figsize=(10, 6))
 
-if "GMM_group" not in df.columns:
-    df["GMM_group"] = np.nan
+# "GMM_group" is created by the .loc assignments below (object dtype, NaN for
+# unassigned rows) — same as the app; pre-seeding it as float would make the
+# string-label assignment a pandas FutureWarning/error.
 
 for g in color_groups:
     group_mask = df["_color_group"] == g
@@ -557,6 +625,10 @@ for g in color_groups:
         df.loc[data_indices, "GMM_group"] = assigned_labels
     else:
         df.loc[gdata.index, "GMM_group"] = f"{{g}}_group1"
+
+if SAVE_DERIVED_DATA:
+    df.drop(columns=["_color_group"]).to_csv("gmm_grouped_data.csv", index=False)
+    print("GMM grouped data saved to gmm_grouped_data.csv")
 
 ax.set_xlabel(SELECTED_VAR, fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("Probability Density", fontsize=AXIS_LABEL_SIZE)
@@ -697,9 +769,11 @@ for sec_group in ordered_separate_groups:
         y_data = group_df[SELECTED_VAR].values
 
         if len(y_data) < 2:
-            ax.scatter([x_pos] * len(y_data), y_data, c=[color_map[cg][:3]],
-                      s=POINT_SIZE, edgecolors='DarkSlateGrey', linewidths=0.5,
-                      label=cg if cg not in legend_entries else None, zorder=2)
+            scatter_with_encodings(ax, [x_pos] * len(y_data), y_data, color_map[cg][:3],
+                                   cg if cg not in legend_entries else None, POINT_SIZE,
+                                   shape_vals=group_df[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
+                                   opacity_vals=group_df[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
+                                   base_alpha=1.0, linewidths=0.5)
             legend_entries.add(cg)
             continue
 
@@ -715,21 +789,11 @@ for sec_group in ordered_separate_groups:
         rng = np.random.default_rng(42)
         jitter = rng.uniform(-1, 1, len(y_data)) * norm_d * 0.35
 
-        marker = 'o'
-        if SHAPE_BY and SHAPE_BY in group_df.columns:
-            shape_vals = group_df[SHAPE_BY].astype(str).unique()
-            if len(shape_vals) == 1 and shape_vals[0] in shape_map:
-                marker = shape_map[shape_vals[0]]
-
-        alpha = 0.7
-        if OPACITY_BY and OPACITY_BY in group_df.columns:
-            opacity_vals = group_df[OPACITY_BY].astype(str).unique()
-            if len(opacity_vals) == 1 and opacity_vals[0] in opacity_map:
-                alpha = opacity_map[opacity_vals[0]]
-
-        ax.scatter(x_pos + jitter, y_data, c=[color_map[cg][:3]], s=POINT_SIZE,
-                  alpha=alpha, marker=marker, edgecolors='DarkSlateGrey', linewidths=0.5,
-                  label=cg if cg not in legend_entries else None, zorder=2)
+        scatter_with_encodings(ax, x_pos + jitter, y_data, color_map[cg][:3],
+                               cg if cg not in legend_entries else None, POINT_SIZE,
+                               shape_vals=group_df[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
+                               opacity_vals=group_df[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
+                               linewidths=0.5)
         legend_entries.add(cg)
 
 # --- Boxplot overlay ---
@@ -873,6 +937,7 @@ ax.set_xticks(tick_positions)
 ax.set_xticklabels(x_labels, fontsize=max(8, AXIS_LABEL_SIZE - 4))
 ax.set_ylabel(SELECTED_VAR, fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='y', labelsize=LEGEND_SIZE)
+add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
 """
 
@@ -920,11 +985,11 @@ else:
 legend_entries = set()
 for g in color_groups:
     gdf = df[df["_color_group"] == g]
-    c = [color_map[g][:3]]
     label = g if g not in legend_entries else None
-    ax_main.scatter(gdf[SELECTED_X], gdf[SELECTED_Y], c=c, s=POINT_SIZE,
-                   alpha=0.7, edgecolors='DarkSlateGrey', linewidths=0.3,
-                   label=label, zorder=2)
+    scatter_with_encodings(ax_main, gdf[SELECTED_X], gdf[SELECTED_Y],
+                           color_map[g][:3], label, POINT_SIZE,
+                           shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
+                           opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map)
     legend_entries.add(g)
 
     if ax_top is not None and len(gdf) > 1:
@@ -1005,16 +1070,32 @@ if FIT_GMM_2D:
                 ax_main.add_patch(ellipse)
                 ax_main.plot(*mean, '+', color=color_map[g][:3], markersize=15, markeredgewidth=2)
 
+            # per-point component membership, as the app assigns it
+            if best_gmm.n_components > 1:
+                subpopulation_labels = best_gmm.predict(X_gmm)
+                df.loc[gdf.index, "2D_GMM_group"] = [f"{{g}}_group{{label + 1}}" for label in subpopulation_labels]
+
+    if SAVE_DERIVED_DATA:
+        df.drop(columns=["_color_group"]).to_csv("2D_gmm_data.csv", index=False)
+        print("2D GMM data saved to 2D_gmm_data.csv")
+
 ax_main.set_xlabel(SELECTED_X, fontsize=AXIS_LABEL_SIZE)
 ax_main.set_ylabel(SELECTED_Y, fontsize=AXIS_LABEL_SIZE)
 ax_main.tick_params(axis='both', labelsize=LEGEND_SIZE)
+add_encoding_legend_entries(ax_main, shape_map, opacity_map, POINT_SIZE)
 ax_main.legend(fontsize=LEGEND_SIZE)
 """
 
 
 def _build_phasor_plot(state: dict) -> str:
-    # Phasor plot is entirely Matplotlib-specific rendering, no extractable computation
-    return _build_visual_encoding(state) + """
+    # Rendering is Matplotlib-specific; the K-Means clustering is extracted from
+    # the app (src/vis/bivar.py) so both run the identical computation.
+    kmeans_src = ""
+    if state.get("method_params", {}).get("k_means"):
+        from src.vis.bivar import phasor_kmeans
+        kmeans_src = ("\n# K-Means clustering (extracted from FLIM Playground source)\n"
+                      + _extract_source(phasor_kmeans))
+    return _build_visual_encoding(state) + kmeans_src + """
 # ============================================================
 # Phasor Plot
 # ============================================================
@@ -1046,13 +1127,16 @@ s_col = f"Lifetime fit free_{PHASOR_CHANNEL}: S({harmonic_label})"
 if g_col not in df.columns or s_col not in df.columns:
     print(f"ERROR: Columns {g_col} and/or {s_col} not found in data.")
 else:
-    plot_df = df[[g_col, s_col, "_color_group"]].dropna()
+    keep_cols = [g_col, s_col, "_color_group"] + [col for col in (SHAPE_BY, OPACITY_BY) if col]
+    plot_df = df[list(dict.fromkeys(keep_cols))].dropna()
 
     for g in color_groups:
         gdf = plot_df[plot_df["_color_group"] == g]
-        ax.scatter(gdf[g_col], gdf[s_col], c=[color_map[g][:3]], s=POINT_SIZE,
-                  alpha=0.7, edgecolors='DarkSlateGrey', linewidths=0.3,
-                  label=g, zorder=2)
+        scatter_with_encodings(ax, gdf[g_col], gdf[s_col], color_map[g][:3], g, POINT_SIZE,
+                               shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
+                               opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map)
+
+    add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
 
     if K_MEANS:
         from sklearn.cluster import KMeans
@@ -1064,11 +1148,9 @@ else:
             if len(gdf) < K_MEANS_CLUSTERS:
                 continue
             coords = gdf[[g_col, s_col]].values
-            scaler = StandardScaler()
-            coords_scaled = scaler.fit_transform(coords)
-            km = KMeans(n_clusters=K_MEANS_CLUSTERS, random_state=42, n_init=10)
-            labels = km.fit_predict(coords_scaled)
-            centers = scaler.inverse_transform(km.cluster_centers_)
+            labels, centers = phasor_kmeans(coords, K_MEANS_CLUSTERS)
+            # per-point cluster membership, as the app assigns it
+            df.loc[gdf.index, "k_means_cluster"] = [f"{g}_group{label + 1}" for label in labels]
 
             cluster_colors = plt.colormaps['tab10'](np.linspace(0, 1, K_MEANS_CLUSTERS))
             for ci in range(K_MEANS_CLUSTERS):
@@ -1086,6 +1168,10 @@ else:
                         pass
                 ax.plot(centers[ci, 0], centers[ci, 1], 'x',
                        color=cluster_colors[ci], markersize=12, markeredgewidth=2, zorder=4)
+
+        if SAVE_DERIVED_DATA:
+            df.drop(columns=["_color_group"]).to_csv("kmeans_clustered_data.csv", index=False)
+            print("K-Means clustered data saved to kmeans_clustered_data.csv")
 
 ax.set_xlabel("G", fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("S", fontsize=AXIS_LABEL_SIZE)
@@ -1141,13 +1227,14 @@ fig, ax = plt.subplots(figsize=(10, 8))
 
 for g in color_groups:
     gdf = df[df["_color_group"] == g]
-    ax.scatter(gdf["_dr_x"], gdf["_dr_y"], c=[color_map[g][:3]], s=POINT_SIZE,
-              alpha=0.7, edgecolors='DarkSlateGrey', linewidths=0.3,
-              label=g, zorder=2)
+    scatter_with_encodings(ax, gdf["_dr_x"], gdf["_dr_y"], color_map[g][:3], g, POINT_SIZE,
+                           shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
+                           opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map)
 
 ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel(ylabel, fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='both', labelsize=LEGEND_SIZE)
+add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
 """
 
