@@ -6,7 +6,7 @@ import pandas as pd
 def update_multiselect(key, options, categories_to_filter, current_category_index):
     current_selection = st.session_state.get(key, ["All"])
     if len(current_selection) > 1:
-        if "All" in current_selection[-1]:
+        if current_selection[-1] == "All":
             st.session_state[key] = ["All"]
         else:
             st.session_state[key] = [option for option in current_selection if option != "All"]

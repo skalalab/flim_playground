@@ -7,7 +7,7 @@ def update_multiselect_feature(key, options):
     """Callback function to handle "All" logic for feature selection widgets"""
     current_selection = st.session_state.get(key, ["All"])
     if len(current_selection) > 1:
-        if "All" in current_selection[-1]:
+        if current_selection[-1] == "All":
             st.session_state[key] = ["All"]
         else:
             st.session_state[key] = [option for option in current_selection if option != "All"]
