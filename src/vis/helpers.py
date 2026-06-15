@@ -546,6 +546,18 @@ def create_shape_groups_and_map(df, shape_by_col):
     else:
         return [], None
 
+def format_group_label(group, count=None, show_count=False):
+    """Legend label for a color group.
+
+    When ``show_count`` is enabled and a count is given, the count is placed on a
+    second line below the group name in a smaller font (relative ``em`` so it
+    tracks the legend font size), e.g. "Control" with "n=42" beneath it.
+    """
+    label = str(group)
+    if show_count and count is not None:
+        label = f"{label}<br><span style='font-size: 0.75em'>n={count}</span>"
+    return label
+
 def get_point_visual_mappings(
     df,
     color_by=None,
@@ -732,7 +744,8 @@ def add_interleaved_points_trace(
     opacity_by=None,
     hovertemplate="<b>%{text}</b>",
     random_seed=None,
-    num_batches=15
+    num_batches=15,
+    show_counts=False
 ):
     """
     Adds multiple interleaved traces per color group to minimize occlusion
@@ -871,7 +884,7 @@ def add_interleaved_points_trace(
                     text=text_vals,
                     customdata=customdata_vals,
                     hovertemplate=hover_without_trace,
-                    name=str(color_group),
+                    name=format_group_label(color_group, len(points_by_color[color_group]), show_counts),
                     legendgroup=str(color_group),  # All batches of same color share legendgroup
                     marker=dict(
                         color=color_map[color_group],

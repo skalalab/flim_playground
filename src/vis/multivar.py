@@ -83,7 +83,8 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
         axis_labels=axis_labels,
         text_col=unique_row_id_col,
         customdata_col=fov_name_col,
-        hovertemplate="<b>%{text}</b>"
+        hovertemplate="<b>%{text}</b>",
+        show_counts=st.session_state.get("plot_show_group_counts", False)
     )
 
     # Get theme color for axis styling

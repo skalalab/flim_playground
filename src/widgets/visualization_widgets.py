@@ -190,7 +190,7 @@ def phasor_params_widget(feature_groups_dict):
         f = st.number_input("Laser repetition rate (**GHz**)", value=0.08, min_value=0.0, step=0.01)
     return selected_channel, selected_harmonic, f
 
-def plot_config_widget(point_based=True, show_colormap=False):
+def plot_config_widget(point_based=True, show_colormap=False, show_count_toggle=False):
     """
     Widgets to change point, axis label font, legend font size, and colormap.
     Uses key= parameters to write directly to session state — no manual
@@ -238,6 +238,15 @@ def plot_config_widget(point_based=True, show_colormap=False):
                         index=colormap_options.index(current_colormap) if current_colormap in colormap_options else 0,
                         key="plot_colormap",
                         help="Choose color palette for categorical data")
+
+    # Optional toggle: append per-color-group sample size to legend entries
+    if show_count_toggle:
+        st.checkbox(
+            "Show group counts (n) in legend",
+            value=st.session_state.get("plot_show_group_counts", False),
+            key="plot_show_group_counts",
+            help="Append each color group's sample size to its legend entry, e.g. 'Control (n=42)'.",
+        )
 
 def get_custom_order_widget(items, key):
     if sort_items is None:

@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 from itertools import combinations
 import numpy as np
 from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, comparison_pair_widget
-from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, get_theme_color
+from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, get_theme_color, format_group_label
 
 def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab10"):
     if (df[fov_name_col] == "missing fov name").any():
@@ -12,7 +12,9 @@ def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab1
     fig = go.Figure()
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
-    
+    show_counts = st.session_state.get("plot_show_group_counts", False)
+    group_counts = df.dropna(subset=[selected_var]).groupby(GROUP_COL_NAME).size().to_dict()
+
     fov_names = df[fov_name_col].unique()
     
     legend_added = set()
@@ -32,7 +34,7 @@ def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab1
             
             fig.add_trace(go.Box(
                 y=fov_group_df[selected_var],
-                name=color_group,  # Use color group name for legend
+                name=format_group_label(color_group, group_counts.get(color_group), show_counts),  # color group name (optionally with count)
                 x=[fov_name] * len(fov_group_df),  # Explicitly set x values for grouping
                 boxpoints=False, # Only show the box
                 marker_color=color_map[color_group],
@@ -61,7 +63,8 @@ def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab1
 def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10"):
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
-   
+    show_counts = st.session_state.get("plot_show_group_counts", False)
+
     fig = go.Figure()
 
     bin_edges = histogram_bin_width_widget(df[selected_var], key=f"hist_bin_width_{selected_var}")
@@ -102,7 +105,7 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10"):
             x=bin_centers,
             y=counts,
             mode='lines', # Use lines instead of markers+lines
-            name=color_group,
+            name=format_group_label(color_group, len(x_data), show_counts),
             line=dict(color=color_map[color_group], width=2),
             hovertemplate=(
                 f"<b>Group:</b> {color_group}<br>"
@@ -165,6 +168,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
     h_index_msg = ""    
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
+    show_counts = st.session_state.get("plot_show_group_counts", False)
     fit_gmm_max_components, fit_gmm_min_weight_threshold = gmm_hyperParams_widget()
     # add the choice to do "intersection thresholding" or "hard assignment"
     intersection_threshold = st.checkbox("Use intersection as threshold", value=False, key="intersection_threshold", help="If checked, the point where the two Gaussian distributions intersect will be used as the threshold. If not checked, each data will be assigned to the component with the highest posterior probability.")
@@ -200,7 +204,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
             x=x.flatten(),
             y=pdf,
             mode='lines',
-            name=f'{color_group} GMM',
+            name=format_group_label(f'{color_group} GMM', len(x_data), show_counts),
             line=dict(color=color_map[color_group], width=2),
             hovertemplate=(
                 f"<b>Group:</b> {color_group}<br>"
@@ -393,6 +397,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
     grouped_list = list(grouped_sep)
     group_keys = [group_key for group_key, _ in grouped_list]
     compare_groups = list(color_map.keys())
+    show_counts = st.session_state.get("plot_show_group_counts", False)
+    group_counts = df.dropna(subset=[selected_var]).groupby(COLOR_GROUP_COL_NAME).size().to_dict()
     
     # Apply custom order early so compare_pairs uses the reordered groups
     # This is critical for Glass's Delta where the first group in the pair is the control
@@ -549,8 +555,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         if show_legend:
             legend_entries.add(color_group)
         
-        trace_name = color_group
-        
+        trace_name = format_group_label(color_group, group_counts.get(color_group), show_counts)
+
         # --- Sina plot: density-based horizontal jitter ---
         y_data = group_df[selected_var].values
         kde = _estimate_density_1d(y_data)

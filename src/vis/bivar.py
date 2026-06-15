@@ -302,7 +302,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
             f"<b>Image:</b> %{{customdata}}<br>"
             f"<b>{selected_x}:</b> %{{x}}<br>"
             f"<b>{selected_y}:</b> %{{y}}<extra></extra>"
-        )
+        ),
+        show_counts=st.session_state.get("plot_show_group_counts", False)
     )
     
     # Note: hovermode='closest' is already set by add_interleaved_points_trace
@@ -623,10 +624,11 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         axis_labels=[g_feature, s_feature],
         text_col=unique_row_id_col,
         customdata_col=fov_name_col,
-        hovertemplate="<b>%{text}</b>"
+        hovertemplate="<b>%{text}</b>",
+        show_counts=st.session_state.get("plot_show_group_counts", False)
     )
-    
-    
+
+
     # --- K-Means clustering per color group (not per shape/opacity) ---
     if k_means:
         for color_group in color_map.keys():

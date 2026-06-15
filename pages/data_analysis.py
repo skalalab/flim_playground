@@ -38,6 +38,8 @@ if "plot_legend_size" not in st.session_state:
     st.session_state.plot_legend_size = DEFAULT_LEGEND_FONT_SIZE
 if "plot_colormap" not in st.session_state:
     st.session_state.plot_colormap = DEFAULT_COLORMAP
+if "plot_show_group_counts" not in st.session_state:
+    st.session_state.plot_show_group_counts = False
 
 def _collect_categorical_filters(categorical_cols, df):
     """Read categorical filter selections from session state."""
@@ -454,7 +456,8 @@ with col2:
                 # Widgets use key= to write directly to session state; Streamlit reruns naturally on change
                 st.subheader("📊 Plot Styling")
                 show_colormap = len(color_by) > 0
-                plot_config_widget(point_based=point_based, show_colormap=show_colormap)
+                plot_config_widget(point_based=point_based, show_colormap=show_colormap,
+                                   show_count_toggle=show_colormap)
 
                 # 3. Export as Python Script
                 _extra = {}
