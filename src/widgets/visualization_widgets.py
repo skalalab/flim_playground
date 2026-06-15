@@ -130,6 +130,11 @@ def histogram_bin_width_widget(x_data, key=None):
         # Calculate common bin edges based on the user-provided bin_width
         common_bin_edges = np.arange(min_val, max_val + bin_width + epsilon, bin_width)
     
+    else:
+        # Constant / near-constant feature: numpy's 'auto' yields a single bin;
+        # fall back to those edges instead of leaving common_bin_edges unbound.
+        common_bin_edges = bin_edges_all
+
     return common_bin_edges
 
 def gmm_hyperParams_widget():
@@ -140,36 +145,47 @@ def gmm_hyperParams_widget():
         fit_gmm_min_weight_threshold = st.slider("Min Weight Threshold", min_value=0.0, max_value=0.3, value=0.1, step=0.1, key="fit_gmm_min_weight_threshold")
     return fit_gmm_max_components, fit_gmm_min_weight_threshold
 
-def phasor_params_widget(feature_groups_dict):
+def _compute_channel_harmonics(feature_groups_dict):
+    """Map each fit-free channel to the phasor harmonics it can plot.
 
+    A harmonic is available only when BOTH its G and S coordinates are present
+    among the channel's features. Returns ``{channel: [harmonics...]}`` where the
+    list may be empty when no complete G/S pair exists.
+    """
     channel_harmonics = {}
-    
     for extractor_channel in feature_groups_dict.keys():
         try:
             extractor, channel = extractor_channel.split("_", 1)
-        except Exception as e:
+        except Exception:
             continue
         if extractor == "Lifetime fit free":
             channel_harmonics[channel] = []
             features = feature_groups_dict[extractor_channel]
-            
-            # Check if any feature contains G(1st) AND any feature contains S(1st)
+            # A harmonic needs both its G and S coordinates present.
             if any("G(1st)" in feature for feature in features) and any("S(1st)" in feature for feature in features):
                 channel_harmonics[channel].append(1)
-            
-            # Check if any feature contains G(2nd) AND any feature contains S(2nd)
             if any("G(2nd)" in feature for feature in features) and any("S(2nd)" in feature for feature in features):
                 channel_harmonics[channel].append(2)
-                    
+    return channel_harmonics
+
+
+def phasor_params_widget(feature_groups_dict):
+    channel_harmonics = _compute_channel_harmonics(feature_groups_dict)
+
     if len(channel_harmonics.keys()) > 1:
         selected_channel = st.selectbox("Channel", channel_harmonics.keys())
     elif len(channel_harmonics.keys()) == 1:
         selected_channel = list(channel_harmonics.keys())[0]
     else:
-        selected_channel = None
         st.error("No available channels found for phasor plot")
         return None, None, None
+    if not channel_harmonics.get(selected_channel):
+        # No complete G/S pair for this channel -> nothing to plot. Guard the
+        # otherwise-empty selectbox (which returns None) so f stays defined.
+        st.error(f"No phasor harmonics available for {selected_channel}: both G and S coordinates are required.")
+        return None, None, None
     selected_harmonic = st.selectbox(f"{selected_channel} harmonic No. ", channel_harmonics[selected_channel])
+    f = None
     if selected_channel is not None and selected_harmonic is not None:
         f = st.number_input("Laser repetition rate (**GHz**)", value=0.08, min_value=0.0, step=0.01)
     return selected_channel, selected_harmonic, f
