@@ -140,6 +140,27 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10"):
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
     return fig
 
+def _assign_subpopulation_labels(values, best_gmm, thresholds, color_group):
+    """Label each point with its GMM subpopulation, numbered by ascending-mean rank.
+
+    ``group1`` is always the smallest-mean component, so the labels line up with
+    the component table rendered in ``feature_gmm_plot`` (which is sorted by mean).
+
+    - With intersection ``thresholds`` (ascending), ``np.digitize`` already
+      returns the ascending-mean bucket index, so it is used directly.
+    - Without thresholds, ``best_gmm.predict`` returns *original* component
+      indices, which are remapped to ascending-mean rank.
+    """
+    values = np.asarray(values)
+    if thresholds is not None:
+        ranks = np.digitize(values, bins=thresholds)
+    else:
+        sorted_indices = np.argsort(best_gmm.means_.flatten())
+        rank_of = {int(orig): rank for rank, orig in enumerate(sorted_indices)}
+        ranks = [rank_of[int(c)] for c in best_gmm.predict(values.reshape(-1, 1))]
+    return [f"{color_group}_group{int(r) + 1}" for r in ranks]
+
+
 def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
     h_index_msg = ""    
     GROUP_COL_NAME = 'unique_color_group'
@@ -259,7 +280,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
                               pi[i+1], mu[i+1], sigma[i+1])
                         thresholds.append(t)
                     except Exception as e:
-                        st.error(f"Error finding intersection between {color_group} component {sorted_indices[i]+1} and component {sorted_indices[i+1]+1}: either there is no intersection or there are more than one intersection.")
+                        st.error(f"Error finding intersection between {color_group} component {i+1} and component {i+2}: either there is no intersection or there are more than one intersection.")
                         st.warning("Intersection threshold is not possible, so we resort to hard assignment in this group.")
                         intersection_threshold_possible = False
                         break
@@ -280,18 +301,13 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
                             x=threshold, y=max(pdf) * 1.05, text=f"Threshold ({threshold:.2f})", showarrow=False, align="center",
                             font=dict(color=theme_color)
                         )
-                        st.markdown(f"Threshold for <span style='color:{color_map[color_group]}'>{color_group}</span> between component {sorted_indices[i]+1} and component {sorted_indices[i+1]+1}: **{threshold:.2f}**", unsafe_allow_html=True)
+                        st.markdown(f"Threshold for <span style='color:{color_map[color_group]}'>{color_group}</span> between component {i+1} and component {i+2}: **{threshold:.2f}**", unsafe_allow_html=True)
 
-                    subpopulation_labels = np.digitize(x_data, bins=thresholds)
-                    # restore the original order of the labels
-                    subpopulation_labels = sorted_indices[subpopulation_labels]
+                    assigned_labels = _assign_subpopulation_labels(x_data.values, best_gmm, thresholds, color_group)
             if not intersection_threshold_possible:
-                # Predict the component membership for each point (soft thresholding)
-                data_2d = x_data.values.reshape(-1, 1)
-                subpopulation_labels = best_gmm.predict(data_2d)
-            # Assign the predicted labels (0-based) to the new column in the original DataFrame
-            # Add 1 to have 1-based component indexing (e.g., group1, 2, ...)
-            assigned_labels = [f"{color_group}_group{label + 1}" for label in subpopulation_labels]
+                # Hard assignment: each point joins its highest-posterior component,
+                # numbered by ascending-mean rank to match the component table above.
+                assigned_labels = _assign_subpopulation_labels(x_data.values, best_gmm, None, color_group)
             df.loc[data_indices, "GMM_group"] = assigned_labels
     
     # Display tables in two columns using modular arithmetic
