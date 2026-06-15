@@ -179,12 +179,21 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
 
     if num_components == 1:
         tm = t1 
+        tm_iw = t1
     elif num_components == 2:
         tm = (a1 / 100 * t1) + ((100 - a1) / 100 * t2)
+        alpha1 = a1 / 100.0
+        alpha2 = (100.0 - a1) / 100.0
+        tm_iw = (alpha1 * (t1 ** 2) + alpha2 * (t2 ** 2)) / tm
     elif num_components == 3:
         tm = (a1 / 100 * t1) + (a2 / 100 * t2) + ((100 - a1 - a2) / 100 * t3)
+        alpha1 = a1 / 100.0
+        alpha2 = a2 / 100.0
+        alpha3 = (100.0 - a1 - a2) / 100.0
+        tm_iw = (alpha1 * (t1 ** 2) + alpha2 * (t2 ** 2) + alpha3 * (t3 ** 2)) / tm
     
     intensity_images[f"{fit_feature_prefix}tm"] = tm
+    intensity_images[f"{fit_feature_prefix}tm_iw"] = tm_iw
 
     # Get unique region labels from the mask (excluding background label 0)
     unique_labels = np.unique(mask)
@@ -265,11 +274,20 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
             if total_amp == 0:
                 warning_msg += f"Warning: {cell_id} has a total amplitude of 0. "
                 continue
-            a1_pct = (amp1 / total_amp) * 100
+            alpha1 = amp1 / total_amp
+            alpha2 = amp2 / total_amp
+            a1_pct = alpha1 * 100
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}a1"] = a1_pct
             single_cell_features_fov[cell_id][f"{channel_name}_a2"] = 100 - a1_pct
             # Calculate mean lifetime (in original units, not converted)
-            single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm"] = ((amp1 / total_amp) * results["t1"][i] + (amp2 / total_amp) * results["t2"][i]) * 1000
+            # Calculate intensity weighted average lifetime (in original units, not converted)
+            t1_val = results["t1"][i]
+            t2_val = results["t2"][i]
+            tm_ns = alpha1 * t1_val + alpha2 * t2_val
+            single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm"] = tm_ns * 1000
+            single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm_iw"] = (
+                ((alpha1 * (t1_val ** 2) + alpha2 * (t2_val ** 2)) / tm_ns) * 1000 if tm_ns != 0 else 0.0
+            )
             
         elif num_components == 3:
             single_cell_features_fov[cell_id][f"{channel_name}_amp2"] = results["amp2"][i]
@@ -283,13 +301,24 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
             if total_amp == 0:
                 warning_msg += f"Warning: {cell_id} has a total amplitude of 0. "
                 continue
-            a1_pct = (amp1 / total_amp) * 100
-            a2_pct = (amp2 / total_amp) * 100
+            alpha1 = amp1 / total_amp
+            alpha2 = amp2 / total_amp
+            alpha3 = amp3 / total_amp
+            a1_pct = alpha1 * 100
+            a2_pct = alpha2 * 100
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}a1"] = a1_pct
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}a2"] = a2_pct
             single_cell_features_fov[cell_id][f"{channel_name}_a3"] = 100 - a1_pct - a2_pct
+            t1_val = results["t1"][i]
+            t2_val = results["t2"][i]
+            t3_val = results["t3"][i]
             # Calculate mean lifetime for 3 components (in original units, not converted)
-            single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm"] = ((amp1 / total_amp) * results["t1"][i] + (amp2 / total_amp) * results["t2"][i] + (amp3 / total_amp) * results["t3"][i]) * 1000
+            tm_ns = alpha1 * t1_val + alpha2 * t2_val + alpha3 * t3_val
+            single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm"] = tm_ns * 1000
+            # Calculate intensity weighted average lifetime for 3 components (in original units, not converted)
+            single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm_iw"] = (
+                ((alpha1 * (t1_val ** 2) + alpha2 * (t2_val ** 2) + alpha3 * (t3_val ** 2)) / tm_ns) * 1000 if tm_ns != 0 else 0.0
+            )
 
     return warning_msg, single_cell_features_fov
 
