@@ -78,9 +78,10 @@ def get_ch_info(metadata_df):
             if channel_name not in metadata_dict["channels_shift"]:
                 # no need to shift if channel-specific fluorescence lifetime standard file is provided
                 channel_ref_col = f"{channel_name}_Fluorescence Lifetime Standard"
-                if channel_ref_col in metadata_df.columns:
-                    continue
-                else:
+                # No IRF shift is needed when a per-channel fluorescence lifetime
+                # standard provides calibration; only fall back to "fit free"
+                # otherwise. (A bare `continue` here also skipped channel_no below.)
+                if channel_ref_col not in metadata_df.columns:
                     metadata_dict["channels_shift"][channel_name] = "fit free"
         
         if "Decay (3/4D)" in input_type:
