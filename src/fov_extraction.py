@@ -395,10 +395,10 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
                 return f"Error: Shifted IRF is not provided for {channel_name}", pd.DataFrame()
 
         phi = np.arctan2(S, G) 
-        m = np.sqrt(G**2 + S**2)
+        mod = np.sqrt(G**2 + S**2)
         tau_phase = 1/w * np.tan(phi)
-        if m > 0 and m < 1:
-            tau_mod = 1/w * np.sqrt(1/m**2 - 1)
+        if mod > 0 and mod < 1:
+            tau_mod = 1/w * np.sqrt(1/mod**2 - 1)
         else:
             tau_mod = np.nan
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}G(1st)"] = G
