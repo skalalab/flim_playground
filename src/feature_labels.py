@@ -27,8 +27,9 @@ def format_feature_label(column_name, engine="plotly"):
     ``"mpl"`` (the exported Matplotlib script) converts those to mathtext. Single-character
     subscripts use real unicode (τ₁, α₂, τₘ, τᵩ, χ²ᵣ — present in DejaVu Sans and browser
     fonts, identical in both engines); only multi-letter subscripts Unicode lacks use
-    markup — currently just modulation lifetime ``Tau_m`` → ``τ_mod`` (Unicode has no
-    subscript "d"). Mean lifetime ``tm`` → τₘ is therefore distinct from modulation. Units
+    markup — currently just modulation lifetime ``Tau_mod`` → ``τ_mod`` (Unicode has no
+    subscript "d"); the legacy key ``Tau_m`` (pre-rename CSVs) is aliased to the same label.
+    Mean lifetime ``tm`` → τₘ is therefore distinct from modulation. Units
     verified against extracted data ranges: fit lifetimes are ps, phasor-derived lifetimes
     (Tau_*) are ns, amplitude fractions are %.
     """
@@ -45,7 +46,8 @@ def format_feature_label(column_name, engine="plotly"):
         "G(1st)": ("g", ""), "S(1st)": ("s", ""),
         "G(2nd)": ("g (2nd harm.)", ""), "S(2nd)": ("s (2nd harm.)", ""),
         # phasor-derived lifetimes (ns)
-        "Tau_phase": ("τᵩ", "ns"), "Tau_m": ("τ<sub>mod</sub>", "ns"),
+        "Tau_phase": ("τᵩ", "ns"), "Tau_mod": ("τ<sub>mod</sub>", "ns"),
+        "Tau_m": ("τ<sub>mod</sub>", "ns"),  # legacy alias: pre-rename CSVs (extraction now writes Tau_mod)
         # morphology
         "area": ("Area", "px²"), "perimeter": ("Perimeter", "px"),
         "major_axis_length": ("Major axis", "px"),
@@ -53,13 +55,13 @@ def format_feature_label(column_name, engine="plotly"):
         "solidity": ("Solidity", ""), "eccentricity": ("Eccentricity", ""),
         "circularity": ("Circularity", ""),
         # texture
-        "intensity_sum": ("Total intensity", "a.u."),
+        "intensity_sum": ("Intensity", "photons"),
         "mass_displacement": ("Mass displacement", "px"),
     }
     # uncategorized suffix (text after "{channel}_") -> (symbol, unit)
     suffix_labels = {
-        "amp1": ("A₁", "a.u."), "amp2": ("A₂", "a.u."), "amp3": ("A₃", "a.u."),
-        "offset": ("Offset", "a.u."),
+        "amp1": ("A₁", "photons"), "amp2": ("A₂", "photons"), "amp3": ("A₃", "photons"),
+        "offset": ("Offset", "photons"),
         "reduced_chi_square": ("χ²ᵣ", ""),
         "centroid_x": ("Centroid x", "px"), "centroid_y": ("Centroid y", "px"),
         "a2": ("α₂", "%"), "a3": ("α₃", "%"),

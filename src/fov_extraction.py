@@ -398,13 +398,13 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         m = np.sqrt(G**2 + S**2)
         tau_phase = 1/w * np.tan(phi)
         if m > 0 and m < 1:
-            tau_m = 1/w * np.sqrt(1/m**2 - 1)
+            tau_mod = 1/w * np.sqrt(1/m**2 - 1)
         else:
-            tau_m = np.nan
+            tau_mod = np.nan
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}G(1st)"] = G
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}S(1st)"] = S
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}Tau_phase"] = tau_phase
-        single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}Tau_m"] = tau_m
+        single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}Tau_mod"] = tau_mod
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}G(2nd)"] = G_2nd
         single_cell_features_fov[cell_id][f"{fit_free_feature_prefix}S(2nd)"] = S_2nd
 
