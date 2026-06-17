@@ -133,11 +133,7 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10"):
             zeroline=False
         ),
         hovermode='x unified', # Good for comparing counts at specific x-values
-        hoverlabel=dict(
-            bgcolor="white" if theme_color == "black" else "rgb(30, 30, 30)",
-            font=dict(color=theme_color, size=13),
-            bordercolor=theme_color
-        ),
+        # hover tooltip styling is applied centrally in apply_plot_styling (theme-aware)
         margin=dict(l=50, r=20, t=50, b=80)
     )
     # remove the column after plotting
@@ -346,11 +342,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
             showgrid=True,
             zeroline=False
         ),
-        hoverlabel=dict(
-            bgcolor="white" if theme_color == "black" else "rgb(30, 30, 30)",
-            font=dict(color=theme_color, size=13),
-            bordercolor=theme_color
-        ),
+        # hover tooltip styling is applied centrally in apply_plot_styling (theme-aware)
         margin=dict(l=50, r=20, t=50, b=80)
     )
     
@@ -363,7 +355,9 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
 
     # Get theme color once at the start for all theme-aware elements
     theme_color = get_theme_color(key=f"theme_compare_{selected_var}")
-    
+    # Pretty FLIM label (Greek notation) reused for hover, title, and y-axis
+    pretty_var = format_feature_label(selected_var)
+
     col1, col2, col3 = st.columns([0.15, 0.2, 0.65])
     with col1:
         log_y = st.checkbox("Log Y", value=False, key=f"log_y_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
@@ -527,7 +521,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             
         # --- Prepare Hover Information ---
         hovertemplate_parts = [
-            f"<b>{selected_var}:</b> %{{y:.3f}}<br>" # Display the Y value
+            f"<b>{pretty_var}:</b> %{{y:.3f}}<br>" # Display the Y value
         ]
         hovertemplate_parts.append("<b>Cell ID:</b> %{text}<br>")
         point_customdata = group_df[fov_name_col]
@@ -685,7 +679,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             )
     
     # Build title with visual encoding information
-    title_parts = [f'Distribution of {format_feature_label(selected_var)} by {", ".join(color_by)}']
+    title_parts = [f'Distribution of {pretty_var} by {", ".join(color_by)}']
     if separate_by and separate_by.strip() != "":
         title_parts.append(f'separated by: {separate_by}')
     if opacity_by and opacity_by.strip() != "":
@@ -790,8 +784,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 zorder=10
             ))
 
-    # Set y-axis label based on log transform
-    pretty_var = format_feature_label(selected_var)
+    # Set y-axis label based on log transform (pretty_var defined at top)
     y_axis_label = f"log₁₀({pretty_var})" if log_y else pretty_var
     
     fig.update_layout(

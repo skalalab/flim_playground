@@ -15,18 +15,21 @@ library (``re``).
 import re
 
 
-def format_feature_label(column_name):
+def format_feature_label(column_name, engine="plotly"):
     """Return a pretty FLIM axis label for an extracted feature column.
 
     Recognised columns become ``"{channel} {symbol} ({unit})"`` (the unit is omitted
     when the quantity is dimensionless). Unrecognised columns — identifiers,
     categoricals, or arbitrary user CSVs — are returned unchanged.
 
-    Glyph convention: real unicode subscripts throughout (τ₁, α₂, τₘ, τᵩ, χ²ᵣ) —
-    DejaVu Sans (Matplotlib's default) and common browser fonts include them. The sole
-    exception is modulation lifetime τ_M: Unicode has no subscript capital M, and the
-    capital M is what distinguishes it from the mean lifetime τₘ. Units verified
-    against extracted data ranges: fit lifetimes are ps, phasor-derived lifetimes
+    ``engine`` selects the subscript markup so the label renders correctly in either
+    renderer: ``"plotly"`` (the app, default) emits HTML ``<sub>``/``<sup>`` where needed;
+    ``"mpl"`` (the exported Matplotlib script) converts those to mathtext. Single-character
+    subscripts use real unicode (τ₁, α₂, τₘ, τᵩ, χ²ᵣ — present in DejaVu Sans and browser
+    fonts, identical in both engines); only multi-letter subscripts Unicode lacks use
+    markup — currently just modulation lifetime ``Tau_m`` → ``τ_mod`` (Unicode has no
+    subscript "d"). Mean lifetime ``tm`` → τₘ is therefore distinct from modulation. Units
+    verified against extracted data ranges: fit lifetimes are ps, phasor-derived lifetimes
     (Tau_*) are ns, amplitude fractions are %.
     """
     if not isinstance(column_name, str):
@@ -42,7 +45,7 @@ def format_feature_label(column_name):
         "G(1st)": ("g", ""), "S(1st)": ("s", ""),
         "G(2nd)": ("g (2nd harm.)", ""), "S(2nd)": ("s (2nd harm.)", ""),
         # phasor-derived lifetimes (ns)
-        "Tau_phase": ("τᵩ", "ns"), "Tau_m": ("τ_M", "ns"),
+        "Tau_phase": ("τᵩ", "ns"), "Tau_m": ("τ<sub>mod</sub>", "ns"),
         # morphology
         "area": ("Area", "px²"), "perimeter": ("Perimeter", "px"),
         "major_axis_length": ("Major axis", "px"),
@@ -63,7 +66,15 @@ def format_feature_label(column_name):
     }
 
     def compose(channel, symbol, unit):
-        return f"{channel} {symbol} ({unit})" if unit else f"{channel} {symbol}"
+        label = f"{channel} {symbol} ({unit})" if unit else f"{channel} {symbol}"
+        if engine == "mpl":
+            # Convert Plotly <sub>/<sup> markup to Matplotlib mathtext, e.g.
+            # "τ<sub>mod</sub>" -> "$τ_{\\mathrm{mod}}$". Unicode subscripts are untouched.
+            label = re.sub(r"(\S)<sub>(.*?)</sub>",
+                           lambda m: "$" + m.group(1) + r"_{\mathrm{" + m.group(2) + "}}$", label)
+            label = re.sub(r"(\S)<sup>(.*?)</sup>",
+                           lambda m: "$" + m.group(1) + r"^{\mathrm{" + m.group(2) + "}}$", label)
+        return label
 
     def lookup_feature(feature):
         """Map a feature key to (symbol, unit), handling parameterised families."""

@@ -648,6 +648,11 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
             else:
                 annotation.font = dict(size=axis_label_size)
 
+    # Theme-aware hover tooltips, applied centrally so EVERY plot's hover matches the
+    # axes instead of Plotly's default gray: black-on-white in light mode,
+    # white-on-dark in dark mode. get_theme_color returns 'black' (light)/'white' (dark).
+    theme_color = get_theme_color(key="theme_hoverlabel")
+
     # Update layout with axis and legend font sizes
     fig.update_layout(
         xaxis=dict(
@@ -660,6 +665,11 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
         ),
         legend=dict(
             font=dict(size=legend_size)
+        ),
+        hoverlabel=dict(
+            bgcolor="white" if theme_color == "black" else "rgb(30, 30, 30)",
+            font=dict(color=theme_color),
+            bordercolor=theme_color,
         )
     )
 

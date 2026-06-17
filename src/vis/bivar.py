@@ -231,6 +231,10 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     # Create valid copy to allow modification
     df = df.copy()
 
+    # Pretty FLIM labels (Greek notation) reused for hover tooltips and axis titles
+    pretty_x = format_feature_label(selected_x)
+    pretty_y = format_feature_label(selected_y)
+
     # Squeezed columns for log checks: smaller ratio for the first two
     col_log_x, col_log_y, col1, col2, col3 = st.columns([0.8, 0.8, 2, 2, 2])
     with col_log_x:
@@ -301,8 +305,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         hovertemplate=(
             f"<b>Cell ID:</b> %{{text}}<br>"
             f"<b>Image:</b> %{{customdata}}<br>"
-            f"<b>{selected_x}:</b> %{{x}}<br>"
-            f"<b>{selected_y}:</b> %{{y}}<extra></extra>"
+            f"<b>{pretty_x}:</b> %{{x}}<br>"
+            f"<b>{pretty_y}:</b> %{{y}}<extra></extra>"
         ),
         show_counts=st.session_state.get("plot_show_group_counts", False)
     )
@@ -412,9 +416,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     # Just update layout with additional settings
     theme_color = get_theme_color(key=f"theme_2d_{selected_x}_{selected_y}")
     
-    # Set axis labels based on log transform
-    pretty_x = format_feature_label(selected_x)
-    pretty_y = format_feature_label(selected_y)
+    # Set axis labels based on log transform (pretty_x/pretty_y defined above)
     x_axis_label = f"log₁₀({pretty_x})" if log_x else pretty_x
     y_axis_label = f"log₁₀({pretty_y})" if log_y else pretty_y
     
@@ -523,7 +525,7 @@ def _plot_convex_hull(
         y=centers_raw[:, 1],
         mode="markers",
         marker=dict(symbol="x", size=14, line=dict(width=1.5, color=theme_color), color=polygon_color),
-        hovertemplate="<b>Centroid</b><br>G: %{x:.2f}<br>S: %{y:.2f}<extra></extra>",
+        hovertemplate="<b>Centroid</b><br>g: %{x:.2f}<br>s: %{y:.2f}<extra></extra>",
         name="Centroids",
         showlegend=False
     ))
