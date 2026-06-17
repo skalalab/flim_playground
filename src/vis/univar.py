@@ -61,7 +61,7 @@ def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab1
     
     return fig
 
-def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10"):
+def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10", log_x=False):
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
     show_counts = st.session_state.get("plot_show_group_counts", False)
@@ -115,13 +115,16 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10"):
         ))
 
     theme_color = get_theme_color(key=f"theme_hist_{selected_var}")
+    # data is log-transformed upstream (data_analysis.py) when log_x is set; wrap the label to match
+    pretty_var = format_feature_label(selected_var)
+    x_axis_label = f"log₁₀({pretty_var})" if log_x else pretty_var
     fig.update_layout(
         title=dict(
-            text=f'Frequency histogram of {format_feature_label(selected_var)} by {", ".join(color_by)}',
+            text=f'Frequency histogram of {pretty_var} by {", ".join(color_by)}',
             font=dict(color=theme_color)
         ),
         xaxis=dict(
-            title=dict(text=format_feature_label(selected_var), font=dict(color=theme_color)),
+            title=dict(text=x_axis_label, font=dict(color=theme_color)),
             tickfont=dict(color=theme_color),
             showgrid=False,
             zeroline=False
@@ -161,7 +164,7 @@ def _assign_subpopulation_labels(values, best_gmm, thresholds, color_group):
     return [f"{color_group}_group{int(r) + 1}" for r in ranks]
 
 
-def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
+def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=False):
     h_index_msg = ""    
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
@@ -325,13 +328,16 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
     if h_index_msg != "": 
         st.info(h_index_msg)    
     
+    # data is log-transformed upstream (data_analysis.py) when log_x is set; wrap the label to match
+    pretty_var = format_feature_label(selected_var)
+    x_axis_label = f"log₁₀({pretty_var})" if log_x else pretty_var
     fig.update_layout(
         title=dict(
-            text=f'Gaussian Mixture Model fit of {format_feature_label(selected_var)} by {", ".join(color_by)}',
+            text=f'Gaussian Mixture Model fit of {pretty_var} by {", ".join(color_by)}',
             font=dict(color=theme_color)
         ),
         xaxis=dict(
-            title=dict(text=format_feature_label(selected_var), font=dict(color=theme_color)),
+            title=dict(text=x_axis_label, font=dict(color=theme_color)),
             tickfont=dict(color=theme_color),
             showgrid=False,
             zeroline=False

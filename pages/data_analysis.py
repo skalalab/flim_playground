@@ -351,10 +351,10 @@ with col2:
                                 filtered_df = filtered_df.copy()
                                 filtered_df[selected_var] = np.log10(filtered_df[selected_var] + 1e-6)
                         if apply_gmm:
-                            fig, gmm_df = feature_gmm_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap)
+                            fig, gmm_df = feature_gmm_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x)
                             data_export_ready = True
                         else: 
-                            fig = feature_histogram_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap)    
+                            fig = feature_histogram_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x)    
                 else:
                     st.write(f"No data available after removing rows with missing values {sad_emoji}")
             elif method in bivar_methods:

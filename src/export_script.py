@@ -648,7 +648,7 @@ if SAVE_DERIVED_DATA:
     df.drop(columns=["_color_group"]).to_csv("gmm_grouped_data.csv", index=False)
     print("GMM grouped data saved to gmm_grouped_data.csv")
 
-ax.set_xlabel(format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
+ax.set_xlabel(f"log₁₀({{format_feature_label(SELECTED_VAR, engine='mpl')}})" if LOG_X else format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("Probability Density", fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='both', labelsize=LEGEND_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
@@ -705,7 +705,7 @@ for g in color_groups:
         desc = "strongly right-skewed"
     print(f"  {g}: skewness = {sk:.3f} ({desc})")
 
-ax.set_xlabel(format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
+ax.set_xlabel(f"log₁₀({format_feature_label(SELECTED_VAR, engine='mpl')})" if LOG_X else format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("Count", fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='both', labelsize=LEGEND_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
@@ -967,7 +967,7 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
 # --- Axis setup ---
 ax.set_xticks(tick_positions)
 ax.set_xticklabels(x_labels, fontsize=max(8, AXIS_LABEL_SIZE - 4))
-ax.set_ylabel(format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
+ax.set_ylabel(f"log₁₀({{format_feature_label(SELECTED_VAR, engine='mpl')}})" if LOG_Y else format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='y', labelsize=LEGEND_SIZE)
 add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
