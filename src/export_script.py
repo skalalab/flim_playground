@@ -372,15 +372,24 @@ def _build_data_loading(state: dict) -> str:
         match_col_name,
         safe_split_with_logging,
     )
+    from src.feature_labels import format_feature_label
 
     loading_src = _extract_source(match_col_name, safe_split_with_logging,
                                   check_and_fix_df, coerce_majority_numeric_cols)
+    # Inline the exact same axis-label helper the app uses, so exported plots render
+    # identical FLIM notation (e.g. "nadh τ₁ (ps)") — no second copy of the mapping.
+    label_src = _extract_source(format_feature_label)
     divider = "# " + "=" * 60
     return f"""
 {divider}
 # Data Loading — runs the same normalization functions as the app (src/dataset_io.py)
 {divider}
 {loading_src}
+
+{divider}
+# Feature axis labels — identical helper to the app (src/feature_labels.py)
+{divider}
+{label_src}
 
 df = pd.read_csv(CSV_PATH, index_col=False, low_memory=False)
 df, _warning_msg, _error_msg = check_and_fix_df(df, CATEGORICAL_COLS, UNIQUE_ROW_ID_COL, FOV_NAME_COL)
@@ -518,7 +527,7 @@ for fov_i, fov in enumerate(fovs):
 
 ax.set_xticks(positions)
 ax.set_xticklabels(tick_labels, fontsize=max(6, AXIS_LABEL_SIZE - 6), rotation=45, ha='right')
-ax.set_ylabel(SELECTED_VAR, fontsize=AXIS_LABEL_SIZE)
+ax.set_ylabel(format_feature_label(SELECTED_VAR), fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='y', labelsize=LEGEND_SIZE)
 
 for g in color_groups:
@@ -639,7 +648,7 @@ if SAVE_DERIVED_DATA:
     df.drop(columns=["_color_group"]).to_csv("gmm_grouped_data.csv", index=False)
     print("GMM grouped data saved to gmm_grouped_data.csv")
 
-ax.set_xlabel(SELECTED_VAR, fontsize=AXIS_LABEL_SIZE)
+ax.set_xlabel(format_feature_label(SELECTED_VAR), fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("Probability Density", fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='both', labelsize=LEGEND_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
@@ -696,7 +705,7 @@ for g in color_groups:
         desc = "strongly right-skewed"
     print(f"  {g}: skewness = {sk:.3f} ({desc})")
 
-ax.set_xlabel(SELECTED_VAR, fontsize=AXIS_LABEL_SIZE)
+ax.set_xlabel(format_feature_label(SELECTED_VAR), fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("Count", fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='both', labelsize=LEGEND_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
@@ -958,7 +967,7 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
 # --- Axis setup ---
 ax.set_xticks(tick_positions)
 ax.set_xticklabels(x_labels, fontsize=max(8, AXIS_LABEL_SIZE - 4))
-ax.set_ylabel(SELECTED_VAR, fontsize=AXIS_LABEL_SIZE)
+ax.set_ylabel(format_feature_label(SELECTED_VAR), fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='y', labelsize=LEGEND_SIZE)
 add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
@@ -1108,8 +1117,8 @@ if FIT_GMM_2D:
         df.drop(columns=["_color_group"]).to_csv("2D_gmm_data.csv", index=False)
         print("2D GMM data saved to 2D_gmm_data.csv")
 
-ax_main.set_xlabel(f"log₁₀({{SELECTED_X}})" if LOG_X else SELECTED_X, fontsize=AXIS_LABEL_SIZE)
-ax_main.set_ylabel(f"log₁₀({{SELECTED_Y}})" if LOG_Y else SELECTED_Y, fontsize=AXIS_LABEL_SIZE)
+ax_main.set_xlabel(f"log₁₀({{format_feature_label(SELECTED_X)}})" if LOG_X else format_feature_label(SELECTED_X), fontsize=AXIS_LABEL_SIZE)
+ax_main.set_ylabel(f"log₁₀({{format_feature_label(SELECTED_Y)}})" if LOG_Y else format_feature_label(SELECTED_Y), fontsize=AXIS_LABEL_SIZE)
 ax_main.tick_params(axis='both', labelsize=LEGEND_SIZE)
 add_encoding_legend_entries(ax_main, shape_map, opacity_map, POINT_SIZE)
 ax_main.legend(fontsize=LEGEND_SIZE)
@@ -1206,8 +1215,8 @@ else:
             df.drop(columns=["_color_group"]).to_csv("kmeans_clustered_data.csv", index=False)
             print("K-Means clustered data saved to kmeans_clustered_data.csv")
 
-ax.set_xlabel("G", fontsize=AXIS_LABEL_SIZE)
-ax.set_ylabel("S", fontsize=AXIS_LABEL_SIZE)
+ax.set_xlabel("g", fontsize=AXIS_LABEL_SIZE)
+ax.set_ylabel("s", fontsize=AXIS_LABEL_SIZE)
 ax.set_xlim(-0.05, 1.05)
 ax.set_ylim(-0.05, 0.55)
 ax.set_aspect('equal')

@@ -1,4 +1,5 @@
 from .helpers import _find_best_gmm, get_point_visual_mappings, add_interleaved_points_trace, get_theme_color
+from src.feature_labels import format_feature_label
 import plotly.graph_objects as go
 import numpy as np
 from scipy.stats import gaussian_kde, pearsonr, chi2
@@ -412,12 +413,14 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     theme_color = get_theme_color(key=f"theme_2d_{selected_x}_{selected_y}")
     
     # Set axis labels based on log transform
-    x_axis_label = f"log₁₀({selected_x})" if log_x else selected_x
-    y_axis_label = f"log₁₀({selected_y})" if log_y else selected_y
+    pretty_x = format_feature_label(selected_x)
+    pretty_y = format_feature_label(selected_y)
+    x_axis_label = f"log₁₀({pretty_x})" if log_x else pretty_x
+    y_axis_label = f"log₁₀({pretty_y})" if log_y else pretty_y
     
     fig.update_layout(
         title=dict(
-            text=f'2D Distribution of {selected_x} and {selected_y} by {", ".join(color_by)}',
+            text=f'2D Distribution of {pretty_x} and {pretty_y} by {", ".join(color_by)}',
             font=dict(color=theme_color)
         ),
         xaxis=dict(

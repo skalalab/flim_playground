@@ -4,6 +4,7 @@ from itertools import combinations
 import numpy as np
 from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, comparison_pair_widget
 from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, get_theme_color, format_group_label
+from src.feature_labels import format_feature_label
 
 def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab10"):
     if (df[fov_name_col] == "missing fov name").any():
@@ -47,9 +48,9 @@ def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab1
             ))
     
     fig.update_layout(
-        title=f'Distribution of {selected_var} by Field of View',
+        title=f'Distribution of {format_feature_label(selected_var)} by Field of View',
         xaxis_title=fov_name_col,
-        yaxis_title=selected_var,
+        yaxis_title=format_feature_label(selected_var),
         showlegend=True, # Hide legend 
         hovermode='closest',
        # xaxis={'categoryorder':'array', 'categoryarray': sorted(fov_names)}, # Sort boxes by name
@@ -116,11 +117,11 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10"):
     theme_color = get_theme_color(key=f"theme_hist_{selected_var}")
     fig.update_layout(
         title=dict(
-            text=f'Frequency histogram of {selected_var} by {", ".join(color_by)}',
+            text=f'Frequency histogram of {format_feature_label(selected_var)} by {", ".join(color_by)}',
             font=dict(color=theme_color)
         ),
         xaxis=dict(
-            title=dict(text=selected_var, font=dict(color=theme_color)),
+            title=dict(text=format_feature_label(selected_var), font=dict(color=theme_color)),
             tickfont=dict(color=theme_color),
             showgrid=False,
             zeroline=False
@@ -330,11 +331,11 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10"):
     
     fig.update_layout(
         title=dict(
-            text=f'Gaussian Mixture Model fit of {selected_var} by {", ".join(color_by)}',
+            text=f'Gaussian Mixture Model fit of {format_feature_label(selected_var)} by {", ".join(color_by)}',
             font=dict(color=theme_color)
         ),
         xaxis=dict(
-            title=dict(text=selected_var, font=dict(color=theme_color)),
+            title=dict(text=format_feature_label(selected_var), font=dict(color=theme_color)),
             tickfont=dict(color=theme_color),
             showgrid=False,
             zeroline=False
@@ -684,7 +685,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             )
     
     # Build title with visual encoding information
-    title_parts = [f'Distribution of {selected_var} by {", ".join(color_by)}']
+    title_parts = [f'Distribution of {format_feature_label(selected_var)} by {", ".join(color_by)}']
     if separate_by and separate_by.strip() != "":
         title_parts.append(f'separated by: {separate_by}')
     if opacity_by and opacity_by.strip() != "":
@@ -790,7 +791,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             ))
 
     # Set y-axis label based on log transform
-    y_axis_label = f"log₁₀({selected_var})" if log_y else selected_var
+    pretty_var = format_feature_label(selected_var)
+    y_axis_label = f"log₁₀({pretty_var})" if log_y else pretty_var
     
     fig.update_layout(
         title=dict(text=full_title, font=dict(color=theme_color)),
