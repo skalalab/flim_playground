@@ -96,7 +96,9 @@ def objective(params, data, irf, time_axis, start=0, end=-1, fitting_algo="MLE",
     if fitting_algo == "MLE": 
         return nll_poisson(fitted, data, start, end)
     elif fitting_algo == "WLS":
-        weights = np.sqrt(np.maximum(data[start:end], 1))
+        # Pearson weighting: variance estimated from the model (fitted), so the
+        # minimized objective matches the reported reduced χ² (also Pearson).
+        weights = np.sqrt(np.maximum(fitted[start:end], 1))
         residuals = (data[start:end] - fitted[start:end]) / weights
         return residuals
 
