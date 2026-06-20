@@ -753,7 +753,7 @@ def add_interleaved_points_trace(
     shape_by=None,
     opacity_by=None,
     hovertemplate="<b>%{text}</b>",
-    random_seed=None,
+    random_seed=42,
     num_batches=15,
     show_counts=False
 ):
@@ -791,7 +791,9 @@ def add_interleaved_points_trace(
     hovertemplate : str
         Hover template string
     random_seed : int or None
-        Random seed for shuffling (for reproducibility)
+        Seed for the per-color shuffle. Defaults to a fixed value so the
+        interleave order is reproducible across reruns; pass None for a
+        nondeterministic order.
     num_batches : int
         Number of batches to split each color group into (default: 15)
     
@@ -802,10 +804,11 @@ def add_interleaved_points_trace(
     """
     import random
     import math
-    
-    # Set random seed if provided
-    if random_seed is not None:
-        random.seed(random_seed)
+
+    # Local RNG so the per-color shuffle is reproducible run-to-run without
+    # touching (or being perturbed by) the global `random` state. Seeded by
+    # default; pass random_seed=None for a nondeterministic order.
+    rng = random.Random(random_seed)
     
     # Collect all points, grouped by color
     points_by_color = {}
@@ -830,7 +833,7 @@ def add_interleaved_points_trace(
     
     # Shuffle points within each color group
     for color_group in points_by_color:
-        random.shuffle(points_by_color[color_group])
+        rng.shuffle(points_by_color[color_group])
     
     # Split each color group into batches
     batches_by_color = {}

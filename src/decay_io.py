@@ -126,7 +126,14 @@ def read_ptu(filename, channel=-1):
         if c == 1:
             decay_data = ptu_data.reshape(y, x, t)
         else:
-            decay_data = ptu_data.reshape(c, y, x, t)
+            # ptu[0] is laid out as (Y, X, C, H) (ptu.dims minus the leading T).
+            # Move the channel axis to the front -> (C, Y, X, H) so the later
+            # decay_data[channel] actually selects a channel. A blind
+            # reshape(c, y, x, t) reinterprets this buffer and scrambles
+            # channels/pixels/time bins. (read_sdt's identical reshape is safe
+            # only because sdtfile already returns channel-first (C, Y, X, T).)
+            c_axis = ptu.dims.index("C") - 1  # -1: ptu[0] dropped the leading T axis
+            decay_data = np.moveaxis(ptu_data, c_axis, 0)
         if channel != -1:
             num_channels = c
             if channel < 0 or channel >= num_channels:

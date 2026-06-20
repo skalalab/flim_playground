@@ -11,26 +11,24 @@ from src.cell_texture import granularity, radial_distribution, mass_displacement
 
 def get_offset(decay_curve):
     """
-    Get the offset of a decay curve using: median of the last 10% of bins
+    Estimate the constant background offset of a decay curve as the MEAN of the
+    last 10% of time bins (the late-time tail, assumed to be flat background once
+    the fluorescence has decayed).
+
+    Note: this computes the mean, not the median. The old docstring/variable name
+    said "median" but the implementation has always used np.mean — the docstring
+    was wrong, the behavior is intentional and unchanged.
     """
-   # head_bins_percentile = 20
-    tail_bins_percentile = 90
-    
-    # Calculate the number of bins for each segment
+    tail_bins_percentile = 90  # tail = bins from the 90% mark onward (last 10%)
+
     total_bins = len(decay_curve)
-    #head_bins = int(total_bins * head_bins_percentile / 100)
     tail_start_bin = int(total_bins * tail_bins_percentile / 100)
-    
-    # Get the first 20% of bins and calculate median
-  #  head_segment = decay_curve[:head_bins]
-  #  head_median = np.median(head_segment)
-    
-    # Get the last 10% of bins and calculate median  
+
+    # Mean of the last 10% of bins
     tail_segment = decay_curve[tail_start_bin:]
-    tail_median = np.mean(tail_segment)
-    
-    # Return the minimum of the two medians
-    return tail_median
+    tail_mean = np.mean(tail_segment)
+
+    return tail_mean
 
 def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type):
     feature_prefix = f"Intensity texture_{channel_name}: "
