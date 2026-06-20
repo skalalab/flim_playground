@@ -42,10 +42,10 @@
   ],
   "related_identifiers": [
     {
-      "identifier": "10.1101/2025.09.30.679625",
+      "identifier": "10.1016/j.crmeth.2026.101484",
       "relation": "isSupplementTo",
       "scheme": "doi",
-      "resource_type": "publication-preprint"
+      "resource_type": "publication-article"
     },
     {
       "identifier": "https://github.com/skalalab/flim_playground",

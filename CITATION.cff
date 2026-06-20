@@ -41,7 +41,7 @@ keywords:
   - bioimage analysis
 preferred-citation:
   type: article
-  title: "FLIM Playground: An interactive, end-to-end graphical user interface for analyzing single-cell fluorescence lifetime data"
+  title: "FLIM Playground: An interactive, end-to-end graphical user interface for analyzing single cells with fluorescence lifetime imaging microscopy"
   authors:
     - family-names: Zhao
       given-names: Wenxuan
@@ -52,6 +52,7 @@ preferred-citation:
       name-particle: C.
     - family-names: Datta
       given-names: Rupsa
-  year: 2025
-  journal: bioRxiv
-  doi: "10.1101/2025.09.30.679625"
+  year: 2026
+  journal: "Cell Reports Methods"
+  doi: "10.1016/j.crmeth.2026.101484"
+  month: 6
