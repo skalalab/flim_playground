@@ -245,16 +245,22 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
 
     irf_upsampled = upsample_irf(irf) if fit_shift else None
 
-    # Warm-start: fit the summed decay with Global to get better initial lifetimes for Local mode
+    # Warm-start: fit the AVERAGE (mean) decay with Global to seed initial lifetimes
+    # for Local mode. Use the mean, NOT the sum: lifetimes are scale-invariant so the
+    # τ seeds are identical either way, but the summed decay's offset is ~N× a single
+    # cell's (then clamped to the peak) and its peak sets ~N× the DE parameter bounds —
+    # both leak batch size/composition into the ill-conditioned per-cell fits, making a
+    # cell's result depend on how many cells share its batch. The mean keeps the warm
+    # fit at single-cell scale, so the seeded offset and DE bounds are batch invariant.
     if fitting_mode == "Local" and num_curves >= 1:
-        summed_decay = np.sum(np.array(decay_curves), axis=0)
+        mean_decay = np.mean(np.array(decay_curves), axis=0)
         warm_params = params.copy()
-        _set_amplitude_guesses(warm_params, summed_decay, num_components)
+        _set_amplitude_guesses(warm_params, mean_decay, num_components)
         try:
             # `seed` (not `rng`) is what lmfit forwards to differential_evolution;
             # required for a reproducible warm-start (see test_fit_determinism.py).
             warm_global_opts = dict(optimizers["global_opts"], seed=0)
-            warm_result = lmfit_minimize(objective, warm_params, args=(summed_decay, irf, time_axis, start, end, fitting_algo, irf_upsampled), method=optimizers["global"], **warm_global_opts)
+            warm_result = lmfit_minimize(objective, warm_params, args=(mean_decay, irf, time_axis, start, end, fitting_algo, irf_upsampled), method=optimizers["global"], **warm_global_opts)
             for key in ['t1', 't2', 't3']:
                 if key in params and params[key].vary:
                     params[key].value = warm_result.params[key].value

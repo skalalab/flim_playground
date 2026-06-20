@@ -301,7 +301,7 @@ def fit_options_widget(metadata_dict):
             key="fitting_mode",
             help="Hybrid: global search for initial guess, then local refinement per cell (robust)."
                 + ("" if needs_shift
-                   else " Local: warm-start on summed decay, then local fit per cell (faster).")
+                   else " Local: warm-start on mean decay, then local fit per cell (faster).")
         )
     
    

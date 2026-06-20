@@ -143,7 +143,7 @@ with col1:
                             ["Hybrid", "Local"],
                             index=0,
                             key="fitting_mode_update",
-                            help="Hybrid: global search for initial guess, then local refinement per cell (robust). Local: warm-start on summed decay, then local fit per cell (faster)."
+                            help="Hybrid: global search for initial guess, then local refinement per cell (robust). Local: warm-start on mean decay, then local fit per cell (faster)."
                         )
                     col1_1, col1_2 = st.columns(2)
                     with col1_1:
