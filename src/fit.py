@@ -90,7 +90,9 @@ def _fit_single_curve(decay_curve, current_params, irf, time_axis, start, end, f
     if fitting_mode == "Hybrid":
         global_opts = dict(optimizers["global_opts"])
         if seed is not None:
-            global_opts["rng"] = np.random.default_rng(seed)
+            # lmfit forwards `seed` (not `rng`) to scipy.differential_evolution,
+            # so seed via `seed` to make the global search reproducible.
+            global_opts["seed"] = seed
         result_global = lmfit_minimize(objective, current_params, args=args, method=optimizers["global"], **global_opts)
         current_params = result_global.params
 
@@ -249,7 +251,9 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         warm_params = params.copy()
         _set_amplitude_guesses(warm_params, summed_decay, num_components)
         try:
-            warm_global_opts = dict(optimizers["global_opts"], rng=np.random.default_rng(0))
+            # `seed` (not `rng`) is what lmfit forwards to differential_evolution;
+            # required for a reproducible warm-start (see test_fit_determinism.py).
+            warm_global_opts = dict(optimizers["global_opts"], seed=0)
             warm_result = lmfit_minimize(objective, warm_params, args=(summed_decay, irf, time_axis, start, end, fitting_algo, irf_upsampled), method=optimizers["global"], **warm_global_opts)
             for key in ['t1', 't2', 't3']:
                 if key in params and params[key].vary:
