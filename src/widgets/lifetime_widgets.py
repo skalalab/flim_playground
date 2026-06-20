@@ -286,10 +286,10 @@ def fit_options_widget(metadata_dict):
     with cols1[0]:
         fitting_algo = st.selectbox(
             "Metric", 
-            ["MLE", "LS"], 
+            ["MLE", "WLS"],
             index=0, 
             key="fitting_metric",
-            help="MLE: Maximum Likelihood Estimation. LS: Least Squares."
+            help="MLE: Maximum Likelihood Estimation. WLS: Weighted Least Squares."
         )
     with cols1[1]:
         needs_shift = len(metadata_dict.get("channels_shift", {})) > 0

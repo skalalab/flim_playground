@@ -96,10 +96,10 @@ def _fit_single_curve(decay_curve, current_params, irf, time_axis, start, end, f
 
     if fitting_algo == "MLE":
         return lmfit_minimize(objective, current_params, args=args, method=optimizers["mle"], options=optimizers["mle_opts"])
-    elif fitting_algo == "LS":
-        return lmfit_minimize(objective, current_params, args=args, method=optimizers["ls"], **optimizers["ls_opts"])
+    elif fitting_algo == "WLS":
+        return lmfit_minimize(objective, current_params, args=args, method=optimizers["wls"], **optimizers["wls_opts"])
     else:
-        raise ValueError(f"Unsupported fitting algorithm: {fitting_algo}. Use 'MLE' or 'LS'.")
+        raise ValueError(f"Unsupported fitting algorithm: {fitting_algo}. Use 'MLE' or 'WLS'.")
 
 
 def _extract_result(result, arrays, i, num_components, fit_shift, fixed):
@@ -235,8 +235,8 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
     optimizers = {
         "mle": "nelder",
         "mle_opts": {'maxfev': 100000, 'xatol': 1e-8, 'fatol': 1e-8},
-        "ls": "leastsq",
-        "ls_opts": {'max_nfev': 100000, 'ftol': 1e-8, 'xtol': 1e-8, 'gtol': 1e-8},
+        "wls": "leastsq",
+        "wls_opts": {'max_nfev': 100000, 'ftol': 1e-8, 'xtol': 1e-8, 'gtol': 1e-8},
         "global": "differential_evolution",
         "global_opts": {'popsize': 25, 'tol': 1e-8, 'max_nfev': 100000},
     }
