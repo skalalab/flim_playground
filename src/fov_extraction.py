@@ -243,6 +243,11 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
     num_fixed = sum(1 for v in (fixed_lifetimes or {}).values() if v is not None and v > 0)
     num_free_params = num_components * 2 + 1 - num_fixed  # k amps + k taus + offset, minus fixed
     warning_msg = ""
+    # A degenerate (all-zero) IRF makes every fit feature NaN (fit_curves returns
+    # NaN params); flag it ONCE at the channel level rather than once per cell.
+    irf_degenerate = shifted_irf is not None and not np.any(shifted_irf)
+    if irf_degenerate:
+        warning_msg += f"Channel {channel_name}: IRF is all zeros — lifetime fit features set to NaN. "
     for i, cell_id in enumerate(decay_curves.keys()):
         if cell_id not in single_cell_features_fov:
             single_cell_features_fov[cell_id] = {}
@@ -268,9 +273,11 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
             # Calculate alpha values
             amp1, amp2 = results["amp1"][i], results["amp2"][i]
             total_amp = amp1 + amp2
-            # guard against division by zero
-            if total_amp == 0:
-                warning_msg += f"Warning: {cell_id} has a total amplitude of 0. "
+            # guard against division by zero AND non-finite amps: a failed fit
+            # returns NaN params, and NaN == 0 is False, so check finiteness too.
+            if not np.isfinite(total_amp) or total_amp == 0:
+                if not irf_degenerate:
+                    warning_msg += f"Warning: {cell_id} has an invalid total amplitude (fit failed or zero signal); derived lifetimes set to NaN. "
                 continue
             alpha1 = amp1 / total_amp
             alpha2 = amp2 / total_amp
@@ -295,9 +302,11 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
             # Calculate alpha values for 3 components
             amp1, amp2, amp3 = results["amp1"][i], results["amp2"][i], results["amp3"][i]
             total_amp = amp1 + amp2 + amp3
-            # guard against division by zero
-            if total_amp == 0:
-                warning_msg += f"Warning: {cell_id} has a total amplitude of 0. "
+            # guard against division by zero AND non-finite amps: a failed fit
+            # returns NaN params, and NaN == 0 is False, so check finiteness too.
+            if not np.isfinite(total_amp) or total_amp == 0:
+                if not irf_degenerate:
+                    warning_msg += f"Warning: {cell_id} has an invalid total amplitude (fit failed or zero signal); derived lifetimes set to NaN. "
                 continue
             alpha1 = amp1 / total_amp
             alpha2 = amp2 / total_amp
@@ -321,10 +330,15 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
     return warning_msg, single_cell_features_fov
 
 def get_raw_phasor(decay_curve, h, w, time_axis=None, full_period=False):
+    # A signal-less cell (decay sums to 0) has an undefined phasor; return NaN
+    # deliberately instead of a 0/0 division (truncated) or a phasorpy NaN.
+    total = np.sum(decay_curve)
+    if total == 0:
+        return np.nan, np.nan
     # the truncated time axis case
     if not full_period:
-        g_raw = np.dot(np.transpose(decay_curve) , np.cos(h*w*time_axis)) / np.sum(decay_curve)
-        s_raw = np.dot(np.transpose(decay_curve) , np.sin(h*w*time_axis)) / np.sum(decay_curve)
+        g_raw = np.dot(np.transpose(decay_curve) , np.cos(h*w*time_axis)) / total
+        s_raw = np.dot(np.transpose(decay_curve) , np.sin(h*w*time_axis)) / total
     else:
         _, g_raw, s_raw = phasor.phasor_from_signal(decay_curve, harmonic=h)
     return g_raw, s_raw

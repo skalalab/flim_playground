@@ -231,6 +231,12 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
         shift_halfwidth = irf_fwhm_bins(irf)
     params, arrays, fixed = _init_params(duration, time_bins, num_components, num_curves, fit_shift, shift_guess, shift_halfwidth, fixed_lifetimes)
 
+    # A degenerate (all-zero) IRF makes the reconvolution model identically zero,
+    # so the fit is meaningless; return the NaN-initialised results to flag it
+    # explicitly instead of fitting a zero model to finite-but-garbage params.
+    if irf is not None and not np.any(irf):
+        return arrays
+
     period = duration / time_bins
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
 

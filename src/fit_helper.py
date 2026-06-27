@@ -39,8 +39,12 @@ def irf_shift(irf, shift, irf_upsampled=None):
     # downsample the irf curve back to original size
     irf_shifted_downsampled = irf_shifted[::scale]
 
-    irf_shifted_downsampled /= np.sum(irf_shifted_downsampled)
-   
+    # A degenerate (all-zero) IRF would make this 0/0 -> NaN; leave it
+    # unnormalised in that case.
+    total = np.sum(irf_shifted_downsampled)
+    if total != 0:
+        irf_shifted_downsampled = irf_shifted_downsampled / total
+
     return irf_shifted_downsampled
 
 def forward_pass(amp1, t1, offset, shifted_irf, time_axis, amp2=None, t2=None, amp3=None, t3=None):
@@ -73,7 +77,13 @@ def reduced_chi_square(fitted, data, start, end, num_free_params):
     fitted_slice = fitted_slice[valid]
     residuals = data_slice - fitted_slice
     tmp_chiq = residuals**2/fitted_slice
-    chiq = tmp_chiq.sum() / (len(data_slice) - num_free_params) 
+    # Degrees of freedom must be positive; a too-narrow time gate (or a failed
+    # fit whose curve is <= 0 everywhere) leaves <= 0 dof, where reduced
+    # chi-square is undefined. Return NaN instead of +inf / a negative value.
+    dof = len(data_slice) - num_free_params
+    if dof <= 0:
+        return np.nan
+    chiq = tmp_chiq.sum() / dof
     return chiq
 
 def objective(params, data, irf, time_axis, start=0, end=-1, fitting_algo="MLE", irf_upsampled=None):

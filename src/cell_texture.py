@@ -100,6 +100,11 @@ def mass_displacement(cell_image):
     # step1: get the centroid of the cell
     cell_mask = cell_image > 0
     y_coords, x_coords = np.where(cell_mask)
+    # A dark/empty cell (no pixel with intensity > 0) has no defined centroid,
+    # so the displacement is undefined -> deliberate NaN (avoids np.mean([]) and
+    # the 0/0 division below).
+    if len(y_coords) == 0:
+        return np.nan
     centroid_y = np.mean(y_coords)
     centroid_x = np.mean(x_coords)
     # step2: get the intensity weighted centroid of the cell
