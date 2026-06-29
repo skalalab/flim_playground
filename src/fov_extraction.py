@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+from scipy import ndimage
 from skimage.measure import regionprops
 from src.file_io import get_decay_curves, load_image, get_irf
 from src.decay_io import read_decay
@@ -30,16 +31,59 @@ def get_offset(decay_curve):
 
     return tail_mean
 
-def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type):
-    feature_prefix = f"Intensity texture_{channel_name}: "
-    intensity_texture_features = ["intensity_sum", "granularity", "radial_distribution", "mass_displacement"]
-    granularity_values = [1,3,5,7]
-    radial_distribution_values = [1,2,3,4]
-    fov_name = metadata[fov_col_name]
-    single_cell_texture_features_fov = {}
-    # get cell ids from the mask
+def extract_texture_features_from_arrays(intensity_image, mask, fov_name, feature_prefix):
+    """Per-cell intensity-texture features, cropping each ROI to its bounding box.
+
+    Equivalent to processing the full frame but orders of magnitude cheaper. The
+    texture functions only ever need a cell's own pixels plus a background
+    margin, so we crop to the cell's bbox instead of sweeping
+    ``morphology.opening`` over the whole (mostly-background) frame for every
+    cell — the dominant cost on large images with many cells.
+
+    The pad is ``2 * max(granularity radius)``: opening = dilation(erosion(.))
+    reads up to ``2*radius`` around a pixel, so that margin of real background
+    zeros makes each cropped value byte-identical to the full-frame result
+    (pinned in tests/test_texture_bbox_parity.py). Cropping also re-applies
+    ``mask == id`` so an overlapping neighbour's intensity never leaks in.
+    """
+    granularity_values = [1, 3, 5, 7]
+    radial_distribution_values = [1, 2, 3, 4]
+    pad = 2 * max(granularity_values)
+
     mask_ids = np.unique(mask)
     mask_ids = mask_ids[mask_ids != 0]
+
+    # One bbox slice per label (indexed by label-1); None for absent labels.
+    bbox_slices = ndimage.find_objects(mask.astype(np.intp))
+    height, width = mask.shape
+
+    single_cell_texture_features_fov = {}
+    for mask_id in mask_ids:
+        bbox = bbox_slices[mask_id - 1]
+        if bbox is None:
+            continue
+        y0 = max(bbox[0].start - pad, 0)
+        y1 = min(bbox[0].stop + pad, height)
+        x0 = max(bbox[1].start - pad, 0)
+        x1 = min(bbox[1].stop + pad, width)
+        sub_mask = mask[y0:y1, x0:x1] == mask_id
+        cell_image = intensity_image[y0:y1, x0:x1] * sub_mask
+
+        cell_id = f"{fov_name}_{mask_id}"
+        feats = {}
+        feats[f"{feature_prefix}intensity_sum"] = np.sum(cell_image)
+        for n in granularity_values:
+            feats[f"{feature_prefix}granularity_{n}"] = granularity(cell_image, n)
+        for ring_number in radial_distribution_values:
+            feats[f"{feature_prefix}radial_distribution_ring{ring_number}"] = radial_distribution(cell_image, ring_number)
+        feats[f"{feature_prefix}mass_displacement"] = mass_displacement(cell_image)
+        single_cell_texture_features_fov[cell_id] = feats
+
+    return pd.DataFrame.from_dict(single_cell_texture_features_fov, orient="index")
+
+def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type):
+    feature_prefix = f"Intensity texture_{channel_name}: "
+    fov_name = metadata[fov_col_name]
     # get the intensity image from the metadata
     if input_type == "Intensity (2D)":
         try:
@@ -62,23 +106,7 @@ def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, i
         return f"Error: Unsupported input type '{input_type}' for intensity texture features on {channel_name}.", pd.DataFrame()
     if intensity_image.shape != mask.shape:
         return f"Error: {channel_name} intensity image has a different shape than the mask: {intensity_image.shape} != {mask.shape}", pd.DataFrame()
-    for mask_id in mask_ids:
-        cell_id = f"{fov_name}_{mask_id}"
-        single_cell_texture_features_fov[cell_id] = {}
-        cell_mask = mask == mask_id
-        cell_image = intensity_image * cell_mask
-        for feature in intensity_texture_features:
-            if feature == "intensity_sum":
-                single_cell_texture_features_fov[cell_id][f"{feature_prefix}{feature}"] = np.sum(cell_image)
-            elif feature == "granularity":
-                for n in granularity_values:
-                    single_cell_texture_features_fov[cell_id][f"{feature_prefix}{feature}_{n}"] = granularity(cell_image, n)
-            elif feature == "radial_distribution":
-                for ring_number in radial_distribution_values:
-                    single_cell_texture_features_fov[cell_id][f"{feature_prefix}{feature}_ring{ring_number}"] = radial_distribution(cell_image, ring_number)
-            elif feature == "mass_displacement":
-                single_cell_texture_features_fov[cell_id][f"{feature_prefix}{feature}"] = mass_displacement(cell_image)
-    single_cell_texture_features_fov = pd.DataFrame.from_dict(single_cell_texture_features_fov, orient='index')
+    single_cell_texture_features_fov = extract_texture_features_from_arrays(intensity_image, mask, fov_name, feature_prefix)
     return "", single_cell_texture_features_fov
  
 def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask):
