@@ -143,7 +143,7 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
     rows = (num_images + num_cols - 1) // num_cols
 
     if num_images > 0:
-        st.markdown("##### :green[Field of views:] \n")
+        st.markdown("##### :green[Fields of view:] \n")
         
     for row in range(rows):
         cols = st.columns(num_cols)

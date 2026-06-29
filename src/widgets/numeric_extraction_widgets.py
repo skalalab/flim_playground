@@ -30,7 +30,7 @@ def fov_extraction_widget(metadata_df, metadata_dict, num_cols=3):
    
     num_fovs = len(fov_names)
     if num_fovs > 0:
-        st.markdown("##### :green[Field of views:] \n")
+        st.markdown("##### :green[Fields of view:] \n")
     num_cols = min(num_cols, num_fovs)
     rows = (num_fovs + num_cols - 1) // num_cols
 

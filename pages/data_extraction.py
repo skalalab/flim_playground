@@ -210,7 +210,7 @@ def load_and_validate_fovs(folder_path, actual_file_suffix):
         st.warning("No data found in the folder. Please check the path and the file suffixes.")
         return None
 
-    st.success(f"Field of Views with ✅ are loaded successfully {happy_emoji}. FOVs with ❌ (if any) will **not** be recorded. Here is the preview of the FOVs and metadata recorded:")
+    st.success(f"Fields of View with ✅ are loaded successfully {happy_emoji}. FOVs with ❌ (if any) will **not** be recorded. Here is the preview of the FOVs and metadata recorded:")
     return fovs
 
 def prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components):
@@ -364,7 +364,7 @@ with col2:
     elif "Numeric Feature Extraction" in selected_step and st.session_state["shift_ready"] and metadata_df is not None and metadata_dict is not None:
         single_cell_features = fov_extraction_widget(metadata_df, metadata_dict)
         if not single_cell_features.empty:
-            st.success(f"Field of view features with ✅ are extracted successfully {happy_emoji}! FOVs with error messages are excluded. The first few rows of the features are shown below.")
+            st.success(f"Fields of view features with ✅ are extracted successfully {happy_emoji}! FOVs with error messages are excluded. The first few rows of the features are shown below.")
             st.write(single_cell_features.head())
             # get the current timestamp 
             timestamp = time.strftime("%Y%m%d_%H%M%S")
