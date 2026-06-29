@@ -103,8 +103,30 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
     # Single recursive scan to get all files
 
     path = Path(folder_path)
+
+    # Validate the folder is reachable and readable BEFORE scanning. Path.rglob()
+    # silently swallows PermissionError/OSError, so an unreadable folder (e.g. a
+    # macOS-blocked network/SMB volume) would otherwise look like an empty folder
+    # and produce a misleading "check the path and the file suffixes" message.
+    if not path.exists():
+        st.warning(f"Folder does not exist: **{folder_path}**. Please check the path.")
+        return {}
+    if not path.is_dir():
+        st.warning(f"This path is not a folder: **{folder_path}**.")
+        return {}
+    try:
+        os.listdir(folder_path)
+    except PermissionError:
+        st.error(
+            f"⛔ **Permission denied** reading **{folder_path}**.\n\n"
+            "The folder exists, but the system blocked listing its contents."
+        )
+        return {}
+    except OSError as e:
+        st.error(f"⛔ Could not read folder **{folder_path}**: {e}")
+        return {}
+
     all_files = [str(file) for file in path.rglob("*") if file.is_file() and not file.name.startswith("fov_metadata") and not file.name.startswith("single_cell_features")]
-    
     if len(all_files) == 0:
         st.warning(f"No files found in folder: **{folder_path}**.")
         return {}
