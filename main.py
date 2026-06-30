@@ -152,7 +152,12 @@ def main():
     with cols[0]:
         cfg["num_channels"] = st.selectbox("Number of channels", list(range(1, max_num_channels + 1)), index=cfg.get("num_channels", 1) - 1, help="Number of channels you have in your data", key=f"num_channels_{active}")
     with cols[1]:
-        flim_decay_input_type = st.selectbox("FLIM Decay Input type", cfg["flim_decay_input_types"], index= cfg["flim_decay_input_types"].index(cfg["flim_decay_input_type"]), key=f"flim_decay_input_type_{active}")
+        flim_decay_input_type = st.selectbox("FLIM Decay Input type", cfg["flim_decay_input_types"], index= cfg["flim_decay_input_types"].index(cfg["flim_decay_input_type"]), help=(
+            "How your raw FLIM decay data is stored:\n\n"
+            "- **Decay (3/4D)** — spatially-resolved decays stored as 3D/4D arrays in vendor formats (`.sdt`, `.ptu`), optionally with a channel dimension.\n"
+            "- **Decay (3/4D) pixel-prefitted** — per-pixel pre-fitted SPCImage outputs (`.asc`).\n"
+            "- **Decay (2D)** — a tabular CSV where each row is a cell and each column is a time bin."
+        ), key=f"flim_decay_input_type_{active}")
         cfg["flim_decay_input_type"] = flim_decay_input_type
         if flim_decay_input_type not in cfg:
             cfg[flim_decay_input_type] = {}
