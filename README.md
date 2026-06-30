@@ -12,6 +12,7 @@ FLIM Playground allows you to extract single-cell features from fluorescence lif
 
 ## Latest features
 
+- 🗂️ **Multiple configuration profiles** — Save up to 10 named setups in *Data Extraction* (channels, file suffixes, feature extractors, fixed lifetimes, laser rate, …) and switch between them in one click from the Configuration page. *Data Analysis* configurations are profile-based too, so you can keep several datasets' settings side by side.
 - 📜 **Export Data Analysis as a Python script** — Download a standalone, editable Python script that reproduces all *Data Analysis* settings you see in FLIM Playground; also saves figures as publication-ready SVG.
 - 🚀 **Parallel curve fitting** — Lifetime curve fitting in *Data Extraction* runs across CPU cores via multiprocessing, so large batches finish much faster than sequential fitting.
 
@@ -53,6 +54,11 @@ Then Navigate into the repository once cloned.
 ```bash
 pyinstaller Flim-Playground.spec --clean
 ```
+
+## Upgrade
+Already running an older version? Upgrading is simple — **just replace the old app with the new one** (download the latest from the Releases tab, or rebuild from source).
+
+Your settings carry over automatically. `config.toml` (Data Extraction settings) and `analysis_config.toml` (Data Analysis settings, if you have one) are **not** bundled inside the app, so swapping in the new app leaves them untouched. Just keep these files in the **same folder as the app**, and all your profiles and settings will be there in the new version.
 
 # Documentation
 - @[docs](https://skalalab.github.io/flim_playground_doc/)
