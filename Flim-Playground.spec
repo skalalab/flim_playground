@@ -4,7 +4,7 @@ import streamlit_sortables
 import os
 import streamlit_theme
 
-datas = [('src', 'src'), ('pages', 'pages'), ('main.py', '.'), ('launcher.py', '.'), ('config.toml', '.'), ('logo.png', '.'), ('.streamlit', '.streamlit')]
+datas = [('src', 'src'), ('pages', 'pages'), ('main.py', '.'), ('launcher.py', '.'), ('logo.png', '.'), ('.streamlit', '.streamlit')]
 binaries = []
 hiddenimports = ['pages.data_analysis', 'pages.data_extraction', 'psutil']
 
