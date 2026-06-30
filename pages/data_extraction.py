@@ -9,7 +9,7 @@ from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.lifetime_widgets import fit_options_widget, choose_shift_widget
 from src.metadata import parse_metadata_file
-from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type, get_fit_free_calibration_method, get_fixed_lifetimes
+from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type, get_fit_free_calibration_method, get_fixed_lifetimes, get_current_profile_name
 from src.file_io import load_image
 
 st.set_page_config(layout="wide")
@@ -29,6 +29,17 @@ st.title("Data Extraction")
 col1, col2 = st.columns([0.4, 1])
 steps = ["FOV Metadata Extraction", "Numeric Feature Extraction (fitting, phasor, etc.)", "Categorical Feature Extraction (e.g. treatment)"]
 channel_names = get_channel_names()
+# A blank/unconfigured active profile (e.g. one just created in the Configuration
+# page's sidebar but never saved with "Update Configuration") has no channels.
+# Stop with guidance here instead of crashing downstream on st.columns(0).
+if not channel_names:
+    st.warning(
+        f"The active configuration profile **'{get_current_profile_name()}'** has not "
+        "been configured yet. Please go to **Home / Configuration** page, "
+        "configure this profile, then click "
+        "**Update Configuration** — and come back here."
+    )
+    st.stop()
 input_types = get_input_types(channel_names.keys())
 imaging_modalities = get_imaging_modality(channel_names.keys())
 has_flim = "FLIM" in imaging_modalities.values()
