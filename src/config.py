@@ -7,19 +7,9 @@ def _get_config_path() -> Path:
     """Get the config file path, handling both development and bundled app scenarios."""
     # Check if running as a PyInstaller bundle
     if getattr(sys, '_MEIPASS', None):
-        # Running as bundled app - save config to a persistent location
-        # Use the directory where the executable is located
-        exe_dir = Path(sys.executable).parent
-        config_path = exe_dir / "config.toml"
-        
-        # If config doesn't exist in exe directory, try to copy from bundle
-        if not config_path.exists():
-            bundled_config = Path(sys._MEIPASS) / "config.toml"
-            if bundled_config.exists():
-                import shutil
-                shutil.copy(bundled_config, config_path)
-        
-        return config_path
+        # Running as bundled app - persist config next to the executable.
+        # config.toml is no longer bundled; main.py seeds defaults on first run.
+        return Path(sys.executable).parent / "config.toml"
     else:
         # Running in development mode - use config.toml in project root
         return Path(__file__).resolve().parent.parent / "config.toml"
@@ -47,23 +37,108 @@ def save_config(cfg: dict, config_path: Optional[Path] = None) -> None:
     with path_to_save.open("w", encoding="utf-8") as fh:
         toml.dump(cfg, fh)
 
+# ---------------------------------------------------------------------------
+# Multi-profile support
+#
+# The extraction config now stores named profiles, mirroring analysis_config:
+#   current_profile = "default"
+#   [profiles.<name>]   # the entire legacy flat config lives in here
+#
+# ``current_profile`` is the single source of truth and is read from disk so
+# this module stays Streamlit-free; the Configuration page (main.py) persists
+# it immediately on every switch/create/delete (before st.rerun()). Do NOT read
+# the active profile from st.session_state here.
+# ---------------------------------------------------------------------------
+
+def _migrate_extraction_config_to_profiles(cfg: dict) -> dict:
+    """Wrap a legacy flat extraction config under ``profiles.default``.
+
+    Idempotent: a config that already has a ``profiles`` key is returned
+    unchanged. An empty dict (missing/unparsable file) is left untouched so the
+    caller can seed defaults. The new structure is built in memory and returned;
+    the input is not mutated.
+    """
+    if "profiles" in cfg:
+        return cfg
+    if not cfg:
+        return cfg
+    # Move every existing top-level key into a single "default" profile.
+    default_profile = {k: v for k, v in cfg.items() if k != "current_profile"}
+    return {"current_profile": "default", "profiles": {"default": default_profile}}
+
+def _load_active_profile_cfg(config_path: Optional[Path] = None) -> dict:
+    """Return the active profile's config sub-dict.
+
+    The sub-dict has the same flat shape as the pre-profile config, so the
+    accessor functions below read it exactly as they read the legacy config.
+    """
+    cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
+    current = cfg.get("current_profile", "default")
+    return cfg.get("profiles", {}).get(current, {})
+
+def get_current_profile_name(config_path: Optional[Path] = None) -> str:
+    cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
+    return cfg.get("current_profile", "default")
+
+def list_profiles(config_path: Optional[Path] = None) -> list:
+    cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
+    return list(cfg.get("profiles", {}).keys())
+
+def set_current_profile(name: str, config_path: Optional[Path] = None) -> None:
+    """Switch the active profile, creating it (empty) if it does not exist."""
+    cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
+    cfg.setdefault("profiles", {}).setdefault(name, {})
+    cfg["current_profile"] = name
+    save_config(cfg, config_path)
+
+def create_profile(name: str, config_path: Optional[Path] = None) -> None:
+    """Create a new blank profile and make it current.
+
+    The profile is stored empty; main.py seeds it with app defaults on render
+    and persists those on the first "Update Configuration" click.
+    """
+    cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
+    cfg.setdefault("profiles", {})
+    if name not in cfg["profiles"]:
+        cfg["profiles"][name] = {}
+    cfg["current_profile"] = name
+    save_config(cfg, config_path)
+
+def delete_profile(name: str, config_path: Optional[Path] = None) -> None:
+    """Delete a profile; if it was current, switch to the first remaining one.
+
+    There is always at least one profile: deleting the last one recreates an
+    empty ``default``.
+    """
+    cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
+    profiles = cfg.setdefault("profiles", {})
+    profiles.pop(name, None)
+    if cfg.get("current_profile") == name or cfg.get("current_profile") not in profiles:
+        remaining = list(profiles.keys())
+        if remaining:
+            cfg["current_profile"] = remaining[0]
+        else:
+            profiles["default"] = {}
+            cfg["current_profile"] = "default"
+    save_config(cfg, config_path)
+
 def get_unique_cell_id_col() -> str:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     return cfg.get("unique_cell_id_col", "cell_id")
 
 def get_fov_name_col() -> str:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     return cfg.get("fov_name_col", "image_name")
 
 def get_input_types(channel_keys: list) -> dict:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     input_types = {}
     for channel_key in channel_keys:
         input_types[channel_key] = cfg.get(channel_key, {}).get("input_type", None)
     return input_types
 
 def get_default_file_suffixes(channel_key: str, input_type: str, selected_feature_extractors: list) -> dict:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     filtered_file_suffixes = {}
     file_suffixes = cfg.get(channel_key, {}).get(input_type, {}).get("input_suffixes", {})
     fit_free_calibration = cfg.get(input_type, {}).get("fit_free_calibration", "")
@@ -87,7 +162,7 @@ def get_default_file_suffixes(channel_key: str, input_type: str, selected_featur
     return filtered_file_suffixes
 
 def get_channel_names() -> dict:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     num_channels = cfg.get("num_channels", 0)
     channel_names = {}
     for i in range(num_channels):
@@ -96,12 +171,12 @@ def get_channel_names() -> dict:
     return channel_names
 
 def get_spc_output_suffix() -> dict:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     spc_output_suffix = cfg.get("spc_output_suffix", {})
     return spc_output_suffix
 
 def get_num_components(input_types: dict, channel_keys: list) -> dict:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     num_components = {}
     for channel_key in channel_keys:
         input_type = input_types[channel_key]
@@ -109,7 +184,7 @@ def get_num_components(input_types: dict, channel_keys: list) -> dict:
     return num_components
 
 def get_selected_feature_extractors(input_types: dict, channel_keys: list) -> dict:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     selected_feature_extractors = {}
     for channel_key in channel_keys:
         input_type = input_types[channel_key]
@@ -117,44 +192,44 @@ def get_selected_feature_extractors(input_types: dict, channel_keys: list) -> di
     return selected_feature_extractors
 
 def get_default_2D_decay_config() -> tuple:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     default_duration = cfg.get("Decay (2D)", {}).get("duration", 20.0)
     default_time_bins = cfg.get("Decay (2D)", {}).get("time_bins", 1024)
     return default_duration, default_time_bins
 
 def get_default_laser_rate(input_type: str) -> float:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     return cfg.get(input_type, {}).get("laser_rate", 1.0)
 
 def get_decay_input_type() -> str:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     return cfg.get("flim_decay_input_type", "Decay (2D)")
 
 def get_imaging_modality(channel_keys: list) -> dict:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     imaging_modality = {}
     for channel_key in channel_keys:
         imaging_modality[channel_key] = cfg.get(channel_key, {}).get("imaging_modality", "FLIM")
     return imaging_modality
 
 def get_available_feature_extractors(input_type: str) -> list:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     return cfg.get(input_type, {}).get("available_feature_extractors", [])
 
 def get_file_types(input_type: str) -> list:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     return cfg.get(input_type, {}).get("file_types", [])
 
 def get_all_feature_extractors() -> list:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     return cfg.get("all_feature_extractors", [])
 
 def get_categorical_cols() -> list:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     return cfg.get("categorical_cols", [])
 
 def get_fit_free_calibration_method(input_type: str) -> str:
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     method = cfg.get(input_type, {}).get("fit_free_calibration", "")
     if method == "Fluorescence Lifetime Standard":
         fluorescence_lifetime_standard_lifetime = cfg.get(input_type, {}).get("fluorescence_lifetime_standard_lifetime", "")
@@ -168,7 +243,7 @@ def get_fixed_lifetimes(channel_key: str, input_type: str) -> dict:
     Keys are 't1', 't2', 't3'; values are float (ns) when fixed, or None when free.
     Returns an empty dict when no constraints are stored.
     """
-    cfg = load_config()
+    cfg = _load_active_profile_cfg()
     raw = cfg.get(channel_key, {}).get(input_type, {}).get("fixed_lifetimes", {})
     result = {}
     for key, val in raw.items():
