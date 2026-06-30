@@ -49,7 +49,7 @@ def main():
     # set_current_profile(None)); the profile is seeded with app defaults further
     # down and persisted on the first "Update Configuration" click.
     profiles = list_profiles() or [active]
-    logo_col, welcome_col, profile_col = st.columns([1.7, 1.8, 3.5], vertical_alignment="center")
+    logo_col, welcome_col, profile_col = st.columns([1.5, 1.8, 3.5], vertical_alignment="center")
     with logo_col:
         st.image(str(logo_file), width="stretch")
     with welcome_col:
@@ -60,7 +60,7 @@ def main():
             f"[**Data Analysis**]({doc_analysis_url}) transforms tabular datasets into insights through visualization and statistical modeling."
         )
     with profile_col:
-        st.markdown("##### ⚙️ Configuration")
+        st.markdown("#### ⚙️ Configuration")
         select_col, create_col = st.columns([1, 1], vertical_alignment="top")
         # --- Switch profile, with Delete stacked directly below it ---
         with select_col:
@@ -222,7 +222,12 @@ def main():
             channel_key = f"ch{i+1}"
             if channel_key not in cfg:
                 cfg[channel_key] = {}
-            imaging_modality = st.selectbox("Imaging modality", imaging_modalities, index=0, key=f"imaging_modality_{channel_key}_{active}")
+            # Restore the saved modality on reload (fall back to the first option
+            # when it isn't selectable, e.g. a saved "Intensity-only" while the
+            # input type is "Decay (2D)", which only offers "FLIM").
+            saved_modality = cfg[channel_key].get("imaging_modality", imaging_modalities[0])
+            modality_index = imaging_modalities.index(saved_modality) if saved_modality in imaging_modalities else 0
+            imaging_modality = st.selectbox("Imaging modality", imaging_modalities, index=modality_index, key=f"imaging_modality_{channel_key}_{active}")
             # get input type for this channel
             cfg[channel_key]["imaging_modality"] = imaging_modality
             if imaging_modality == "FLIM":
