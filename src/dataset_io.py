@@ -100,14 +100,17 @@ def match_col_name(col, col_list):
             return col_name
     return None
 
+_MISSING_FOV_NAME = "missing fov name"
+
+
 def safe_split_with_logging(cell_id):
     try:
         if "_" not in cell_id:
-            return "missing fov name"
+            return _MISSING_FOV_NAME
         else:
             return cell_id.rsplit('_', 1)[0]
-    except Exception as e:   
-        return "missing fov name"
+    except Exception as e:
+        return _MISSING_FOV_NAME
 
 def get_feature_groups_data_extraction(cols):
     """

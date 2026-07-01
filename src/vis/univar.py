@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 from itertools import combinations
 import numpy as np
 from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, comparison_pair_widget
-from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, get_theme_color, format_group_label
+from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, get_theme_color, format_group_label, log_negative_error
 from src.feature_labels import format_feature_label
 
 def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab10"):
@@ -378,7 +378,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
     # Apply log transform if requested (consistent with bivar.py)
     if log_y:
         if (df[selected_var] < 0).any():
-            st.error(f"Cannot apply log to {selected_var}: contains negative values.")
+            st.error(log_negative_error(selected_var))
         else:
             df[selected_var] = np.log10(df[selected_var] + 1e-6)
     

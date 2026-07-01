@@ -103,6 +103,14 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
 
     return cat_label_map
 
+def _dup_values_msg(col, file):
+    return f"The {col} column in {file} has duplicate values. Please check the {col} column."
+
+
+def _fov_parts_msg(col, file, example):
+    return f"The {col} column in {file} has different number of parts. For example, check fov_name: {example}."
+
+
 def find_available_dfs_widget(df_folder_path, delimiter):
     unique_cell_id_col = get_unique_cell_id_col()
     fov_name_col = get_fov_name_col()
@@ -131,7 +139,7 @@ def find_available_dfs_widget(df_folder_path, delimiter):
             continue
         if unique_cell_id_col in df.columns and fov_name_col in df.columns:
             if df[unique_cell_id_col].duplicated().any():
-                st.warning(f"The {unique_cell_id_col} column in {file} has duplicate values. Please check the {unique_cell_id_col} column.")
+                st.warning(_dup_values_msg(unique_cell_id_col, file))
                 continue
             # check if the unique_row_id_col has value in all rows
             if df[unique_cell_id_col].isna().any():
@@ -144,7 +152,7 @@ def find_available_dfs_widget(df_folder_path, delimiter):
             # check if every cell_id is not in existing_cell_ids
             for cell_id in cell_ids:
                 if cell_id in existing_cell_ids:
-                    st.warning(f"The {unique_cell_id_col} column in {file} has duplicate values. Please check the {unique_cell_id_col} column.")
+                    st.warning(_dup_values_msg(unique_cell_id_col, file))
                     continue
             existing_cell_ids.extend(cell_ids)
 
@@ -160,7 +168,7 @@ def find_available_dfs_widget(df_folder_path, delimiter):
                 # find the first row that has different number of parts
                 first_row_with_different_parts = fov_names_parts.index(max(fov_names_parts))
                 first_row_with_different_parts_fov_name = fov_names[first_row_with_different_parts]
-                st.warning(f"The {fov_name_col} column in {file} has different number of parts. For example, check fov_name: {first_row_with_different_parts_fov_name}.")
+                st.warning(_fov_parts_msg(fov_name_col, file, first_row_with_different_parts_fov_name))
                 continue
             elif fov_names_parts[0] == 1:
                 st.warning(f"Playground failed to parse the {fov_name_col} column based on the delimiter: {delimiter}. For example, check fov_name: {fov_names[0]}.")
@@ -168,7 +176,7 @@ def find_available_dfs_widget(df_folder_path, delimiter):
             if prev_num_parts == 0:
                 prev_num_parts = fov_names_parts[0]
             elif prev_num_parts != fov_names_parts[0]:
-                st.warning(f"The {fov_name_col} column in {file} has different number of parts. For example, check fov_name: {fov_names[0]}.")
+                st.warning(_fov_parts_msg(fov_name_col, file, fov_names[0]))
                 continue
 
             available_csv_files.append(file)

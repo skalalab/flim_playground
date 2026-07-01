@@ -138,6 +138,39 @@ def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask
     single_cell_morph_features_fov = pd.DataFrame.from_dict(single_cell_morph_features_fov, orient='index')
     return "", single_cell_morph_features_fov
 
+_NO_CELLS_IN_MASK = "Error: No cells found in the mask"
+
+
+def _shifted_irf_missing(channel_name):
+    return f"Error: Shifted IRF is not provided for {channel_name}"
+
+
+def _invalid_total_amp_warning(cell_id):
+    return f"Warning: {cell_id} has an invalid total amplitude (fit failed or zero signal); derived lifetimes set to NaN. "
+
+
+def _read_fail_msg(channel_name, comp, path, e):
+    return f"Error: failed to read the {channel_name} {comp} file: {path}: {e}"
+
+
+def _shape_mismatch_msg(channel_name, comp, shape, mask_shape):
+    return f"Error: {channel_name} {comp} file has a different shape than the mask file: {shape} != {mask_shape}"
+
+
+def _load_masked_component(metadata, channel_name, comp, column, mask):
+    """Load an SPCImage component, mask zero (thresholded/background) pixels to NaN,
+    and check its shape against the mask. Returns (error_msg, masked_array);
+    error_msg is "" on success."""
+    try:
+        arr = load_image(metadata[column])
+        arr = np.ma.masked_array(arr, mask=arr == 0, fill_value=np.nan)
+    except Exception as e:
+        return _read_fail_msg(channel_name, comp, metadata[column], e), None
+    if mask.shape != arr.shape:
+        return _shape_mismatch_msg(channel_name, comp, arr.shape, mask.shape), None
+    return "", arr
+
+
 def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_colname):
 
     if num_components > 3 or num_components < 1:
@@ -149,34 +182,21 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
     try:
         mask = load_image(metadata[f"{channel_name}_Mask"])
     except Exception as e:
-        return f"Error: failed to read the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}", pd.DataFrame()
+        return _read_fail_msg(channel_name, "mask", metadata[f"{channel_name}_Mask"], e), pd.DataFrame()
    
-    try:
-        t1 = load_image(metadata[f"{channel_name}_SPCImage t1"])
-        t1 = np.ma.masked_array(t1, mask=t1==0, fill_value=np.nan)
-    except Exception as e:
-        return f"Error: failed to read the {channel_name} t1 file: {metadata[f'{channel_name}_SPCImage t1']}: {e}", pd.DataFrame()
-    if mask.shape != t1.shape:
-        return f"Error: {channel_name} t1 file has a different shape than the mask file: {t1.shape} != {mask.shape}", pd.DataFrame()
+    err, t1 = _load_masked_component(metadata, channel_name, "t1", f"{channel_name}_SPCImage t1", mask)
+    if err:
+        return err, pd.DataFrame()
     
     intensity_images[f"{fit_feature_prefix}t1"] = t1
 
     if num_components >= 2:
-        try:
-            a1 = load_image(metadata[f"{channel_name}_a1"])
-            # SPC image will output 0 for the thresholded pixels (background), so we need to mask them
-            a1 = np.ma.masked_array(a1, mask=a1==0, fill_value=np.nan)
-        except Exception as e:
-            return f"Error: failed to read the {channel_name} a1 file: {metadata[f'{channel_name}_a1']}: {e}", pd.DataFrame()
-        if mask.shape != a1.shape:
-            return f"Error: {channel_name} a1 file has a different shape than the mask file: {a1.shape} != {mask.shape}", pd.DataFrame()
-        try:
-            t2 = load_image(metadata[f"{channel_name}_t2"])
-            t2 = np.ma.masked_array(t2, mask=t2==0, fill_value=np.nan)
-        except Exception as e:
-            return f"Error: failed to read the {channel_name} t2 file: {metadata[f'{channel_name}_t2']}: {e}", pd.DataFrame()
-        if mask.shape != t2.shape:
-            return f"Error: {channel_name} t2 file has a different shape than the mask file: {t2.shape} != {mask.shape}", pd.DataFrame()
+        err, a1 = _load_masked_component(metadata, channel_name, "a1", f"{channel_name}_a1", mask)
+        if err:
+            return err, pd.DataFrame()
+        err, t2 = _load_masked_component(metadata, channel_name, "t2", f"{channel_name}_t2", mask)
+        if err:
+            return err, pd.DataFrame()
         
         intensity_images[f"{fit_feature_prefix}a1"] = a1
         intensity_images[f"{fit_feature_prefix}t2"] = t2
@@ -184,20 +204,12 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
             intensity_images[f"{channel_name}_a2"] = 100 - a1
 
     if num_components == 3:
-        try:
-            a2 = load_image(metadata[f"{channel_name}_a2"])
-            a2 = np.ma.masked_array(a2, mask=a2==0, fill_value=np.nan)
-        except Exception as e:
-            return f"Error: failed to read the {channel_name} a2 file: {metadata[f'{channel_name}_a2']}: {e}", pd.DataFrame()
-        if mask.shape != a2.shape:
-            return f"Error: {channel_name} a2 file has a different shape than the mask file: {a2.shape} != {mask.shape}", pd.DataFrame()
-        try:
-            t3 = load_image(metadata[f"{channel_name}_t3"])
-            t3 = np.ma.masked_array(t3, mask=t3==0, fill_value=np.nan)
-        except Exception as e:
-            return f"Error: failed to read the {channel_name} t3 file: {metadata[f'{channel_name}_t3']}: {e}", pd.DataFrame()
-        if mask.shape != t3.shape:
-            return f"Error: {channel_name} t3 file has a different shape than the mask file: {t3.shape} != {mask.shape}", pd.DataFrame()
+        err, a2 = _load_masked_component(metadata, channel_name, "a2", f"{channel_name}_a2", mask)
+        if err:
+            return err, pd.DataFrame()
+        err, t3 = _load_masked_component(metadata, channel_name, "t3", f"{channel_name}_t3", mask)
+        if err:
+            return err, pd.DataFrame()
         
         intensity_images[f"{fit_feature_prefix}a2"] = a2
         intensity_images[f"{fit_feature_prefix}t3"] = t3
@@ -226,7 +238,7 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
     unique_labels = unique_labels[unique_labels != 0]
     
     if len(unique_labels) == 0:
-        return "Error: No cells found in the mask", pd.DataFrame()
+        return _NO_CELLS_IN_MASK, pd.DataFrame()
 
     image_name = metadata[fov_colname]
     single_cell_features_img = {}
@@ -247,7 +259,7 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
    # convert single_cell_features_img to a dataframe
     single_cell_fit_features_fov = pd.DataFrame(single_cell_features_img).T
     if single_cell_fit_features_fov.empty:
-        return "Error: No cells found in the mask", pd.DataFrame()
+        return _NO_CELLS_IN_MASK, pd.DataFrame()
    
     return "", single_cell_fit_features_fov
 
@@ -305,7 +317,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
             # returns NaN params, and NaN == 0 is False, so check finiteness too.
             if not np.isfinite(total_amp) or total_amp == 0:
                 if not irf_degenerate:
-                    warning_msg += f"Warning: {cell_id} has an invalid total amplitude (fit failed or zero signal); derived lifetimes set to NaN. "
+                    warning_msg += _invalid_total_amp_warning(cell_id)
                 continue
             alpha1 = amp1 / total_amp
             alpha2 = amp2 / total_amp
@@ -334,7 +346,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
             # returns NaN params, and NaN == 0 is False, so check finiteness too.
             if not np.isfinite(total_amp) or total_amp == 0:
                 if not irf_degenerate:
-                    warning_msg += f"Warning: {cell_id} has an invalid total amplitude (fit failed or zero signal); derived lifetimes set to NaN. "
+                    warning_msg += _invalid_total_amp_warning(cell_id)
                 continue
             alpha1 = amp1 / total_amp
             alpha2 = amp2 / total_amp
@@ -409,7 +421,7 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
             g_irf, s_irf = get_raw_phasor(shifted_irf, h=1,  w=w, time_axis=time_axis, full_period=full_period)
             g_irf_2nd, s_irf_2nd = get_raw_phasor(shifted_irf, h=2,  w=w, time_axis=time_axis, full_period=full_period)
         else: 
-            return f"Error: Shifted IRF is not provided for {channel_name}", pd.DataFrame()
+            return _shifted_irf_missing(channel_name), pd.DataFrame()
     for cell_id, decay_curve in decay_curves.items():
         if cell_id not in single_cell_features_fov:
             single_cell_features_fov[cell_id] = {}
@@ -428,11 +440,8 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
             G, S = lifetime.phasor_calibrate(g_raw, s_raw, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=fluorescence_lifetime_standard_lifetime)
             G_2nd, S_2nd = lifetime.phasor_calibrate(g_raw_2nd, s_raw_2nd, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=fluorescence_lifetime_standard_lifetime, harmonic=2)
         else:
-            if shifted_irf is not None:
-                G, S = phasor.phasor_divide(g_raw, s_raw, g_irf, s_irf)
-                G_2nd, S_2nd = phasor.phasor_divide(g_raw_2nd, s_raw_2nd, g_irf_2nd, s_irf_2nd)
-            else:
-                return f"Error: Shifted IRF is not provided for {channel_name}", pd.DataFrame()
+            G, S = phasor.phasor_divide(g_raw, s_raw, g_irf, s_irf)
+            G_2nd, S_2nd = phasor.phasor_divide(g_raw_2nd, s_raw_2nd, g_irf_2nd, s_irf_2nd)
 
         phi = np.arctan2(S, G) 
         mod = np.sqrt(G**2 + S**2)

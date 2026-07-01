@@ -1,6 +1,15 @@
 from pathlib import Path
 from src.config import get_available_feature_extractors, get_file_types, get_fov_name_col, get_unique_cell_id_col
 
+
+def _not_found(desc):
+    return f"{desc} not found in metadata file."
+
+
+def _inconsistent(desc):
+    return f"{desc} is not consistent."
+
+
 def get_ch_info(metadata_df):
     # get available channels in the metadata file
     # use the {channel_name}_input_type column name to get available channels
@@ -22,14 +31,14 @@ def get_ch_info(metadata_df):
         input_type_col = f"{channel_name}_input_type"
         # check for consistency of input type
         if metadata_df[input_type_col].nunique() != 1:
-            return f"Input type column {input_type_col} is not consistent.", None
+            return _inconsistent(f"Input type column {input_type_col}"), None
         input_type = metadata_df[input_type_col].iloc[0]
         metadata_dict[channel_name]["input_type"] = input_type
 
          # get imaging modality
         imaging_modality_col = f"{channel_name}_imaging_modality"
         if imaging_modality_col not in metadata_df.columns:
-            return f"Imaging modality column {imaging_modality_col} not found in metadata file.", None
+            return _not_found(f"Imaging modality column {imaging_modality_col}"), None
         metadata_dict[channel_name]["imaging_modality"] = metadata_df[imaging_modality_col].iloc[0]
         if metadata_dict[channel_name]["imaging_modality"] == "FLIM":
             # get decay input type
@@ -57,7 +66,7 @@ def get_ch_info(metadata_df):
         if "Lifetime fit" in selected_feature_extractors:
             num_components_col = f"{channel_name}_num_components"
             if num_components_col not in metadata_df.columns:
-                return f"Num components column {num_components_col} not found in metadata file.", None
+                return _not_found(f"Num components column {num_components_col}"), None
             metadata_dict[channel_name]["num_components"] = metadata_df[num_components_col].iloc[0]
             if "prefitted" not in input_type:
                 # use fitting to find the shift, if it is already fitted, then do not use fitting to find shift (if needed)
@@ -90,7 +99,7 @@ def get_ch_info(metadata_df):
                     # only lifetime fit is selected, and data is prefitted, no decay channel needed
                     continue
             if f"{channel_name}_channel" not in metadata_df.columns:
-                return f"Channel number column {channel_name}_channel not found in metadata file.", None
+                return _not_found(f"Channel number column {channel_name}_channel"), None
             else:
                 metadata_dict[channel_name]["channel_no"] = metadata_df[f"{channel_name}_channel"].iloc[0]
 
@@ -100,42 +109,42 @@ def get_ch_info(metadata_df):
     if fit_free:    # laser rate is only needed when fit free 
         if "laser_rate" in metadata_df.columns:
             if metadata_df["laser_rate"].nunique() != 1:
-                return "Laser rate column laser_rate is not consistent.", None
+                return _inconsistent("Laser rate column laser_rate"), None
             metadata_dict["laser_rate"] = metadata_df["laser_rate"].iloc[0]
         else:
-            return f"Laser rate column laser_rate not found in metadata file.", None
+            return _not_found("Laser rate column laser_rate"), None
         
         if "fit_free_calibration_method" in metadata_df.columns:
             if metadata_df["fit_free_calibration_method"].nunique() != 1:
-                return "Fit free calibration method column fit_free_calibration_method is not consistent.", None
+                return _inconsistent("Fit free calibration method column fit_free_calibration_method"), None
             metadata_dict["fit_free_calibration_method"] = metadata_df["fit_free_calibration_method"].iloc[0]
             if metadata_dict["fit_free_calibration_method"] == "Fluorescence Lifetime Standard":
                 # lifetime is global and must be present
                 if "fluorescence_lifetime_standard_lifetime" in metadata_df.columns:
                     if metadata_df["fluorescence_lifetime_standard_lifetime"].nunique() != 1:
-                        return "Fluorescence lifetime standard's lifetime column fluorescence_lifetime_standard_lifetime is not consistent.", None
+                        return _inconsistent("Fluorescence lifetime standard's lifetime column fluorescence_lifetime_standard_lifetime"), None
                     metadata_dict["fluorescence_lifetime_standard_lifetime"] = metadata_df["fluorescence_lifetime_standard_lifetime"].iloc[0]
                 else:
-                    return "Fluorescence lifetime standard's lifetime column fluorescence_lifetime_standard_lifetime not found in metadata file.", None
+                    return _not_found("Fluorescence lifetime standard's lifetime column fluorescence_lifetime_standard_lifetime"), None
                 # channel-specific fluorescence lifetime standard file and time axis
                 for channel_name in metadata_dict["channel_names"]:
                     if "Lifetime fit free" not in metadata_dict[channel_name]["selected_feature_extractors"]:
                         continue
                     ref_col = f"{channel_name}_Fluorescence Lifetime Standard"
                     if ref_col not in metadata_df.columns:
-                        return f"Fluorescence lifetime standard's file column {ref_col} not found in metadata file.", None
+                        return _not_found(f"Fluorescence lifetime standard's file column {ref_col}"), None
                     # Must be consistent across rows
                     if metadata_df[ref_col].nunique() != 1:
-                        return f"Fluorescence lifetime standard's file column {ref_col} is not consistent.", None
+                        return _inconsistent(f"Fluorescence lifetime standard's file column {ref_col}"), None
                     metadata_dict[channel_name]["fluorescence_lifetime_standard_file"] = metadata_df[ref_col].iloc[0]
                     time_axis_col = f"{channel_name}_fluorescence_lifetime_standard_time_axis"
                     if time_axis_col not in metadata_df.columns:
-                        return f"Fluorescence lifetime standard's time axis column `{time_axis_col}` not found in metadata file.", None
+                        return _not_found(f"Fluorescence lifetime standard's time axis column `{time_axis_col}`"), None
                     if metadata_df[time_axis_col].nunique() != 1:
-                        return f"Fluorescence lifetime standard's time axis column {time_axis_col} is not consistent.", None
+                        return _inconsistent(f"Fluorescence lifetime standard's time axis column {time_axis_col}"), None
                     metadata_dict[channel_name]["fluorescence_lifetime_standard_time_axis"] = metadata_df[time_axis_col].iloc[0]
         else:
-            return "Fit free calibration method column fit_free_calibration_method not found in metadata file.", None
+            return _not_found("Fit free calibration method column fit_free_calibration_method"), None
 
     return "", metadata_dict
 
@@ -147,7 +156,7 @@ def parse_metadata_file(metadata_df, fov_name_col):
     """
     # check for required column
     if fov_name_col not in metadata_df.columns:
-       return f"Column of field of view names `{fov_name_col}` not found in metadata file.", None
+       return _not_found(f"Column of field of view names `{fov_name_col}`"), None
     # check for unique image name
     if metadata_df[fov_name_col].duplicated().any():
         return f"Field of view names are not unique. Check the column `{fov_name_col}`.", None
@@ -185,15 +194,15 @@ def parse_metadata_file(metadata_df, fov_name_col):
         # check for time bins, duration
         if "time_bins" in metadata_df.columns:
             if metadata_df["time_bins"].nunique() != 1:
-                return f"Time bins column time_bins is not consistent.", None
+                return _inconsistent("Time bins column time_bins"), None
             metadata_dict["time_bins"] = metadata_df["time_bins"].iloc[0]
         else:
-            return f"Time bins column time_bins not found in metadata file.", None
+            return _not_found("Time bins column time_bins"), None
         if "duration" in metadata_df.columns:
             if metadata_df["duration"].nunique() != 1:
-                return f"Duration column duration is not consistent.", None
+                return _inconsistent("Duration column duration"), None
             metadata_dict["duration"] = metadata_df["duration"].iloc[0]
         else:
-            return f"Duration column duration not found in metadata file.", None
+            return _not_found("Duration column duration"), None
 
     return error_msg, metadata_dict

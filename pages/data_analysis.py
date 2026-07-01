@@ -12,7 +12,7 @@ from src.navigation import render_top_menu
 from src.vis.multivar import dimension_reduction_plot
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
 from src.vis.univar import fov_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
-from src.vis.helpers import apply_plot_styling
+from src.vis.helpers import apply_plot_styling, log_negative_error
 from src.vis.plot_defaults import (
     DEFAULT_AXIS_LABEL_FONT_SIZE,
     DEFAULT_COLORMAP,
@@ -346,7 +346,7 @@ with col2:
                         if log_x:
                             import numpy as np
                             if (filtered_df[selected_var] < 0).any():
-                                st.error(f"Cannot apply log to {selected_var}: contains negative values.")
+                                st.error(log_negative_error(selected_var))
                             else:
                                 filtered_df = filtered_df.copy()
                                 filtered_df[selected_var] = np.log10(filtered_df[selected_var] + 1e-6)

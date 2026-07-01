@@ -10,6 +10,11 @@ import re
 import plotly.graph_objects as go
 from streamlit_theme import st_theme
 
+
+def log_negative_error(var_name):
+    return f"Cannot apply log to {var_name}: contains negative values."
+
+
 def get_theme_color(key="theme_color_detector"):
     """Get plot color based on current system theme (light/dark mode).
     

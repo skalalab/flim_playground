@@ -1,4 +1,4 @@
-from .helpers import _find_best_gmm, get_point_visual_mappings, add_interleaved_points_trace, get_theme_color
+from .helpers import _find_best_gmm, get_point_visual_mappings, add_interleaved_points_trace, get_theme_color, log_negative_error
 from src.feature_labels import format_feature_label
 import plotly.graph_objects as go
 import numpy as np
@@ -263,12 +263,12 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
 
     if log_x:
         if (df[selected_x] < 0).any():
-            st.error(f"Cannot apply log to {selected_x}: contains negative values.")
+            st.error(log_negative_error(selected_x))
         else:
             df[selected_x] = np.log10(df[selected_x] + 1e-6)
     if log_y:
         if (df[selected_y] < 0).any():
-            st.error(f"Cannot apply log to {selected_y}: contains negative values.")
+            st.error(log_negative_error(selected_y))
         else:
             df[selected_y] = np.log10(df[selected_y] + 1e-6)
 

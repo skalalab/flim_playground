@@ -73,6 +73,14 @@ def _get_sample_decay_curves(decays: pd.DataFrame, n_samples: int, max_intensity
         top_indices = filtered_indices[:n_samples]
     return decays.iloc[top_indices].values, top_indices
 
+def _decay_shape_msg(expected, shape):
+    return f"Decay data mismatch. Expected {expected}, got {shape}."
+
+
+def _time_bins_msg(actual, expected):
+    return f"Decay time bins mismatch. Decay time bins: {actual}, time bins: {expected}."
+
+
 def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=True):
 
     # step 1 file check
@@ -111,9 +119,9 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
             except Exception as e:
                 return f"Error reading the decay file for {fov_name_col} {fov_name} at {decay_path}: {e}", None
             if len(decay.shape) != 3:
-                return f"Decay data mismatch. Expected 3D data (XYT), got {decay.shape}.", None
+                return _decay_shape_msg("3D data (XYT)", decay.shape), None
             if decay.shape[-1] != time_bins:
-                return f"Decay time bins mismatch. Decay time bins: {decay.shape[2]}, time bins: {time_bins}.", None
+                return _time_bins_msg(decay.shape[2], time_bins), None
             if len(mask.shape) != 2:
                 return f"Mask data mismatch. Expected 2D data, got {mask.shape}.", None
             if decay.shape[0] != mask.shape[0] or decay.shape[1] != mask.shape[1]:
@@ -145,10 +153,10 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
                 return f"Decay file {os.path.basename(decay_path)} contains non-numeric columns. Expected all columns to be numeric time bins.", None
 
             if len(decays.shape) != 2:
-                return f"Decay data mismatch. Expected 2D data, got {decays.shape}.", None
+                return _decay_shape_msg("2D data", decays.shape), None
                 
             if decays.shape[1] != time_bins:
-                return f"Decay time bins mismatch. Decay time bins: {decays.shape[1]}, time bins: {time_bins}.", None 
+                return _time_bins_msg(decays.shape[1], time_bins), None 
             
             if shift:
                 # get sample decay curves from each kflow experiment, totoalling at 30 samples 

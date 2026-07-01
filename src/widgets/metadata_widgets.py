@@ -19,7 +19,7 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
     """
     """
     actual_file_suffix = {}
-    error_msg = ""
+    error_lines = []
     t1_suffix_list = []
     mask_suffix_list = {}
     if any("prefitted" in input_type for input_type in input_types.values()):
@@ -28,8 +28,7 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
         input_type = input_types[channel_key]
         file_suffixes = get_default_file_suffixes(channel_key, input_type, selected_feature_extractors[channel_key])
         if len(file_suffixes) == 0:
-            error_msg += f"No file suffixes found for {channel_name} {sad_emoji}"
-            return "", error_msg
+            return "", f"No file suffixes found for {channel_name} {sad_emoji}"
         else: 
             actual_file_suffix[channel_name] = file_suffixes
 
@@ -37,10 +36,6 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
         num_cols = 3
         cols = st.columns(num_cols)
         for j, (file_type, default_suffix) in enumerate(actual_file_suffix[channel_name].items()):
-            if file_type == "SPCImage t1":
-                t1_suffix_list.append(default_suffix)
-            elif file_type == "Mask":
-                mask_suffix_list[channel_name] = default_suffix
             col = cols[j % num_cols]
             with col:
                 # only show the help message for the first file type of the first channel
@@ -52,10 +47,18 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
                     help_msg = None
                 suffix = st.text_input(f"{file_type}", default_suffix, key=f"{channel_name}_{input_type}_{file_type}_suffix", help=help_msg)
                 if suffix == "":
-                    error_msg += f"Please provide a suffix for {file_type} {sad_emoji}"
+                    error_lines.append(f"Please provide a suffix for {file_type} in {channel_name}")
                 else:
                     actual_file_suffix[channel_name][file_type] = suffix
-        if "prefitted" in input_type and error_msg == "": # write the spc outputs' suffixes for this channel
+            # Track the ACTUAL entered (non-empty) suffixes for the cross-channel
+            # checks below; empty ones are already reported above as missing, so
+            # they must not masquerade as duplicates.
+            if suffix != "":
+                if file_type == "SPCImage t1":
+                    t1_suffix_list.append(suffix)
+                elif file_type == "Mask":
+                    mask_suffix_list[channel_name] = suffix
+        if "prefitted" in input_type and not error_lines: # write the spc outputs' suffixes for this channel
             if channel_name in selected_ch_num_components and selected_ch_num_components[channel_name] != 0:
                 num_components = selected_ch_num_components[channel_name]
                 # t1 is already provided, so no need to generate the others
@@ -68,9 +71,11 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
                 for key in needed_suffix:
                     actual_file_suffix[channel_name][key] = actual_file_suffix[channel_name]["SPCImage t1"].replace(spc_output_suffix["t1"], spc_output_suffix[key])
 
-    # check for duplicates in t1_suffix_list
+    # check for duplicate t1 suffixes across channels — only non-empty, actually
+    # entered suffixes were collected, so missing ones no longer show up as an
+    # empty-string "duplicate".
     if len(set(t1_suffix_list)) != len(t1_suffix_list):
-        error_msg += f"Duplicate t1 suffixes found: {t1_suffix_list} {sad_emoji}\n"
+        error_lines.append(f"Duplicate t1 suffixes found: {t1_suffix_list}")
 
     # output info message for channels that share the same mask suffix
     mask_suffix_seen = {}
@@ -82,6 +87,10 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
     for mask_suffix, channel_names in mask_suffix_seen.items():
         if len(channel_names) > 1:
             st.info(f"Channels {channel_names} share the same mask suffix: {mask_suffix}")
+
+    # Combine the collected problems into one de-duplicated, line-separated
+    # message (blank line between items so st.error renders them on separate rows).
+    error_msg = "\n\n".join(f"{line} {sad_emoji}" for line in dict.fromkeys(error_lines))
 
     # flatten the actual_file_suffix dictionary
     actual_file_suffix_dict = {}
@@ -376,6 +385,14 @@ def check_raw_intensity_data(fov_df, channel_name):
     else:
         return "", dimension_list[0]
 
+def _inconsistent_selected(x):
+    return f"Inconsistent {x} found for the selected channels. Please check the data."
+
+
+def _none_selected(x):
+    return f"No {x} found for the selected channels. Please check the data."
+
+
 def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type, imaging_modalities, selected_ch_feature_extractors, duration=None, time_bins=None):   
     error_msg = ""
     time_bins_list = []
@@ -438,27 +455,27 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
             continue
 
     if len(set(time_bins_list)) > 1:
-        return "Inconsistent time bins found for the selected channels. Please check the data.", None
+        return _inconsistent_selected("time bins"), None
     elif len(time_bins_list) == 0:
         if has_flim:
-            return "No time bins found for the selected channels. Please check the data.", None
+            return _none_selected("time bins"), None
     else:
         fov_df["time_bins"] = time_bins_list[0]
 
     if len(set(laser_rep_time_list)) > 1:
-        return "Inconsistent laser rep time found for the selected channels. Please check the data.", None
+        return _inconsistent_selected("laser rep time"), None
     elif len(laser_rep_time_list) == 0:
          # in 2d decay, the laser rep time is given by the user, so no way to check it here
         if has_3_4D_decay:
-            return "No laser rep time found for the selected channels. Please check the data.", None
+            return _none_selected("laser rep time"), None
     else:
         fov_df["duration"] = laser_rep_time_list[0]
 
     if len(set(fov_dimensions_list)) > 1:
-        return "Inconsistent fov spatial dimensions found for the selected channels. Please check the data.", None
+        return _inconsistent_selected("fov spatial dimensions"), None
     elif len(fov_dimensions_list) == 0:
         if has_intensity_only or has_3_4D_decay:
-            return "No fov dimensions found for the selected channels. Please check the data.", None
+            return _none_selected("fov dimensions"), None
     else:
         # Store as string to avoid hashing issues in caching
         fov_df["fov_dimensions"] = [str(fov_dimensions_list[0])] * len(fov_df)
