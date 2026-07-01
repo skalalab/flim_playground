@@ -260,8 +260,10 @@ def main():
             if "Lifetime fit" in selected_feature_extractors:
                 num_components = st.number_input(f"Number of components for {custom_channel_name}", value=cfg[channel_key][input_type].get("num_components", 1), min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis", key=f"num_components_{channel_key}_{input_type}_{active}")
                 cfg[channel_key][input_type]["num_components"] = num_components
-                # Fixed-lifetime defaults (per component)
-                if num_components > 1:
+                # Fixed-lifetime defaults (per component). Only meaningful when the
+                # app actually fits the decay — prefitted (SPCImage .asc) channels are
+                # read, not fit, so fixing τ has no effect and the UI is hidden.
+                if num_components > 1 and "prefitted" not in input_type:
                     if "fixed_lifetimes" not in cfg[channel_key][input_type]:
                         cfg[channel_key][input_type]["fixed_lifetimes"] = {}
                     st.caption("Fix lifetime components (ns) — set 0 to fit freely:")
