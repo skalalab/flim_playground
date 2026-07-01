@@ -149,11 +149,16 @@ def find_available_dfs_widget(df_folder_path, delimiter):
             # reject if not
             cell_ids = df[unique_cell_id_col].tolist()
             fov_names = df[fov_name_col].unique()
-            # check if every cell_id is not in existing_cell_ids
-            for cell_id in cell_ids:
-                if cell_id in existing_cell_ids:
-                    st.warning(_dup_values_msg(unique_cell_id_col, file))
-                    continue
+            # If any cell_id here was already seen in a previously-loaded file, the
+            # ids collide across files: warn ONCE and skip this file (consistent with
+            # the checks above, which each warn and `continue`). The old code put the
+            # warning inside the per-cell loop, so a fully-overlapping file printed the
+            # identical warning once per row; its `continue` also only advanced the
+            # inner loop, so the colliding file was not actually skipped.
+            existing_ids = set(existing_cell_ids)
+            if any(cell_id in existing_ids for cell_id in cell_ids):
+                st.warning(_dup_values_msg(unique_cell_id_col, file))
+                continue
             existing_cell_ids.extend(cell_ids)
 
             if delimiter == "":
