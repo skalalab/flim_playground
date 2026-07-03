@@ -1,0 +1,65 @@
+name: Build executables
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x64
+          - os: macos-latest
+            name: macos-arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Build with PyInstaller
+        run: uv run pyinstaller Flim-Playground.spec --clean
+
+      # macOS ships as tar.gz so the executable bit survives download —
+      # zip artifacts and browser downloads strip it. Tarring dist/Flim-Playground
+      # with the dist/ prefix matches the assets of past releases.
+      - name: Stage release files
+        shell: bash
+        run: |
+          mkdir -p release
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            tar -czf release/Flim-Playground-mac.tar.gz dist/Flim-Playground
+          else
+            cp dist/Flim-Playground.exe release/
+          fi
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Flim-Playground-${{ matrix.name }}
+          path: release/*
+          if-no-files-found: error
+
+      - name: Attach to GitHub release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload '${{ github.event.release.tag_name }}' release/* --clobber
