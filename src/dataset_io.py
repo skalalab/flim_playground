@@ -22,8 +22,21 @@ happy_celebratory_emojis = [
     "👍",  # Thumbs Up
     "😉",
     "💛", 
-    "🩵"
-
+    "🩵",
+    "🍰",  # Shortcake
+    "🌟",  # Glowing Star
+    "💃",  # Woman Dancing
+    "🕺",  # Man Dancing
+    "🚀",  # Rocket
+    "🌈",  # Rainbow
+    "🦄",  # Unicorn
+    "🎨",  # Artist Palette
+    "🏆",  # Trophy
+    "🏅",  # Sports Medal
+    "🎯",  # Bullseye
+    "🎡",  # Ferris Wheel
+    "🧸",  # Teddy Bear
+    "😸"   # Grinning Cat with Smiling Eyes
 ]
 sad_regretful_emojis = [
     "😥",  # Sad but Relieved Face
@@ -41,7 +54,25 @@ sad_regretful_emojis = [
     "🤒",
     "🥶",
     "😖",
-    "😫"
+    "😫",
+    "😩",  # Weary Face
+    "☹️",  # Frowning Face
+    "🙁",  # Slightly Frowning Face
+    "😿",  # Crying Cat
+    "😓",  # Downcast Face with Sweat
+    "😰",  # Anxious Face with Sweat
+    "🫠",  # Melting Face
+    "🥀",  # Wilted Flower
+    "🌫️",  # Fog
+    "📉",  # Chart Decreasing
+    "🤕",  # Face with Head-Bandage
+    "🥵",  # Hot Face
+    "😵‍💫", # Face with Spiral Eyes
+    "🤦",  # Person Facepalming
+    "😠",  # Angry Face
+    "😡",  # Enraged Face
+    "😾",  # Pouting Cat
+    "😤"   # Face with Steam from Nose
 ]
 
 # Choose a random happy/celebratory emoji
