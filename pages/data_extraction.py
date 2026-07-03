@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import json
 import pandas as pd
 import time
 from src.navigation import render_top_menu
@@ -9,7 +10,7 @@ from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.lifetime_widgets import fit_options_widget, choose_shift_widget
 from src.metadata import parse_metadata_file
-from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type, get_fit_free_calibration_method, get_fixed_lifetimes, get_current_profile_name
+from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type, get_fit_free_calibration_method, get_fixed_lifetimes, get_current_profile_name, get_derived_features
 from src.file_io import load_image
 
 st.set_page_config(layout="wide")
@@ -246,7 +247,13 @@ def prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components):
             for t_key in ["t1", "t2", "t3"]:
                 val = fixed_lts.get(t_key)  # None or float
                 fov_df[f"{channel_name}_fixed_{t_key}"] = val
-    
+
+    # Serialize derived-feature definitions into one JSON column, repeated per row
+    # (a global setting, like laser_rate). This bakes the formulas into the
+    # metadata CSV so re-running a saved CSV reproduces the same "Derived: *"
+    # columns regardless of later config edits (see src/derived_features.py).
+    fov_df["derived_features"] = json.dumps(get_derived_features())
+
     return fov_df
 
 def validate_fluorescence_lifetime_standard_per_channel(fov_df, selected_channels, fit_free_calibration_method, time_bins, fluorescence_lifetime_standard_lifetime):

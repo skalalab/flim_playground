@@ -228,6 +228,31 @@ def get_categorical_cols() -> list:
     cfg = _load_active_profile_cfg()
     return cfg.get("categorical_cols", [])
 
+def get_derived_features() -> list:
+    """Return the active profile's derived-feature definitions.
+
+    Each entry is a dict ``{"name": str, "expression": str, "operands": list[str]}``
+    where ``expression`` uses positional aliases (A, B, …) mapped to ``operands``.
+    Empty list when the profile defines none — backward-compatible with older
+    configs that lack the key.
+    """
+    return _load_active_profile_cfg().get("derived_features", [])
+
+def set_derived_features(derived_features: list, config_path: Optional[Path] = None) -> None:
+    """Persist the active profile's derived-feature list immediately.
+
+    Mirrors the profile create/delete/switch helpers (load → mutate one key →
+    save), so an added/deleted derived feature survives a Streamlit rerun without
+    waiting for the page-level "Update Configuration" save. Only the
+    ``derived_features`` key of the active profile is touched; everything else on
+    disk is preserved.
+    """
+    cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
+    current = cfg.get("current_profile", "default")
+    cfg.setdefault("profiles", {}).setdefault(current, {})
+    cfg["profiles"][current]["derived_features"] = derived_features
+    save_config(cfg, config_path)
+
 def get_fit_free_calibration_method(input_type: str) -> str:
     cfg = _load_active_profile_cfg()
     method = cfg.get(input_type, {}).get("fit_free_calibration", "")

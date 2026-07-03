@@ -123,6 +123,11 @@ def get_feature_groups_data_extraction(cols):
     for col in cols:
         # column format: extractor_channelName:feature_name
         # e.g. "Lifetime fit_Channel 1: G(1st)"
+        # Derived features form a single cross-channel group; their name has no
+        # "{extractor}_{channel}" structure, so bucket them before the splits.
+        if col.startswith("Derived: "):
+            feature_groups_dict.setdefault("Derived Features", []).append(col)
+            continue
         # first split by ":"
         try:
             extractor_channel, feature = col.split(": ")

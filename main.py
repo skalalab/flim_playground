@@ -328,6 +328,19 @@ def main():
     categorical_cols = st.multiselect("Categorical columns (type to add more)", cfg.get("categorical_cols", []), default=cfg.get("categorical_cols", []),  accept_new_options=True, key=f"categorical_cols_{active}")
     cfg["categorical_cols"] = categorical_cols
 
+    # Derived features (arithmetic over extracted features) live in their own
+    # widget module, revealed by a checkbox. A checkbox (not st.expander) so the
+    # section description can be a hover "?" help; default it on when the profile
+    # already defines derived features, so those aren't hidden behind an off tick.
+    from src.widgets.derived_features_widgets import render_derived_features_widget, DERIVED_FEATURES_HELP
+    if st.checkbox(
+        "Derived features",
+        value=bool(cfg.get("derived_features")),
+        key=f"show_derived_features_{active}",
+        help=DERIVED_FEATURES_HELP,
+    ):
+        render_derived_features_widget(cfg, active)
+
     # Check if we should show a success message from previous update
     if st.session_state.get("config_updated", False):
         st.success("Configuration updated!")

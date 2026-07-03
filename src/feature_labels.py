@@ -36,6 +36,10 @@ def format_feature_label(column_name, engine="plotly"):
     if not isinstance(column_name, str):
         return column_name
 
+    # Derived features carry no fixed unit/notation; show the user-given name.
+    if column_name.startswith("Derived: "):
+        return column_name.split(": ", 1)[1]
+
     # feature key (text after ": ") -> (symbol, unit). Empty unit => dimensionless.
     feature_labels = {
         # lifetime fit

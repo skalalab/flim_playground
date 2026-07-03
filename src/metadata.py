@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from src.config import get_available_feature_extractors, get_file_types, get_fov_name_col, get_unique_cell_id_col
 
@@ -204,5 +205,19 @@ def parse_metadata_file(metadata_df, fov_name_col):
             metadata_dict["duration"] = metadata_df["duration"].iloc[0]
         else:
             return _not_found("Duration column duration"), None
+
+    # Derived-feature definitions travel in the metadata CSV as a single JSON
+    # column, repeated per row (a global setting, like laser_rate/time_bins).
+    # Reading them here — not from live config — is what makes a saved metadata
+    # CSV replayable: the baked formulas reproduce the same derived columns.
+    # Absent column (older CSVs) or unparsable JSON both fall back to [].
+    if "derived_features" in metadata_df.columns:
+        raw = metadata_df["derived_features"].iloc[0]
+        try:
+            metadata_dict["derived_features"] = json.loads(raw) if isinstance(raw, str) and raw else []
+        except (ValueError, TypeError):
+            metadata_dict["derived_features"] = []
+    else:
+        metadata_dict["derived_features"] = []
 
     return error_msg, metadata_dict

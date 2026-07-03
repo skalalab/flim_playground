@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from src.fov_extraction import fov_extraction
+from src.derived_features import compute_derived_features
 
 
 def check_fov_features(single_fov_cell_features):
@@ -52,5 +53,29 @@ def fov_extraction_widget(metadata_df, metadata_dict, num_cols=3):
                         single_cell_features_fov = check_fov_features(single_cell_features_fov)
                         st.success("✅ Success!")
                         single_cell_features = pd.concat([single_cell_features, single_cell_features_fov])
+
+    # Append derived-feature columns computed from the baked metadata definitions
+    # (not live config), so a replayed metadata CSV reproduces the same output.
+    if not single_cell_features.empty:
+        cols_before = set(single_cell_features.columns)
+        single_cell_features, derived_warnings = compute_derived_features(
+            single_cell_features, metadata_dict.get("derived_features", [])
+        )
+        for warning in derived_warnings:
+            st.warning(warning)
+        # Surface NaN in the new derived columns. check_fov_features() runs per FOV
+        # *before* derived columns exist, so a divide-by-zero -> NaN (or NaN inherited
+        # from a NaN operand) would otherwise go unreported, unlike base-feature NaNs.
+        total_cells = len(single_cell_features)
+        new_derived_cols = [c for c in single_cell_features.columns
+                            if c.startswith("Derived: ") and c not in cols_before]
+        for col in new_derived_cols:
+            nan_cells = int(single_cell_features[col].isna().sum())
+            if nan_cells > 0:
+                name = col.split(": ", 1)[1]
+                st.warning(
+                    f"Derived feature **{name}** has **{nan_cells}** NaN value(s) out "
+                    f"of {total_cells} cell(s) (e.g. from divide-by-zero or a NaN operand)."
+                )
 
     return single_cell_features
