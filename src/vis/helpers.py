@@ -51,10 +51,12 @@ def glass_delta(group1, group2, mean_or_median):
         group1_sd = np.std(group1, ddof=1)  # Using Bessel's correction with ddof=1
     else:
         diff = np.median(group2) - np.median(group1)
-        # use MAD (median_absolute_deviation) 
+        # use MAD (median_absolute_deviation)
         # scale: normal: divides by 0.67449 → multiplies by 1.4826 internally
-        group1_sd = median_abs_deviation(group1, scale='normal') 
-    
+        group1_sd = median_abs_deviation(group1, scale='normal')
+
+    if group1_sd == 0:  # constant control group -> effect size undefined (avoid inf/nan divide)
+        return np.nan
     return diff / group1_sd
 
 def cohens_d(group1, group2, mean_or_median):
@@ -74,6 +76,8 @@ def cohens_d(group1, group2, mean_or_median):
         mad_1, mad_2 = median_abs_deviation(group1, scale="normal"), median_abs_deviation(group2, scale="normal")
         pooled_sd = np.sqrt(((n1 - 1) * mad_1**2 + (n2 - 1) * mad_2**2) /
                      (n1 + n2 - 2))
+    if pooled_sd == 0:  # no pooled spread -> effect size undefined (avoid inf/nan divide)
+        return np.nan
     return abs(diff / pooled_sd)
 
 def create_opacity_mapping(groups, min_opacity=0.3, max_opacity=1.0):
@@ -738,13 +742,24 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
 def _estimate_density_1d(y_values, bw_method='scott'):
     """
     Estimate the density of y_values using KDE. Returns a function that maps y to density.
-    """
 
-    y_values = np.asarray(y_values)
-    if len(y_values) < 2:
-        return lambda y: np.zeros_like(np.asarray(y))
-    kde = gaussian_kde(y_values, bw_method=bw_method)
-    return kde
+    Degenerate inputs have no well-defined KDE and make gaussian_kde raise
+    LinAlgError on a singular covariance matrix: fewer than 2 finite points, or zero
+    variance (a constant column — e.g. an all-zero feature). In those cases return a
+    zero-density fallback so callers still render points/box without a density shape,
+    instead of the LinAlgError aborting the whole plot.
+    """
+    y_values = np.asarray(y_values, dtype=float)
+    y_values = y_values[np.isfinite(y_values)]
+    zero_density = lambda y: np.zeros_like(np.asarray(y, dtype=float))
+    if len(y_values) < 2 or np.ptp(y_values) == 0:
+        return zero_density
+    try:
+        return gaussian_kde(y_values, bw_method=bw_method)
+    except np.linalg.LinAlgError:
+        # Near-singular covariance (e.g. all-but-one identical) can still slip past
+        # the ptp check; fall back rather than crash.
+        return zero_density
 
 def add_interleaved_points_trace(
     fig,

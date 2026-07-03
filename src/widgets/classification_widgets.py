@@ -162,12 +162,14 @@ def classifier_hyperparams_widget(classifier):
 
 
 def classifier_options_widget(df, categorical_cols, fov_name_col, selected_features, classifier, splits):
-    classify_by_options = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1 and category != fov_name_col]
+    available_categories = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1 and category != fov_name_col]
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        if len(classify_by_options) > 0:
-            classify_by_options = st.multiselect("Classify by", classify_by_options, default=classify_by_options[-1], key="classify_by_multiselect")
+        if len(available_categories) > 0:
+            classify_by_options = st.multiselect("Classify by", available_categories, default=available_categories[-1], key="classify_by_multiselect")
+        else:
+            classify_by_options = []
     with col2:
         sampling_method = st.selectbox("Sampling method", ["None", "Undersampling", "Oversampling"], help="Undersampling: Randomly remove samples from the majority class. Oversampling: Randomly duplicate samples from the minority class.")
 
@@ -182,6 +184,8 @@ def classifier_options_widget(df, categorical_cols, fov_name_col, selected_featu
     with col4:
         threshold_method = st.selectbox("Threshold tuning based on", ["None", "Balanced Accuracy", "F1 Score"])
 
+    if len(available_categories) == 0:
+        return f"No categorical feature available for classification. Classification requires a categorical column with at least two distinct values {sad_emoji}.", None, None, None, None
     if len(classify_by_options) == 0:
         return "Please select at least one category for classification.", None, None, None, None
 

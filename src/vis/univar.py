@@ -381,7 +381,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             st.error(log_negative_error(selected_var))
         else:
             df[selected_var] = np.log10(df[selected_var] + 1e-6)
-    
+
     fig = go.Figure()
     COLOR_GROUP_COL_NAME = 'compare_group'
     # Use the new helper for color, shape, opacity
@@ -567,7 +567,9 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         if len(densities) > 0 and np.max(densities) > 0:
             norm_densities = densities / np.max(densities)
         else:
-            norm_densities = np.zeros_like(densities)
+            # Degenerate density (a constant column has no KDE): spread points with
+            # uniform jitter so they stay visible instead of stacking into one dot.
+            norm_densities = np.ones_like(densities)
         # Randomly assign sign to spread points left/right
         rng = np.random.default_rng(seed=42)
         jitter_offsets = (rng.uniform(-1, 1, size=len(y_data))) * norm_densities * max_jitter
