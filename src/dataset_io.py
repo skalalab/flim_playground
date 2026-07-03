@@ -36,7 +36,16 @@ happy_celebratory_emojis = [
     "🎯",  # Bullseye
     "🎡",  # Ferris Wheel
     "🧸",  # Teddy Bear
-    "😸"   # Grinning Cat with Smiling Eyes
+    "😸",  # Grinning Cat with Smiling Eyes
+    "🛝",  # Slide
+    "🎠",  # Carousel Horse
+    "🎢",  # Roller Coaster
+    "🪁",  # Kite
+    "🎪",  # Circus Tent
+    "🤹",  # Person Juggling
+    "🤸",  # Person Cartwheeling
+    "🛹",  # Skateboard
+    "🛴"   # Kick Scooter
 ]
 sad_regretful_emojis = [
     "😥",  # Sad but Relieved Face
@@ -69,10 +78,15 @@ sad_regretful_emojis = [
     "🥵",  # Hot Face
     "😵‍💫", # Face with Spiral Eyes
     "🤦",  # Person Facepalming
-    "😠",  # Angry Face
-    "😡",  # Enraged Face
     "😾",  # Pouting Cat
-    "😤"   # Face with Steam from Nose
+    "😤",  # Face with Steam from Nose
+    "💀",  # Skull
+    "🧟",  # Zombie
+    "💥",  # Collision
+    "🪫",  # Low Battery
+    "🌪️",  # Tornado
+    "🧯",  # Fire Extinguisher
+    "🤯"   # Exploding Head
 ]
 
 # Choose a random happy/celebratory emoji
