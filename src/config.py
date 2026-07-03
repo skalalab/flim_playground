@@ -253,7 +253,13 @@ def set_derived_features(derived_features: list, config_path: Optional[Path] = N
     cfg["profiles"][current]["derived_features"] = derived_features
     save_config(cfg, config_path)
 
-def get_fit_free_calibration_method(input_type: str) -> str:
+def get_fit_free_calibration_method(input_type: str) -> tuple[str, float | str]:
+    """Return ``(method, standard_lifetime)`` for the given input type.
+
+    ``method`` is the fit-free calibration method (``""`` if unset).
+    ``standard_lifetime`` is the reference lifetime (ns) when the method is
+    "Fluorescence Lifetime Standard", otherwise ``""``.
+    """
     cfg = _load_active_profile_cfg()
     method = cfg.get(input_type, {}).get("fit_free_calibration", "")
     if method == "Fluorescence Lifetime Standard":
