@@ -115,7 +115,7 @@ def histogram_bin_width_widget(x_data, key=None):
     # x_data: 1D numpy array of data to be binned (already na dropped)
     # use np's automatic binning logic by not specifying nbins explicitly in np.histogram
     # Calculate bins using numpy based on the overall data range
-    counts_all, bin_edges_all = np.histogram(x_data, bins='auto') # Use 'auto' as default
+    _, bin_edges_all = np.histogram(x_data, bins='auto') # Use 'auto' as default
     nbins = len(bin_edges_all) - 1
     if nbins > 1:
         default_bin_width = bin_edges_all[1] - bin_edges_all[0]
@@ -252,19 +252,6 @@ def get_custom_order_widget(items, key):
     if sort_items is None:
         st.warning("streamlit-sortables is not installed. Please install it to use this feature.")
         return items
-    
-    # Custom CSS to ensure visibility in both light and dark modes
-    # We force a light card look with black text
-    custom_style = """
-    .sortable-item {
-        background-color: #f0f2f6;
-        color: black;
-        border: 1px solid #d6d6d6;
-        border-radius: 4px;
-        padding: 8px;
-        margin-bottom: 4px;
-    }
-    """
     
     sorted_items = sort_items(items, key=key)
     return sorted_items

@@ -6,7 +6,6 @@ read data from raw decay file (sdt or ptu)
 from ptufile import PtuFile
 from sdtfile import SdtFile
 import numpy as np
-from pathlib import Path
 import os
 
 

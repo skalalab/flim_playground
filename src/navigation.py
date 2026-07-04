@@ -14,8 +14,6 @@ pages = [page_1, page_2]
 def link_2_name(link):    
     return link.replace("_", " ").title()
 
-titles = [link_2_name(page) for page in pages]
-
 def render_top_menu():
 
     st.markdown(
@@ -28,7 +26,7 @@ def render_top_menu():
         """, unsafe_allow_html=True
     )
 
-    menu_html = f"""
+    menu_html = """
     <div style='background-color:#f0f0f0; padding:10px; border-bottom:1px solid #ccc;'>
     <a href='/' style='margin-right:20px; text-decoration:none; font-weight:bold;'>Home</a>"""
 

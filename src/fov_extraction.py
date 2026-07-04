@@ -116,7 +116,7 @@ def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask
     
     try:
         mask_props = regionprops(label_image=mask)
-    except TypeError as e:
+    except TypeError:
         error_msg = f"Error processing mask for {channel_name}: Mask appears to be in boolean format. Please ensure the mask is properly labeled with integer values for different regions."
         return error_msg, pd.DataFrame()
     

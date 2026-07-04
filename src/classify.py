@@ -142,7 +142,7 @@ def plot_confusion_matrix(y_test, y_pred, axis_label_size=12, legend_size=12):
     cm = confusion_matrix(y_test, y_pred, labels=classes)
     
     fig, ax = plt.subplots()
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes).plot(cmap='Blues', ax=ax, colorbar=False, text_kw={'fontsize': legend_size})
+    ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes).plot(cmap='Blues', ax=ax, colorbar=False, text_kw={'fontsize': legend_size})
     ax.set_title("Confusion Matrix", fontsize=axis_label_size)
     ax.set_xlabel("Predicted Label", fontsize=axis_label_size)
     ax.set_ylabel("True Label", fontsize=axis_label_size)
@@ -343,19 +343,6 @@ def create_per_class_metrics_table(metrics_dict, threshold_method):
         table += f"    | **Average** | {avg_n:.2f} | {avg_precision:.4f} | {avg_recall_value} | {avg_specificity:.4f} | {avg_youdens_j:.4f} | {avg_f1_score_value} |\n"
     
     return f"\n{table}"
-
-def create_metrics_table(metrics_dict):
-    """
-    Create markdown tables with overall accuracy and per-class metrics.
-    Returns both tables for side-by-side display.
-    
-    Args:
-        metrics_dict: Dictionary containing metrics (from calculate_metrics)
-    
-    Returns:
-        tuple: (overall_accuracy_table, per_class_metrics_table)
-    """
-    return create_overall_accuracy_table(metrics_dict), create_per_class_metrics_table(metrics_dict)
 
 
 def _build_classifier(method, class_weight, classifier_params, random_state):

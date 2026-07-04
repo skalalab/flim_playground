@@ -183,7 +183,7 @@ def _compute_bracket_position(x_start, x_end, region_max_y, positioning_metrics,
 
     y_candidate = region_max_y + offset_abs
 
-    for iteration in range(50):
+    for _ in range(50):
         y_text_center = y_candidate + text_offset + (text_h / 2)
         y_bottom = y_candidate - bracket_h
         y_top = y_text_center + (text_h / 2)
@@ -587,9 +587,9 @@ def get_point_visual_mappings(
         color_by = [color_by]
     unique_color_groups, color_map = _prepare_group_data(df, color_by, group_col_name, overlap_point=overlap_point, colormap=colormap)
     # Prepare shape mapping
-    shape_groups, shape_map = create_shape_groups_and_map(df, shape_by)
+    _, shape_map = create_shape_groups_and_map(df, shape_by)
     # Prepare opacity mapping
-    opacity_groups, opacity_map = create_opacity_groups_and_map(df, opacity_by)
+    _, opacity_map = create_opacity_groups_and_map(df, opacity_by)
     if separate_by and separate_by.strip() != "" and separate_by in df.columns:
         separate_groups = natural_tuple_sort(df[separate_by].dropna().unique())
     else:

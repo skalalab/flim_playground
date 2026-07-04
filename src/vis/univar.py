@@ -283,7 +283,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
                         t = find_intersection(pi[i], mu[i], sigma[i],
                               pi[i+1], mu[i+1], sigma[i+1])
                         thresholds.append(t)
-                    except Exception as e:
+                    except Exception:
                         st.error(f"Error finding intersection between {color_group} component {i+1} and component {i+2}: either there is no intersection or there are more than one intersection.")
                         st.warning("Intersection threshold is not possible, so we resort to hard assignment in this group.")
                         intersection_threshold_possible = False
@@ -456,7 +456,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             if section_idx > 0:
                 current_x += section_spacing  # Add spacing between sections
             
-            for local_idx, (separate_group, color_group) in enumerate(section_combinations):
+            for separate_group, color_group in section_combinations:
                 x_positions[(separate_group, color_group)] = current_x
                 x_tick_positions_actual.append(current_x)
                 x_tick_labels_actual.append("" if color_group == "all_data" else color_group)

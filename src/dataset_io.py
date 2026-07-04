@@ -1,5 +1,6 @@
 import pandas as pd
-from src.widgets.analysis_config_widgets import get_all_feature_groups, get_all_feature_extractors, get_unique_row_id_col, get_fov_name_col_analysis 
+from src.widgets.analysis_config_widgets import get_all_feature_groups, get_unique_row_id_col, get_fov_name_col_analysis
+from src.config import get_all_feature_extractors
 import streamlit as st
 import random
 happy_celebratory_emojis = [
@@ -154,7 +155,7 @@ def safe_split_with_logging(cell_id):
             return _MISSING_FOV_NAME
         else:
             return cell_id.rsplit('_', 1)[0]
-    except Exception as e:
+    except Exception:
         return _MISSING_FOV_NAME
 
 def get_feature_groups_data_extraction(cols):
@@ -176,12 +177,12 @@ def get_feature_groups_data_extraction(cols):
         # first split by ":"
         try:
             extractor_channel, feature = col.split(": ")
-        except Exception as e:
+        except Exception:
             feature_groups_dict["Uncategorized Features"].append(col)
             continue
         try:
             extractor, channel = extractor_channel.split("_", 1)
-        except Exception as e:
+        except Exception:
             feature_groups_dict["Uncategorized Features"].append(col)
             continue
         if extractor in all_feature_extractors:

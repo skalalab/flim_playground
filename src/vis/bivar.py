@@ -386,8 +386,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                     table_md += [f"\n**{color_group} GMM Components:**"]
                     table_md.append("")
                     table_md.append(f"| Component | **{selected_x}** | **{selected_x}** | **{selected_y}** | **{selected_y}** | Weight |")
-                    table_md.append(f"|------|-----|-----|-----|-----|------|")
-                    table_md.append(f"| | **Mean** | **Std Dev** | **Mean** | **Std Dev** | |")
+                    table_md.append("|------|-----|-----|-----|-----|------|")
+                    table_md.append("| | **Mean** | **Std Dev** | **Mean** | **Std Dev** | |")
 
                     for i in range(best_gmm.n_components):
                         mean = best_gmm.means_[i]

@@ -206,17 +206,15 @@ class TunedThresholdClassifierCV:
         if self.n_classes_ == 2:
             # Binary: optimize single threshold
             initial_threshold = np.array([0.5])
-            bounds = [(0.0, 1.0)]
         else:
             # Multi-class: optimize thresholds for all classes simultaneously
             initial_threshold = np.full(self.n_classes_, 1.0 / self.n_classes_)
-            bounds = [(0.0, 1.0)] * self.n_classes_
         
         # Optimize thresholds using scipy.optimize
         # First evaluate the initial threshold to ensure the objective function works
         try:
             initial_score = -self._objective_function(initial_threshold, X, y, cv_splits, cached_probas=cached_probas)
-        except Exception as e:
+        except Exception:
             # If objective function fails, use default thresholds
             if self.n_classes_ == 2:
                 self.best_threshold_ = 0.5

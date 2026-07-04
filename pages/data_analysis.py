@@ -4,7 +4,7 @@ from pathlib import Path
 
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from src.dataset_io import load_csv, happy_emoji, sad_emoji
+from src.dataset_io import load_csv, sad_emoji
 from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget, twod_single_feature_select_widget
 from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget, visual_encoding_channels_widget, plot_config_widget, tsne_hyperParams_widget, get_visual_group_keys, reorder_x_axis_widget
 from src.widgets.filter_widgets import filters_widget
@@ -311,7 +311,6 @@ with col2:
                         # Logic to determine keys for "separate_by" and "color_by"
                         # We mimic the logic in feature_comparison_plot somewhat or we just pass the raw data
                         # But to save state, we need to know what the groups are.
-                        from src.vis.helpers import natural_tuple_sort
                         
                         # Define the reordering UI *before* the plot or *after*? 
                         # User said: "below the actual plot, I want to have an interactive setup... confirm button. After confirm the plot is rerendered"

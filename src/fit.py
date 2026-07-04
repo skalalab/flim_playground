@@ -1,5 +1,4 @@
 import multiprocessing
-import os
 from os import cpu_count
 
 import numpy as np

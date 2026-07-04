@@ -134,7 +134,7 @@ def find_available_dfs_widget(df_folder_path, delimiter):
     for file in all_csv_files:
         try: 
             df = pd.read_csv(file)
-        except Exception as e:
+        except Exception:
             st.warning(f"Failed to read the file {file}.")
             continue
         if unique_cell_id_col in df.columns and fov_name_col in df.columns:

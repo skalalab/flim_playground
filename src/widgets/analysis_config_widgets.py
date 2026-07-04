@@ -2,7 +2,7 @@ import streamlit as st
 from streamlit_sortables import sort_items
 from pathlib import Path
 import sys
-from src.config import load_config, save_config, get_unique_cell_id_col, get_fov_name_col, get_all_feature_extractors, get_categorical_cols, get_persistent_dir
+from src.config import load_config, save_config, get_unique_cell_id_col, get_fov_name_col, get_categorical_cols, get_persistent_dir
 
 # Maximum number of profiles allowed
 MAX_PROFILES = 10
@@ -308,8 +308,7 @@ def feature_groups_widget():
     # Get current profile and its config
     current_profile = _get_current_profile()
     profile_cfg = _get_profile_config(current_profile)
-    all_feature_extractors = get_all_feature_extractors()
-    
+
     # Initialize feature groups in profile config if not exists
     if "feature_groups" not in profile_cfg:
         profile_cfg["feature_groups"] = {}
@@ -564,11 +563,6 @@ def get_all_feature_groups():
     current_profile = _get_current_profile()
     profile_cfg = _get_profile_config(current_profile)
     return profile_cfg.get("feature_groups", {})
-
-def get_all_numerical_features():
-    current_profile = _get_current_profile()
-    profile_cfg = _get_profile_config(current_profile)
-    return profile_cfg.get("all_numerical_features", [])
 
 
 
