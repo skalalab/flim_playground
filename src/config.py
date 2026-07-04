@@ -1,22 +1,35 @@
+import os
 import toml
 import sys
 from pathlib import Path
 from typing import Optional
 
 def get_persistent_dir() -> Path:
-    """Directory for runtime-writable config, beside the app the user launched.
+    """Directory for runtime-writable config, kept OUTSIDE the app payload the
+    user replaces on upgrade so their settings always survive.
 
-    In a macOS .app bundle sys.executable is
-    ``<dir>/Flim-Playground.app/Contents/MacOS/Flim-Playground``; we walk up out
-    of the bundle to ``<dir>`` so config lands next to the .app — mirroring where
-    Windows puts it next to the .exe. Writing inside ``Contents/`` would hide the
-    file from Finder and break the code-signature seal. On Windows/Linux the exe
-    isn't in that layout, so we fall back to the executable's own directory.
+    - **macOS**: sys.executable is
+      ``<dir>/Flim-Playground.app/Contents/MacOS/Flim-Playground``; we walk up
+      out of the bundle to ``<dir>`` so config lands next to the .app. Writing
+      inside ``Contents/`` would hide the file from Finder and break the
+      code-signature seal.
+    - **Linux**: the binary ships in a self-contained folder the user swaps
+      wholesale when upgrading (extract new tarball → ``./install.sh``), so
+      config kept beside it would be lost on every upgrade. Store it in the
+      per-user XDG config dir (``$XDG_CONFIG_HOME`` or ``~/.config``) under
+      ``flim-playground/`` instead — stable across upgrades, never inside the
+      replaced folder.
+    - **Windows**: beside the .exe; the installer preserves it (it refreshes
+      only the ``_internal`` payload, never the config at the install-folder
+      root).
     """
     exe = Path(sys.executable)
     if exe.parent.name == "MacOS" and exe.parent.parent.name == "Contents":
         return exe.parent.parent.parent.parent  # directory containing the .app
-    return exe.parent
+    if sys.platform.startswith("linux"):
+        base = os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")
+        return Path(base) / "flim-playground"
+    return exe.parent  # Windows: beside the .exe
 
 
 def _get_config_path() -> Path:

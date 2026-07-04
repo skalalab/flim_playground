@@ -11,19 +11,11 @@ def _get_analysis_config_path() -> Path:
     """Get the analysis config file path, handling both development and bundled app scenarios."""
     # Check if running as a PyInstaller bundle
     if getattr(sys, '_MEIPASS', None):
-        # Running as bundled app - save config next to the app (out of the
-        # macOS .app bundle so it's visible and doesn't break the signature).
-        exe_dir = get_persistent_dir()
-        config_path = exe_dir / "analysis_config.toml"
-        
-        # If config doesn't exist in exe directory, try to copy from bundle
-        if not config_path.exists():
-            bundled_config = Path(sys._MEIPASS) / "analysis_config.toml"
-            if bundled_config.exists():
-                import shutil
-                shutil.copy(bundled_config, config_path)
-        
-        return config_path
+        # Running as bundled app - save config in the per-user location
+        # get_persistent_dir() picks (outside the swappable app payload).
+        # analysis_config.toml is not bundled; the default profile is seeded on
+        # first run by _get_current_profile().
+        return get_persistent_dir() / "analysis_config.toml"
     else:
         # Running in development mode - use analysis_config.toml in project root
         return Path(__file__).resolve().parent.parent.parent / "analysis_config.toml"
