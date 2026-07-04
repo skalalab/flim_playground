@@ -118,7 +118,7 @@ def main():
     full_cfg.setdefault("profiles", {}).setdefault(active, {})
     cfg = full_cfg["profiles"][active]
     error_msg = ""
-    max_num_channels = 4
+    max_num_channels = 8
     all_flim_decay_input_types = ["Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)"]
     intensity_only_input_types = ["Intensity (2D)"]
     all_available_categorical_cols = ["experiment", "patient_id", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "replicate"]
@@ -213,12 +213,25 @@ def main():
             elif input_type == "Intensity (2D)":
                 cfg[input_type]["file_types"] = ["Intensity (2D)", "Mask"]
     
-    cols = st.columns(cfg["num_channels"])
-   
-     # check for duplicate channel names
+    # check for duplicate channel names
     channel_names = []
-    for i, col in enumerate(cols):
-        with col:
+    # Channels render as side-by-side columns. With more than 4 channels, fold
+    # the first four (typically already set up) into a collapsed group and keep
+    # the newer channels (5+) expanded, so the ones you just added stay in view.
+    # Columns created inside an expander still render inside it when populated
+    # later, so the per-channel body below is unchanged regardless of grouping.
+    n_channels = cfg["num_channels"]
+    if n_channels <= 4:
+        channel_cols = list(st.columns(n_channels))
+    else:
+        with st.expander("Channels 1–4", expanded=False):
+            first_group = st.columns(4)
+        second_label = "Channel 5" if n_channels == 5 else f"Channels 5–{n_channels}"
+        with st.expander(second_label, expanded=True):
+            second_group = st.columns(n_channels - 4)
+        channel_cols = list(first_group) + list(second_group)
+    for i in range(n_channels):
+        with channel_cols[i]:
             channel_key = f"ch{i+1}"
             if channel_key not in cfg:
                 cfg[channel_key] = {}
