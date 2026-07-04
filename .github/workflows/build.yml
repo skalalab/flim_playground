@@ -21,6 +21,8 @@ jobs:
             name: windows-x64
           - os: macos-latest
             name: macos-arm64
+          - os: ubuntu-24.04
+            name: linux-x64
 
     steps:
       - uses: actions/checkout@v4
@@ -37,17 +39,40 @@ jobs:
       - name: Build with PyInstaller
         run: uv run pyinstaller Flim-Playground.spec --clean
 
-      # macOS ships as tar.gz so the executable bit survives download —
-      # zip artifacts and browser downloads strip it. Tarring dist/Flim-Playground
-      # with the dist/ prefix matches the assets of past releases.
+      # All three platforms ship onedir builds (fast startup, no per-launch
+      # self-extraction). macOS and Linux are tarred so the executable bit
+      # survives download (zip strips it): macOS wraps the onedir in
+      # Flim-Playground.app, Linux ships the Flim-Playground/ folder. Windows
+      # wraps the onedir folder in a single per-user installer via Inno Setup
+      # (Flim-Playground-Setup.exe): the user downloads one file, it installs
+      # once and adds shortcuts, then every launch is full onedir speed.
       - name: Stage release files
         shell: bash
+        env:
+          APP_VERSION: ${{ github.event.release.tag_name || '0.0.0-dev' }}
         run: |
           mkdir -p release
           if [ "$RUNNER_OS" = "macOS" ]; then
-            tar -czf release/Flim-Playground-mac.tar.gz dist/Flim-Playground
+            tar -czf release/Flim-Playground-mac.tar.gz -C dist Flim-Playground.app
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            # onedir folder dist/Flim-Playground/ (the Flim-Playground binary +
+            # _internal/), tarred from inside dist/ so it extracts to
+            # Flim-Playground/ with no dist/ prefix. Same tar handling as macOS
+            # (preserve the exec bit); macOS just wraps its onedir in the .app.
+            tar -czf release/Flim-Playground-linux.tar.gz -C dist Flim-Playground
           else
-            cp dist/Flim-Playground.exe release/
+            # Brand the Setup exe: build logo.ico from logo.png (padded to a
+            # transparent square so the 320x207 logo isn't squished into the
+            # square icon slots). Kept out of the repo — logo.png is the source.
+            uv run python -c "from PIL import Image; im = Image.open('logo.png').convert('RGBA'); side = max(im.size); sq = Image.new('RGBA', (side, side), (0, 0, 0, 0)); sq.paste(im, ((side - im.width) // 2, (side - im.height) // 2)); sq.save('logo.ico', sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])"
+            # Inno Setup is usually pre-installed on windows-latest; install via
+            # choco as a fallback so the build doesn't depend on the runner image.
+            ISCC=$(find "/c/Program Files (x86)" -maxdepth 2 -name ISCC.exe 2>/dev/null | head -1)
+            if [ -z "$ISCC" ]; then
+              choco install innosetup --no-progress -y
+              ISCC=$(find "/c/Program Files (x86)" -maxdepth 2 -name ISCC.exe 2>/dev/null | head -1)
+            fi
+            "$ISCC" Flim-Playground.iss
           fi
 
       - name: Upload workflow artifact

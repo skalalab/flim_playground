@@ -52,19 +52,22 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
+# onedir on all platforms: onefile re-extracted the whole ~450MB bundle to a
+# temp dir on every launch (tens of seconds, worse under antivirus scanning);
+# onedir materializes it once and starts in seconds. Users get
+# Flim-Playground.app on macOS and a Flim-Playground/ folder on Linux (both
+# tarred for download), and the same folder wrapped in a one-file installer on
+# Windows — each with configs saved beside the app.
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='Flim-Playground',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
@@ -72,4 +75,21 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['logo.png'],
+)
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='Flim-Playground',
+)
+# macOS only (explicit no-op on other platforms): wrap the onedir folder in a
+# .app bundle so Finder launches it without a Terminal window and shows the icon.
+app = BUNDLE(
+    coll,
+    name='Flim-Playground.app',
+    icon='logo.png',
+    bundle_identifier='com.skalalab.flim-playground',
 )
