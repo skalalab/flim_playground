@@ -2,7 +2,7 @@ import streamlit as st
 from streamlit_sortables import sort_items
 from pathlib import Path
 import sys
-from src.config import load_config, save_config, get_unique_cell_id_col, get_fov_name_col, get_all_feature_extractors, get_categorical_cols
+from src.config import load_config, save_config, get_unique_cell_id_col, get_fov_name_col, get_all_feature_extractors, get_categorical_cols, get_persistent_dir
 
 # Maximum number of profiles allowed
 MAX_PROFILES = 10
@@ -11,9 +11,9 @@ def _get_analysis_config_path() -> Path:
     """Get the analysis config file path, handling both development and bundled app scenarios."""
     # Check if running as a PyInstaller bundle
     if getattr(sys, '_MEIPASS', None):
-        # Running as bundled app - save config to a persistent location
-        # Use the directory where the executable is located
-        exe_dir = Path(sys.executable).parent
+        # Running as bundled app - save config next to the app (out of the
+        # macOS .app bundle so it's visible and doesn't break the signature).
+        exe_dir = get_persistent_dir()
         config_path = exe_dir / "analysis_config.toml"
         
         # If config doesn't exist in exe directory, try to copy from bundle

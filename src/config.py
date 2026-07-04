@@ -3,13 +3,29 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+def get_persistent_dir() -> Path:
+    """Directory for runtime-writable config, beside the app the user launched.
+
+    In a macOS .app bundle sys.executable is
+    ``<dir>/Flim-Playground.app/Contents/MacOS/Flim-Playground``; we walk up out
+    of the bundle to ``<dir>`` so config lands next to the .app — mirroring where
+    Windows puts it next to the .exe. Writing inside ``Contents/`` would hide the
+    file from Finder and break the code-signature seal. On Windows/Linux the exe
+    isn't in that layout, so we fall back to the executable's own directory.
+    """
+    exe = Path(sys.executable)
+    if exe.parent.name == "MacOS" and exe.parent.parent.name == "Contents":
+        return exe.parent.parent.parent.parent  # directory containing the .app
+    return exe.parent
+
+
 def _get_config_path() -> Path:
     """Get the config file path, handling both development and bundled app scenarios."""
     # Check if running as a PyInstaller bundle
     if getattr(sys, '_MEIPASS', None):
-        # Running as bundled app - persist config next to the executable.
+        # Running as bundled app - persist config next to the app.
         # config.toml is no longer bundled; main.py seeds defaults on first run.
-        return Path(sys.executable).parent / "config.toml"
+        return get_persistent_dir() / "config.toml"
     else:
         # Running in development mode - use config.toml in project root
         return Path(__file__).resolve().parent.parent / "config.toml"

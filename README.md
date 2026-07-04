@@ -57,9 +57,9 @@ pyinstaller Flim-Playground.spec --clean
 ```
 
 ## Upgrade
-Already running an older version? Upgrading is simple — **just replace the old app with the new one** (download the latest from the Releases tab, or rebuild from source).
+Already running an older version? Upgrading is simple — on **macOS** and **Linux**, just replace the old app with the new one; on **Windows**, just run the new installer and it upgrades your existing installation in place (download the latest from the Releases tab, or rebuild from source).
 
-Your settings carry over automatically. `config.toml` (Data Extraction settings) and `analysis_config.toml` (Data Analysis settings, if you have one) are **not** bundled inside the app, so swapping in the new app leaves them untouched. Just keep these files in the **same folder as the app**, and all your profiles and settings will be there in the new version.
+Your settings carry over automatically. `config.toml` (Data Extraction settings) and `analysis_config.toml` (Data Analysis settings, if you have one) are **not** bundled inside the app, so upgrading leaves them untouched. On **macOS and Linux**, just keep these files in the **same folder as the app**; on **Windows**, they live in the install folder and survive upgrades on their own — all your profiles and settings will be there in the new version.
 
 # Documentation
 - @[docs](https://skalalab.github.io/flim_playground_doc/)
