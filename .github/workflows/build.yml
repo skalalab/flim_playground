@@ -55,10 +55,18 @@ jobs:
           if [ "$RUNNER_OS" = "macOS" ]; then
             tar -czf release/Flim-Playground-mac.tar.gz -C dist Flim-Playground.app
           elif [ "$RUNNER_OS" = "Linux" ]; then
-            # onedir folder dist/Flim-Playground/ (the Flim-Playground binary +
-            # _internal/), tarred from inside dist/ so it extracts to
-            # Flim-Playground/ with no dist/ prefix. Same tar handling as macOS
-            # (preserve the exec bit); macOS just wraps its onedir in the .app.
+            # Desktop integration so Linux users get a clickable, iconed launcher
+            # like macOS/Windows instead of a bare binary. Drop a square PNG icon
+            # (padded from logo.png, same idea as the Windows .ico) plus
+            # install.sh/uninstall.sh INSIDE the onedir folder; the user runs
+            # ./install.sh once to register a "FLIM Playground" menu entry.
+            uv run python -c "from PIL import Image; im = Image.open('logo.png').convert('RGBA'); side = max(im.size); sq = Image.new('RGBA', (side, side), (0, 0, 0, 0)); sq.paste(im, ((side - im.width) // 2, (side - im.height) // 2)); sq.resize((256, 256)).save('dist/Flim-Playground/flim-playground.png')"
+            cp linux/install.sh linux/uninstall.sh dist/Flim-Playground/
+            chmod +x dist/Flim-Playground/install.sh dist/Flim-Playground/uninstall.sh
+            # onedir folder dist/Flim-Playground/ (binary + _internal/ + the icon
+            # and scripts just added), tarred from inside dist/ so it extracts to
+            # Flim-Playground/ with no dist/ prefix and keeps the exec bits (zip
+            # would strip them). macOS wraps its onedir in the .app instead.
             tar -czf release/Flim-Playground-linux.tar.gz -C dist Flim-Playground
           else
             # Brand the Setup exe: build logo.ico from logo.png (padded to a

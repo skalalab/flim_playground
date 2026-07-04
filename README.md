@@ -38,7 +38,10 @@ You can try out analysis modules in the **Data Analysis** section using this sam
 
 # Install
 ## Option 1: Download from Releases
-- Releases for Mac OS 26, Windows 11, Ubuntu 24.04 LTS (look for the latest ones under the Releases tab on the right)
+Grab the latest build for your OS under the **Releases** tab on the right (available for macOS, Windows 11, and Ubuntu 24.04 LTS):
+- **macOS** — download `Flim-Playground-mac.tar.gz`, unzip, and double-click **Flim-Playground.app**.
+- **Windows** — download `Flim-Playground-Setup.exe`, run the installer, then launch from the **Start Menu** shortcut it creates.
+- **Linux** (Ubuntu 24.04+) — download `Flim-Playground-linux.tar.gz`, extract it, and run `./install.sh` once from the extracted folder to add **FLIM Playground** to your application menu; then click it to launch. (Or run the `Flim-Playground` binary directly.)
 ## Option 2: Build from source
 ### Clone the repo
 ```bash
@@ -55,9 +58,10 @@ Then Navigate into the repository once cloned.
 ```bash
 pyinstaller Flim-Playground.spec --clean
 ```
+This produces a ready-to-run app folder (`dist/Flim-Playground/`, or `Flim-Playground.app` on macOS) you can launch directly. The Windows `Setup.exe` installer is built separately by CI (Inno Setup), so a from-source build on Windows gives you the runnable app folder rather than an installer.
 
 ## Upgrade
-Already running an older version? Upgrading is simple — on **macOS** and **Linux**, just replace the old app with the new one; on **Windows**, just run the new installer and it upgrades your existing installation in place (download the latest from the Releases tab, or rebuild from source).
+Already running an older version? Upgrading is simple — on **macOS** and **Linux**, just replace the old app with the new one; on **Windows**, just run the new installer and it upgrades your existing installation in place (download the latest from the Releases tab). On **Linux**, re-run `./install.sh` only if you moved the folder to a new location.
 
 Your settings carry over automatically. `config.toml` (Data Extraction settings) and `analysis_config.toml` (Data Analysis settings, if you have one) are **not** bundled inside the app, so upgrading leaves them untouched. On **macOS and Linux**, just keep these files in the **same folder as the app**; on **Windows**, they live in the install folder and survive upgrades on their own — all your profiles and settings will be there in the new version.
 
