@@ -43,8 +43,38 @@ Grab the latest build for your OS under the **Releases** tab on the right (avail
 - **Windows** — download `Flim-Playground-Setup.exe`, run the installer, then launch from the **Start Menu** shortcut it creates.
 - **Linux** (Ubuntu 24.04+) — download `Flim-Playground-linux.tar.gz` and **double-click it to extract** (or right-click → *Extract* in your file manager). You get a single **`Flim-Playground-linux`** folder — open it and run `./install.sh` once to add **FLIM Playground** to your application menu, then click it to launch. (Or run the `Flim-Playground` binary directly.) *Prefer the terminal? Extract with `tar --one-top-level -xzf Flim-Playground-linux.tar.gz` so the files land in their own folder instead of the current directory.*
 
+### First launch: getting past the security warning
+FLIM Playground is distributed **without a paid code-signing certificate**, so the first time you open a downloaded build, Windows and macOS show a security warning. This is expected for open-source apps shipped outside the App Store / Microsoft Store — nothing is wrong with the download, and you can always [build from source](#option-2-build-from-source) if you'd rather verify it yourself. You only need to clear the warning **once per download**.
+
+**Windows** — Microsoft Defender SmartScreen flags the installer because it "isn't commonly downloaded" yet:
+
+- **In your browser:** if the download is flagged, click **⋯ → Keep**, then **Keep anyway** when it double-checks.
+
+  <img src="assets/security-win-1-keep.png" width="380" alt="Browser download menu: Keep"> <img src="assets/security-win-2-smartscreen.png" width="300" alt="SmartScreen: Keep anyway">
+
+- **When you run it:** double-click `Flim-Playground-Setup.exe`; if a blue *"Windows protected your PC"* box appears, click **More info → Run anyway**, then proceed through the installer.
+
+**macOS** — Gatekeeper blocks the app because Apple hasn't notarized it. Depending on your macOS version you'll hit one of two blocks:
+
+- **"Apple could not verify…" (Not Opened)** — this softer block *can* be cleared in the UI: open **System Settings → Privacy & Security**, scroll to **Security**, click **Open Anyway** next to *"Flim-Playground" was blocked*, then confirm.
+
+  <img src="assets/security-mac-1-blocked.png" width="270" alt="macOS: Apple could not verify"> <img src="assets/security-mac-3-open-anyway.png" width="470" alt="System Settings: Open Anyway">
+
+- **`-47` "can't be opened"** — on recent macOS the block appears as this error instead. It has **no *Open Anyway* button and cannot be cleared through System Settings** — the Terminal command below is the only fix.
+
+  <img src="assets/security-mac-2-error-47.png" width="270" alt="macOS: error -47">
+
+**Terminal fix** — works for both cases, and is the **only** way past the `-47` error. Strip the download-quarantine flag, then open:
+
+```bash
+xattr -dr com.apple.quarantine ~/Downloads/Flim-Playground.app
+open ~/Downloads/Flim-Playground.app
+```
+
+If you moved the app elsewhere (e.g. `/Applications`), point the command at that path instead.
+
 ### Upgrading
-Already running an older version? Grab the latest build from the **Releases** tab, then follow the steps for your platform below. Your settings — `config.toml` (Data Extraction) and `analysis_config.toml` (Data Analysis, if you have one) — are **not** bundled inside the app, so they carry over. Where they are stored, and what that means when you upgrade, differs by platform:
+Already running an older version? Grab the latest build from the **Releases** tab, then follow the steps for your platform below. Because every download is a fresh, unsigned file, the [security warning](#first-launch-getting-past-the-security-warning) above **reappears for each new version** — clear it the same way each time (on macOS, re-run the `xattr` command on the new download; if you get the `-47` error, that command is the only fix). Your settings — `config.toml` (Data Extraction) and `analysis_config.toml` (Data Analysis, if you have one) — are **not** bundled inside the app, so they carry over. Where they are stored, and what that means when you upgrade, differs by platform:
 
 - **macOS** — extract the new `Flim-Playground-mac.tar.gz` and replace the old **Flim-Playground.app** with the new one. Your settings are saved in the folder *beside* the app, **outside** the `.app` bundle, so swapping the app never touches them — just keep the two `.toml` files where they are.
 - **Windows** — run the new `Flim-Playground-Setup.exe`; it upgrades your existing installation in place. Your settings sit at the **root of the install folder** (next to the program, not inside the internal payload the installer refreshes), so they are preserved automatically.
