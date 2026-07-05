@@ -13,6 +13,12 @@ jobs:
     name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
+    # APP_VERSION at job level so BOTH the PyInstaller build step (which embeds
+    # it in the Windows .exe version resource via the spec) and the Inno Setup
+    # staging step read the same value. Release builds get the tag (e.g.
+    # 1.11.0); manual workflow_dispatch builds fall back to the dev placeholder.
+    env:
+      APP_VERSION: ${{ github.event.release.tag_name || '0.0.0-dev' }}
     strategy:
       fail-fast: false
       matrix:
@@ -48,8 +54,6 @@ jobs:
       # once and adds shortcuts, then every launch is full onedir speed.
       - name: Stage release files
         shell: bash
-        env:
-          APP_VERSION: ${{ github.event.release.tag_name || '0.0.0-dev' }}
         run: |
           mkdir -p release
           if [ "$RUNNER_OS" = "macOS" ]; then
@@ -63,11 +67,13 @@ jobs:
             uv run python -c "from PIL import Image; im = Image.open('logo.png').convert('RGBA'); side = max(im.size); sq = Image.new('RGBA', (side, side), (0, 0, 0, 0)); sq.paste(im, ((side - im.width) // 2, (side - im.height) // 2)); sq.resize((256, 256)).save('dist/Flim-Playground/flim-playground.png')"
             cp linux/install.sh linux/uninstall.sh dist/Flim-Playground/
             chmod +x dist/Flim-Playground/install.sh dist/Flim-Playground/uninstall.sh
-            # onedir folder dist/Flim-Playground/ (binary + _internal/ + the icon
-            # and scripts just added), tarred from inside dist/ so it extracts to
-            # Flim-Playground/ with no dist/ prefix and keeps the exec bits (zip
-            # would strip them). macOS wraps its onedir in the .app instead.
-            tar -czf release/Flim-Playground-linux.tar.gz -C dist Flim-Playground
+            # Tar the onedir CONTENTS (not the folder itself) so double-clicking
+            # the archive in a file manager yields a single Flim-Playground-linux/
+            # folder with install.sh right inside. Taring the folder made managers
+            # wrap it twice (Flim-Playground-linux/Flim-Playground/). Extracted
+            # from inside the onedir dir to keep exec bits (zip strips them). A raw
+            # `tar xzf` spills into the cwd — the README shows --one-top-level.
+            tar -czf release/Flim-Playground-linux.tar.gz -C dist/Flim-Playground .
           else
             # Brand the Setup exe: build logo.ico from logo.png (padded to a
             # transparent square so the 320x207 logo isn't squished into the

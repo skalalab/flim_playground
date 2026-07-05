@@ -2,6 +2,7 @@
 from PyInstaller.utils.hooks import collect_all
 import streamlit_sortables
 import os
+import sys
 import streamlit_theme
 
 datas = [('src', 'src'), ('pages', 'pages'), ('main.py', '.'), ('launcher.py', '.'), ('logo.png', '.'), ('.streamlit', '.streamlit')]
@@ -58,6 +59,48 @@ pyz = PYZ(a.pure)
 # Flim-Playground.app on macOS and a Flim-Playground/ folder on Linux (both
 # tarred for download), and the same folder wrapped in a one-file installer on
 # Windows — each with configs saved beside the app.
+
+# Windows .exe version resource. Without this, PyInstaller stamps the default
+# 0.0.0.0 into the file's Properties -> Details (independent of the Inno Setup
+# installer version). Build a VSVersionInfo from APP_VERSION (set at job level
+# in build.yml: the release tag for release builds, else a dev placeholder) so
+# the .exe reports the same version as the installer. Windows-only: the
+# versioninfo module imports pefile, which PyInstaller only installs on Windows.
+version_resource = None
+if sys.platform == 'win32':
+    import re
+    from PyInstaller.utils.win32.versioninfo import (
+        VSVersionInfo, FixedFileInfo, StringFileInfo, StringTable, StringStruct,
+        VarFileInfo, VarStruct,
+    )
+    _app_version = os.environ.get('APP_VERSION') or '0.0.0-dev'
+    # FILEVERSION/PRODUCTVERSION are 4 ints; take the leading numeric parts
+    # ('1.11.0' -> (1, 11, 0, 0); '0.0.0-dev' -> (0, 0, 0, 0)).
+    _nums = [int(n) for n in re.findall(r'\d+', _app_version)][:4]
+    _nums += [0] * (4 - len(_nums))
+    _vtuple = tuple(_nums)
+    version_resource = VSVersionInfo(
+        ffi=FixedFileInfo(
+            filevers=_vtuple, prodvers=_vtuple,
+            mask=0x3f, flags=0x0, OS=0x40004, fileType=0x1, subtype=0x0,
+            date=(0, 0),
+        ),
+        kids=[
+            StringFileInfo([
+                StringTable('040904B0', [
+                    StringStruct('CompanyName', 'Skala Lab'),
+                    StringStruct('FileDescription', 'FLIM Playground'),
+                    StringStruct('FileVersion', _app_version),
+                    StringStruct('InternalName', 'Flim-Playground'),
+                    StringStruct('OriginalFilename', 'Flim-Playground.exe'),
+                    StringStruct('ProductName', 'FLIM Playground'),
+                    StringStruct('ProductVersion', _app_version),
+                ]),
+            ]),
+            VarFileInfo([VarStruct('Translation', [1033, 1200])]),
+        ],
+    )
+
 exe = EXE(
     pyz,
     a.scripts,
@@ -75,6 +118,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon=['logo.png'],
+    version=version_resource,
 )
 coll = COLLECT(
     exe,

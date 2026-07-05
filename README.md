@@ -41,14 +41,14 @@ You can try out analysis modules in the **Data Analysis** section using this sam
 Grab the latest build for your OS under the **Releases** tab on the right (available for macOS, Windows 11, and Ubuntu 24.04 LTS):
 - **macOS** — download `Flim-Playground-mac.tar.gz`, unzip, and double-click **Flim-Playground.app**.
 - **Windows** — download `Flim-Playground-Setup.exe`, run the installer, then launch from the **Start Menu** shortcut it creates.
-- **Linux** (Ubuntu 24.04+) — download `Flim-Playground-linux.tar.gz`, extract it, and run `./install.sh` once from the extracted folder to add **FLIM Playground** to your application menu; then click it to launch. (Or run the `Flim-Playground` binary directly.)
+- **Linux** (Ubuntu 24.04+) — download `Flim-Playground-linux.tar.gz` and **double-click it to extract** (or right-click → *Extract* in your file manager). You get a single **`Flim-Playground-linux`** folder — open it and run `./install.sh` once to add **FLIM Playground** to your application menu, then click it to launch. (Or run the `Flim-Playground` binary directly.) *Prefer the terminal? Extract with `tar --one-top-level -xzf Flim-Playground-linux.tar.gz` so the files land in their own folder instead of the current directory.*
 
 ### Upgrading
 Already running an older version? Grab the latest build from the **Releases** tab, then follow the steps for your platform below. Your settings — `config.toml` (Data Extraction) and `analysis_config.toml` (Data Analysis, if you have one) — are **not** bundled inside the app, so they carry over. Where they are stored, and what that means when you upgrade, differs by platform:
 
 - **macOS** — extract the new `Flim-Playground-mac.tar.gz` and replace the old **Flim-Playground.app** with the new one. Your settings are saved in the folder *beside* the app, **outside** the `.app` bundle, so swapping the app never touches them — just keep the two `.toml` files where they are.
 - **Windows** — run the new `Flim-Playground-Setup.exe`; it upgrades your existing installation in place. Your settings sit at the **root of the install folder** (next to the program, not inside the internal payload the installer refreshes), so they are preserved automatically.
-- **Linux** — your settings are saved in `~/.config/flim-playground/` (following the XDG convention), **outside** the app folder, so replacing the app never touches them. Delete the old app folder, extract the new tarball in its place, then re-run `./install.sh` so the menu launcher points at the new files — your settings are picked up automatically.
+- **Linux** — your settings are saved in `~/.config/flim-playground/` (following the XDG convention), **outside** the app folder, so replacing the app never touches them. Delete the old `Flim-Playground-linux` folder, double-click the new tarball to extract it in the same place, then re-run `./install.sh` so the menu launcher points at the new files — your settings are picked up automatically.
 
 ## Option 2: Build from source
 ### Clone the repo
