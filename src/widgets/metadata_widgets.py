@@ -1,5 +1,7 @@
 import streamlit as st
-import os 
+import os
+import sys
+import errno
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -99,6 +101,40 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
             actual_file_suffix_dict[f"{channel_name}_{file_type}"] = file_suffix
     return actual_file_suffix_dict, error_msg
 
+def _permission_denied_message(folder_path, err):
+    """Build the message shown when a folder exists but can't be listed.
+
+    A folder can be un-listable for several unrelated reasons — plain
+    filesystem/ACL permissions, a network server refusing access, or an OS
+    privacy gate (macOS TCC, Windows Controlled Folder Access). So lead with a
+    statement that is true on every platform and for every cause, then append a
+    platform-specific hint only when the signal actually matches, so the advice
+    never misleads a user on a platform or cause it doesn't apply to.
+    """
+    msg = (
+        f"⛔ **Permission denied** reading **{folder_path}**.\n\n"
+        "Your account doesn't have permission to list this folder. If it's on a "
+        "shared or network drive, check that you're connected and authorized to access it."
+    )
+    # macOS: errno 1 (EPERM, 'Operation not permitted') — or any /Volumes path —
+    # is the privacy/TCC signature, a different problem from a filesystem-permission
+    # denial (errno 13, EACCES) and one the user fixes by granting volume access.
+    if sys.platform == "darwin" and (
+        getattr(err, "errno", None) == errno.EPERM or str(folder_path).startswith("/Volumes/")
+    ):
+        app = "FLIM Playground" if getattr(sys, "frozen", False) else "the terminal or IDE you launched it from"
+        msg += (
+            f"\n\n**On macOS**, {app} needs permission to read network or removable volumes. "
+            "Enable it under System Settings → Privacy & Security → Full Disk Access, "
+            "then fully quit and reopen it."
+        )
+    elif sys.platform == "win32":
+        msg += (
+            "\n\n**On Windows**, check the folder's permissions, or whether Controlled Folder "
+            "Access (Windows Security → Ransomware protection) is blocking access to it."
+        )
+    return msg
+
 @st.cache_data
 def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):    
     """
@@ -125,11 +161,8 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
         return {}
     try:
         os.listdir(folder_path)
-    except PermissionError:
-        st.error(
-            f"⛔ **Permission denied** reading **{folder_path}**.\n\n"
-            "The folder exists, but the system blocked listing its contents."
-        )
+    except PermissionError as e:
+        st.error(_permission_denied_message(folder_path, e))
         return {}
     except OSError as e:
         st.error(f"⛔ Could not read folder **{folder_path}**: {e}")
