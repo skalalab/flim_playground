@@ -188,11 +188,18 @@ def main():
         # feature extractor initialization
     if "available_feature_extractors" not in cfg[flim_decay_input_type]:
         if flim_decay_input_type == "Decay (2D)":
-            cfg[flim_decay_input_type]["available_feature_extractors"] = ["Lifetime fit", "Lifetime fit free"]
+            # 2D CSVs have no image/mask, so only "Intensity texture" is offered (for
+            # intensity_sum, the decay-curve sum) — morphology needs regionprops on a mask.
+            cfg[flim_decay_input_type]["available_feature_extractors"] = ["Lifetime fit", "Lifetime fit free", "Intensity texture"]
         else:
             cfg[flim_decay_input_type]["available_feature_extractors"] = ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture"]
     if "available_feature_extractors" not in cfg[intensity_only_input_type]:
         cfg[intensity_only_input_type]["available_feature_extractors"] = ["Intensity morphology", "Intensity texture"]
+
+    # Migration: profiles seeded before "Intensity texture" was offered for 2D gain it now.
+    d2d = cfg.get("Decay (2D)", {})
+    if "available_feature_extractors" in d2d and "Intensity texture" not in d2d["available_feature_extractors"]:
+        d2d["available_feature_extractors"].append("Intensity texture")
 
     if flim_decay_input_type == "Decay (2D)":
         imaging_modalities = ["FLIM"]

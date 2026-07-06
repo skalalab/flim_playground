@@ -526,13 +526,11 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
             laser_rate = metadata["laser_rate"]
         except (KeyError, TypeError):
             return "Error: laser_rate not found in metadata. Ensure it was set during FOV Metadata Extraction.", pd.DataFrame()
-        if calibration_method == None:
+        if calibration_method is None:
             return f"Error: Calibration method is not provided for {channel_name}", pd.DataFrame()
         error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf, fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis)
         if error_msg != "":
             return error_msg, pd.DataFrame()
-        if "2D" in input_type:
-            single_cell_fit_free_features_fov = extract_intensity_sum_2d(channel_name, decay_curves, single_cell_fit_free_features_fov)
         single_cell_fit_free_features_fov = pd.DataFrame.from_dict(single_cell_fit_free_features_fov, orient='index')
     if fit and fit_free:
         return "", pd.concat([single_cell_fit_features_fov, single_cell_fit_free_features_fov], axis=1)
@@ -558,6 +556,23 @@ def extract_intensity_features(metadata, channel_name, fov_col_name, input_type,
     feature_dfs = []
 
     if not (int_morph or int_texture):
+        return feature_dfs, False
+
+    # Decay (2D): tabular CSV (row = cell, column = time bin) — no image, no mask.
+    # The only intensity feature derivable is intensity_sum = sum of each cell's
+    # decay curve. Reuse the identical get_decay_curves(..., shift=False) call the
+    # lifetime path uses so the summed values match. Morphology is never offered
+    # for 2D (needs regionprops on a mask), so only texture is handled here.
+    if input_type == "Decay (2D)":
+        if int_texture:
+            error_msg, decay_curves = get_decay_curves(
+                metadata, input_type, channel_name, metadata["time_bins"], shift=False)
+            if error_msg != "":
+                st.error(error_msg)
+                return feature_dfs, True  # signal caller to skip this channel
+            cells = {cell_id: {} for cell_id in decay_curves}
+            cells = extract_intensity_sum_2d(channel_name, decay_curves, cells)
+            feature_dfs.append(pd.DataFrame.from_dict(cells, orient="index"))
         return feature_dfs, False
 
     try:

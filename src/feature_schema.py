@@ -52,23 +52,32 @@ def _fit_suffixes(num_components):
     return suffixes
 
 
-def predict_feature_columns(channel_names, selected_extractors, num_components):
+def predict_feature_columns(channel_names, selected_extractors, num_components, input_types=None):
     """Predict the categorized feature columns a profile will produce.
 
     Args:
         channel_names: iterable of channel display names.
         selected_extractors: dict ``{channel_name: [extractor, ...]}``.
         num_components: dict ``{channel_name: int}`` (only read for 'Lifetime fit').
+        input_types: optional dict ``{channel_name: input_type}``. Only consulted to
+            narrow 'Intensity texture' on a 'Decay (2D)' channel to ``intensity_sum``.
+            Mirrors the 2D special case in
+            ``fov_extraction.extract_intensity_features``: a 2D CSV has no image/mask,
+            so ``intensity_sum`` (the decay-curve sum) is the only texture feature it
+            can emit. Omitting it (or a non-2D value) yields the full suffix list.
 
     Returns:
         Ordered list of unique ``"{Extractor}_{channel}: {suffix}"`` column names.
     """
+    input_types = input_types or {}
     columns = []
     for channel_name in channel_names:
         extractors = selected_extractors.get(channel_name, []) or []
         for extractor in extractors:
             if extractor == "Lifetime fit":
                 suffixes = _fit_suffixes(num_components.get(channel_name, 1))
+            elif extractor == "Intensity texture" and input_types.get(channel_name) == "Decay (2D)":
+                suffixes = ["intensity_sum"]
             else:
                 suffixes = EXTRACTOR_FEATURE_SUFFIXES.get(extractor, [])
             for suffix in suffixes:
@@ -89,6 +98,7 @@ def predict_feature_columns_from_cfg(cfg):
     channel_names = []
     selected_extractors = {}
     num_components = {}
+    input_types = {}
     for i in range(num_channels):
         channel_key = f"ch{i + 1}"
         ch_cfg = cfg.get(channel_key, {})
@@ -98,4 +108,5 @@ def predict_feature_columns_from_cfg(cfg):
         channel_names.append(channel_name)
         selected_extractors[channel_name] = input_cfg.get("selected_feature_extractors", [])
         num_components[channel_name] = input_cfg.get("num_components", 1)
-    return predict_feature_columns(channel_names, selected_extractors, num_components)
+        input_types[channel_name] = input_type
+    return predict_feature_columns(channel_names, selected_extractors, num_components, input_types)
