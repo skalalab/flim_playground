@@ -39,6 +39,37 @@ def feature_display_to_column(feature_list, feature_group, data_extraction=True)
         return {col.split(": ", 1)[1]: col for col in feature_list}
     return {col: col for col in feature_list}
 
+
+def resolve_pending_selection(feature_groups_dict, key_prefix, data_extraction=True, session_state=None):
+    """Resolve an axis's current pick from session state, before its widgets render.
+
+    ``single_feature_select_widget`` keys each group's selectbox
+    ``f"{key_prefix}_menu_{group}"``, so the previous run's choice is readable
+    ahead of the widget. ``twod_single_feature_select_widget`` needs it that
+    early to decide whether to draw the plain grid or a collapsed expander.
+
+    A stored display value is only honoured while it is still present in its
+    group's *current* option list. That matters because the x-axis pick is
+    removed from ``feature_groups_dict`` before the y-axis grid renders: when the
+    user re-opens x and steals the feature y was showing, Streamlit silently
+    resets y's selectbox to "Select". Validating here keeps the container and its
+    label agreeing with the value the widget will actually return.
+
+    Returns the full DataFrame column name, or "Select" when the axis has no
+    valid selection.
+    """
+    if session_state is None:
+        session_state = st.session_state
+    for feature_group, feature_list in feature_groups_dict.items():
+        stored = session_state.get(f"{key_prefix}_menu_{feature_group}", "Select")
+        if stored == "Select":
+            continue
+        display_to_col = feature_display_to_column(
+            feature_list, feature_group, data_extraction)
+        if stored in display_to_col:
+            return display_to_col[stored]
+    return "Select"
+
 # create selectboxs for variables
 def single_feature_select_widget(feature_groups_dict, data_extraction=True, n_per_row=2, key_prefix=""):
     """
@@ -90,21 +121,55 @@ def single_feature_select_widget(feature_groups_dict, data_extraction=True, n_pe
     
     return selected_var
 
+def _axis_select_block(feature_groups_dict, axis_name, key_prefix, data_extraction=True, n_per_row=2):
+    """Render one axis's feature picker.
+
+    With no pick yet, this is the plain prompt + grid of per-group selectboxes.
+    Once a feature is chosen the same grid moves inside a collapsed expander
+    labelled with the full column name, freeing the vertical space the grid ate.
+
+    The collapse relies on Streamlit *remounting* the element rather than on
+    flipping ``expanded``, which only ever initialises an expander's state
+    (Streamlit 1.54) and so cannot be trusted to close one that already exists.
+    Swapping a markdown+columns block for an expandable block mounts a fresh
+    expander, initialised collapsed. Re-opening it and changing the pick then
+    re-collapses it on the rerun, showing the new value — verified on 1.54, and
+    the behaviour we want either way, so nothing here depends on whether a given
+    frontend preserves the user's toggle.
+
+    Returns the axis's selected column, or "Select".
+    """
+    pending = resolve_pending_selection(feature_groups_dict, key_prefix, data_extraction)
+
+    if pending == "Select":
+        st.write(f"**Select the {axis_name}-axis feature:** ")
+        return single_feature_select_widget(
+            feature_groups_dict, data_extraction=data_extraction,
+            n_per_row=n_per_row, key_prefix=key_prefix)
+
+    with st.expander(f"{axis_name.upper()}-axis — {pending}", expanded=False):
+        return single_feature_select_widget(
+            feature_groups_dict, data_extraction=data_extraction,
+            n_per_row=n_per_row, key_prefix=key_prefix)
+
+
 def twod_single_feature_select_widget(feature_groups_dict, data_extraction=True, n_per_row=2):
-    st.write("**Select the x-axis feature:** ")
-    selected_x = single_feature_select_widget(feature_groups_dict, data_extraction=data_extraction, n_per_row=n_per_row, key_prefix="2d_x")
-    # remove the selected_x from the feature_groups_dict
-    # selected_x is not a feature group, it is a feature
+    selected_x = _axis_select_block(
+        feature_groups_dict, "x", "2d_x", data_extraction, n_per_row)
+
+    # Remove the x pick so it cannot also be chosen for y. Must happen after the
+    # x grid renders (it still needs the feature in its own options) and before
+    # the y grid does.
     for feature_group in feature_groups_dict.keys():
         if selected_x in feature_groups_dict[feature_group]:
             feature_groups_dict[feature_group].remove(selected_x)
+
     if selected_x != "Select":
-        st.write("**Select the y-axis feature:** ")
-        selected_y = single_feature_select_widget(feature_groups_dict, data_extraction=data_extraction, n_per_row=n_per_row, key_prefix="2d_y")
+        selected_y = _axis_select_block(
+            feature_groups_dict, "y", "2d_y", data_extraction, n_per_row)
     else:
         selected_y = "Select"
-    if selected_x != "Select" and selected_y != "Select":
-        st.info(f"Selected features: **{selected_x}** and **{selected_y}**")
+
     return selected_x, selected_y
 
 def multi_feature_select_widget(feature_groups_dict, data_extraction=True, n_per_row=2):
