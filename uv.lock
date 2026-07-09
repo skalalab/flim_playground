@@ -255,7 +255,6 @@ dependencies = [
     { name = "sdtfile" },
     { name = "seaborn" },
     { name = "six" },
-    { name = "st-theme" },
     { name = "streamlit" },
     { name = "streamlit-sortables" },
     { name = "threadpoolctl" },
@@ -312,7 +311,6 @@ requires-dist = [
     { name = "sdtfile", specifier = "==2025.3.25" },
     { name = "seaborn", specifier = "==0.13.2" },
     { name = "six", specifier = "==1.17.0" },
-    { name = "st-theme", specifier = ">=1.2.3" },
     { name = "streamlit", specifier = ">=1.54.0" },
     { name = "streamlit-sortables", specifier = ">=0.3.1" },
     { name = "threadpoolctl", specifier = "==3.6.0" },
@@ -1635,18 +1633,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/44/cd/a040c4b3119bbe532e5b0732286f805445375489fceaec1f48306068ee3b/smmap-5.0.2.tar.gz", hash = "sha256:26ea65a03958fa0c8a1c7e8c7a58fdc77221b8910f6be2131affade476898ad5", size = 22329, upload-time = "2025-01-02T07:14:40.909Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/04/be/d09147ad1ec7934636ad912901c5fd7667e1c858e19d355237db0d0cd5e4/smmap-5.0.2-py3-none-any.whl", hash = "sha256:b30115f0def7d7531d22a0fb6502488d879e75b260a9db4d0819cfb25403af5e", size = 24303, upload-time = "2025-01-02T07:14:38.724Z" },
-]
-
-[[package]]
-name = "st-theme"
-version = "1.2.3"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "streamlit" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/31/84/3e2fd95f5acaf6c92a51e7f038f1120235c65bb0b8be9bf43aa9fb4267e5/st-theme-1.2.3.tar.gz", hash = "sha256:ca97aece1a48ded6e83fd742c27cb0851e1bce2100ab4b6c37c7b6e003b65b42", size = 73873, upload-time = "2024-05-03T19:25:50.657Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/09/cd7134f1ed5074a7d456640e7ba9a8c8e68a831837b4e7bfd9f29e5700a4/st_theme-1.2.3-py3-none-any.whl", hash = "sha256:0a54d9817dd5f8a6d7b0d071b25ae72eacf536c63a5fb97374923938021b1389", size = 75205, upload-time = "2024-05-03T19:25:47.858Z" },
 ]
 
 [[package]]

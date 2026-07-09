@@ -18,3 +18,4 @@ example_data/Data_Extraction/*/fov_metadata*.csv
 example_data/Data_Extraction/*/*features*.csv
 fit_test/*
 test_features/*
+docs/*

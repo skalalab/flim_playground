@@ -8,32 +8,19 @@ import pandas as pd
 from src.widgets.visualization_widgets import comparison_pair_widget
 import re
 import plotly.graph_objects as go
-from streamlit_theme import st_theme
 
 
 def log_negative_error(var_name):
     return f"Cannot apply log to {var_name}: contains negative values."
 
 
-def get_theme_color(key="theme_color_detector"):
-    """Get plot color based on current system theme (light/dark mode).
-    
-    Uses a unique key for st_theme() to avoid duplicate component errors,
-    and always fetches the current theme to respond to theme changes.
-    
-    Args:
-        key (str): Unique key for the st_theme component. Defaults to "theme_color_detector".
-    
-    Returns:
-        str: 'black' for light mode, 'white' for dark mode.
+def get_context_theme_color():
+    """Plot color for the current theme: 'black' in light mode, 'white' otherwise.
+
+    ``st.context.theme.type`` is a plain server-side read, so it costs no rerun. It is
+    None until the browser reports in, which falls through to the dark-mode color.
     """
-    # Use a unique key to avoid duplicate element ID errors
-    theme = st_theme(key=key)
-    # Default to dark mode color if theme detection fails
-    if theme is None or theme.get("base") == "dark":
-        return "white"
-    else:
-        return "black"
+    return "black" if st.context.theme.type == "light" else "white"
 
 def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
     """
@@ -659,8 +646,8 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
 
     # Theme-aware hover tooltips, applied centrally so EVERY plot's hover matches the
     # axes instead of Plotly's default gray: black-on-white in light mode,
-    # white-on-dark in dark mode. get_theme_color returns 'black' (light)/'white' (dark).
-    theme_color = get_theme_color(key="theme_hoverlabel")
+    # white-on-dark in dark mode.
+    theme_color = get_context_theme_color()
 
     # Update layout with axis and legend font sizes
     fig.update_layout(

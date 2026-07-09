@@ -3,7 +3,7 @@ import math
 import pandas as pd
 import numpy as np
 from plotly import graph_objects as go
-from src.vis.helpers import get_theme_color
+from src.vis.helpers import get_context_theme_color
 from src.choose_shift import choose_shift_fit_free, choose_shift_fit
 from src.fit_helper import forward_pass, irf_shift, nll_poisson, reduced_chi_square
 
@@ -13,7 +13,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
     # kflow decay_id is the cell_name, otherwise it is the image_name
     plot_df =  pd.DataFrame({"decay_id": results["decay_id"], "shift": results["shift"]})
     # Get theme-aware color
-    color = get_theme_color(key=f"theme_shift_{channel_name}")
+    color = get_context_theme_color()
     
     cols = st.columns(2)
     with cols[0]:

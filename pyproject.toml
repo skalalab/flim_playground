@@ -41,7 +41,6 @@ dependencies = [
     "sdtfile==2025.3.25",
     "seaborn==0.13.2",
     "six==1.17.0",
-    "st-theme>=1.2.3",
     "streamlit>=1.54.0",
     "streamlit-sortables>=0.3.1",
     "threadpoolctl==3.6.0",

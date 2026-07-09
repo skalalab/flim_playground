@@ -7,7 +7,7 @@ import pandas as pd
 import umap
 import plotly.graph_objects as go
 import streamlit as st
-from .helpers import get_point_visual_mappings, add_interleaved_points_trace, get_theme_color
+from .helpers import get_point_visual_mappings, add_interleaved_points_trace, get_context_theme_color
 import threading  
   
 @st.cache_data()
@@ -88,7 +88,7 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
     )
 
     # Get theme color for axis styling
-    theme_color = get_theme_color(key=f"theme_dim_red_{method}")
+    theme_color = get_context_theme_color()
     
     # Update axis labels to include explained variance
     if exp_var is not None: 

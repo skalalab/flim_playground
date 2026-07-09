@@ -1,4 +1,4 @@
-from .helpers import _find_best_gmm, get_point_visual_mappings, add_interleaved_points_trace, get_theme_color, log_negative_error
+from .helpers import _find_best_gmm, get_point_visual_mappings, add_interleaved_points_trace, get_context_theme_color, log_negative_error
 from src.feature_labels import format_feature_label
 import plotly.graph_objects as go
 import numpy as np
@@ -414,8 +414,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
 
     # Note: Legend traces and hovermode are already added by add_interleaved_points_trace
     # Just update layout with additional settings
-    theme_color = get_theme_color(key=f"theme_2d_{selected_x}_{selected_y}")
-    
+    theme_color = get_context_theme_color()
+
     # Set axis labels based on log transform (pretty_x/pretty_y defined above)
     x_axis_label = f"log₁₀({pretty_x})" if log_x else pretty_x
     y_axis_label = f"log₁₀({pretty_y})" if log_y else pretty_y
@@ -549,7 +549,7 @@ def phasor_kmeans(X_raw, n_clusters, random_state=42):
 def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, colormap="tab10", f=0.08, harmonic=1):
 
     # Get theme color once at the start for all theme-aware elements
-    theme_color = get_theme_color(key=f"theme_phasor_{selected_channel}_{harmonic}")
+    theme_color = get_context_theme_color()
     
     # Create the figure
     fig = go.Figure()

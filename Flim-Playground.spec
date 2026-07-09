@@ -3,7 +3,6 @@ from PyInstaller.utils.hooks import collect_all
 import streamlit_sortables
 import os
 import sys
-import streamlit_theme
 
 datas = [('src', 'src'), ('pages', 'pages'), ('main.py', '.'), ('launcher.py', '.'), ('logo.png', '.'), ('.streamlit', '.streamlit')]
 binaries = []
@@ -26,17 +25,6 @@ sortables_path = os.path.dirname(streamlit_sortables.__file__)
 frontend_build_path = os.path.join(sortables_path, 'frontend', 'build')
 if os.path.exists(frontend_build_path):
     datas.append((frontend_build_path, 'streamlit_sortables/frontend/build'))
-
-# Add streamlit-theme
-tmp_ret = collect_all('streamlit_theme')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
-
-# Manually add streamlit-theme frontend build directory
-# st-theme uses 'frontend/dist' unlike sortables which uses 'frontend/build'
-st_theme_path = os.path.dirname(streamlit_theme.__file__)
-st_theme_frontend_path = os.path.join(st_theme_path, 'frontend', 'dist')
-if os.path.exists(st_theme_frontend_path):
-    datas.append((st_theme_frontend_path, 'streamlit_theme/frontend/dist'))
 
 a = Analysis(
     ['launcher.py'],

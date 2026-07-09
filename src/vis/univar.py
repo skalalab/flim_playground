@@ -3,7 +3,7 @@ import plotly.graph_objects as go
 from itertools import combinations
 import numpy as np
 from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, comparison_pair_widget
-from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, get_theme_color, format_group_label, log_negative_error
+from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, get_context_theme_color, format_group_label, log_negative_error
 from src.feature_labels import format_feature_label
 
 def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab10"):
@@ -114,7 +114,7 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10", log_
             )
         ))
 
-    theme_color = get_theme_color(key=f"theme_hist_{selected_var}")
+    theme_color = get_context_theme_color()
     # data is log-transformed upstream (data_analysis.py) when log_x is set; wrap the label to match
     pretty_var = format_feature_label(selected_var)
     x_axis_label = f"log₁₀({pretty_var})" if log_x else pretty_var
@@ -173,7 +173,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
     # add the choice to do "intersection thresholding" or "hard assignment"
     intersection_threshold = st.checkbox("Use intersection as threshold", value=False, key="intersection_threshold", help="If checked, the point where the two Gaussian distributions intersect will be used as the threshold. If not checked, each data will be assigned to the component with the highest posterior probability.")
     fig = go.Figure()
-    theme_color = get_theme_color(key=f"theme_gmm_{selected_var}")
+    theme_color = get_context_theme_color()
     # fit a Gaussian Mixture Model (GMM) to each color group
     
     # Collect tables for two-column display
@@ -360,7 +360,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
 def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None", custom_order=None):
 
     # Get theme color once at the start for all theme-aware elements
-    theme_color = get_theme_color(key=f"theme_compare_{selected_var}")
+    theme_color = get_context_theme_color()
     # Pretty FLIM label (Greek notation) reused for hover, title, and y-axis
     pretty_var = format_feature_label(selected_var)
 
