@@ -27,6 +27,10 @@ jobs:
             name: windows-x64
           - os: macos-latest
             name: macos-arm64
+          # Last GitHub-hosted Intel mac image (macos-13 retired Dec 2025);
+          # available until macOS 15 leaves support in Aug 2027.
+          - os: macos-15-intel
+            name: macos-x64
           - os: ubuntu-24.04
             name: linux-x64
 
@@ -57,7 +61,11 @@ jobs:
         run: |
           mkdir -p release
           if [ "$RUNNER_OS" = "macOS" ]; then
-            tar -czf release/Flim-Playground-mac.tar.gz -C dist Flim-Playground.app
+            # Both mac jobs (Apple Silicon + Intel) attach to the same release,
+            # so the tar name must encode the arch: arm64 keeps the historical
+            # unsuffixed name existing links point at, Intel gets -intel.
+            if [ "$(uname -m)" = "x86_64" ]; then MAC_SUFFIX="-intel"; else MAC_SUFFIX=""; fi
+            tar -czf "release/Flim-Playground-mac${MAC_SUFFIX}.tar.gz" -C dist Flim-Playground.app
           elif [ "$RUNNER_OS" = "Linux" ]; then
             # Desktop integration so Linux users get a clickable, iconed launcher
             # like macOS/Windows instead of a bare binary. Drop a square PNG icon
