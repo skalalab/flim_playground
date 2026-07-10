@@ -41,7 +41,7 @@ You can try out analysis modules in the **Data Analysis** section using this sam
 # Install
 ## Option 1: Download from Releases
 Grab the latest build for your OS under the **Releases** tab on the right (available for macOS, Windows 11, and Ubuntu 24.04 LTS):
-- **macOS** — download `Flim-Playground-mac.tar.gz` (Apple Silicon: M1 and later) or `Flim-Playground-mac-intel.tar.gz` (Intel Macs — check **Apple menu → About This Mac** if unsure), unzip, and double-click **Flim-Playground.app**.
+- **macOS** — download `Flim-Playground-mac.tar.gz` (Apple Silicon: M1 and later) or `Flim-Playground-mac-intel.tar.gz` (Intel Macs — check **Apple menu → About This Mac** if unsure), unzip, run the [one-line Terminal command below](#first-launch-getting-past-the-security-warning) once, then double-click **Flim-Playground.app**.
 - **Windows** — download `Flim-Playground-Setup.exe`, run the installer, then launch from the **Start Menu** shortcut it creates.
 - **Linux** (Ubuntu 24.04+) — download `Flim-Playground-linux.tar.gz` and **double-click it to extract** (or right-click → *Extract* in your file manager). You get a single **`Flim-Playground-linux`** folder — open it and run `./install.sh` once to add **FLIM Playground** to your application menu, then click it to launch. (Or run the `Flim-Playground` binary directly.) *Prefer the terminal? Extract with `tar --one-top-level -xzf Flim-Playground-linux.tar.gz` so the files land in their own folder instead of the current directory.*
 
@@ -56,27 +56,20 @@ FLIM Playground is distributed **without a paid code-signing certificate**, so t
 
 - **When you run it:** double-click `Flim-Playground-Setup.exe`; if a blue *"Windows protected your PC"* box appears, click **More info → Run anyway**, then proceed through the installer.
 
-**macOS** — Gatekeeper blocks the app because Apple hasn't notarized it. Depending on your macOS version you'll hit one of two blocks:
-
-- **"Apple could not verify…" (Not Opened)** — this softer block *can* be cleared in the UI: open **System Settings → Privacy & Security**, scroll to **Security**, click **Open Anyway** next to *"Flim-Playground" was blocked*, then confirm.
-
-  <img src="assets/security-mac-1-blocked.png" width="270" alt="macOS: Apple could not verify"> <img src="assets/security-mac-3-open-anyway.png" width="470" alt="System Settings: Open Anyway">
-
-- **`-47` "can't be opened"** — on recent macOS the block appears as this error instead. It has **no *Open Anyway* button and cannot be cleared through System Settings** — the Terminal command below is the only fix.
-
-  <img src="assets/security-mac-2-error-47.png" width="270" alt="macOS: error -47">
-
-**Terminal fix** — works for both cases, and is the **only** way past the `-47` error. Strip the download-quarantine flag, then open:
+**macOS** — the app isn't notarized by Apple, so **before double-clicking it for the first time**, open **Terminal** (find it with Spotlight: ⌘-Space, type "Terminal"), paste this one line, and press Return:
 
 ```bash
 xattr -dr com.apple.quarantine ~/Downloads/Flim-Playground.app
-open ~/Downloads/Flim-Playground.app
 ```
 
-If you moved the app elsewhere (e.g. `/Applications`), point the command at that path instead.
+This strips the download-quarantine flag, so the app opens with a normal double-click and you skip macOS's security pop-ups entirely. If the app is somewhere other than Downloads (e.g. `/Applications`), point the command at that path instead.
+
+If you double-clicked first and got blocked with one of the errors below — no problem: run the same command, then double-click again.
+
+<img src="assets/security-mac-1-blocked.png" width="270" alt="macOS: Apple could not verify"> <img src="assets/security-mac-2-error-47.png" width="270" alt="macOS: error -47">
 
 ### Upgrading
-Already running an older version? Grab the latest build from the **Releases** tab, then follow the steps for your platform below. Because every download is a fresh, unsigned file, the [security warning](#first-launch-getting-past-the-security-warning) above **reappears for each new version** — clear it the same way each time (on macOS, re-run the `xattr` command on the new download; if you get the `-47` error, that command is the only fix). Your settings — `config.toml` (Data Extraction) and `analysis_config.toml` (Data Analysis, if you have one) — are **not** bundled inside the app, so they carry over. Where they are stored, and what that means when you upgrade, differs by platform:
+Already running an older version? Grab the latest build from the **Releases** tab, then follow the steps for your platform below. Because every download is a fresh, unsigned file, the [security warning](#first-launch-getting-past-the-security-warning) above **reappears for each new version** — clear it the same way each time (on macOS, re-run the `xattr` command on the new download). Your settings — `config.toml` (Data Extraction) and `analysis_config.toml` (Data Analysis, if you have one) — are **not** bundled inside the app, so they carry over. Where they are stored, and what that means when you upgrade, differs by platform:
 
 - **macOS** — extract the new mac tarball (`Flim-Playground-mac.tar.gz`, or `Flim-Playground-mac-intel.tar.gz` on Intel Macs) and replace the old **Flim-Playground.app** with the new one. Your settings are saved in the folder *beside* the app, **outside** the `.app` bundle, so swapping the app never touches them — just keep the two `.toml` files where they are.
 - **Windows** — run the new `Flim-Playground-Setup.exe`; it upgrades your existing installation in place. Your settings sit at the **root of the install folder** (next to the program, not inside the internal payload the installer refreshes), so they are preserved automatically.
