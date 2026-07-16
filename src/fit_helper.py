@@ -30,8 +30,20 @@ def irf_fwhm_bins(irf):
     # returns the 2 times of the FWHM just to be safe
     return max(2, 2*(R - L))
 
+def coerce_finite_shift(shift):
+    if isinstance(shift, (bool, np.bool_)) or np.ndim(shift) != 0:
+        raise ValueError(f"IRF shift must be a finite number; got {shift!r}.")
+    try:
+        shift_value = float(shift)
+    except (TypeError, ValueError, OverflowError):
+        raise ValueError(f"IRF shift must be a finite number; got {shift!r}.") from None
+    if not np.isfinite(shift_value):
+        raise ValueError(f"IRF shift must be a finite number; got {shift!r}.")
+    return shift_value
+
 def irf_shift(irf, shift, irf_upsampled=None):
     scale = 10
+    shift = coerce_finite_shift(shift)
     if irf_upsampled is None:
         irf_upsampled = upsample_irf(irf, scale)
     # shift the irf curve

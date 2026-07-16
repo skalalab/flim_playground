@@ -468,6 +468,11 @@ def extract_intensity_sum_2d(channel_name, decay_curves, single_cell_features_fo
 
 def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method=None, fluorescence_lifetime_standard_image=None, fluorescence_lifetime_standard_lifetime=None, fluorescence_lifetime_standard_time_axis=None, fixed_lifetimes=None):
     need_to_fit = False
+    shifted_irf = None
+    shift_required = (
+        (fit and "prefitted" not in input_type)
+        or (fit_free and calibration_method != "Fluorescence Lifetime Standard")
+    )
 
     if "prefitted" not in input_type or fit_free:
         time_bins = metadata["time_bins"]
@@ -477,14 +482,24 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         if error_msg != "":
             return error_msg, pd.DataFrame()
         
-        if f"{channel_name}_shift" in metadata.index:
+        shift_col = f"{channel_name}_shift"
+        if shift_required and shift_col in metadata.index:
             error_msg, irf = get_irf(metadata, channel_name, time_bins)
             if error_msg != "":
                 return error_msg, pd.DataFrame()
-            shift = metadata[f"{channel_name}_shift"]
-            shifted_irf = irf_shift(irf, shift)
-        else:
-            shifted_irf = None
+            raw_shift = metadata[shift_col]
+            try:
+                shifted_irf = irf_shift(irf, raw_shift)
+            except ValueError:
+                fov_name = metadata.get(fov_col_name, "unknown")
+                return (
+                    f"Error: Invalid shift for channel {channel_name} in {fov_col_name} {fov_name}: "
+                    f"{raw_shift!r}. Re-run shift optimization or correct {shift_col} in the metadata.",
+                    pd.DataFrame(),
+                )
+        elif shift_required:
+            fov_name = metadata.get(fov_col_name, "unknown")
+            return f"Error: Shift column {shift_col} is missing for {fov_col_name} {fov_name}.", pd.DataFrame()
     if fit:
         try:
             num_components = metadata[f"{channel_name}_num_components"]
@@ -682,4 +697,3 @@ def fov_extraction(metadata, metadata_dict):
         return f"Error: No cells found in the {fov_name}", pd.DataFrame()
 
     return "", single_cell_features_fov
-            

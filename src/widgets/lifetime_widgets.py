@@ -249,6 +249,35 @@ def choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name, 
         error_msg, results = choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_algo, fitting_mode, input_type, channel_name, start=start, end=end, fixed_lifetimes=fixed_lifetimes)
     if error_msg != "":
         return error_msg, None
+
+    try:
+        shift_values = np.asarray(results["shift"], dtype=float)
+        decay_ids = list(results["decay_id"])
+    except (KeyError, TypeError, ValueError):
+        return f"Error: Shift optimization returned invalid results for {channel_name}. No shifts were saved.", None
+
+    if shift_values.ndim != 1 or len(shift_values) != len(decay_ids):
+        return f"Error: Shift optimization returned inconsistent results for {channel_name}. No shifts were saved.", None
+
+    if len(shift_values) == 0:
+        return f"Error: Shift optimization found no decay curves for {channel_name}. No shifts were saved.", None
+
+    invalid_indices = np.flatnonzero(~np.isfinite(shift_values))
+    if len(invalid_indices) > 0:
+        invalid_ids = [str(decay_ids[index]) for index in invalid_indices]
+        shown_ids = ", ".join(invalid_ids[:5])
+        if len(invalid_ids) > 5:
+            shown_ids += f", and {len(invalid_ids) - 5} more"
+        return (
+            f"Error: Shift optimization failed for {channel_name} decay(s): {shown_ids}. "
+            f"No shifts were saved. Verify that {channel_name} is mapped to the correct acquisition channel, "
+            "check for empty masks or low/noisy signal decay curves, then re-run shift optimization.",
+            None,
+        )
+
+    results = dict(results)
+    results["shift"] = shift_values
+    results["decay_id"] = decay_ids
     
     period = duration / time_bins
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
@@ -256,21 +285,29 @@ def choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name, 
     display_shift_data_widget(results, channel_name, choose_shift_method, time_axis, period, metadata_dict[channel_name].get("num_components", 0), log_y, start, end, fixed_lifetimes=fixed_lifetimes)
     
     if metadata_dict["fix_shift"]:
-        median_shift = np.median(results["shift"])
+        median_shift = np.median(shift_values)
         shift_data = st.number_input(f"{channel_name} Shift", value=median_shift, step=0.1, help=f"The shift for {channel_name} channel. The provided default value is the median of the shifts. You can change it to a specific value.")
     else:
         if "2D" in input_type:
             # get one shift value for each fov 
             fovs = metadata_df[fov_name_col].unique()
-            decay_ids = results["decay_id"]
-            shifts = results["shift"]
             fov_shifts = []
             for fov in fovs:
-                shift_fov = np.median([shifts[decay_ids.index(decay_id)] for decay_id in decay_ids if decay_id.startswith(fov)])
+                matching_indices = [
+                    index for index, decay_id in enumerate(decay_ids)
+                    if str(decay_id).startswith(f"{fov}_")
+                ]
+                if not matching_indices:
+                    return (
+                        f"Error: Shift optimization found no matching decay curves for {fov_name_col} {fov} "
+                        f"in channel {channel_name}. No shifts were saved.",
+                        None,
+                    )
+                shift_fov = np.median(shift_values[matching_indices])
                 fov_shifts.append(shift_fov)
             shift_data = fov_shifts
         else:
-            shift_data = results["shift"]
+            shift_data = shift_values
 
     return "", shift_data
 
