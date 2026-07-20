@@ -371,6 +371,7 @@ def check_raw_decay_data(fov_df, channel_name):
             non_zero_channels = [c for c in range(shape[0]) if channel_has_signal[c]]
             return "", non_zero_channels, shape[1:], laser_rep_time
 
+@st.cache_data
 def check_raw_2D_decay_data(fov_df, channel_name):
     decay_column_name = f"{channel_name}_Decay"
     if decay_column_name not in fov_df.columns:
@@ -382,6 +383,7 @@ def check_raw_2D_decay_data(fov_df, channel_name):
             return f"Error reading decay data for {channel_name}: {e}", None
         return "", decay_data.shape[1]
 
+@st.cache_data
 def check_raw_intensity_data(fov_df, channel_name):
     dimension_list = []
     intensity_column_name = f"{channel_name}_Intensity (2D)"
@@ -417,6 +419,17 @@ def check_raw_intensity_data(fov_df, channel_name):
         return f"No fov dimensions found for channel {channel_name}. Please check the data.", None
     else:
         return "", dimension_list[0]
+
+def clear_folder_scan_caches():
+    """Clear every cached folder-scan / raw-data-validation result so the next
+    scan re-reads all files from disk. Backs the "Rescan folder" button, whose
+    "ignore cached results" promise only holds if *all* these readers are
+    cleared, not just the folder listing.
+    """
+    load_list_data_from_folder_widget.clear()
+    check_raw_decay_data.clear()
+    check_raw_2D_decay_data.clear()
+    check_raw_intensity_data.clear()
 
 def _inconsistent_selected(x):
     return f"Inconsistent {x} found for the selected channels. Please check the data."

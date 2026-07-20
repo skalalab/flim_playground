@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from src.navigation import render_top_menu
 from src.dataset_io import happy_emoji, sad_emoji
 from src.widgets.numeric_extraction_widgets import fov_extraction_widget
-from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, preview_metadata_widget, check_assign_channel_widget, lifetime_data_config_widget
+from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, preview_metadata_widget, check_assign_channel_widget, lifetime_data_config_widget, clear_folder_scan_caches
 from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
 from src.widgets.lifetime_widgets import fit_options_widget, choose_shift_widget
 from src.metadata import parse_metadata_file
@@ -254,7 +254,7 @@ def render_fov_metadata_step(col1, col2, ctx):
             else:
                 folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the raw data that is needed for the selected data extraction type.", key="fov_metadata_folder_path")
                 if folder_path and st.button("Rescan folder", help="Re-read files from disk, ignoring cached results"):
-                    load_list_data_from_folder_widget.clear()
+                    clear_folder_scan_caches()
                     st.rerun()
 
     with col2:
