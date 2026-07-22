@@ -367,10 +367,10 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
             elif effect_size_method == "Absolute Cohen's d":
                 threshold = st.number_input(
                     "Absolute Cohen's d threshold",
-                    value=0.7,
+                    value=0.5,
                     min_value=0.0,
                     max_value=3.0,
-                    step=0.05,
+                    step=0.1,
                     key=f"cohens_d_thresh_{threshold_key_suffix}",
                 )
 

@@ -544,9 +544,9 @@ def lifetime_data_config_widget(selected_feature_extractors, input_type):
         if fit_free:
             default_laser_rate = get_default_laser_rate(input_type)
             with cols[2]:
-                laser_rate = st.number_input("Laser rate **(GHz)**", value=default_laser_rate, min_value=0.0, max_value=2.0, key="2D_decay_laser_rate")
+                laser_rate = st.number_input("Laser rate **(GHz)**", value=default_laser_rate, min_value=0.0, max_value=1.0, key="2D_decay_laser_rate")
     else: 
         if fit_free:
             default_laser_rate = get_default_laser_rate(input_type)
-            laser_rate = st.number_input("Laser rate **(GHz)**", value=default_laser_rate, min_value=0.0, max_value=2.0, key="laser_rate")
+            laser_rate = st.number_input("Laser rate **(GHz)**", value=default_laser_rate, min_value=0.0, max_value=1.0, key="laser_rate")
     return duration, time_bins, laser_rate
