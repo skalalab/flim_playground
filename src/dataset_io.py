@@ -1,8 +1,15 @@
-import pandas as pd
-from src.widgets.analysis_config_widgets import get_all_feature_groups, get_unique_row_id_col, get_fov_name_col_analysis
-from src.config import get_all_feature_extractors
-import streamlit as st
 import random
+
+import pandas as pd
+import streamlit as st
+
+from src.config import get_all_feature_extractors
+from src.widgets.analysis_config_widgets import (
+    get_all_feature_groups,
+    get_fov_name_col_analysis,
+    get_unique_row_id_col,
+)
+
 happy_celebratory_emojis = [
     "🥳",  # Partying Face
     "🎉",  # Party Popper
@@ -46,7 +53,27 @@ happy_celebratory_emojis = [
     "🤹",  # Person Juggling
     "🤸",  # Person Cartwheeling
     "🛹",  # Skateboard
-    "🛴"   # Kick Scooter
+    "🛴",  # Kick Scooter
+    "🥟",  # Dumpling
+    "🍕",  # Pizza
+    "🍔",  # Hamburger
+    "🍟",  # French Fries
+    "🌮",  # Taco
+    "🍿",  # Popcorn
+    "🎂",  # Birthday Cake
+    "🧁",  # Cupcake
+    "🍩",  # Doughnut
+    "🍦",  # Soft Ice Cream
+    "🍨",  # Ice Cream
+    "🥞",  # Pancakes
+    "🧇",  # Waffle
+    "🍬",  # Candy
+    "🍭",  # Lollipop
+    "🍫",  # Chocolate Bar
+    "🍓",  # Strawberry
+    "🍒",  # Cherries
+    "🍉",  # Watermelon
+    "🧋"   # Bubble Tea
 ]
 sad_regretful_emojis = [
     "😥",  # Sad but Relieved Face
@@ -87,7 +114,17 @@ sad_regretful_emojis = [
     "🪫",  # Low Battery
     "🌪️",  # Tornado
     "🧯",  # Fire Extinguisher
-    "🤯"   # Exploding Head
+    "🤯",  # Exploding Head
+    "🫥",  # Dotted Line Face
+    "🫨",  # Shaking Face
+    "😶",  # Face Without Mouth
+    "🤐",  # Zipper-Mouth Face
+    "🥱",  # Yawning Face
+    "🙀",  # Weary Cat
+    "🌧️",  # Cloud with Rain
+    "⛈️",  # Cloud with Lightning and Rain
+    "😵",  # Dizzy Face
+    "🆘"   # SOS Button
 ]
 
 # Choose a random happy/celebratory emoji
@@ -95,6 +132,20 @@ happy_emoji = random.choice(happy_celebratory_emojis)
 
 # Choose a random sad/regretful emoji
 sad_emoji = random.choice(sad_regretful_emojis)
+
+@st.cache_data(show_spinner=False)
+def _read_csv_cached(uploaded_csv):
+    """Cache only the raw CSV parse — the expensive, per-rerun cost for large tables.
+
+    Keyed on the uploaded file's *content* (st.cache_data hashes the buffer by
+    bytes), so it is independent of the analysis-profile config that the rest of
+    load_csv reads (row-id / FOV / feature grouping). That validation stays live
+    and always reflects the active profile, avoiding stale results on a profile
+    switch. cache_data returns a fresh copy each call, so downstream mutation of
+    the frame is safe.
+    """
+    return pd.read_csv(uploaded_csv, index_col=False, low_memory=False)
+
 
 def load_csv(uploaded_csv, categorical_cols, use_data_extraction=True):
     """
@@ -104,8 +155,8 @@ def load_csv(uploaded_csv, categorical_cols, use_data_extraction=True):
     df = feature_groups_dict = None
         # check and fix the uploaded csv 
     if uploaded_csv is not None:
-        # Read the uploaded data, explicitly preventing the first column from being used as the index
-        df = pd.read_csv(uploaded_csv, index_col=False, low_memory=False)
+        # Read the uploaded data (cached parse; index_col=False keeps the first column as data)
+        df = _read_csv_cached(uploaded_csv)
         unique_row_id_col = get_unique_row_id_col(use_data_extraction)
         fov_name_col = get_fov_name_col_analysis(use_data_extraction)
         df, warning_msg, error_msg = check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col)

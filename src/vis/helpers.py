@@ -1,13 +1,15 @@
+import re
+
+import numpy as np
+import pandas as pd
+import plotly.graph_objects as go
 import seaborn as sns
 import streamlit as st
-import numpy as np
-from scipy.stats import norm, gaussian_kde, median_abs_deviation, ttest_ind
 from scipy.optimize import brentq
+from scipy.stats import gaussian_kde, median_abs_deviation, norm, ttest_ind
 from sklearn.mixture import GaussianMixture
-import pandas as pd
+
 from src.widgets.visualization_widgets import comparison_pair_widget
-import re
-import plotly.graph_objects as go
 
 
 def log_negative_error(var_name):
@@ -462,6 +464,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
                 show_effect_size=False
             )
 
+@st.cache_data(show_spinner=False)
 def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_state=42):
     """
     Finds the best Gaussian Mixture Model (GMM) based on BIC, subject to constraints.
@@ -593,7 +596,7 @@ def get_point_visual_mappings(
         for group_key in product(color_keys, shape_keys, opacity_keys, separate_keys):
             # Build boolean mask for each group
             mask = (
-                (df[group_col_name] == group_key[0])
+                df[group_col_name] == group_key[0]
             )
             if shape_by and shape_by in df.columns:
                 mask &= (df[shape_by] == group_key[1])
@@ -631,9 +634,7 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
         if hasattr(trace, 'name') and trace.name in skip_trace_names:
             continue
         if hasattr(trace, 'marker') and trace.marker:
-            if trace.type == 'scatter':
-                trace.marker.size = point_size
-            elif trace.type == 'box' and trace.marker:
+            if trace.type == 'scatter' or trace.type == 'box' and trace.marker:
                 trace.marker.size = point_size
 
     # Update annotation font sizes to match axis label size
@@ -809,8 +810,8 @@ def add_interleaved_points_trace(
     fig : plotly.graph_objects.Figure
         The figure with traces added
     """
-    import random
     import math
+    import random
 
     # Local RNG so the per-color shuffle is reproducible run-to-run without
     # touching (or being perturbed by) the global `random` state. Seeded by

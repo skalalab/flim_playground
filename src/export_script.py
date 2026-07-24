@@ -21,7 +21,6 @@ from src.vis.plot_defaults import (
     DEFAULT_POINT_SIZE,
 )
 
-
 # Prepended to every exported analysis script (same message as README.md # Citation).
 _EXPORT_SCRIPT_CITATION = """\
 # Citation
@@ -60,6 +59,12 @@ def _extract_source(*funcs_or_classes, strip_src_imports=True) -> str:
     for obj in funcs_or_classes:
         src = inspect.getsource(obj)
         src = textwrap.dedent(src)
+        # Drop any leading decorators captured with the source (e.g. the app's
+        # @st.cache_data). Caching is a Streamlit-only optimization; the
+        # standalone script imports no streamlit, so leaving the decorator in
+        # would reference an undefined `st`. The extracted function runs once,
+        # so it needs no cache anyway.
+        src = re.sub(r"\A(?:@[^\n]*\n)+", "", src)
         if strip_src_imports:
             src = re.sub(r"^from src\..*$", "", src, flags=re.MULTILINE)
         parts.append(src.strip())
@@ -418,7 +423,12 @@ def _build_filters(state: dict) -> str:
 
 def _build_visual_encoding(state: dict, overlap_point: bool = True) -> str:
     """Build visual encoding section by extracting real functions."""
-    from src.vis.helpers import natural_key, tuple_natural_key, natural_tuple_sort, create_opacity_mapping
+    from src.vis.helpers import (
+        create_opacity_mapping,
+        natural_key,
+        natural_tuple_sort,
+        tuple_natural_key,
+    )
 
     # Extract computation from actual source (include tuple_natural_key which natural_tuple_sort depends on)
     helpers_src = _extract_source(natural_key, tuple_natural_key, natural_tuple_sort, create_opacity_mapping)
@@ -713,7 +723,7 @@ ax.legend(fontsize=LEGEND_SIZE)
 
 
 def _build_feature_comparison(state: dict) -> str:
-    from src.vis.helpers import glass_delta, cohens_d, _compute_bracket_position
+    from src.vis.helpers import _compute_bracket_position, cohens_d, glass_delta
 
     effect_size_src = _extract_source(glass_delta, cohens_d, _compute_bracket_position)
 
@@ -1284,8 +1294,13 @@ ax.legend(fontsize=LEGEND_SIZE)
 
 def _build_classification(state: dict) -> str:
     from src.classify import (
-        prepare_data, _build_classifier, calculate_metrics,
-        calculate_roc_curve, plot_roc_curve, plot_confusion_matrix, plot_feature_importance,
+        _build_classifier,
+        calculate_metrics,
+        calculate_roc_curve,
+        plot_confusion_matrix,
+        plot_feature_importance,
+        plot_roc_curve,
+        prepare_data,
     )
     from src.tuned_threshold_classifier import TunedThresholdClassifierCV
 
