@@ -1,12 +1,12 @@
-# -*- coding: utf-8 -*-
 """
 read data from raw decay file (sdt or ptu)
 """
 
+import os
+
+import numpy as np
 from ptufile import PtuFile
 from sdtfile import SdtFile
-import numpy as np
-import os
 
 
 def _msg_no_path():
@@ -55,7 +55,7 @@ def read_decay_metadata(filename):
             laser_rep_rate = ptu.tags['TTResult_SyncRate']
             if not laser_rep_rate or laser_rep_rate <= 0:
                 return f"Error: Invalid laser sync rate ({laser_rep_rate}) in {filename}", None
-            laser_rep_time = 1 / laser_rep_rate * 1e9
+            laser_rep_time = float(1 / laser_rep_rate * 1e9)
         except Exception:
             return _msg_no_laser_rep(filename), None
     elif filename.endswith(".sdt"):
@@ -68,7 +68,10 @@ def read_decay_metadata(filename):
             tac_g = sdt.measure_info[0].tac_g
             if not tac_g or tac_g == 0:
                 return f"Error: Invalid TAC gain (tac_g={tac_g}) in {filename}", None
-            laser_rep_time = tac_r / tac_g * 1e9
+            # tac_r / tac_g are float32 SDT header fields; coerce so `duration`
+            # stays a native float (float32 is not JSON-serializable, which
+            # otherwise breaks lmfit params.dumps() on the parallel fit path).
+            laser_rep_time = float(tac_r / tac_g * 1e9)
         except Exception:
             return _msg_no_laser_rep(filename), None
     else:

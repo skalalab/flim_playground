@@ -73,8 +73,11 @@ happy_celebratory_emojis = [
     "🍓",  # Strawberry
     "🍒",  # Cherries
     "🍉",  # Watermelon
-    "🧋"   # Bubble Tea
+    "🧋",  # Bubble Tea
+    "🎡",  # Ferris Wheel
+    "🧸",  # Teddy Bear
 ]
+
 sad_regretful_emojis = [
     "😥",  # Sad but Relieved Face
     "😢",  # Crying Face

@@ -3,9 +3,10 @@ from os import cpu_count
 
 import numpy as np
 import psutil
-from lmfit import minimize as lmfit_minimize
 from lmfit import Parameters
-from src.fit_helper import objective, upsample_irf, irf_fwhm_bins
+from lmfit import minimize as lmfit_minimize
+
+from src.fit_helper import irf_fwhm_bins, objective, upsample_irf
 
 _MIN_CURVES_FOR_PARALLEL = 10
 
@@ -13,6 +14,10 @@ _MIN_CURVES_FOR_PARALLEL = 10
 def _init_params(duration, time_bins, num_components, num_curves, fit_shift, shift_guess, shift_halfwidth, fixed_lifetimes):
     """Build lmfit Parameters and allocate result arrays."""
     params = Parameters()
+    # `duration` seeds param bounds (max=duration) that are JSON-serialized via
+    # params.dumps() on the parallel fit path; a numpy float32 (e.g. from an SDT
+    # tac_r/tac_g laser rep time) is not JSON-serializable, so coerce to float.
+    duration = float(duration)
     _fl = fixed_lifetimes or {}
 
     def _get_fixed(key):
