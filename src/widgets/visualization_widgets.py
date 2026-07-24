@@ -1,14 +1,15 @@
-import streamlit as st
 import numpy as np
-
+import streamlit as st
 from streamlit_sortables import sort_items
 
+from src.emojis import sad_emoji
 from src.vis.plot_defaults import (
     DEFAULT_AXIS_LABEL_FONT_SIZE,
     DEFAULT_COLORMAP,
     DEFAULT_LEGEND_FONT_SIZE,
     DEFAULT_POINT_SIZE,
 )
+
 
 def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False):
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
@@ -177,12 +178,12 @@ def phasor_params_widget(feature_groups_dict):
     elif len(channel_harmonics.keys()) == 1:
         selected_channel = list(channel_harmonics.keys())[0]
     else:
-        st.error("No available channels found for phasor plot")
+        st.error(f"No available channels found for phasor plot {sad_emoji}")
         return None, None, None
     if not channel_harmonics.get(selected_channel):
         # No complete G/S pair for this channel -> nothing to plot. Guard the
         # otherwise-empty selectbox (which returns None) so f stays defined.
-        st.error(f"No phasor harmonics available for {selected_channel}: both G and S coordinates are required.")
+        st.error(f"No phasor harmonics available for {selected_channel}: both G and S coordinates are required. {sad_emoji}")
         return None, None, None
     selected_harmonic = st.selectbox(f"{selected_channel} harmonic No. ", channel_harmonics[selected_channel])
     f = None

@@ -1,30 +1,59 @@
-import streamlit as st
 import sys
 from pathlib import Path
 
+import streamlit as st
+
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from src.dataset_io import load_csv, sad_emoji
-from src.widgets.selection_widgets import single_feature_select_widget, multi_feature_select_widget, twod_single_feature_select_widget
-from src.widgets.visualization_widgets import umap_hyperParams_widget, phasor_params_widget, visual_encoding_channels_widget, plot_config_widget, tsne_hyperParams_widget, get_visual_group_keys, reorder_x_axis_widget
-from src.widgets.filter_widgets import filters_widget
+from src.classify import run_classification
+from src.dataset_io import load_csv
+from src.emojis import sad_emoji
+from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import render_top_menu
-from src.vis.multivar import dimension_reduction_plot
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
-from src.vis.univar import fov_comparison_plot, feature_histogram_plot, feature_gmm_plot, feature_comparison_plot
 from src.vis.helpers import apply_plot_styling, log_negative_error
+from src.vis.multivar import dimension_reduction_plot
 from src.vis.plot_defaults import (
     DEFAULT_AXIS_LABEL_FONT_SIZE,
     DEFAULT_COLORMAP,
     DEFAULT_LEGEND_FONT_SIZE,
     DEFAULT_POINT_SIZE,
 )
-from src.widgets.analysis_config_widgets import dataset_config_widget, get_fov_name_col_analysis, get_unique_row_id_col, get_categorical_cols_analysis
-from src.widgets.classification_widgets import CLASSIFIER_OPTIONS, classifier_hyperparams_widget, classifier_options_widget, classification_plot_widget
-from src.classify import run_classification
-from src.export_script import generate_script, get_effect_size_threshold_capture
+from src.vis.univar import (
+    feature_comparison_plot,
+    feature_gmm_plot,
+    feature_histogram_plot,
+    fov_comparison_plot,
+)
+from src.widgets.analysis_config_widgets import (
+    dataset_config_widget,
+    get_categorical_cols_analysis,
+    get_fov_name_col_analysis,
+    get_unique_row_id_col,
+)
+from src.widgets.classification_widgets import (
+    CLASSIFIER_OPTIONS,
+    classification_plot_widget,
+    classifier_hyperparams_widget,
+    classifier_options_widget,
+)
+from src.widgets.filter_widgets import filters_widget
+from src.widgets.selection_widgets import (
+    multi_feature_select_widget,
+    single_feature_select_widget,
+    twod_single_feature_select_widget,
+)
+from src.widgets.visualization_widgets import (
+    get_visual_group_keys,
+    phasor_params_widget,
+    plot_config_widget,
+    reorder_x_axis_widget,
+    tsne_hyperParams_widget,
+    umap_hyperParams_widget,
+    visual_encoding_channels_widget,
+)
 
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_icon="📊")
 render_top_menu()
 
 # initialize session_states
@@ -238,7 +267,7 @@ with col1:
     try:
         df, feature_groups_dict, upload_complete = load_csv(uploaded_csv, categorical_cols, use_data_extraction=use_data_extraction)
     except Exception as e:
-        st.error(f"Failed to process the uploaded CSV: {e}")
+        st.error(f"Failed to process the uploaded CSV: {e} {sad_emoji}")
         df, feature_groups_dict, upload_complete = None, None, False
     st.session_state.vis_df = df
 
@@ -371,7 +400,7 @@ with col2:
                         g_col = f"{feature_prefix}G(1st)" if selected_harmonic == 1 else f"{feature_prefix}G(2nd)"
                         s_col = f"{feature_prefix}S(1st)" if selected_harmonic == 1 else f"{feature_prefix}S(2nd)"
                         if g_col not in filtered_df.columns or s_col not in filtered_df.columns:
-                            st.error(f"Required phasor columns ({g_col}, {s_col}) not found in your data.")
+                            st.error(f"Required phasor columns ({g_col}, {s_col}) not found in your data. {sad_emoji}")
                         else:
                             fig, kmeans_df = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap, f=f, harmonic=selected_harmonic)
                             data_export_ready = True
@@ -390,7 +419,7 @@ with col2:
                             try:
                                 fig = dimension_reduction_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_features=selected_features, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by, colormap=st.session_state.plot_colormap, method=dr_method, hyperParam_dict=hyperParam_dict)
                             except Exception as e:
-                                st.error(f"Dimension reduction failed: {e}. Check that selected features don't contain constant or all-NaN columns.")
+                                st.error(f"Dimension reduction failed: {e}. Check that selected features don't contain constant or all-NaN columns. {sad_emoji}")
                                 fig = None
                         else:
                             st.write(f"No data available after removing rows with missing values {sad_emoji}")
@@ -417,7 +446,7 @@ with col2:
                             random_state=42,
                         )
                         if error_msg:
-                            st.error(error_msg)
+                            st.error(f"{error_msg} {sad_emoji}")
                         else:
                             classification_plot_widget(results, classification_method, threshold_method)
                             _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by,

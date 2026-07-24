@@ -20,7 +20,7 @@ from src.config import get_config_mtime
 _SEEN_KEY = "_config_mtime_seen"
 _STALE_MESSAGE = (
     "⚙️ The configuration was updated in another tab. **Reload this page** "
-    "(browser refresh, or press **R**) to apply the new settings here."
+    "(i.e. hard browser refresh) to apply the new settings here."
 )
 
 

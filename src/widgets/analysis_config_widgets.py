@@ -1,8 +1,18 @@
+import sys
+from pathlib import Path
+
 import streamlit as st
 from streamlit_sortables import sort_items
-from pathlib import Path
-import sys
-from src.config import load_config, save_config, get_unique_cell_id_col, get_fov_name_col, get_categorical_cols, get_persistent_dir
+
+from src.config import (
+    get_categorical_cols,
+    get_fov_name_col,
+    get_persistent_dir,
+    get_unique_cell_id_col,
+    load_config,
+    save_config,
+)
+from src.emojis import happy_emoji, sad_emoji
 
 # Maximum number of profiles allowed
 MAX_PROFILES = 10
@@ -204,7 +214,7 @@ def dataset_config_widget(use_data_extraction=True):
                             del st.session_state[new_numerical_features_key]
                         st.rerun()
                     elif new_profile_name in available_profiles:
-                        st.error(f"Profile '{new_profile_name}' already exists!")
+                        st.error(f"Profile '{new_profile_name}' already exists! {sad_emoji}")
         else:
             st.info(f"Maximum {MAX_PROFILES} profiles reached")
     
@@ -232,7 +242,7 @@ def dataset_config_widget(use_data_extraction=True):
                     for key in [deleted_feature_groups_key, deleted_numerical_features_key, deleted_categorical_cols_key]:
                         if key in st.session_state:
                             del st.session_state[key]
-                    st.success(f"Profile '{selected_profile}' deleted successfully!")
+                    st.success(f"Profile '{selected_profile}' deleted successfully! {happy_emoji}")
                     st.rerun()
         else:
             st.info("Cannot delete the only profile")
@@ -279,7 +289,7 @@ def dataset_config_widget(use_data_extraction=True):
         
         # Display success message if flag is set
         if st.session_state.get("config_saved", False):
-            st.success("Configuration saved successfully!")
+            st.success(f"Configuration saved successfully! {happy_emoji}")
             st.session_state.config_saved = False  # Clear the flag
     with col2:
         if st.button("Reset Configuration"):
@@ -301,7 +311,7 @@ def dataset_config_widget(use_data_extraction=True):
         
         # Display success message if flag is set
         if st.session_state.get("config_reset", False):
-            st.success("Configuration reset successfully!")
+            st.success(f"Configuration reset successfully! {happy_emoji}")
             st.session_state.config_reset = False  # Clear the flag
 
 def feature_groups_widget():
@@ -419,10 +429,10 @@ def feature_groups_widget():
                 if new_group_name not in st.session_state[feature_groups_key]:
                     st.session_state[feature_groups_key][new_group_name] = []
                     st.session_state[sortable_refresh_key_name] += 1  # Force sortable refresh
-                    st.success(f"Created feature group: '{new_group_name}'")
+                    st.success(f"Created feature group: '{new_group_name}' {happy_emoji}")
                     st.rerun()
                 else:
-                    st.error(f"Group '{new_group_name}' already exists!")
+                    st.error(f"Group '{new_group_name}' already exists! {sad_emoji}")
     
     with col2:
         # Delete feature groups
@@ -440,7 +450,7 @@ def feature_groups_widget():
                     # Remove the group from session state
                     del st.session_state[feature_groups_key][group_to_delete]
                     st.session_state[sortable_refresh_key_name] += 1  # Force sortable refresh
-                    st.success(f"Deleted feature group: '{group_to_delete}'")
+                    st.success(f"Deleted feature group: '{group_to_delete}' {happy_emoji}")
                     st.rerun()
         else:
             st.info("Create some feature groups first to enable deletion.")
@@ -509,7 +519,7 @@ def feature_groups_widget():
                         st.session_state[feature_groups_key][group_name] = items
                     st.rerun()
         except Exception as e:
-            st.error(f"Error with drag and drop interface: {str(e)}")
+            st.error(f"Error with drag and drop interface: {str(e)} {sad_emoji}")
             st.info("Please try refreshing the page or recreating your feature groups.")
    
     

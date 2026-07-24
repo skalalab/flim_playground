@@ -17,6 +17,7 @@ import streamlit as st
 
 from src.config import set_derived_features
 from src.derived_features import alias_names, evaluate_expression, is_single_operand
+from src.emojis import happy_emoji, sad_emoji
 from src.feature_schema import predict_feature_columns_from_cfg
 
 # Shown as the help "?" on the reveal checkbox in main.py (st.expander has no help
@@ -186,14 +187,14 @@ def render_derived_features_widget(cfg, active_profile):
     duplicate = any(d.get("name") == name_clean for d in existing)
 
     if name and not name_ok:
-        st.error("Name cannot contain ': '.")
+        st.error(f"Name cannot contain ': '. {sad_emoji}")
     if name_clean and expression:
         if not valid:
-            st.error(f"Invalid formula: {err}")
+            st.error(f"Invalid formula: {err} {sad_emoji}")
         elif duplicate:
             st.caption(f":red[A derived feature named '{name_clean}' already exists.]")
         else:
-            st.success(f"✓  `Derived: {name_clean}`  =  `{_expand_expression(expression, operands)}`")
+            st.success(f"✓  `Derived: {name_clean}`  =  `{_expand_expression(expression, operands)}` {happy_emoji}")
 
     # --- Add.
     disabled = not (name_ok and expression and valid and operands and not duplicate)

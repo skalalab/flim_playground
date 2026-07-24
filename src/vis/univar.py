@@ -1,10 +1,30 @@
-import streamlit as st
-import plotly.graph_objects as go
 from itertools import combinations
+
 import numpy as np
-from src.widgets.visualization_widgets import histogram_bin_width_widget, gmm_hyperParams_widget, comparison_pair_widget
-from .helpers import _prepare_group_data, find_intersection, _add_effect_size_annotations, _find_best_gmm, _estimate_density_1d, get_point_visual_mappings, add_point_legend_traces, get_context_theme_color, format_group_label, log_negative_error
+import plotly.graph_objects as go
+import streamlit as st
+
+from src.emojis import sad_emoji
 from src.feature_labels import format_feature_label
+from src.widgets.visualization_widgets import (
+    comparison_pair_widget,
+    gmm_hyperParams_widget,
+    histogram_bin_width_widget,
+)
+
+from .helpers import (
+    _add_effect_size_annotations,
+    _estimate_density_1d,
+    _find_best_gmm,
+    _prepare_group_data,
+    add_point_legend_traces,
+    find_intersection,
+    format_group_label,
+    get_context_theme_color,
+    get_point_visual_mappings,
+    log_negative_error,
+)
+
 
 def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab10"):
     if (df[fov_name_col] == "missing fov name").any():
@@ -284,7 +304,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
                               pi[i+1], mu[i+1], sigma[i+1])
                         thresholds.append(t)
                     except Exception:
-                        st.error(f"Error finding intersection between {color_group} component {i+1} and component {i+2}: either there is no intersection or there are more than one intersection.")
+                        st.error(f"Error finding intersection between {color_group} component {i+1} and component {i+2}: either there is no intersection or there are more than one intersection. {sad_emoji}")
                         st.warning("Intersection threshold is not possible, so we resort to hard assignment in this group.")
                         intersection_threshold_possible = False
                         break

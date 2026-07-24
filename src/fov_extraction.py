@@ -1,14 +1,22 @@
-import pandas as pd
 import numpy as np
+import pandas as pd
+import streamlit as st
+from phasorpy import lifetime, phasor
 from scipy import ndimage
 from skimage.measure import regionprops
-from src.file_io import get_decay_curves, load_image, get_irf
+
+from src.cell_texture import granularity, mass_displacement, radial_distribution
 from src.decay_io import read_decay
+from src.emojis import sad_emoji
+from src.file_io import get_decay_curves, get_irf, load_image
 from src.fit import fit_curves
-from src.fit_helper import create_progress_callback, irf_shift, forward_pass, reduced_chi_square
-import streamlit as st
-from phasorpy import phasor, lifetime
-from src.cell_texture import granularity, radial_distribution, mass_displacement
+from src.fit_helper import (
+    create_progress_callback,
+    forward_pass,
+    irf_shift,
+    reduced_chi_square,
+)
+
 
 def get_offset(decay_curve):
     """
@@ -583,7 +591,7 @@ def extract_intensity_features(metadata, channel_name, fov_col_name, input_type,
             error_msg, decay_curves = get_decay_curves(
                 metadata, input_type, channel_name, metadata["time_bins"], shift=False)
             if error_msg != "":
-                st.error(error_msg)
+                st.error(f"{error_msg} {sad_emoji}")
                 return feature_dfs, True  # signal caller to skip this channel
             cells = {cell_id: {} for cell_id in decay_curves}
             cells = extract_intensity_sum_2d(channel_name, decay_curves, cells)
@@ -593,7 +601,7 @@ def extract_intensity_features(metadata, channel_name, fov_col_name, input_type,
     try:
         mask = load_image(metadata[f"{channel_name}_Mask"])
     except Exception as e:
-        st.error(f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e}")
+        st.error(f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e} {sad_emoji}")
         return feature_dfs, True  # signal caller to skip this channel
 
     if int_morph:
@@ -602,14 +610,14 @@ def extract_intensity_features(metadata, channel_name, fov_col_name, input_type,
             extracted_morphology_masks.append(metadata[f"{channel_name}_Mask"])
             error_msg, morph_df = get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask)
             if error_msg != "":
-                st.error(error_msg)
+                st.error(f"{error_msg} {sad_emoji}")
             else:
                 feature_dfs.append(morph_df)
 
     if int_texture:
         error_msg, texture_df = get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type)
         if error_msg != "":
-            st.error(error_msg)
+            st.error(f"{error_msg} {sad_emoji}")
         else:
             feature_dfs.append(texture_df)
 
@@ -669,7 +677,7 @@ def fov_extraction(metadata, metadata_dict):
                 fixed_lifetimes = metadata_dict[channel_name].get("fixed_lifetimes", {})
                 error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method, fluorescence_lifetime_standard_image=fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime=fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis=fluorescence_lifetime_standard_time_axis, fixed_lifetimes=fixed_lifetimes)
                 if error_msg != "":
-                    st.error(error_msg)
+                    st.error(f"{error_msg} {sad_emoji}")
                     continue
                 fov_feature_dfs.append(single_cell_lifetime_features)
             intensity_dfs, mask_error = extract_intensity_features(

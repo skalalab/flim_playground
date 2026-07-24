@@ -1,9 +1,17 @@
-import streamlit as st
 from itertools import combinations
-from src.dataset_io import happy_emoji, sad_emoji
-from src.classify import plot_confusion_matrix, plot_roc_curve, plot_feature_importance, create_overall_accuracy_table, create_per_class_metrics_table
-from src.widgets.visualization_widgets import plot_config_widget
+
+import streamlit as st
+
+from src.classify import (
+    create_overall_accuracy_table,
+    create_per_class_metrics_table,
+    plot_confusion_matrix,
+    plot_feature_importance,
+    plot_roc_curve,
+)
+from src.emojis import happy_emoji, sad_emoji
 from src.vis.plot_defaults import DEFAULT_AXIS_LABEL_FONT_SIZE, DEFAULT_LEGEND_FONT_SIZE
+from src.widgets.visualization_widgets import plot_config_widget
 
 CLASSIFIER_OPTIONS = ["Random Forest", "Gradient Boosting", "SVM", "Logistic Regression"]
 
@@ -187,7 +195,7 @@ def classifier_options_widget(df, categorical_cols, fov_name_col, selected_featu
     if len(available_categories) == 0:
         return f"No categorical feature available for classification. Classification requires a categorical column with at least two distinct values {sad_emoji}.", None, None, None, None
     if len(classify_by_options) == 0:
-        return "Please select at least one category for classification.", None, None, None, None
+        return f"Please select at least one category for classification. {sad_emoji}", None, None, None, None
 
     df = df.copy()
     df['classes'] = df[classify_by_options].agg('_'.join, axis=1)
@@ -195,7 +203,7 @@ def classifier_options_widget(df, categorical_cols, fov_name_col, selected_featu
     if len(classes) <= 1:
         return f"No more than one class available for classification {sad_emoji}.", None, None, None, None
     elif len(selected_features) == 0:
-        return "Please select features.", None, None, None, None
+        return f"Please select features. {sad_emoji}", None, None, None, None
     else: 
         # Check if the number of classes would generate too many combinations
         max_combinations = 2000  # Reasonable limit for UI performance

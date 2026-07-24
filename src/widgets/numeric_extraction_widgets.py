@@ -1,7 +1,9 @@
-import streamlit as st
 import pandas as pd
-from src.fov_extraction import fov_extraction
+import streamlit as st
+
 from src.derived_features import compute_derived_features
+from src.emojis import sad_emoji
+from src.fov_extraction import fov_extraction
 
 
 def check_fov_features(single_fov_cell_features):
@@ -48,7 +50,7 @@ def fov_extraction_widget(metadata_df, metadata_dict, num_cols=3):
                     metadata = metadata_df[metadata_df[fov_name_col] == fov_name].iloc[0]
                     error_msg, single_cell_features_fov = fov_extraction(metadata, metadata_dict) 
                     if error_msg != "":
-                        st.error(error_msg)
+                        st.error(f"{error_msg} {sad_emoji}")
                     else:
                         single_cell_features_fov = check_fov_features(single_cell_features_fov)
                         st.success("✅ Success!")

@@ -20,7 +20,7 @@ from src.config import (
     get_selected_feature_extractors,
 )
 from src.config_watch import notify_on_config_change
-from src.dataset_io import happy_emoji, sad_emoji
+from src.emojis import happy_emoji, sad_emoji
 from src.file_io import load_image
 from src.metadata import parse_metadata_file
 from src.navigation import render_top_menu
@@ -305,7 +305,7 @@ def render_fov_metadata_step(col1, col2, ctx):
                     # Step 4: Finalize processing ( fluorescence lifetime standard validation moved here)
                     error_msg, fov_df = finalize_fov_processing(fov_df, selected_channels, ctx.decay_input_type, ctx.imaging_modalities, duration, time_bins, folder_path, ctx.selected_ch_feature_extractors, fit_free_calibration_method, fluorescence_lifetime_standard_lifetime)
                     if error_msg != "":
-                        st.error(error_msg)
+                        st.error(f"{error_msg} {sad_emoji}")
 
 
 # --- Numeric Feature Extraction helpers ------------------------------------
@@ -323,7 +323,7 @@ def _load_metadata_df():
             try:
                 metadata_df = pd.read_csv(uploaded_file)
             except Exception as e:  # noqa: BLE001
-                st.error(f"Error reading the uploaded CSV file: {e}")
+                st.error(f"Error reading the uploaded CSV file: {e} {sad_emoji}")
                 metadata_df = None  # Ensure metadata_df is None if reading fail
     return metadata_df
 
@@ -336,18 +336,18 @@ def _save_or_download_metadata(metadata_df):
         if download:
             try:
                 metadata_df.to_csv(st.session_state["last_extracted_metadata_filepath"], index=False)
-                st.success(f"✅ Metadata updated successfully at {st.session_state['last_extracted_metadata_filepath']}")
+                st.success(f"✅ Metadata updated successfully at {st.session_state['last_extracted_metadata_filepath']} {happy_emoji}")
             except PermissionError:
-                st.error("❌ Cannot save file - it may be open in another program (like Excel). Please close the file and try again.")
+                st.error(f"❌ Cannot save file - it may be open in another program (like Excel). Please close the file and try again. {sad_emoji}")
             except Exception as e:  # noqa: BLE001
-                st.error(f"❌ Error saving file: {str(e)}")
+                st.error(f"❌ Error saving file: {str(e)} {sad_emoji}")
     else:
         st.download_button(label="Download updated metadata", data=metadata_df.to_csv(index=False), file_name=f"fov_metadata_{time.strftime('%Y%m%d_%H%M%S')}.csv", key=f"download_metadata_{time.time()}", width='stretch', help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
 
 
 def _render_shift_controls(metadata_df, metadata_dict):
     """Configure fitting/shift options (col1). Returns the possibly-updated (metadata_df, metadata_dict)."""
-    st.success("✅ Features to be extracted confirmed.")
+    st.success(f"✅ Features to be extracted confirmed. {happy_emoji}")
     # Only relevant when at least one channel is FLIM; not set for intensity-only metadata
     decay_input_type = metadata_dict.get("decay_input_type")
     shift_needed = len(metadata_dict["channels_shift"]) > 0
@@ -389,6 +389,9 @@ def _render_shift_controls(metadata_df, metadata_dict):
                 st.session_state["last_extracted_metadata"] = metadata_df
                 st.session_state["choosing_shift"] = False
                 st.session_state["shift_ready"] = True
+                # Arm the one-shot celebration; _render_run_extraction consumes it
+                # once the batch actually produces features.
+                st.session_state["celebrate_extraction"] = True
                 st.rerun()
 
         if shift_needed and shifts_are_present:
@@ -412,7 +415,7 @@ def _render_choose_shift(metadata_df, metadata_dict, ctx):
     for channel_name in metadata_dict["channels_shift"]:
         error_msg, shifts = choose_shift_widget(metadata_df, metadata_dict, ctx.fov_name_col, channel_name=channel_name)
         if error_msg != "":
-            st.error(error_msg)
+            st.error(f"{error_msg} {sad_emoji}")
         else:
             channel_shifts[channel_name] = shifts
     shift_finished = st.button("Confirm Time Gates (if applicable) and Shift for each channel")
@@ -456,7 +459,7 @@ def _save_or_download_features(single_cell_features, timestamp):
             single_cell_features.to_csv(csv_path)  # Save the DataFrame
             st.success(f"✅ Single cell features exported successfully to {csv_path} {happy_emoji}")
         except Exception as e:  # noqa: BLE001
-            st.error(f"❌ Error exporting the single cell features: {str(e)}")
+            st.error(f"❌ Error exporting the single cell features: {str(e)} {sad_emoji}")
     else:
         downloaded = st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name=f"single_cell_features_{timestamp}.csv")
         if downloaded:
@@ -468,6 +471,12 @@ def _render_run_extraction(metadata_df, metadata_dict):
     single_cell_features = fov_extraction_widget(metadata_df, metadata_dict)
     if not single_cell_features.empty:
         st.success(f"Fields of view features with ✅ are extracted successfully {happy_emoji}! FOVs with error messages are excluded. The first few rows of the features are shown below.")
+        # fov_extraction_widget re-runs the whole batch on every rerun, so this block
+        # re-renders whenever the user touches a widget (e.g. the download button
+        # below). pop() consumes the flag armed by "Confirm and Start", keeping the
+        # animation to once per confirmed run instead of once per interaction.
+        if st.session_state.pop("celebrate_extraction", False):
+            st.balloons()
         st.write(single_cell_features.head())
         # get the current timestamp
         timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -485,7 +494,7 @@ def render_numeric_step(col1, col2, ctx):
             if error_msg == "":
                 metadata_df, metadata_dict = _render_shift_controls(metadata_df, metadata_dict)
             else:
-                st.error(f"Error: {error_msg}")
+                st.error(f"Error: {error_msg} {sad_emoji}")
 
     if metadata_df is None or metadata_dict is None:
         return
@@ -528,7 +537,7 @@ STEP_RENDERERS = {
     STEP_CATEGORICAL: render_categorical_step,
 }
 
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_icon="🔬")
 # Render the top menu
 render_top_menu()
 init_session_state()

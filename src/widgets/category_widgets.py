@@ -1,9 +1,13 @@
-import streamlit as st
 import os
-from pathlib import Path
-import pandas as pd
 from datetime import datetime
+from pathlib import Path
+
+import pandas as pd
+import streamlit as st
+
 from src.config import get_categorical_cols, get_fov_name_col, get_unique_cell_id_col
+from src.emojis import happy_emoji
+
 
 def map_categories_to_labels_widget(available_categories, combined_df, delimiter, df_folder_path):
     fov_name_col = get_fov_name_col()
@@ -99,7 +103,7 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         combined_df_path = f"{df_folder_path}/{timestamp}_combined.csv"
         combined_df.to_csv(combined_df_path, index=False)
-        st.success(f"Combined dataset exported to {combined_df_path}.")
+        st.success(f"Combined dataset exported to {combined_df_path}. {happy_emoji}")
 
     return cat_label_map
 

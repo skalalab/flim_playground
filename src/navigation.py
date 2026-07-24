@@ -1,5 +1,8 @@
 import sys
+
 import streamlit as st
+
+from src.emojis import sad_emoji
 
 """
 This module contains the navigation bar for the FLIM Playground app.
@@ -28,7 +31,7 @@ def render_top_menu():
         st.error(
             "macOS opened this quarantined app read-only, so settings can't save. "
             f'Quit, run `xattr -dr com.apple.quarantine ~/Downloads/"{app_name}"` '
-            "in Terminal (adjust the path if the app is elsewhere), then reopen it."
+            f"in Terminal (adjust the path if the app is elsewhere), then reopen it. {sad_emoji}"
         )
         st.stop()
 

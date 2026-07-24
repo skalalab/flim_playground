@@ -1,21 +1,24 @@
-import streamlit as st
+import errno
 import os
 import sys
-import errno
+from datetime import datetime
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
+import streamlit as st
+
 from src.config import (
-    get_default_file_suffixes,
-    get_spc_output_suffix,
     get_default_2D_decay_config,
+    get_default_file_suffixes,
     get_default_laser_rate,
     get_fov_name_col,
+    get_spc_output_suffix,
 )
-from src.dataset_io import happy_emoji, sad_emoji
 from src.decay_io import read_decay, read_decay_metadata
+from src.emojis import happy_emoji, sad_emoji
 from src.file_io import load_image
-from datetime import datetime
+
 
 def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_components, selected_feature_extractors):
     """
@@ -162,10 +165,10 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
     try:
         os.listdir(folder_path)
     except PermissionError as e:
-        st.error(_permission_denied_message(folder_path, e))
+        st.error(f"{_permission_denied_message(folder_path, e)} {sad_emoji}")
         return {}
     except OSError as e:
-        st.error(f"⛔ Could not read folder **{folder_path}**: {e}")
+        st.error(f"⛔ Could not read folder **{folder_path}**: {e} {sad_emoji}")
         return {}
 
     all_files = [str(file) for file in path.rglob("*") if file.is_file() and not file.name.startswith("fov_metadata") and not file.name.startswith("single_cell_features")]
@@ -284,7 +287,7 @@ def export_metadata_widget(metadata_df, folder_path):
         try:
             metadata_df.to_csv(csv_file_path) # Save the DataFrame
         except Exception as e:
-            st.error(f"Error exporting the fov metadata: {e}. Is the previous metadata file open in another program?")
+            st.error(f"Error exporting the fov metadata: {e}. Is the previous metadata file open in another program? {sad_emoji}")
             return
         st.success(f"FOV metadata exported successfully to {csv_file_path} {happy_emoji}")
         st.session_state["last_extracted_metadata"] = metadata_df

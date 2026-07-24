@@ -9,11 +9,12 @@ from scipy.optimize import brentq
 from scipy.stats import gaussian_kde, median_abs_deviation, norm, ttest_ind
 from sklearn.mixture import GaussianMixture
 
+from src.emojis import sad_emoji
 from src.widgets.visualization_widgets import comparison_pair_widget
 
 
 def log_negative_error(var_name):
-    return f"Cannot apply log to {var_name}: contains negative values."
+    return f"Cannot apply log to {var_name}: contains negative values. {sad_emoji}"
 
 
 def get_context_theme_color():

@@ -1,15 +1,18 @@
 import streamlit as st
+
+from src.emojis import happy_emoji, sad_emoji, three_happy_emojis
 from src.navigation import render_top_menu
+
 
 def main():
     """Main function to run the Streamlit app."""
-    st.set_page_config(layout="wide")
+    st.set_page_config(layout="wide", page_icon="⚙️")
     
     # Render the top menu on the main page
     render_top_menu()
     # Display the logo
-    from pathlib import Path
     import sys
+    from pathlib import Path
 
     def resource_path(rel: str) -> Path:
         """Return the absolute path to a bundled resource."""
@@ -26,14 +29,14 @@ def main():
     # Load + migrate the extraction config and resolve the active profile so the
     # profile controls and the page body both read the active profile.
     from src.config import (
-        load_config,
-        save_config,
         _migrate_extraction_config_to_profiles,
-        get_current_profile_name,
-        list_profiles,
-        set_current_profile,
         create_profile,
         delete_profile,
+        get_current_profile_name,
+        list_profiles,
+        load_config,
+        save_config,
+        set_current_profile,
     )
 
     MAX_PROFILES = 10
@@ -55,7 +58,7 @@ def main():
     with welcome_col:
         # Short welcome / orientation, sitting between the logo and the controls.
         st.markdown(
-            f"**Welcome 👋 to [FLIM Playground]({doc_github_url})!** 🥳🎉🥂  \n"
+            f"**Welcome 👋 to [FLIM Playground]({doc_github_url})!** {three_happy_emojis}  \n"
             f"[**Data Extraction**]({doc_extraction_url}) pulls single-object features from raw microscopy data.  \n"
             f"[**Data Analysis**]({doc_analysis_url}) transforms tabular datasets into insights through visualization and statistical modeling."
         )
@@ -111,7 +114,7 @@ def main():
                         st.session_state.pop("extraction_profile_selector", None)
                         st.rerun()
                     elif new_profile_name in profiles:
-                        st.error(f"'{new_profile_name}' already exists!")
+                        st.error(f"'{new_profile_name}' already exists! {sad_emoji}")
 
     # Point `cfg` at the active profile's sub-dict. The rest of the page edits it
     # in place; the final "Update Configuration" save persists the whole tree.
@@ -263,7 +266,7 @@ def main():
             custom_channel_name = st.text_input(f"Channel {i+1} name", value=default_name, key=f"channel_name_{channel_key}_{active}")
             if custom_channel_name in channel_names:
                 error_msg = "Duplicate channel names found. Please change the names to be unique."
-                st.error(error_msg)
+                st.error(f"{error_msg} {sad_emoji}")
                 continue
             channel_names.append(custom_channel_name)
             cfg[channel_key]["channel_name"] = custom_channel_name
@@ -273,7 +276,7 @@ def main():
             cfg[channel_key][input_type]["selected_feature_extractors"] = selected_feature_extractors
             if len(selected_feature_extractors) == 0: 
                 error_msg = f"Please select at least one feature type for {custom_channel_name}. Or you can adjust the number of channels on the top. "
-                st.error(error_msg)
+                st.error(f"{error_msg} {sad_emoji}")
                 continue
               
             # get the number of components for each channel if Lifetime is in selected feature extractors and fit is in selected modules
@@ -352,7 +355,10 @@ def main():
     # widget module, revealed by a checkbox. A checkbox (not st.expander) so the
     # section description can be a hover "?" help; default it on when the profile
     # already defines derived features, so those aren't hidden behind an off tick.
-    from src.widgets.derived_features_widgets import render_derived_features_widget, DERIVED_FEATURES_HELP
+    from src.widgets.derived_features_widgets import (
+        DERIVED_FEATURES_HELP,
+        render_derived_features_widget,
+    )
     if st.checkbox(
         "Derived features",
         value=bool(cfg.get("derived_features")),
@@ -363,7 +369,7 @@ def main():
 
     # Check if we should show a success message from previous update
     if st.session_state.get("config_updated", False):
-        st.success("Configuration updated!")
+        st.success(f"Configuration updated! {happy_emoji}")
         # Clear the flag so message doesn't persist indefinitely
         st.session_state.config_updated = False
 
