@@ -1,19 +1,45 @@
-import streamlit as st
-import os
 import json
-import pandas as pd
+import os
 import time
 from dataclasses import dataclass
-from src.navigation import render_top_menu
-from src.dataset_io import happy_emoji, sad_emoji
-from src.widgets.numeric_extraction_widgets import fov_extraction_widget
-from src.widgets.metadata_widgets import load_list_data_from_folder_widget, load_data_suffix_widget, export_metadata_widget, preview_metadata_widget, check_assign_channel_widget, lifetime_data_config_widget, clear_folder_scan_caches
-from src.widgets.category_widgets import map_categories_to_labels_widget, find_available_dfs_widget, check_and_merge_df_widget
-from src.widgets.lifetime_widgets import fit_options_widget, choose_shift_widget
-from src.metadata import parse_metadata_file
-from src.config import get_imaging_modality, get_input_types, get_channel_names, get_num_components, get_selected_feature_extractors, get_fov_name_col, get_decay_input_type, get_fit_free_calibration_method, get_fixed_lifetimes, get_current_profile_name, get_derived_features
-from src.file_io import load_image
 
+import pandas as pd
+import streamlit as st
+
+from src.config import (
+    get_channel_names,
+    get_current_profile_name,
+    get_decay_input_type,
+    get_derived_features,
+    get_fit_free_calibration_method,
+    get_fixed_lifetimes,
+    get_fov_name_col,
+    get_imaging_modality,
+    get_input_types,
+    get_num_components,
+    get_selected_feature_extractors,
+)
+from src.config_watch import notify_on_config_change
+from src.dataset_io import happy_emoji, sad_emoji
+from src.file_io import load_image
+from src.metadata import parse_metadata_file
+from src.navigation import render_top_menu
+from src.widgets.category_widgets import (
+    check_and_merge_df_widget,
+    find_available_dfs_widget,
+    map_categories_to_labels_widget,
+)
+from src.widgets.lifetime_widgets import choose_shift_widget, fit_options_widget
+from src.widgets.metadata_widgets import (
+    check_assign_channel_widget,
+    clear_folder_scan_caches,
+    export_metadata_widget,
+    lifetime_data_config_widget,
+    load_data_suffix_widget,
+    load_list_data_from_folder_widget,
+    preview_metadata_widget,
+)
+from src.widgets.numeric_extraction_widgets import fov_extraction_widget
 
 # --- Step identity ---------------------------------------------------------
 # Single source of truth for the three workflow steps, used for both the radio
@@ -143,7 +169,7 @@ def validate_fluorescence_lifetime_standard_per_channel(fov_df, selected_channel
     # lifetime is shared across channels
     fov_df["fluorescence_lifetime_standard_lifetime"] = fluorescence_lifetime_standard_lifetime
 
-    for _, channel_name in selected_channels.items():
+    for channel_name in selected_channels.values():
         ref_col = f"{channel_name}_Fluorescence Lifetime Standard"
         if ref_col not in fov_df.columns:
             # Channel may not use fit free; skip
@@ -165,7 +191,7 @@ def validate_fluorescence_lifetime_standard_per_channel(fov_df, selected_channel
                 return f"Ambiguous time axis for {channel_name} fluorescence lifetime standard file dimensions: {fluorescence_lifetime_standard_shape}", fov_df
             else:
                 fov_df[f"{channel_name}_fluorescence_lifetime_standard_time_axis"] = fluorescence_lifetime_standard_shape.index(time_bins)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             return f"Error reading fluorescence lifetime standard file for {channel_name}: {str(e)}", fov_df
 
     return "", fov_df
@@ -216,6 +242,9 @@ def render_fov_metadata_step(col1, col2, ctx):
     fluorescence_lifetime_standard_lifetime = ctx.fluorescence_lifetime_standard_lifetime
 
     with col1:
+        # Tell the user (don't auto-reload) if another tab changed the config since
+        # this page loaded, so they can refresh to pick up new channels/extractors.
+        notify_on_config_change()
         # show decay input type
         if ctx.has_flim:
             st.write(f"Decay input type: {ctx.decay_input_type}")
@@ -293,7 +322,7 @@ def _load_metadata_df():
         if uploaded_file is not None:
             try:
                 metadata_df = pd.read_csv(uploaded_file)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 st.error(f"Error reading the uploaded CSV file: {e}")
                 metadata_df = None  # Ensure metadata_df is None if reading fail
     return metadata_df
@@ -310,7 +339,7 @@ def _save_or_download_metadata(metadata_df):
                 st.success(f"✅ Metadata updated successfully at {st.session_state['last_extracted_metadata_filepath']}")
             except PermissionError:
                 st.error("❌ Cannot save file - it may be open in another program (like Excel). Please close the file and try again.")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001
                 st.error(f"❌ Error saving file: {str(e)}")
     else:
         st.download_button(label="Download updated metadata", data=metadata_df.to_csv(index=False), file_name=f"fov_metadata_{time.strftime('%Y%m%d_%H%M%S')}.csv", key=f"download_metadata_{time.time()}", width='stretch', help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
@@ -320,7 +349,7 @@ def _render_shift_controls(metadata_df, metadata_dict):
     """Configure fitting/shift options (col1). Returns the possibly-updated (metadata_df, metadata_dict)."""
     st.success("✅ Features to be extracted confirmed.")
     # Only relevant when at least one channel is FLIM; not set for intensity-only metadata
-    decay_input_type = metadata_dict["decay_input_type"] if "decay_input_type" in metadata_dict else None
+    decay_input_type = metadata_dict.get("decay_input_type")
     shift_needed = len(metadata_dict["channels_shift"]) > 0
     shifts_are_present = all(f"{ch}_shift" in metadata_df.columns for ch in metadata_dict["channels_shift"])
     # Defensive reset: if shifts are required but missing, do not allow extraction yet
@@ -389,8 +418,8 @@ def _render_choose_shift(metadata_df, metadata_dict, ctx):
     shift_finished = st.button("Confirm Time Gates (if applicable) and Shift for each channel")
     if shift_finished:
         # write the shift, time gates and fitting options to the metadata file
-        for channel_name in channel_shifts:
-            metadata_df[f"{channel_name}_shift"] = channel_shifts[channel_name]
+        for channel_name, shift in channel_shifts.items():
+            metadata_df[f"{channel_name}_shift"] = shift
             if "start" in metadata_dict[channel_name]:
                 metadata_df[f"{channel_name}_start"] = metadata_dict[channel_name]["start"]
             if "end" in metadata_dict[channel_name]:
@@ -426,7 +455,7 @@ def _save_or_download_features(single_cell_features, timestamp):
         try:
             single_cell_features.to_csv(csv_path)  # Save the DataFrame
             st.success(f"✅ Single cell features exported successfully to {csv_path} {happy_emoji}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             st.error(f"❌ Error exporting the single cell features: {str(e)}")
     else:
         downloaded = st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name=f"single_cell_features_{timestamp}.csv")

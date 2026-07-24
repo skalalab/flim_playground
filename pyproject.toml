@@ -58,3 +58,8 @@ dependencies = [
 dev = [
     "pytest>=9.0.3",
 ]
+
+[tool.ruff.lint]
+# RUF010 auto-rewrites {str(x)} -> {x!s} inside f-strings; we keep explicit
+# str()/repr() calls for readability. All other ruff defaults stay in effect.
+ignore = ["RUF010"]

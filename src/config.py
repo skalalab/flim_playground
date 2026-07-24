@@ -1,8 +1,9 @@
 import os
-import toml
 import sys
 from pathlib import Path
-from typing import Optional
+
+import toml
+
 
 def get_persistent_dir() -> Path:
     """Directory for runtime-writable config, kept OUTSIDE the app payload the
@@ -46,7 +47,7 @@ def _get_config_path() -> Path:
 # Absolute path to the project-level config file
 _CONFIG_PATH = _get_config_path()
 
-def load_config(config_path: Optional[Path] = None) -> dict:
+def load_config(config_path: Path | None = None) -> dict:
     """Load and return the TOML configuration as a dict.
 
     Returns an empty dict if the file is missing or unparsable so that the
@@ -58,13 +59,27 @@ def load_config(config_path: Optional[Path] = None) -> dict:
     except (FileNotFoundError, toml.TomlDecodeError):
         return {}
 
-def save_config(cfg: dict, config_path: Optional[Path] = None) -> None:
+def save_config(cfg: dict, config_path: Path | None = None) -> None:
     """Persist *cfg* to disk, overwriting the previous config file."""
     path_to_save = _CONFIG_PATH if config_path is None else config_path
     # Ensure the parent directory exists (helpful when running tests, etc.)
     path_to_save.parent.mkdir(parents=True, exist_ok=True)
     with path_to_save.open("w", encoding="utf-8") as fh:
         toml.dump(cfg, fh)
+
+def get_config_mtime(config_path: Path | None = None) -> float:
+    """Return the config file's last-modified time, or ``0.0`` if it is missing.
+
+    This is the cross-session change signal: ``save_config`` rewrites the file
+    (bumping its mtime), so an already-open tab can poll this value and notice
+    that another tab edited the configuration. Streamlit-free by design, like the
+    rest of this module.
+    """
+    path = _CONFIG_PATH if config_path is None else config_path
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
 
 # ---------------------------------------------------------------------------
 # Multi-profile support
@@ -95,7 +110,7 @@ def _migrate_extraction_config_to_profiles(cfg: dict) -> dict:
     default_profile = {k: v for k, v in cfg.items() if k != "current_profile"}
     return {"current_profile": "default", "profiles": {"default": default_profile}}
 
-def _load_active_profile_cfg(config_path: Optional[Path] = None) -> dict:
+def _load_active_profile_cfg(config_path: Path | None = None) -> dict:
     """Return the active profile's config sub-dict.
 
     The sub-dict has the same flat shape as the pre-profile config, so the
@@ -105,22 +120,22 @@ def _load_active_profile_cfg(config_path: Optional[Path] = None) -> dict:
     current = cfg.get("current_profile", "default")
     return cfg.get("profiles", {}).get(current, {})
 
-def get_current_profile_name(config_path: Optional[Path] = None) -> str:
+def get_current_profile_name(config_path: Path | None = None) -> str:
     cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
     return cfg.get("current_profile", "default")
 
-def list_profiles(config_path: Optional[Path] = None) -> list:
+def list_profiles(config_path: Path | None = None) -> list:
     cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
     return list(cfg.get("profiles", {}).keys())
 
-def set_current_profile(name: str, config_path: Optional[Path] = None) -> None:
+def set_current_profile(name: str, config_path: Path | None = None) -> None:
     """Switch the active profile, creating it (empty) if it does not exist."""
     cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
     cfg.setdefault("profiles", {}).setdefault(name, {})
     cfg["current_profile"] = name
     save_config(cfg, config_path)
 
-def create_profile(name: str, config_path: Optional[Path] = None) -> None:
+def create_profile(name: str, config_path: Path | None = None) -> None:
     """Create a new blank profile and make it current.
 
     The profile is stored empty; main.py seeds it with app defaults on render
@@ -133,7 +148,7 @@ def create_profile(name: str, config_path: Optional[Path] = None) -> None:
     cfg["current_profile"] = name
     save_config(cfg, config_path)
 
-def delete_profile(name: str, config_path: Optional[Path] = None) -> None:
+def delete_profile(name: str, config_path: Path | None = None) -> None:
     """Delete a profile; if it was current, switch to the first remaining one.
 
     There is always at least one profile: deleting the last one recreates an
@@ -171,13 +186,14 @@ def get_default_file_suffixes(channel_key: str, input_type: str, selected_featur
     filtered_file_suffixes = {}
     file_suffixes = cfg.get(channel_key, {}).get(input_type, {}).get("input_suffixes", {})
     fit_free_calibration = cfg.get(input_type, {}).get("fit_free_calibration", "")
-    for file_type in file_suffixes.keys():
+    for file_type in file_suffixes:
         # Only include Fluorescence Lifetime Standard when fit free uses Fluorescence Lifetime Standard and this channel does fit free
         if file_type == "Decay" and "prefitted" in input_type and len(selected_feature_extractors) == 1 and "Lifetime fit" in selected_feature_extractors:
             continue
-        if file_type == "Fluorescence Lifetime Standard":
-            if not ("Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Fluorescence Lifetime Standard"):
-                continue
+        if file_type == "Fluorescence Lifetime Standard" and not (
+            "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Fluorescence Lifetime Standard"
+        ):
+            continue
         # skip a bunch of things 
         if file_type == "SPCImage t1" and "Lifetime fit" not in selected_feature_extractors:
             continue
@@ -267,7 +283,7 @@ def get_derived_features() -> list:
     """
     return _load_active_profile_cfg().get("derived_features", [])
 
-def set_derived_features(derived_features: list, config_path: Optional[Path] = None) -> None:
+def set_derived_features(derived_features: list, config_path: Path | None = None) -> None:
     """Persist the active profile's derived-feature list immediately.
 
     Mirrors the profile create/delete/switch helpers (load → mutate one key →
