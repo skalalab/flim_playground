@@ -669,7 +669,7 @@ for g in color_groups:
                 for i, t in enumerate(thresholds):
                     ax.axvline(x=t, color=color_map[g][:3], linestyle='--', alpha=0.5, linewidth=2)
                     ax.text(t, ax.get_ylim()[1] * 0.95, f"Threshold: {{t:.2f}}",
-                           ha='center', fontsize=9, color=color_map[g][:3])
+                           ha='center', fontsize=AXIS_LABEL_SIZE, color=color_map[g][:3])
                     print(f"    Threshold between component {{i+1}} and {{i+2}}: {{t:.4f}}")
                 assigned_labels = _assign_subpopulation_labels(gdata.values, gmm, thresholds, g)
         if not intersection_ok:
@@ -809,6 +809,7 @@ x_labels = []
 tick_positions = []
 pos = 0
 section_boundaries = []
+section_headers = []
 
 for sec_i, sec_group in enumerate(ordered_separate_groups):
     if sec_group is not None:
@@ -819,16 +820,29 @@ for sec_i, sec_group in enumerate(ordered_separate_groups):
         sec_color_groups = ordered_color_groups
 
     if sec_i > 0:
-        section_boundaries.append(pos - 0.5)
-        pos += 1
+        # Gap between sections, matching the app's section_spacing = 0.5
+        # (src/vis/univar.py). A full 1.0 here made every section after the first sit
+        # 0.5 further right than on screen, and the shift accumulated per section.
+        # The app draws the divider at the centre of that gap (univar.py: midpoint of
+        # the previous section's last position and the next section's first): the
+        # previous position is pos - 1 and the next section starts at pos + 0.5, so
+        # the centre is pos - 0.25.
+        section_boundaries.append(pos - 0.25)
+        pos += 0.5
 
+    section_start = pos
     for cg in sec_color_groups:
         key = (sec_group, cg) if sec_group is not None else cg
         x_positions[key] = pos
-        label = f"{{sec_group}}\\n{{cg}}" if sec_group is not None else cg
-        x_labels.append(label)
+        # Tick label is the group alone, as in the app (univar.py x_tick_labels_actual,
+        # which likewise blanks the placeholder group used when nothing is coloured by).
+        # Folding the section name into every tick made labels collide once a section
+        # held more than ~3 groups; the section name gets one centred header instead.
+        x_labels.append("" if cg == "all_data" else cg)
         tick_positions.append(pos)
         pos += 1
+    if sec_group is not None and sec_color_groups:
+        section_headers.append(((section_start + pos - 1) / 2, sec_group))
 
 fig, ax = plt.subplots(figsize=(max(10, len(tick_positions) * 1.2), 6))
 
@@ -1012,8 +1026,11 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
                    [y_bracket_top - bracket_h, y_bracket_top, y_bracket_top, y_bracket_top - bracket_h],
                    color='black', linewidth=1.5, zorder=4)
 
+            # AXIS_LABEL_SIZE: the app writes size=12 on this annotation
+            # (src/vis/helpers.py) but apply_plot_styling() then rewrites every
+            # annotation's size to plot_axis_label_size, so 12 never renders.
             ax.text((x_start + x_end) / 2, y_text_center,
-                   txt, ha='center', va='bottom', fontsize=10, zorder=4)
+                   txt, ha='center', va='bottom', fontsize=AXIS_LABEL_SIZE, zorder=4)
 
 # --- Axis setup ---
 ax.set_xticks(tick_positions)
@@ -1032,6 +1049,39 @@ ax.set_title(_full_title, fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='y', labelsize=AXIS_LABEL_SIZE - 2)
 add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
+
+# Everything below measures the drawn figure, so it has to run last — after the title,
+# axis label and legend exist, or tight_layout fits a figure that is still missing them
+# and the Save section's own tight_layout shifts the result out from under us.
+#
+# Same tick angle rule as the app (src/vis/univar.py): labels of more than four
+# characters are slanted to 45°, shorter ones stay upright. The app fixes the angle
+# rather than letting Plotly choose per container width, so that its section headers can
+# be offset exactly; matching the rule here is what keeps the two figures looking alike.
+if max((len(str(lbl)) for lbl in x_labels), default=0) > 4:
+    plt.setp(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode='anchor')
+plt.tight_layout()
+fig.canvas.draw()
+
+# One bold header per separate_by section, centred under its groups (univar.py
+# separate_sections_info). The app pins these at y=-0.20 of the plot height, which
+# collides with its own rotated tick labels; measuring where the labels actually end
+# keeps the header clear of them at any font size.
+if section_headers:
+    # Offset in points below the axes edge, not a fraction of the axes height: adding
+    # these headers enlarges the axes' tight bbox, so the Save section's tight_layout
+    # resizes the axes underneath them. How far the tick labels hang below the edge is
+    # a font-size property and survives that resize; a fraction of the height does not.
+    _labels_depth_pts = ((ax.get_window_extent().y0
+                          - min(t.get_window_extent().y0 for t in ax.get_xticklabels()))
+                         / fig.dpi * 72)
+    for _header_x, _header_label in section_headers:
+        # AXIS_LABEL_SIZE, not the size univar.py passes: apply_plot_styling() rewrites
+        # every annotation's font size to plot_axis_label_size after the plot is built,
+        # so that is the size the app actually renders these at.
+        ax.annotate(_header_label, xy=(_header_x, 0), xycoords=('data', 'axes fraction'),
+                    xytext=(0, -(_labels_depth_pts + 6)), textcoords='offset points',
+                    ha='center', va='top', fontsize=AXIS_LABEL_SIZE, fontweight='bold')
 """
 
 
@@ -1224,8 +1274,11 @@ for tau in [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
     s_marker = wt / (1.0 + wt**2)
     ax.plot(g_marker, s_marker, 'ko', markersize=5, zorder=3)
     if tau in (0.5, 1, 2, 3, 4, 5):  # app annotates only the first six (bivar.py)
+        # AXIS_LABEL_SIZE here and on the frequency text below: the app writes 12 and 15
+        # on these annotations (src/vis/bivar.py), but apply_plot_styling() rewrites every
+        # annotation's size to plot_axis_label_size, so neither literal ever renders.
         ax.annotate(f"{tau} ns", (g_marker, s_marker), textcoords="offset points",
-                   xytext=(5, 5), fontsize=8, zorder=3)
+                   xytext=(5, 5), fontsize=AXIS_LABEL_SIZE, zorder=3)
 
 ax.axhline(y=0, color='gray', linewidth=0.5)
 ax.axvline(x=0, color='gray', linewidth=0.5)
@@ -1236,7 +1289,7 @@ ax.axvline(x=0, color='gray', linewidth=0.5)
 freq_text = f"f = {PHASOR_F * PHASOR_HARMONIC * 1000} MHz"
 if PHASOR_HARMONIC != 1:
     freq_text += f"\\n({PHASOR_HARMONIC} x {PHASOR_F * 1000} MHz)"
-ax.text(0.8, 0.5, freq_text, fontsize=15, ha='left', va='center')
+ax.text(0.8, 0.5, freq_text, fontsize=AXIS_LABEL_SIZE, ha='left', va='center')
 
 harmonic_label = "1st" if PHASOR_HARMONIC == 1 else "2nd"
 g_col = f"Lifetime fit free_{PHASOR_CHANNEL}: G({harmonic_label})"
