@@ -546,16 +546,26 @@ def create_shape_groups_and_map(df, shape_by_col):
     else:
         return [], None
 
-def format_group_label(group, count=None, show_count=False):
+def format_group_label(group, count=None, show_count=False, engine="plotly"):
     """Legend label for a color group.
 
     When ``show_count`` is enabled and a count is given, the count is placed on a
-    second line below the group name in a smaller font (relative ``em`` so it
-    tracks the legend font size), e.g. "Control" with "n=42" beneath it.
+    second line below the group name, e.g. "Control" with "n=42" beneath it.
+
+    ``engine`` selects the markup, following ``format_feature_label``
+    (src/feature_labels.py): ``"plotly"`` (the app, default) breaks the line with
+    ``<br>`` and shrinks the count with a relative ``em`` so it tracks the legend font
+    size; ``"mpl"`` (the exported Matplotlib script) uses a plain newline, since
+    Matplotlib legend labels take no markup and cannot mix sizes within one entry.
+    The wording is written once here so the exported legend reads the same as the
+    screen — export_script.py inlines this function rather than reproducing the text.
     """
     label = str(group)
     if show_count and count is not None:
-        label = f"{label}<br><span style='font-size: 0.75em'>n={count}</span>"
+        if engine == "mpl":
+            label = f"{label}\nn={count}"
+        else:
+            label = f"{label}<br><span style='font-size: 0.75em'>n={count}</span>"
     return label
 
 def get_point_visual_mappings(

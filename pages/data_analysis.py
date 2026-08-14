@@ -117,6 +117,10 @@ def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opac
         "axis_label_size": st.session_state.plot_axis_label_size,
         "legend_size": st.session_state.plot_legend_size,
         "colormap": st.session_state.plot_colormap,
+        # .get(), not attribute access: the toggle only renders when something is
+        # coloured by (plot_config_widget's show_count_toggle), so the key is absent
+        # for uncoloured plots — which is also when it has nothing to show.
+        "show_group_counts": st.session_state.get("plot_show_group_counts", False),
     }
 
     # Method-specific params

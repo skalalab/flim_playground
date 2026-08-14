@@ -298,6 +298,7 @@ def _build_config_section(state: dict) -> str:
         f"POINT_SIZE = {state.get('point_size', DEFAULT_POINT_SIZE)}",
         f"AXIS_LABEL_SIZE = {state.get('axis_label_size', DEFAULT_AXIS_LABEL_FONT_SIZE)}",
         f"LEGEND_SIZE = {state.get('legend_size', DEFAULT_LEGEND_FONT_SIZE)}",
+        f"SHOW_GROUP_COUNTS = {state.get('show_group_counts', False)!r}  # 'Show group counts (n) in legend'",
         f"COLORMAP = {state.get('colormap', DEFAULT_COLORMAP)!r}",
         f"COLOR_BY = {state.get('color_by', [])!r}",
         f"SHAPE_BY = {state.get('shape_by')!r}",
@@ -449,13 +450,18 @@ def _build_visual_encoding(state: dict, overlap_point: bool = True) -> str:
     """Build visual encoding section by extracting real functions."""
     from src.vis.helpers import (
         create_opacity_mapping,
+        format_group_label,
         natural_key,
         natural_tuple_sort,
         tuple_natural_key,
     )
 
     # Extract computation from actual source (include tuple_natural_key which natural_tuple_sort depends on)
-    helpers_src = _extract_source(natural_key, tuple_natural_key, natural_tuple_sort, create_opacity_mapping)
+    # format_group_label is the app's own legend-label helper (src/vis/helpers.py), called
+    # below with engine='mpl' so the "n=" wording and the line break match the screen
+    # without a second copy of the text living here.
+    helpers_src = _extract_source(natural_key, tuple_natural_key, natural_tuple_sort,
+                                  create_opacity_mapping, format_group_label)
     # Extract Matplotlib-adapted color/shape maps and scatter helpers from this module
     mpl_src = _extract_source(create_color_map, create_shape_map,
                               scatter_with_encodings, add_encoding_legend_entries)
@@ -565,8 +571,12 @@ ax.set_ylabel(format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LA
 ax.set_title(f"Distribution of {format_feature_label(SELECTED_VAR, engine='mpl')} by Field of View", fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='y', labelsize=AXIS_LABEL_SIZE - 2)
 
+# Counted on the NaN-filtered frame above, matching the app's
+# df.dropna(subset=[selected_var]).groupby(...).size() (univar.py fov_comparison_plot).
+group_counts = df.groupby("_color_group").size().to_dict()
 for g in color_groups:
-    ax.scatter([], [], c=[color_map[g][:3]], label=g, s=50)
+    ax.scatter([], [], c=[color_map[g][:3]], s=50,
+               label=format_group_label(g, group_counts.get(g), SHOW_GROUP_COUNTS, engine='mpl'))
 ax.legend(fontsize=LEGEND_SIZE)
 """
 
@@ -618,7 +628,12 @@ for g in color_groups:
     responsibilities = gmm.predict_proba(x_range)
     pdf_individual = responsibilities * pdf[:, np.newaxis]
 
-    ax.plot(x_range.flatten(), pdf, color=color_map[g][:3], linewidth=2, label=f"{{g}} GMM")
+    # The " GMM" suffix goes inside the label and the count is the group's non-NaN
+    # size, both as in the app (univar.py feature_gmm_plot, which passes the suffixed
+    # name and len(x_data) to this same helper). Component curves below carry no count,
+    # again matching the app.
+    ax.plot(x_range.flatten(), pdf, color=color_map[g][:3], linewidth=2,
+            label=format_group_label(f"{{g}} GMM", len(gdata), SHOW_GROUP_COUNTS, engine='mpl'))
 
     pi = gmm.weights_
     mu = gmm.means_.flatten()
@@ -724,7 +739,10 @@ for g in color_groups:
         continue
     counts, edges = np.histogram(gdata, bins=bin_edges)
     centers = (edges[:-1] + edges[1:]) / 2
-    ax.plot(centers, counts, label=g, color=color_map[g][:3], linewidth=2)
+    # len(gdata) is the group's non-NaN size, the count the app shows
+    # (univar.py feature_histogram_plot: format_group_label(g, len(x_data), ...)).
+    ax.plot(centers, counts, color=color_map[g][:3], linewidth=2,
+            label=format_group_label(g, len(gdata), SHOW_GROUP_COUNTS, engine='mpl'))
 
     # Bias-corrected skewness (pandas .skew()) + the app's 7-way label ladder
     # (univar.py:74-87) — keep both identical to the app.
@@ -847,6 +865,10 @@ for sec_i, sec_group in enumerate(ordered_separate_groups):
 fig, ax = plt.subplots(figsize=(max(10, len(tick_positions) * 1.2), 6))
 
 # --- Plot points (Sina jitter) ---
+# Counted once over the whole NaN-filtered frame, not per section: the app builds
+# group_counts the same way (univar.py feature_comparison_plot), so a colour group
+# that appears in several separate_by sections shows its total in the one legend entry.
+group_counts = df.groupby("_color_group").size().to_dict()
 legend_entries = set()
 for sec_group in ordered_separate_groups:
     if sec_group is not None:
@@ -862,29 +884,45 @@ for sec_group in ordered_separate_groups:
         group_df = sec_df[sec_df["_color_group"] == cg]
         y_data = group_df[SELECTED_VAR].values
 
-        if len(y_data) < 2:
-            scatter_with_encodings(ax, [x_pos] * len(y_data), y_data, color_map[cg][:3],
-                                   cg if cg not in legend_entries else None, POINT_SIZE,
-                                   shape_vals=group_df[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
-                                   opacity_vals=group_df[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
-                                   base_alpha=1.0, linewidths=0.5)
-            legend_entries.add(cg)
-            continue
+        # KDE-based jitter (Sina plot), computed per (colour, shape, opacity) subgroup to
+        # match the app: get_point_visual_mappings() iterates
+        # product(color, shape, opacity, separate), and univar.py fits the KDE and reseeds
+        # rng(42) INSIDE that loop, so both the density support and the random sequence are
+        # per-subgroup. Jittering per colour group instead moved EVERY point as soon as
+        # shape_by or opacity_by was set (same y, same groups, different x).
+        # The sub-masks use the same str() comparison as scatter_with_encodings, so the
+        # jitter lands on exactly the points it draws; a row whose encoding value is NaN
+        # matches no key and is plotted by neither side.
+        # There is deliberately no small-group branch: the app has none, and
+        # _estimate_density_1d already returns a zero-density fallback below 2 points,
+        # which the norm_d fallback turns into uniform jitter.
+        x_vals = np.full(len(y_data), float(x_pos))
+        shape_keys = list(shape_map) if (SHAPE_BY and shape_map) else [None]
+        opacity_keys = list(opacity_map) if (OPACITY_BY and opacity_map) else [None]
+        for shape_key in shape_keys:
+            for opacity_key in opacity_keys:
+                sub = np.ones(len(y_data), dtype=bool)
+                if shape_key is not None:
+                    sub &= group_df[SHAPE_BY].astype(str).values == shape_key
+                if opacity_key is not None:
+                    sub &= group_df[OPACITY_BY].astype(str).values == opacity_key
+                if not sub.any():
+                    continue
+                sub_y = y_data[sub]
+                densities = _estimate_density_1d(sub_y)(sub_y)
+                if len(densities) > 0 and np.max(densities) > 0:
+                    norm_d = densities / np.max(densities)
+                else:
+                    # Degenerate density (a constant column has no KDE): spread points with
+                    # uniform jitter so they stay visible instead of stacking into one dot.
+                    norm_d = np.ones_like(densities)
+                rng = np.random.default_rng(42)
+                x_vals[sub] = x_pos + rng.uniform(-1, 1, len(sub_y)) * norm_d * 0.35
 
-        # KDE-based jitter (Sina plot) — same density helper and normalization as the app.
-        densities = _estimate_density_1d(y_data)(y_data)
-        if len(densities) > 0 and np.max(densities) > 0:
-            norm_d = densities / np.max(densities)
-        else:
-            # Degenerate density (a constant column has no KDE): spread points with
-            # uniform jitter so they stay visible instead of stacking into one dot.
-            norm_d = np.ones_like(densities)
-
-        rng = np.random.default_rng(42)
-        jitter = rng.uniform(-1, 1, len(y_data)) * norm_d * 0.35
-
-        scatter_with_encodings(ax, x_pos + jitter, y_data, color_map[cg][:3],
-                               cg if cg not in legend_entries else None, POINT_SIZE,
+        cg_label = (format_group_label(cg, group_counts.get(cg), SHOW_GROUP_COUNTS, engine='mpl')
+                    if cg not in legend_entries else None)
+        scatter_with_encodings(ax, x_vals, y_data, color_map[cg][:3],
+                               cg_label, POINT_SIZE,
                                shape_vals=group_df[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
                                opacity_vals=group_df[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
                                linewidths=0.5)
@@ -1128,7 +1166,12 @@ else:
 legend_entries = set()
 for g in color_groups:
     gdf = df[df["_color_group"] == g]
-    label = g if g not in legend_entries else None
+    # len(gdf) counts the rows the app's point collector holds for this colour group
+    # (helpers.py add_interleaved_points_trace: len(points_by_color[g])). Both sides
+    # count after the same X/Y NaN filter — data_analysis.py applies it before calling
+    # the plot, the notna() line above reproduces it.
+    label = (format_group_label(g, len(gdf), SHOW_GROUP_COUNTS, engine='mpl')
+             if g not in legend_entries else None)
     scatter_with_encodings(ax_main, gdf[SELECTED_X], gdf[SELECTED_Y],
                            color_map[g][:3], label, POINT_SIZE,
                            shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
@@ -1303,7 +1346,13 @@ else:
 
     for g in color_groups:
         gdf = plot_df[plot_df["_color_group"] == g]
-        scatter_with_encodings(ax, gdf[g_col], gdf[s_col], color_map[g][:3], g, POINT_SIZE,
+        # Counted on plot_df, after the coordinate dropna. Phasor is the one point plot
+        # data_analysis.py hands over unfiltered, but the app drops the missing
+        # coordinates itself (bivar.py phasor_plot: df[g_feature].notna() &
+        # df[s_feature].notna()) before grouping, so the screen count excludes them too.
+        scatter_with_encodings(ax, gdf[g_col], gdf[s_col], color_map[g][:3],
+                               format_group_label(g, len(gdf), SHOW_GROUP_COUNTS,
+                                                  engine='mpl'), POINT_SIZE,
                                shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
                                opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
                                base_alpha=BASE_ALPHA)
@@ -1397,7 +1446,11 @@ fig, ax = plt.subplots(figsize=(10, 8))
 
 for g in color_groups:
     gdf = df[df["_color_group"] == g]
-    scatter_with_encodings(ax, gdf["_dr_x"], gdf["_dr_y"], color_map[g][:3], g, POINT_SIZE,
+    # Counted after the feature-NaN filter above, which is the same frame the app
+    # reduces and then counts (helpers.py: len(points_by_color[g])).
+    scatter_with_encodings(ax, gdf["_dr_x"], gdf["_dr_y"], color_map[g][:3],
+                           format_group_label(g, len(gdf), SHOW_GROUP_COUNTS, engine='mpl'),
+                           POINT_SIZE,
                            shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
                            opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
                            base_alpha=BASE_ALPHA)
