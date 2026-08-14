@@ -723,49 +723,44 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
     if separate_groups:
         # Use the actual positions and labels we calculated
         # Add section headers using annotations.
-        # These sit in the bottom margin, below the group tick labels. Plotly rotates
-        # those labels automatically once they stop fitting, and a header pinned to a
-        # fraction of the plot height (this used to be y=-0.20) then lands on top of
-        # them: the labels descend by a pixel amount that grows with the tick font,
-        # while the fraction does not. Anchor to the axis in pixels instead and scale
-        # the drop with the longest label, the way fov_comparison_plot already scales
-        # its bottom margin.
+        # The header goes directly under the axis line and the group tick labels are
+        # pushed down below it, rather than the header being dropped past them. That
+        # ordering is what makes the placement exact: the header occupies a slot whose
+        # height we set ourselves — one line of text, at a size we choose — so reserving
+        # room for it is arithmetic on the font size. Putting it underneath instead meant
+        # predicting how far the *labels* reach, which depends on their text, the tick
+        # angle and the browser's font metrics; that estimate is what used to collide.
         header_font_size = st.session_state.get("plot_axis_label_size", 12)
-        tick_font_size = header_font_size - 2
         longest_tick_label = max((len(str(t)) for t in x_tick_labels_actual), default=0)
-        # Pin the tick angle rather than leaving it to Plotly. Plotly measures the text in
-        # the browser and picks 0°, 45° or 90° from the container width — which the server
-        # cannot know, since the chart is rendered with width='stretch' — yet the header
-        # below has to be placed for whichever angle wins. Budgeting for the worst case it
-        # could pick left a large gap every time it picked less; fixing the angle makes the
-        # drop exact instead of an upper bound.
+        # One bold line plus padding above and below it. ticklabelstandoff pushes the
+        # group labels this much further from the axis, and that gap is the slot the
+        # header sits in. Plotly adds it to its own default standoff, so this is
+        # clearance on top of the space the labels would normally have.
+        header_slot_px = round(1.6 * header_font_size)
+        # Pin the tick angle rather than leaving it to Plotly, which measures the text in
+        # the browser and picks 0°, 45° or 90° from the container width — a width the
+        # server cannot know, since the chart is rendered with width='stretch'. The header
+        # no longer depends on the angle, but the exported Matplotlib figure
+        # (src/export_script.py) has to reproduce it, and it can only match an angle that
+        # is decided here.
         # 45° is safe at any label length: rotated labels are parallel diagonal strips,
         # so neighbours collide only when the perpendicular distance between them
         # (slot * sin45) drops below one line height — a function of the slot, never of
-        # how long the text is. At 45° a label reaches below the axis by its rendered
-        # width * sin45. Labels of a few characters fit upright at any width, so those
-        # stay at 0°.
-        # Both arms are (tick standoff ~1.0 * font) + (how far the label itself reaches):
-        # one rendered line upright, or the label's width when it is turned on its side.
-        # Calibrated against the live figure — at font 24 with 9-character labels the
-        # labels reach 110px below the axis and this puts the header at 119px.
-        if longest_tick_label <= 4:
-            tick_angle = 0
-            header_shift_px = round(2.2 * tick_font_size)
-        else:
-            # Negative: Plotly's positive tickangle turns clockwise, which reads
-            # downhill left-to-right. -45 is the conventional uphill slant, the one
-            # Plotly's own automatic rotation picks and the one Matplotlib's
-            # rotation=45, ha='right' produces in the exported figure. The drop is
-            # |sin(45)| either way, so the offset below is unaffected.
-            tick_angle = -45
-            header_shift_px = round(tick_font_size * (0.7 + 0.44 * longest_tick_label))
+        # how long the text is. Labels of a few characters fit upright at any width, so
+        # those stay at 0°.
+        # Negative because Plotly's positive tickangle turns clockwise, which reads
+        # downhill left-to-right; -45 is the conventional uphill slant, the one Plotly's
+        # own automatic rotation picks and the one Matplotlib's rotation=45, ha='right'
+        # produces in the export.
+        tick_angle = 0 if longest_tick_label <= 4 else -45
         for section_info in separate_sections_info:
             if section_info['combinations']:  # Only add annotation if section has data
                 fig.add_annotation(
                     x=section_info['center'],
-                    y=0,  # Bottom of the plot area; the offset below it is in pixels
-                    yshift=-header_shift_px,
+                    y=0,  # Bottom of the plot area
+                    # Padding between the axis line and the header, not a measurement of
+                    # anything below it.
+                    yshift=-round(0.25 * header_font_size),
                     text=f"<b>{section_info['group']}</b>",
                     showarrow=False,
                     xref="x",
@@ -778,13 +773,19 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                     xanchor="center",
                     yanchor="top"
                 )
-        
+
         xaxis_config = dict(
             tickvals=x_tick_positions_actual,
             ticktext=x_tick_labels_actual,
-            tickangle=tick_angle,  # fixed above, so the section header offset is exact
+            tickangle=tick_angle,  # fixed above so the export can reproduce it
+            ticklabelstandoff=header_slot_px,  # the section header sits in this gap
             zeroline=False,
             tickfont=dict(color=theme_color),
+            # The tick labels are the lowest thing in the figure now, so letting Plotly
+            # size the bottom margin from the labels it has actually rendered also covers
+            # the header sitting above them. It measures in the browser, which is the one
+            # place the true text extent is known.
+            automargin=True,
         )
     else:
         # Standard x-axis configuration
@@ -793,6 +794,10 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             ticktext=ordered_compare_groups,
             zeroline=False,
             tickfont=dict(color=theme_color),
+            # As in the separate_by branch above: Plotly grows the bottom margin from the
+            # tick labels it has rendered. Here it also rotates them itself, so the space
+            # they need is doubly something only the browser knows.
+            automargin=True,
         )
     
     # --- Loop 2: Boxplots (on top of points) ---
@@ -859,12 +864,12 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
     # Set y-axis label based on log transform (pretty_var defined at top)
     y_axis_label = f"log₁₀({pretty_var})" if log_y else pretty_var
     
-    # The bottom margin has to hold the group tick labels and, when separate_by splits
-    # the plot into sections, the headers hanging below them — otherwise the headers are
-    # placed correctly but clipped off the bottom of the figure.
-    bottom_margin = max(120, len(max(compare_groups, key=len, default=''))*5)
-    if separate_groups:
-        bottom_margin = max(bottom_margin, header_shift_px + 2 * header_font_size)
+    # A plain floor, so a plot with short labels still gets a comfortable gutter.
+    # It used to be max(120, len(longest_label) * 5) — a character count standing in for
+    # a pixel height, which is the same guess-at-someone-else's-text-metrics the section
+    # header used to make. xaxis.automargin now grows the margin past this floor by
+    # whatever the labels Plotly actually rendered need, so the guess had nothing to do.
+    bottom_margin = 120
 
     fig.update_layout(
         title=dict(text=full_title, font=dict(color=theme_color)),
@@ -876,7 +881,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         ),
         showlegend=True, # Show legend entries based on the 'name' of each go.Box trace
         hovermode='closest', # Hover behavior
-        margin=dict(l=50, r=20, t=50, b=bottom_margin), # Room for tick labels + section headers
+        margin=dict(l=50, r=20, t=50, b=bottom_margin), # Floor; xaxis.automargin grows it
     )
 
     # --- 4. Add statistical annotations ---

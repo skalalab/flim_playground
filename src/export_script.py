@@ -1088,37 +1088,34 @@ ax.tick_params(axis='y', labelsize=AXIS_LABEL_SIZE - 2)
 add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
 
-# Everything below measures the drawn figure, so it has to run last — after the title,
-# axis label and legend exist, or tight_layout fits a figure that is still missing them
-# and the Save section's own tight_layout shifts the result out from under us.
-#
 # Same tick angle rule as the app (src/vis/univar.py): labels of more than four
 # characters are slanted to 45°, shorter ones stay upright. The app fixes the angle
-# rather than letting Plotly choose per container width, so that its section headers can
-# be offset exactly; matching the rule here is what keeps the two figures looking alike.
+# rather than letting Plotly choose per container width, so matching the rule here is
+# what keeps the two figures looking alike.
 if max((len(str(lbl)) for lbl in x_labels), default=0) > 4:
     plt.setp(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode='anchor')
-plt.tight_layout()
-fig.canvas.draw()
 
-# One bold header per separate_by section, centred under its groups (univar.py
-# separate_sections_info). The app pins these at y=-0.20 of the plot height, which
-# collides with its own rotated tick labels; measuring where the labels actually end
-# keeps the header clear of them at any font size.
+# One bold header per separate_by section, centred over its groups (univar.py
+# separate_sections_info). The header sits directly under the axis line and the tick
+# labels are pushed below it, mirroring the app's xaxis.ticklabelstandoff. Stacking them
+# this way is what makes the offsets exact at any font size: the reserved gap is one line
+# of header text, whose height we set, instead of a guess at how far the group labels
+# reach — which is the thing the app used to have to predict.
 if section_headers:
-    # Offset in points below the axes edge, not a fraction of the axes height: adding
-    # these headers enlarges the axes' tight bbox, so the Save section's tight_layout
-    # resizes the axes underneath them. How far the tick labels hang below the edge is
-    # a font-size property and survives that resize; a fraction of the height does not.
-    _labels_depth_pts = ((ax.get_window_extent().y0
-                          - min(t.get_window_extent().y0 for t in ax.get_xticklabels()))
-                         / fig.dpi * 72)
+    # 1.6 * the header size is the line plus padding, matching header_slot_px in the app;
+    # the +3.5 is Matplotlib's default x-tick pad, which the app's standoff likewise adds
+    # to Plotly's own default. Points here against the app's pixels, but both are the
+    # same multiple of the font size, so the two figures reserve the same proportion.
+    ax.tick_params(axis='x', pad=1.6 * AXIS_LABEL_SIZE + 3.5)
     for _header_x, _header_label in section_headers:
         # AXIS_LABEL_SIZE, not the size univar.py passes: apply_plot_styling() rewrites
         # every annotation's font size to plot_axis_label_size after the plot is built,
         # so that is the size the app actually renders these at.
+        # Offset in points below the axes edge, not a fraction of the axes height: the
+        # Save section's tight_layout resizes the axes under these headers, and a
+        # font-size offset survives that resize where a fraction of the height does not.
         ax.annotate(_header_label, xy=(_header_x, 0), xycoords=('data', 'axes fraction'),
-                    xytext=(0, -(_labels_depth_pts + 6)), textcoords='offset points',
+                    xytext=(0, -0.25 * AXIS_LABEL_SIZE), textcoords='offset points',
                     ha='center', va='top', fontsize=AXIS_LABEL_SIZE, fontweight='bold')
 """
 
