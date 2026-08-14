@@ -307,6 +307,20 @@ def _build_config_section(state: dict) -> str:
         f"CATEGORICAL_COLS = {state.get('categorical_cols', [])!r}",
     ]
 
+    # The column universe the app analyses. get_features() (src/dataset_io.py) keeps
+    # the row id, the FOV column, the configured categorical columns and every
+    # recognised numerical feature, dropping the rest; anything the app never saw
+    # must not reappear in this script's derived-data CSVs either. Captured from the
+    # loaded frame rather than re-derived, because re-deriving needs config.toml /
+    # analysis_config.toml and this script has to stand alone.
+    analysis_columns = state.get("analysis_columns")
+    if analysis_columns:
+        lines.append("ANALYSIS_COLUMNS = [")
+        lines.extend(f"    {col!r}," for col in analysis_columns)
+        lines.append("]")
+    else:
+        lines.append("ANALYSIS_COLUMNS = None  # not captured — keep every column")
+
     if method in ("Feature Comparison", "Feature Histogram", "FOV Comparison"):
         lines.append(f"SELECTED_VAR = {mp.get('selected_var')!r}")
     if method == "Feature Comparison":
@@ -405,6 +419,14 @@ if _error_msg:
 df, _coerce_warning = coerce_majority_numeric_cols(
     df, set([UNIQUE_ROW_ID_COL, FOV_NAME_COL] + list(CATEGORICAL_COLS)))
 _warning_msg += _coerce_warning
+if ANALYSIS_COLUMNS is not None:
+    # Same prune the app applies in get_features() — see ANALYSIS_COLUMNS above.
+    # Missing columns are skipped rather than raising, so the script still runs on a
+    # CSV that lost a column; anything dropped here was never part of the analysis.
+    _missing = [col for col in ANALYSIS_COLUMNS if col not in df.columns]
+    if _missing:
+        print("Warning: analysed column(s) missing from the CSV: " + ", ".join(_missing))
+    df = df[[col for col in ANALYSIS_COLUMNS if col in df.columns]]
 if _warning_msg:
     print(_warning_msg.replace("<br>", "\\n").strip())
 """
@@ -1192,8 +1214,10 @@ G_semi = 1.0 / (1.0 + u**2)
 S_semi = u / (1.0 + u**2)
 ax.plot(G_semi, S_semi, 'k-', linewidth=1.5, zorder=1)
 
-# Lifetime markers
-w = 2 * np.pi * PHASOR_F
+# Lifetime markers. The n-th harmonic phasor is evaluated at n*omega, so a marker
+# for tau belongs at n*2*pi*f*tau (src/vis/bivar.py _create_phasor_background).
+# The semicircle is parameterised by omega*tau and needs no harmonic correction.
+w = 2 * np.pi * PHASOR_F * PHASOR_HARMONIC
 for tau in [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
     wt = w * tau
     g_marker = 1.0 / (1.0 + wt**2)
@@ -1206,9 +1230,13 @@ for tau in [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
 ax.axhline(y=0, color='gray', linewidth=0.5)
 ax.axvline(x=0, color='gray', linewidth=0.5)
 
-# Laser repetition rate annotation, matching the app (src/vis/bivar.py): the
-# lifetime marker scale is meaningless without it.
-ax.text(0.8, 0.5, f"f = {PHASOR_F * 1000} MHz", fontsize=15, ha='left', va='center')
+# Frequency annotation, matching the app (src/vis/bivar.py): the lifetime marker
+# scale is meaningless without it. For harmonic n the geometry is drawn at n x the
+# laser repetition rate, so report that and show the rate it came from.
+freq_text = f"f = {PHASOR_F * PHASOR_HARMONIC * 1000} MHz"
+if PHASOR_HARMONIC != 1:
+    freq_text += f"\\n({PHASOR_HARMONIC} x {PHASOR_F * 1000} MHz)"
+ax.text(0.8, 0.5, freq_text, fontsize=15, ha='left', va='center')
 
 harmonic_label = "1st" if PHASOR_HARMONIC == 1 else "2nd"
 g_col = f"Lifetime fit free_{PHASOR_CHANNEL}: G({harmonic_label})"

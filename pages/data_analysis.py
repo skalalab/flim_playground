@@ -112,6 +112,7 @@ def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opac
         "shape_by": shape_by,
         "separate_by": separate_by,
         "categorical_cols": list(categorical_cols) if categorical_cols else [],
+        "analysis_columns": st.session_state.get("analysis_columns"),
         "point_size": st.session_state.plot_point_size,
         "axis_label_size": st.session_state.plot_axis_label_size,
         "legend_size": st.session_state.plot_legend_size,
@@ -270,6 +271,10 @@ with col1:
         st.error(f"Failed to process the uploaded CSV: {e} {sad_emoji}")
         df, feature_groups_dict, upload_complete = None, None, False
     st.session_state.vis_df = df
+    # Snapshot the column universe get_features() pruned to, before any plot adds
+    # derived columns (GMM_group, _color_group, ...). The exported script replays
+    # this same prune so its derived CSVs carry the app's columns, not the raw file's.
+    st.session_state.analysis_columns = list(df.columns) if df is not None else None
 
     if upload_complete:
         if method in univar_methods:
