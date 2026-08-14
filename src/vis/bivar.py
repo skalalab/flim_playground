@@ -87,10 +87,15 @@ def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, 
                 points=False # Hide points for a cleaner look
             ))
 
-def _create_phasor_background(fig, theme_color, f=0.08):
+def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
     """
     Helper function to create the phasor semicircle, axes, annotations, and lifetime markers.
     Adds these elements to the provided figure.
+
+    ``harmonic`` is the harmonic the plotted G/S coordinates were computed at
+    (see fov_extraction.py, which passes ``harmonic=h`` to
+    ``phasor.phasor_from_signal``). The n-th harmonic phasor is evaluated at
+    n·ω, so the reference geometry must use n·2πf as well.
     """
     # Plot the curve
     u = np.arange(0, 100, 0.01)
@@ -163,8 +168,12 @@ def _create_phasor_background(fig, theme_color, f=0.08):
         yanchor='top'
     )
 
-    # Calculate and plot specific points
-    wt = 2 * np.pi * f * np.array([0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=float)
+    # Calculate and plot specific points.
+    # The n-th harmonic phasor is evaluated at n*omega, so a lifetime marker for tau
+    # belongs at n*2*pi*f*tau. Omitting the harmonic put every 2nd-harmonic marker at
+    # the coordinate of a lifetime twice the one it was labelled with. The semicircle
+    # itself is parameterised by omega*tau and so needs no harmonic correction.
+    wt = 2 * np.pi * f * harmonic * np.array([0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=float)
     x_points = 1 / (1 + wt**2)
     y_points = wt / (1 + wt**2)
 
@@ -193,11 +202,15 @@ def _create_phasor_background(fig, theme_color, f=0.08):
             xanchor='left'
         )
     
-    # Add text inside the plot
+    # Add text inside the plot. Report the frequency the geometry is drawn at, which
+    # for harmonic n is n x the laser repetition rate.
+    freq_text = f"f = {f * harmonic * 1000} MHz"
+    if harmonic != 1:
+        freq_text += f"<br>({harmonic} x {f * 1000} MHz)"
     fig.add_annotation(
         x=0.8,
         y=0.5,
-        text=f"f = {f * 1000} MHz",
+        text=freq_text,
         showarrow=False,
         font=dict(size=15, color=theme_color),
         xanchor='left'
@@ -608,7 +621,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
     )
 
     # Create phasor background (semicircle, axes, annotations, lifetime markers)
-    _create_phasor_background(fig, theme_color, f)
+    _create_phasor_background(fig, theme_color, f, harmonic)
     
     # plot the phasor coordinates
     GROUP_COL_NAME = 'unique_color_group'
