@@ -1,15 +1,24 @@
-from .helpers import _find_best_gmm, get_point_visual_mappings, add_interleaved_points_trace, get_context_theme_color, log_negative_error
-from src.feature_labels import format_feature_label
-import plotly.graph_objects as go
 import numpy as np
-from scipy.stats import gaussian_kde, pearsonr, chi2
+import plotly.graph_objects as go
+import streamlit as st
+from scipy.spatial import ConvexHull
+from scipy.stats import chi2, gaussian_kde, pearsonr
+from sklearn.cluster import KMeans
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
-from src.widgets.visualization_widgets import gmm_hyperParams_widget
-import streamlit as st
-from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-from scipy.spatial import ConvexHull
+
+from src.feature_labels import format_feature_label
+from src.widgets.visualization_widgets import gmm_hyperParams_widget
+
+from .helpers import (
+    _find_best_gmm,
+    add_interleaved_points_trace,
+    get_context_theme_color,
+    get_point_visual_mappings,
+    log_negative_error,
+)
+
 
 def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, plotly_axis_params):
     """Helper function to plot marginal densities."""
@@ -451,6 +460,25 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     table_md = "\n".join(table_md)
     return fig, table_md, df
 
+def _cluster_hull_polygon(pts):
+    """Return one cluster's boundary polygon (unclosed) for its (x, y) points.
+
+    Deduplicates first because Qhull fails on repeated points, and falls back to a
+    small circle around the mean when there are fewer than three unique points,
+    which have no hull. Kept free of Plotly/Streamlit so the exported script can
+    inline this exact source and draw identical boundaries.
+    """
+    uniq = np.unique(np.asarray(pts, dtype=float), axis=0)
+    if uniq.shape[0] >= 3:
+        hull = ConvexHull(uniq)
+        return uniq[hull.vertices]
+    center = uniq.mean(axis=0)
+    r = max(np.linalg.norm(uniq - center, axis=1).max(initial=0.0), 0.01)
+    theta = np.linspace(0, 2 * np.pi, 80)
+    return np.c_[center[0] + 1.2 * r * np.cos(theta),
+                 center[1] + 1.2 * r * np.sin(theta)]
+
+
 def _plot_convex_hull(
     fig,
     df,
@@ -491,20 +519,7 @@ def _plot_convex_hull(
         if sub.empty:
             continue
 
-        pts = sub.to_numpy()
-        # Use unique points to avoid Qhull failures on duplicates
-        uniq = np.unique(pts, axis=0)
-
-        if uniq.shape[0] >= 3:
-            hull = ConvexHull(uniq)
-            poly = uniq[hull.vertices]
-        else:
-            # Fallback: small circle around the mean if <3 unique points
-            center = uniq.mean(axis=0)
-            r = max(np.linalg.norm(uniq - center, axis=1).max(initial=0.0), 0.01)
-            theta = np.linspace(0, 2*np.pi, 80)
-            poly = np.c_[center[0] + 1.2*r*np.cos(theta),
-                         center[1] + 1.2*r*np.sin(theta)]
+        poly = _cluster_hull_polygon(sub.to_numpy())
 
         fig.add_trace(go.Scatter(
             x=np.r_[poly[:, 0], poly[0, 0]],

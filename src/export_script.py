@@ -159,14 +159,16 @@ def get_effect_size_threshold_capture(session_state, effect_size_method, selecte
 
     Mirrors the widget keys and defaults in src/vis/helpers.py (non-separate
     path) and src/vis/univar.py (separate path): the key suffix is the selected
-    variable; Glass's Delta defaults to 0.7 on both paths, Absolute Cohen's d
-    defaults to 0.7 (0.5 when separate_by is active).
+    variable; Glass's Delta defaults to 0.7 and Absolute Cohen's d to 0.5 on
+    BOTH paths (helpers.py:373, univar.py:846). `separate_by` does not change
+    either default -- this used to fall back to 0.7 for Cohen's d whenever
+    separate_by was falsy, which silently diverged from the widget any time the
+    widget had not rendered and so had written no session value.
     """
     if effect_size_method == "Glass's Delta":
         return float(session_state.get(f"glass_delta_thresh_{selected_var}", 0.7))
     if effect_size_method == "Absolute Cohen's d":
-        default = 0.5 if separate_by else 0.7
-        return float(session_state.get(f"cohens_d_thresh_{selected_var}", default))
+        return float(session_state.get(f"cohens_d_thresh_{selected_var}", 0.5))
     return 0.0
 
 
@@ -536,9 +538,10 @@ for fov_i, fov in enumerate(fovs):
     offset += len(present) + 1
 
 ax.set_xticks(positions)
-ax.set_xticklabels(tick_labels, fontsize=max(6, AXIS_LABEL_SIZE - 6), rotation=45, ha='right')
+ax.set_xticklabels(tick_labels, fontsize=AXIS_LABEL_SIZE - 2, rotation=45, ha='right')
 ax.set_ylabel(format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
-ax.tick_params(axis='y', labelsize=LEGEND_SIZE)
+ax.set_title(f"Distribution of {format_feature_label(SELECTED_VAR, engine='mpl')} by Field of View", fontsize=AXIS_LABEL_SIZE)
+ax.tick_params(axis='y', labelsize=AXIS_LABEL_SIZE - 2)
 
 for g in color_groups:
     ax.scatter([], [], c=[color_map[g][:3]], label=g, s=50)
@@ -548,11 +551,14 @@ ax.legend(fontsize=LEGEND_SIZE)
 
 def _build_feature_histogram(state: dict) -> str:
     from src.vis.helpers import _find_best_gmm, find_intersection
+    from src.vis.univar import _assign_subpopulation_labels
 
     has_gmm = state.get("method_params", {}).get("apply_gmm", False)
 
     if has_gmm:
-        gmm_src = _extract_source(_find_best_gmm, find_intersection)
+        # _assign_subpopulation_labels is shared with the app so subpopulations are
+        # numbered by ascending-mean rank on both paths (group1 == smallest mean).
+        gmm_src = _extract_source(_find_best_gmm, find_intersection, _assign_subpopulation_labels)
         return _build_visual_encoding(state, overlap_point=False) + f"""
 # ============================================================
 # Gaussian Mixture Model Fit (extracted from FLIM Playground)
@@ -643,13 +649,10 @@ for g in color_groups:
                     ax.text(t, ax.get_ylim()[1] * 0.95, f"Threshold: {{t:.2f}}",
                            ha='center', fontsize=9, color=color_map[g][:3])
                     print(f"    Threshold between component {{i+1}} and {{i+2}}: {{t:.4f}}")
-                subpopulation_labels = np.digitize(gdata.values, bins=thresholds)
-                subpopulation_labels = sorted_idx[subpopulation_labels]
+                assigned_labels = _assign_subpopulation_labels(gdata.values, gmm, thresholds, g)
         if not intersection_ok:
-            data_2d = gdata.values.reshape(-1, 1)
-            subpopulation_labels = gmm.predict(data_2d)
+            assigned_labels = _assign_subpopulation_labels(gdata.values, gmm, None, g)
 
-        assigned_labels = [f"{{g}}_group{{label + 1}}" for label in subpopulation_labels]
         df.loc[data_indices, "GMM_group"] = assigned_labels
     # No else: a single-component group is left unlabeled, matching the app
     # (univar.py assigns GMM_group only inside the n_components>1 branch).
@@ -660,7 +663,8 @@ if SAVE_DERIVED_DATA:
 
 ax.set_xlabel(f"log₁₀({{format_feature_label(SELECTED_VAR, engine='mpl')}})" if LOG_X else format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("Probability Density", fontsize=AXIS_LABEL_SIZE)
-ax.tick_params(axis='both', labelsize=LEGEND_SIZE)
+ax.set_title(f"Gaussian Mixture Model fit of {{format_feature_label(SELECTED_VAR, engine='mpl')}} by {{', '.join(COLOR_BY)}}", fontsize=AXIS_LABEL_SIZE)
+ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
 ax.legend(fontsize=LEGEND_SIZE)
 """
 
@@ -680,13 +684,17 @@ if LOG_X:
 fig, ax = plt.subplots(figsize=(10, 6))
 
 all_vals = df[SELECTED_VAR].dropna().values
-if BIN_WIDTH is not None:
-    bin_width = float(BIN_WIDTH)
+# Common bin edges shared by all groups, mirroring histogram_bin_width_widget in
+# src/widgets/visualization_widgets.py: only when numpy's 'auto' yields more than
+# one bin is a width used at all. For a constant / near-constant feature the app's
+# widget never renders and it falls back to numpy's own single-bin edges — the
+# export used to invent a width of 1.0 instead, shifting the bar off centre.
+_, _auto_edges = np.histogram(all_vals, bins='auto')
+if len(_auto_edges) - 1 > 1:
+    bin_width = float(BIN_WIDTH) if BIN_WIDTH is not None else (_auto_edges[1] - _auto_edges[0])
+    bin_edges = np.arange(all_vals.min(), all_vals.max() + bin_width + 1e-9, bin_width)
 else:
-    _, _auto_edges = np.histogram(all_vals, bins='auto')
-    bin_width = _auto_edges[1] - _auto_edges[0] if len(_auto_edges) > 1 else 1.0
-# Common bin edges shared by all groups (mirrors the app's histogram widget)
-bin_edges = np.arange(all_vals.min(), all_vals.max() + bin_width + 1e-9, bin_width)
+    bin_edges = _auto_edges
 
 for g in color_groups:
     gdata = df[df["_color_group"] == g][SELECTED_VAR].dropna().values
@@ -717,15 +725,26 @@ for g in color_groups:
 
 ax.set_xlabel(f"log₁₀({format_feature_label(SELECTED_VAR, engine='mpl')})" if LOG_X else format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("Count", fontsize=AXIS_LABEL_SIZE)
-ax.tick_params(axis='both', labelsize=LEGEND_SIZE)
+ax.set_title(f"Frequency histogram of {format_feature_label(SELECTED_VAR, engine='mpl')} by {', '.join(COLOR_BY)}", fontsize=AXIS_LABEL_SIZE)
+ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
 ax.legend(fontsize=LEGEND_SIZE)
 """
 
 
 def _build_feature_comparison(state: dict) -> str:
-    from src.vis.helpers import _compute_bracket_position, cohens_d, glass_delta
+    from src.vis.helpers import (
+        _compute_bracket_position,
+        _estimate_density_1d,
+        cohens_d,
+        glass_delta,
+    )
 
-    effect_size_src = _extract_source(glass_delta, cohens_d, _compute_bracket_position)
+    # _estimate_density_1d is shared with the app so degenerate groups (constant or
+    # single-point) get the same zero-density fallback, and therefore the same
+    # uniform jitter, instead of collapsing onto one x position.
+    effect_size_src = _extract_source(
+        glass_delta, cohens_d, _compute_bracket_position, _estimate_density_1d
+    )
 
     return _build_visual_encoding(state, overlap_point=False) + f"""
 # ============================================================
@@ -816,14 +835,14 @@ for sec_group in ordered_separate_groups:
             legend_entries.add(cg)
             continue
 
-        # KDE-based jitter (Sina plot)
-        try:
-            kde = gaussian_kde(y_data)
-            densities = kde(y_data)
-            max_d = densities.max()
-            norm_d = densities / max_d if max_d > 0 else np.zeros_like(densities)
-        except Exception:
-            norm_d = np.zeros(len(y_data))
+        # KDE-based jitter (Sina plot) — same density helper and normalization as the app.
+        densities = _estimate_density_1d(y_data)(y_data)
+        if len(densities) > 0 and np.max(densities) > 0:
+            norm_d = densities / np.max(densities)
+        else:
+            # Degenerate density (a constant column has no KDE): spread points with
+            # uniform jitter so they stay visible instead of stacking into one dot.
+            norm_d = np.ones_like(densities)
 
         rng = np.random.default_rng(42)
         jitter = rng.uniform(-1, 1, len(y_data)) * norm_d * 0.35
@@ -976,9 +995,19 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
 
 # --- Axis setup ---
 ax.set_xticks(tick_positions)
-ax.set_xticklabels(x_labels, fontsize=max(8, AXIS_LABEL_SIZE - 4))
+ax.set_xticklabels(x_labels, fontsize=AXIS_LABEL_SIZE - 2)
 ax.set_ylabel(f"log₁₀({{format_feature_label(SELECTED_VAR, engine='mpl')}})" if LOG_Y else format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
-ax.tick_params(axis='y', labelsize=LEGEND_SIZE)
+# Title mirrors the app's encoding-aware title (src/vis/univar.py).
+_title_parts = [f"Distribution of {{format_feature_label(SELECTED_VAR, engine='mpl')}} by {{', '.join(COLOR_BY)}}"]
+if SEPARATE_BY:
+    _title_parts.append(f"separated by: {{SEPARATE_BY}}")
+if OPACITY_BY:
+    _title_parts.append(f"opacity: {{OPACITY_BY}}")
+if SHAPE_BY:
+    _title_parts.append(f"shape: {{SHAPE_BY}}")
+_full_title = _title_parts[0] + (f" ({{', '.join(_title_parts[1:])}})" if len(_title_parts) > 1 else "")
+ax.set_title(_full_title, fontsize=AXIS_LABEL_SIZE)
+ax.tick_params(axis='y', labelsize=AXIS_LABEL_SIZE - 2)
 add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
 """
@@ -1035,7 +1064,10 @@ for g in color_groups:
                            base_alpha=BASE_ALPHA)
     legend_entries.add(g)
 
-    if ax_top is not None and gdf[SELECTED_X].nunique() > 1 and gdf[SELECTED_Y].nunique() > 1:
+    # Guard each marginal on its OWN axis, as the app does (_plot_marginal_density
+    # in src/vis/bivar.py returns early per axis). Requiring both axes to vary
+    # dropped the x marginal whenever y happened to be constant, and vice versa.
+    if ax_top is not None and gdf[SELECTED_X].nunique() > 1:
         from scipy.stats import gaussian_kde
         try:
             x_vals = gdf[SELECTED_X].dropna().values
@@ -1053,7 +1085,7 @@ for g in color_groups:
         except Exception:
             pass
 
-    if ax_right is not None and gdf[SELECTED_X].nunique() > 1 and gdf[SELECTED_Y].nunique() > 1:
+    if ax_right is not None and gdf[SELECTED_Y].nunique() > 1:
         try:
             y_vals = gdf[SELECTED_Y].dropna().values
             kde_y = gaussian_kde(y_vals)
@@ -1129,7 +1161,8 @@ if FIT_GMM_2D:
 
 ax_main.set_xlabel(f"log₁₀({{format_feature_label(SELECTED_X, engine='mpl')}})" if LOG_X else format_feature_label(SELECTED_X, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
 ax_main.set_ylabel(f"log₁₀({{format_feature_label(SELECTED_Y, engine='mpl')}})" if LOG_Y else format_feature_label(SELECTED_Y, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
-ax_main.tick_params(axis='both', labelsize=LEGEND_SIZE)
+ax_main.set_title(f"2D Distribution of {{format_feature_label(SELECTED_X, engine='mpl')}} and {{format_feature_label(SELECTED_Y, engine='mpl')}} by {{', '.join(COLOR_BY)}}", fontsize=AXIS_LABEL_SIZE)
+ax_main.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
 add_encoding_legend_entries(ax_main, shape_map, opacity_map, POINT_SIZE)
 ax_main.legend(fontsize=LEGEND_SIZE)
 """
@@ -1140,9 +1173,13 @@ def _build_phasor_plot(state: dict) -> str:
     # the app (src/vis/bivar.py) so both run the identical computation.
     kmeans_src = ""
     if state.get("method_params", {}).get("k_means"):
-        from src.vis.bivar import phasor_kmeans
-        kmeans_src = ("\n# K-Means clustering (extracted from FLIM Playground source)\n"
-                      + _extract_source(phasor_kmeans))
+        from src.vis.bivar import _cluster_hull_polygon, phasor_kmeans
+        # _cluster_hull_polygon is shared so clusters with fewer than three UNIQUE
+        # points get the app's fallback circle instead of silently losing their
+        # boundary, and duplicate points can't trip Qhull.
+        kmeans_src = ("\n# K-Means clustering and cluster boundaries "
+                      "(extracted from FLIM Playground source)\n"
+                      + _extract_source(phasor_kmeans, _cluster_hull_polygon))
     return _build_visual_encoding(state) + kmeans_src + """
 # ============================================================
 # Phasor Plot
@@ -1168,6 +1205,10 @@ for tau in [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
 
 ax.axhline(y=0, color='gray', linewidth=0.5)
 ax.axvline(x=0, color='gray', linewidth=0.5)
+
+# Laser repetition rate annotation, matching the app (src/vis/bivar.py): the
+# lifetime marker scale is meaningless without it.
+ax.text(0.8, 0.5, f"f = {PHASOR_F * 1000} MHz", fontsize=15, ha='left', va='center')
 
 harmonic_label = "1st" if PHASOR_HARMONIC == 1 else "2nd"
 g_col = f"Lifetime fit free_{PHASOR_CHANNEL}: G({harmonic_label})"
@@ -1207,17 +1248,12 @@ else:
             group_color = color_map[g][:3]
             for ci in range(K_MEANS_CLUSTERS):
                 cluster_pts = coords[labels == ci]
-                if len(cluster_pts) >= 3:
-                    try:
-                        hull = ConvexHull(cluster_pts)
-                        hull_pts = cluster_pts[hull.vertices]
-                        hull_pts = np.vstack([hull_pts, hull_pts[0]])
-                        ax.fill(hull_pts[:, 0], hull_pts[:, 1],
-                               alpha=0.15, color=group_color, zorder=1)
-                        ax.plot(hull_pts[:, 0], hull_pts[:, 1],
-                               color=group_color, linewidth=1.5, zorder=1)
-                    except Exception:
-                        pass
+                if len(cluster_pts):
+                    # Shared boundary logic; drawn unfilled and closed, matching the
+                    # app's mode="lines" trace in _plot_convex_hull.
+                    poly = _cluster_hull_polygon(cluster_pts)
+                    ax.plot(np.r_[poly[:, 0], poly[0, 0]], np.r_[poly[:, 1], poly[0, 1]],
+                           color=group_color, linewidth=1.5, zorder=1)
                 ax.plot(centers[ci, 0], centers[ci, 1], 'x',
                        color=group_color, markersize=12, markeredgewidth=2, zorder=4)
 
@@ -1227,10 +1263,11 @@ else:
 
 ax.set_xlabel("g", fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("s", fontsize=AXIS_LABEL_SIZE)
+ax.set_title(f"{PHASOR_CHANNEL} {harmonic_label} Harmonic Phasor", fontsize=AXIS_LABEL_SIZE)
 ax.set_xlim(-0.05, 1.05)
 ax.set_ylim(-0.05, 0.55)
 ax.set_aspect('equal')
-ax.tick_params(axis='both', labelsize=LEGEND_SIZE)
+ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
 ax.legend(fontsize=LEGEND_SIZE)
 """
 
@@ -1286,7 +1323,7 @@ for g in color_groups:
 
 ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel(ylabel, fontsize=AXIS_LABEL_SIZE)
-ax.tick_params(axis='both', labelsize=LEGEND_SIZE)
+ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
 add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
 """

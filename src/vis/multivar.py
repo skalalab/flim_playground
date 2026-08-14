@@ -1,15 +1,24 @@
-from sklearn.preprocessing import StandardScaler
 import warnings
+
+from sklearn.preprocessing import StandardScaler
+
 warnings.filterwarnings(action='ignore', category=FutureWarning, module='sklearn.utils.deprecation')
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
+import threading
+
 import pandas as pd
-import umap
 import plotly.graph_objects as go
 import streamlit as st
-from .helpers import get_point_visual_mappings, add_interleaved_points_trace, get_context_theme_color
-import threading  
-  
+import umap
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+
+from .helpers import (
+    add_interleaved_points_trace,
+    get_context_theme_color,
+    get_point_visual_mappings,
+)
+
+
 @st.cache_data()
 def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, random_state=42):
     exp_var = None
@@ -19,7 +28,10 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, ra
         # Standardize features before PCA and umap
         X_std = StandardScaler().fit_transform(X)
         if method == "PCA":
-            pca = PCA(n_components=n_components)
+            # Seed PCA like UMAP/t-SNE below: svd_solver="auto" can pick the
+            # randomized solver on larger inputs, which made live results vary
+            # between reruns while the exported script (random_state=42) did not.
+            pca = PCA(n_components=n_components, random_state=random_state)
             principal_components = pca.fit_transform(X_std)
             df = pd.DataFrame(principal_components, columns=["PC1", "PC2"])
             exp_var = pca.explained_variance_ratio_ * 100
