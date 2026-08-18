@@ -297,13 +297,21 @@ def export_metadata_widget(metadata_df, folder_path):
 def check_raw_decay_data(fov_df, channel_name):
     """
     Check if the raw decay data is available.
+
+    Returns ``(error_msg, available_channels, shape, laser_rep_time, preview_images)``.
+    ``preview_images`` is a (C, Y, X) array of photon counts for the first FOV, summed
+    over the time axis, and backs the channel-assignment preview in
+    ``check_assign_channel_widget``. It is None whenever there is no channel to assign
+    (3D decay) or the data never got read. It has to travel in the return value rather
+    than a module-level stash: this function is cached, so on a cache hit the body never
+    runs and any side effect would silently vanish.
     """
     decay_column_name = f"{channel_name}_Decay"
     mask_column_name = f"{channel_name}_Mask"
     if decay_column_name not in fov_df.columns:
-        return "Error: No decay data found. Please check the data.", [], None, None
+        return "Error: No decay data found. Please check the data.", [], None, None, None
     if mask_column_name not in fov_df.columns:
-        return "Error: No mask data found. Please check the data.", [], None, None
+        return "Error: No mask data found. Please check the data.", [], None, None, None
 
     shape_list = []
     shape_to_files = {}  # shape -> list of decay file paths
@@ -312,17 +320,18 @@ def check_raw_decay_data(fov_df, channel_name):
     fov_name_col = get_fov_name_col()
     empty_fov_labels = []
     channel_has_signal = None  # set on first 4D decay; used if all FOVs agree on 4D shape
+    preview_images = None  # (C, Y, X) intensity of the first 4D FOV, for the channel preview
     for idx, row in fov_df.iterrows():
         decay_path = row[decay_column_name]
         error_msg, decay_data = read_decay(decay_path)
         if error_msg != "":
-            return error_msg, [], None, None
+            return error_msg, [], None, None, None
         shape = decay_data.shape
         shape_list.append(shape)
         shape_to_files.setdefault(shape, []).append(decay_path)
         error_msg, laser_rep_time = read_decay_metadata(decay_path)
         if error_msg != "":
-            return error_msg, [], None, None
+            return error_msg, [], None, None, None
         laser_rep_time_list.append(laser_rep_time)
         laser_rep_time_to_files.setdefault(laser_rep_time, []).append(decay_path)
 
@@ -331,6 +340,10 @@ def check_raw_decay_data(fov_df, channel_name):
         if len(shape) == 4 and shape == shape_list[0]:
             if channel_has_signal is None:
                 channel_has_signal = np.zeros(shape[0], dtype=bool)
+                # Same first-4D-row branch: sum the time axis while this FOV's decay is
+                # still in memory, so the preview costs no extra read. float64 keeps the
+                # photon totals shown under each thumbnail exact.
+                preview_images = np.sum(decay_data, axis=-1, dtype=np.float64)
             fov_label = row[fov_name_col] if fov_name_col in fov_df.columns else idx
             if not np.any(decay_data):
                 empty_fov_labels.append(str(fov_label))
@@ -348,7 +361,7 @@ def check_raw_decay_data(fov_df, channel_name):
             for i in range(0, len(basenames), 2):
                 line = ", ".join(basenames[i : i + 2])
                 error_msg += f"  - {line}\n"
-        return error_msg, [], None, None
+        return error_msg, [], None, None, None
     if len(set(laser_rep_time_list)) > 1:
         error_msg = f"Inconsistent laser rep time found for {channel_name} decay: \n"
         for laser_rep_time, files in laser_rep_time_to_files.items():
@@ -357,22 +370,23 @@ def check_raw_decay_data(fov_df, channel_name):
             for i in range(0, len(basenames), 2):
                 line = ", ".join(basenames[i : i + 2])
                 error_msg += f"  - {line}\n"
-        return error_msg, [], None, None
+        return error_msg, [], None, None, None
     else:
         # get the first shape: CYXT or YXT
         shape = shape_list[0]
         laser_rep_time = laser_rep_time_list[0]
         if len(shape) == 3:
-            return "", [-1], shape, laser_rep_time
+            # single channel per file: nothing to assign, so nothing to preview
+            return "", [-1], shape, laser_rep_time, None
         elif len(shape) == 4:
             if len(empty_fov_labels) > 0:
                 listed = ", ".join(empty_fov_labels)
                 return (
                     f"{len(empty_fov_labels)} field(s) of view have entirely zero "
                     f"{channel_name} decay data ({listed}). Please check the data."
-                ), [], None, None
+                ), [], None, None, None
             non_zero_channels = [c for c in range(shape[0]) if channel_has_signal[c]]
-            return "", non_zero_channels, shape[1:], laser_rep_time
+            return "", non_zero_channels, shape[1:], laser_rep_time, preview_images
 
 @st.cache_data
 def check_raw_2D_decay_data(fov_df, channel_name):
@@ -442,6 +456,49 @@ def _none_selected(x):
     return f"No {x} found for the selected channels. Please check the data."
 
 
+def _to_display_image(intensity_image, high_percentile=99.5):
+    """Photon counts -> 8-bit grayscale for st.image, stretched from 0 to a percentile.
+
+    Clipping at a high percentile rather than the max stops a handful of hot pixels from
+    crushing the rest of the image to black. The floor stays at 0, not the minimum,
+    because zero photons genuinely means no signal.
+    """
+    vmax = np.percentile(intensity_image, high_percentile)
+    if vmax <= 0:  # a channel whose signal is all in the tail, or nothing at all
+        vmax = intensity_image.max()
+    if vmax <= 0:
+        return np.zeros(intensity_image.shape, dtype=np.uint8)
+    return (np.clip(intensity_image / vmax, 0, 1) * 255).astype(np.uint8)
+
+
+def _render_channel_preview(fov_df, preview_images, available_channels, selected_channel):
+    """Thumbnails of every non-zero channel in the first FOV, so the channel assigned
+    above can be checked against what the data actually looks like.
+
+    Each channel is stretched independently so a dim one stays legible; the photon total
+    in each caption carries the relative-brightness cue that independent stretching drops.
+    """
+    if preview_images is None:
+        return  # 3D decay, or a read error check_raw_decay_data has already reported
+    fov_name_col = get_fov_name_col()
+    fov_label = fov_df.iloc[0][fov_name_col] if fov_name_col in fov_df.columns else fov_df.index[0]
+    st.caption(f"First FOV: {fov_label}")
+    preview_cols = st.columns(len(available_channels))
+    for j, channel_no in enumerate(available_channels):
+        if channel_no >= preview_images.shape[0]:
+            continue
+        intensity_image = preview_images[channel_no]
+        with preview_cols[j]:
+            # A channel can be all-zero in this FOV yet have signal in a later one, since
+            # channel_has_signal ORs across FOVs: that shows up as black, "0 photons".
+            marker = " \u2705" if channel_no == selected_channel else ""
+            st.image(
+                _to_display_image(intensity_image),
+                width="stretch",
+                caption=f"ch {channel_no + 1}{marker} \u2014 {intensity_image.sum():,.0f} photons",
+            )
+
+
 def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type, imaging_modalities, selected_ch_feature_extractors, duration=None, time_bins=None):   
     error_msg = ""
     time_bins_list = []
@@ -487,7 +544,7 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
                 else: # 3/4D decay
                     has_3_4D_decay = True
                     with cols[i]:
-                        error_msg, available_channels, shape, laser_rep_time = check_raw_decay_data(fov_df, channel_name)
+                        error_msg, available_channels, shape, laser_rep_time, preview_images = check_raw_decay_data(fov_df, channel_name)
                         if error_msg == "":
                             if len(available_channels) == 1:
                                 fov_df[f"{channel_name}_channel"] = available_channels[0]
@@ -495,6 +552,7 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
                                 human_readable_channel_nos = [channel_no + 1 for channel_no in available_channels]
                                 human_readable_channel_no = st.selectbox(f"Select the channel for {channel_name} decay", human_readable_channel_nos, key=f"{channel_name}_channel_selectbox")
                                 fov_df[f"{channel_name}_channel"] = human_readable_channel_no - 1
+                                _render_channel_preview(fov_df, preview_images, available_channels, human_readable_channel_no - 1)
                             time_bins_list.append(shape[-1])
                             fov_dimensions_list.append(shape[:-1])
                             laser_rep_time_list.append(laser_rep_time)
