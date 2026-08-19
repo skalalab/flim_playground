@@ -774,16 +774,22 @@ ax.legend(fontsize=LEGEND_SIZE)
 def _build_feature_comparison(state: dict) -> str:
     from src.vis.helpers import (
         _compute_bracket_position,
+        _density_at_points,
         _estimate_density_1d,
         cohens_d,
         glass_delta,
     )
 
-    # _estimate_density_1d is shared with the app so degenerate groups (constant or
-    # single-point) get the same zero-density fallback, and therefore the same
-    # uniform jitter, instead of collapsing onto one x position.
+    # _density_at_points is what the app calls for the sina jitter (src/vis/univar.py
+    # feature_comparison_plot), so extracting it keeps the jitter numerically identical
+    # rather than merely similar -- it evaluates the KDE on a grid and interpolates, which
+    # lands a hair off the exact per-point density. _estimate_density_1d comes along
+    # because _density_at_points delegates to it, and because sharing it is what gives
+    # degenerate groups (constant or single-point) the same zero-density fallback, and
+    # therefore the same uniform jitter, instead of collapsing onto one x position.
     effect_size_src = _extract_source(
-        glass_delta, cohens_d, _compute_bracket_position, _estimate_density_1d
+        glass_delta, cohens_d, _compute_bracket_position, _estimate_density_1d,
+        _density_at_points,
     )
 
     return _build_visual_encoding(state, overlap_point=False) + f"""
@@ -894,8 +900,9 @@ for sec_group in ordered_separate_groups:
         # jitter lands on exactly the points it draws; a row whose encoding value is NaN
         # matches no key and is plotted by neither side.
         # There is deliberately no small-group branch: the app has none, and
-        # _estimate_density_1d already returns a zero-density fallback below 2 points,
-        # which the norm_d fallback turns into uniform jitter.
+        # _density_at_points already returns zeros below 2 points (the same fallback
+        # _estimate_density_1d gives it), which the norm_d fallback turns into uniform
+        # jitter.
         x_vals = np.full(len(y_data), float(x_pos))
         shape_keys = list(shape_map) if (SHAPE_BY and shape_map) else [None]
         opacity_keys = list(opacity_map) if (OPACITY_BY and opacity_map) else [None]
@@ -909,7 +916,11 @@ for sec_group in ordered_separate_groups:
                 if not sub.any():
                     continue
                 sub_y = y_data[sub]
-                densities = _estimate_density_1d(sub_y)(sub_y)
+                # _density_at_points, not _estimate_density_1d(sub_y)(sub_y): asking the
+                # KDE for the density at its own training points is O(n^2), which took 60 s
+                # for a single 113k-point group here. This is the app's function, so the
+                # jitter matches what was on screen.
+                densities = _density_at_points(sub_y)
                 if len(densities) > 0 and np.max(densities) > 0:
                     norm_d = densities / np.max(densities)
                 else:
