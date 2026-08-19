@@ -488,16 +488,30 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
 
     best_gmm = None
     lowest_bic = np.inf
-    
-    for k in range(1, max_components + 1):
-        gmm = GaussianMixture(n_components=k, random_state=random_state)
-        gmm.fit(data_reshaped)
-        bic = gmm.bic(data_reshaped)
 
-        if gmm.weights_.min() >= min_weight_threshold:
-            if bic < lowest_bic:
-                lowest_bic = bic
-                best_gmm = gmm
+    # Pin the BLAS/OpenMP pool to one thread for the sweep. Counter-intuitively this is
+    # ~9x faster here: a 1-D or 2-D FLIM feature gives each thread so little work that
+    # spawning and synchronising them costs far more than the arithmetic, so the default
+    # (one thread per core) spends the fit thrashing. Measured on 112,808 rows across 5
+    # colour groups: 2.3 s unpinned -> 0.22 s pinned. Not bit-identical: multi-threaded BLAS
+    # reduces in a different order, so fitted means drift by ~1e-12. Everything the user sees
+    # is unchanged -- the selected n_components and the per-cell component assignment matched
+    # exactly on every group. The residual risk is a near-tie in BIC between two component
+    # counts, where that drift could flip the choice. Imported inside the function so the
+    # source stays self-contained when export_script.py inlines it via inspect.getsource();
+    # threadpoolctl ships as a scikit-learn dependency.
+    from threadpoolctl import threadpool_limits
+
+    with threadpool_limits(1):
+        for k in range(1, max_components + 1):
+            gmm = GaussianMixture(n_components=k, random_state=random_state)
+            gmm.fit(data_reshaped)
+            bic = gmm.bic(data_reshaped)
+
+            if gmm.weights_.min() >= min_weight_threshold:
+                if bic < lowest_bic:
+                    lowest_bic = bic
+                    best_gmm = gmm
     return best_gmm
 
 def natural_key(s):
@@ -603,20 +617,43 @@ def get_point_visual_mappings(
     opacity_keys = list(opacity_map.keys()) if opacity_map else [None]
     separate_keys = list(separate_groups) if separate_groups is not None else [None]
 
+    # Which of the four channels actually select rows, and which slot each occupies
+    # in the group_key tuple below. Inactive channels keep a None placeholder in the
+    # key (callers unpack it positionally) but take no part in the grouping.
+    key_cols = [group_col_name]
+    key_positions = [0]
+    if shape_by and shape_by in df.columns:
+        key_cols.append(shape_by)
+        key_positions.append(1)
+    if opacity_by and opacity_by in df.columns:
+        key_cols.append(opacity_by)
+        key_positions.append(2)
+    if separate_by and separate_by in df.columns:
+        key_cols.append(separate_by)
+        key_positions.append(3)
+
     def ordered_group_iter():
+        # Group once, then walk the Cartesian product and look each combination up.
+        # Masking per combination meant a full-length scan of the frame for every
+        # entry in the product -- and the product is mostly combinations that match
+        # no rows at all (20 of 120 in a representative dataset), so the great
+        # majority of those scans found nothing. Walking `product` here rather than
+        # iterating the groupby is what keeps trace order, legend order and
+        # legendrank byte-for-byte identical to the mask version.
+        #
+        # groupby drops NaN keys, which is the same rows the old masks dropped: a
+        # `df[col] == value` comparison is False against NaN, so those rows never
+        # matched any combination. The shape/opacity/separate key lists are built
+        # from `.dropna().unique()` anyway, so a NaN key is never looked up.
+        groups = {}
+        for key, group_df in df.groupby(key_cols, sort=False, observed=True):
+            if not isinstance(key, tuple):
+                key = (key,)
+            groups[key] = group_df
+
         for group_key in product(color_keys, shape_keys, opacity_keys, separate_keys):
-            # Build boolean mask for each group
-            mask = (
-                df[group_col_name] == group_key[0]
-            )
-            if shape_by and shape_by in df.columns:
-                mask &= (df[shape_by] == group_key[1])
-            if opacity_by and opacity_by in df.columns:
-                mask &= (df[opacity_by] == group_key[2])
-            if separate_by and separate_by in df.columns:
-                mask &= (df[separate_by] == group_key[3])
-            group_df = df[mask]
-            if len(group_df) > 0:
+            group_df = groups.get(tuple(group_key[pos] for pos in key_positions))
+            if group_df is not None and len(group_df) > 0:
                 yield group_key, group_df
 
     # Return an iterable like a groupby object, but ordered as specified
@@ -760,6 +797,44 @@ def _estimate_density_1d(y_values, bw_method='scott'):
         # the ptp check; fall back rather than crash.
         return zero_density
 
+def _density_at_points(y_values, grid_size=1024, bw_method='scott'):
+    """Density at each of ``y_values``, without evaluating the KDE at every point.
+
+    ``gaussian_kde.evaluate`` costs O(n_train x n_eval), so asking it for the density at
+    its own training points is O(n^2) -- 60 s for a single 113k-point group. Evaluating on
+    a small grid and interpolating back is O(n x grid_size) and takes that to under a
+    second.
+
+    The grid deliberately unions a uniform spacing with a quantile spacing. Uniform alone
+    is accurate through the bulk but collapses on heavy-tailed features, where nearly every
+    grid point lands in empty space and the dense core goes unresolved -- measured at
+    several pixels of drift in the sina jitter on a Cauchy-distributed feature, which is
+    visible. Quantile spacing puts resolution wherever the points actually are. Together
+    they stayed sub-pixel on every distribution shape tested (normal, bimodal, lognormal,
+    exponential, spiky mixture, Cauchy).
+
+    Returns zeros for the degenerate inputs ``_estimate_density_1d`` rejects, which is what
+    its zero-density fallback produced when it was called per point.
+    """
+    y_values = np.asarray(y_values, dtype=float)
+    finite = y_values[np.isfinite(y_values)]
+    # Same guards as _estimate_density_1d, checked here too so the grid below never
+    # degenerates to a single repeated value (np.interp needs an increasing xp).
+    if len(finite) < 2 or np.ptp(finite) == 0:
+        return np.zeros_like(y_values)
+
+    kde = _estimate_density_1d(y_values, bw_method=bw_method)
+    if not isinstance(kde, gaussian_kde):
+        # _estimate_density_1d hit its LinAlgError fallback and returned zero_density.
+        return np.zeros_like(y_values)
+
+    half = max(2, grid_size // 2)
+    grid = np.unique(np.concatenate([
+        np.linspace(finite.min(), finite.max(), half),
+        np.quantile(finite, np.linspace(0, 1, half)),
+    ]))
+    return np.interp(y_values, grid, kde(grid))
+
 def add_interleaved_points_trace(
     fig,
     grouped,
@@ -829,35 +904,47 @@ def add_interleaved_points_trace(
     # default; pass random_seed=None for a nondeterministic order.
     rng = random.Random(random_seed)
     
-    # Collect all points, grouped by color
-    points_by_color = {}
-    
+    # Collect each colour's points as columns rather than one dict per cell. A single
+    # colour can receive points from several (shape, opacity, separate) subgroups, so
+    # gather the chunks in iteration order and concatenate once at the end.
+    chunks_by_color = {}
     for group_key, group_df in grouped:
-        color_group = group_key[0]
-        shape_group = group_key[1]
-        opacity_group = group_key[2]
-        
-        if color_group not in points_by_color:
-            points_by_color[color_group] = []
-            
-        for idx, row in group_df.iterrows():
-            points_by_color[color_group].append({
-                'x': row[axis_labels[0]],
-                'y': row[axis_labels[1]],
-                'text': row[text_col],
-                'customdata': row[customdata_col],
-                'shape_group': shape_group,
-                'opacity_group': opacity_group,
-            })
+        chunks_by_color.setdefault(group_key[0], []).append(
+            (group_df, group_key[1], group_key[2])
+        )
+
+    points_by_color = {}
+    for color_group, chunks in chunks_by_color.items():
+        lengths = [len(chunk_df) for chunk_df, _, _ in chunks]
+        points_by_color[color_group] = {
+            'x': np.concatenate([c[axis_labels[0]].to_numpy() for c, _, _ in chunks]),
+            'y': np.concatenate([c[axis_labels[1]].to_numpy() for c, _, _ in chunks]),
+            'text': np.concatenate([c[text_col].to_numpy() for c, _, _ in chunks]),
+            'customdata': np.concatenate([c[customdata_col].to_numpy() for c, _, _ in chunks]),
+            # The shape and opacity groups are constant within a chunk (they come from
+            # the group key), so repeat them instead of reading one per row. Object
+            # dtype is what keeps an inactive channel's None group as None rather than
+            # coercing it to nan.
+            'shape_group': np.repeat(
+                np.array([s for _, s, _ in chunks], dtype=object), lengths),
+            'opacity_group': np.repeat(
+                np.array([o for _, _, o in chunks], dtype=object), lengths),
+        }
+
+    # Shuffle points within each color group. Shuffling an index permutation rather
+    # than the rows draws from `rng` in exactly the same sequence as shuffling a list
+    # of that length did, so the interleave order is unchanged.
+    for color_group, columns in points_by_color.items():
+        order = list(range(len(columns['x'])))
+        rng.shuffle(order)
+        order = np.asarray(order, dtype=int)
+        points_by_color[color_group] = {k: v[order] for k, v in columns.items()}
     
-    # Shuffle points within each color group
-    for color_group in points_by_color:
-        rng.shuffle(points_by_color[color_group])
-    
-    # Split each color group into batches
+    # Split each color group into batches. Batches are (start, end) bounds into the
+    # colour's arrays; slicing at trace-build time avoids copying the points twice.
     batches_by_color = {}
-    for color_group, points in points_by_color.items():
-        num_points = len(points)
+    for color_group, columns in points_by_color.items():
+        num_points = len(columns['x'])
         # Adjust num_batches if there are fewer points
         actual_batches = min(num_batches, max(1, num_points // 5))  # At least 5 points per batch
         batch_size = math.ceil(num_points / actual_batches)
@@ -867,7 +954,7 @@ def add_interleaved_points_trace(
             start_idx = i * batch_size
             end_idx = min((i + 1) * batch_size, num_points)
             if start_idx < num_points:
-                batches.append(points[start_idx:end_idx])
+                batches.append((start_idx, end_idx))
         
         batches_by_color[color_group] = batches
     
@@ -893,17 +980,23 @@ def add_interleaved_points_trace(
             if batch_idx >= len(batches):
                 continue
             
-            batch_points = batches[batch_idx]
+            start_idx, end_idx = batches[batch_idx]
+            columns = points_by_color[color_group]
             
             # Build arrays for this batch
-            x_vals = [p['x'] for p in batch_points]
-            y_vals = [p['y'] for p in batch_points]
-            text_vals = [p['text'] for p in batch_points]
-            customdata_vals = [p['customdata'] for p in batch_points]
+            x_vals = columns['x'][start_idx:end_idx].tolist()
+            y_vals = columns['y'][start_idx:end_idx].tolist()
+            text_vals = columns['text'][start_idx:end_idx].tolist()
+            customdata_vals = columns['customdata'][start_idx:end_idx].tolist()
             
-            # Map visual properties to arrays
-            marker_symbols = [shape_map[p['shape_group']] if p['shape_group'] is not None and shape_map else 'circle' for p in batch_points]
-            marker_opacities = [opacity_map[p['opacity_group']] if p['opacity_group'] is not None and opacity_map else 0.8 for p in batch_points]
+            # Map visual properties to arrays. These stay full-length lists even though
+            # each batch has a single shape/opacity group: apply_plot_styling reads
+            # marker.symbol/marker.opacity and branches on whether they are sequences
+            # when it builds the ghost legend traces.
+            batch_shape_groups = columns['shape_group'][start_idx:end_idx]
+            batch_opacity_groups = columns['opacity_group'][start_idx:end_idx]
+            marker_symbols = [shape_map[g] if g is not None and shape_map else 'circle' for g in batch_shape_groups]
+            marker_opacities = [opacity_map[g] if g is not None and opacity_map else 0.8 for g in batch_opacity_groups]
             
             # Only show legend for the first batch of each color
             show_in_legend = (batch_idx == 0)
@@ -916,7 +1009,7 @@ def add_interleaved_points_trace(
                     text=text_vals,
                     customdata=customdata_vals,
                     hovertemplate=hover_without_trace,
-                    name=format_group_label(color_group, len(points_by_color[color_group]), show_counts),
+                    name=format_group_label(color_group, len(points_by_color[color_group]['x']), show_counts),
                     legendgroup=str(color_group),  # All batches of same color share legendgroup
                     marker=dict(
                         color=color_map[color_group],

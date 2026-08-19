@@ -14,7 +14,7 @@ from src.widgets.visualization_widgets import (
 
 from .helpers import (
     _add_effect_size_annotations,
-    _estimate_density_1d,
+    _density_at_points,
     _find_best_gmm,
     _prepare_group_data,
     add_point_legend_traces,
@@ -580,8 +580,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
 
         # --- Sina plot: density-based horizontal jitter ---
         y_data = group_df[selected_var].values
-        kde = _estimate_density_1d(y_data)
-        densities = kde(y_data)
+        densities = _density_at_points(y_data)
         # Normalize densities to a reasonable jitter width
         max_jitter = 0.35  # Controls the max horizontal spread
         if len(densities) > 0 and np.max(densities) > 0:

@@ -351,7 +351,13 @@ def _build_classifier(method, class_weight, classifier_params, random_state):
     if method == "Random Forest":
         params.pop("class_weight", None)
         params.pop("random_state", None)
-        return RandomForestClassifier(random_state=random_state, class_weight=class_weight, **params)
+        params.pop("n_jobs", None)
+        # Trees are independent and each is seeded from random_state, so building them
+        # across cores cannot reorder anything: predict, predict_proba and
+        # feature_importances_ are bit-identical at n_jobs 1, 4, 24 and -1. Verified,
+        # because a fit this expensive silently retrains on every styling rerun.
+        return RandomForestClassifier(random_state=random_state, class_weight=class_weight,
+                                      n_jobs=-1, **params)
     if method == "Gradient Boosting":
         params.pop("random_state", None)
         return GradientBoostingClassifier(random_state=random_state, **params)

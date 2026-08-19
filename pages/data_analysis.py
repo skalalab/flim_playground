@@ -1,6 +1,7 @@
 import sys
 from pathlib import Path
 
+import plotly.graph_objects as go
 import streamlit as st
 
 # Add the project root to the Python path
@@ -465,63 +466,98 @@ with col2:
                                                   selected_features=selected_features,
                                                   classify_classes=df_classify['classes'].unique().tolist())
 
-            if fig is not None: 
-                fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size) 
-                if method == "2D Feature Distribution":
-                    col2_1, col2_2 = st.columns([1, 1])
-                    with col2_1:
-                       st.plotly_chart(fig, width='stretch')
-                    with col2_2:
-                        if table_md != []:
-                            st.markdown(table_md, unsafe_allow_html=True)
-                else:
-                    st.plotly_chart(fig, width='stretch')
-                # 1. Data export (if applicable)
-                if data_export_ready:
-                    # available for download
-                    if method == "2D Feature Distribution" and "2D_GMM_group" in gmm_df.columns:
-                        st.download_button(label="Download 2D GMM data", data=gmm_df.to_csv(index=False), file_name="2D_gmm_data.csv")
-                    elif method == "Feature Histogram" and "GMM_group" in gmm_df.columns:
-                        st.download_button(label="Download GMM Grouped Data", data=gmm_df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
-                    elif method == "Phasor Plot" and "k_means_cluster" in kmeans_df.columns:
-                        st.download_button(label="Download K-Means Clustered Data", data=kmeans_df.to_csv(index=False), file_name="kmeans_clustered_data.csv", mime="text/csv", key="kmeans_download")
-                if method == "Feature Comparison":
-                    # Widgets for reordering below
-                    reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by)
+            if fig is not None:
+                # Three of the five styling controls are baked into the figure and cannot be
+                # re-applied to a finished one: the colormap is passed into the plot
+                # functions, the group-count toggle is read inside them (it becomes part of
+                # each trace name), and feature_comparison_plot sizes its section headers
+                # from the axis-label size (src/vis/univar.py:733). Changing any of those has
+                # to rebuild, so the fragment escalates to a full rerun. Point size and legend
+                # size are applied afterwards by apply_plot_styling, so they stay inside the
+                # fragment -- which is the point: adjusting them no longer re-reads the CSV,
+                # re-applies the filters and rebuilds every trace.
+                def _plot_build_params():
+                    return (
+                        st.session_state.plot_colormap,
+                        st.session_state.get("plot_show_group_counts", False),
+                        st.session_state.plot_axis_label_size,
+                    )
 
-                # 2. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots
-                # Widgets use key= to write directly to session state; Streamlit reruns naturally on change
-                st.subheader("📊 Plot Styling")
-                show_colormap = len(color_by) > 0
-                plot_config_widget(point_based=point_based, show_colormap=show_colormap,
-                                   show_count_toggle=show_colormap)
+                _build_params = _plot_build_params()
 
-                # 3. Export as Python Script
-                _extra = {}
-                if method in univar_methods:
-                    _extra["selected_var"] = selected_var
+                @st.fragment
+                def _render_plot_and_controls(base_fig, build_params):
+                    # Widget state is committed before a fragment rerun, so a changed
+                    # build-time param is already visible here. Escalate before rendering
+                    # anything rather than painting a stale figure first.
+                    if _plot_build_params() != build_params:
+                        st.rerun(scope="app")
+
+                    # apply_plot_styling mutates the figure in place and appends ghost
+                    # legend traces, so style a copy rather than base_fig itself. Repeated
+                    # in-place passes do happen to be stable today (the showlegend guard
+                    # makes them a no-op after the first), but the fragment reruns against
+                    # this same object indefinitely, and that idempotence is incidental
+                    # rather than something apply_plot_styling promises. The copy costs
+                    # ~0.06 s against a ~7 s rebuild, so keep the invariant explicit.
+                    fig = apply_plot_styling(go.Figure(base_fig), st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
+                    if method == "2D Feature Distribution":
+                        col2_1, col2_2 = st.columns([1, 1])
+                        with col2_1:
+                           st.plotly_chart(fig, width='stretch', key=f"plot_chart_2d_{method}")
+                        with col2_2:
+                            if table_md != []:
+                                st.markdown(table_md, unsafe_allow_html=True)
+                    else:
+                        st.plotly_chart(fig, width='stretch', key=f"plot_chart_{method}")
+                    # 1. Data export (if applicable)
+                    if data_export_ready:
+                        # available for download
+                        if method == "2D Feature Distribution" and "2D_GMM_group" in gmm_df.columns:
+                            st.download_button(label="Download 2D GMM data", data=gmm_df.to_csv(index=False), file_name="2D_gmm_data.csv")
+                        elif method == "Feature Histogram" and "GMM_group" in gmm_df.columns:
+                            st.download_button(label="Download GMM Grouped Data", data=gmm_df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
+                        elif method == "Phasor Plot" and "k_means_cluster" in kmeans_df.columns:
+                            st.download_button(label="Download K-Means Clustered Data", data=kmeans_df.to_csv(index=False), file_name="kmeans_clustered_data.csv", mime="text/csv", key="kmeans_download")
                     if method == "Feature Comparison":
-                        _extra["effect_size_method"] = selected_effect_size_method
-                        _extra["mean_or_median"] = mean_or_median
-                        _extra["statistical_test"] = statistical_test
-                    elif method == "Feature Histogram":
-                        try:
-                            _extra["apply_gmm"] = apply_gmm
-                        except NameError:
-                            _extra["apply_gmm"] = False
-                elif method in bivar_methods:
-                    if "2D" in method:
-                        _extra["selected_x"] = selected_x
-                        _extra["selected_y"] = selected_y
-                    elif method == "Phasor Plot":
-                        _extra["selected_channel"] = selected_channel
-                        _extra["phasor_harmonic"] = selected_harmonic
-                        _extra["phasor_f"] = f
-                elif method == "Dimension Reduction":
-                    _extra["selected_features"] = selected_features
-                    _extra["dr_method"] = dr_method
-                    _extra["hyperParam_dict"] = hyperParam_dict
-                _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, **_extra)
+                        # Widgets for reordering below
+                        reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by)
+
+                    # 2. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots
+                    # Widgets use key= to write directly to session state; Streamlit reruns naturally on change
+                    st.subheader("📊 Plot Styling")
+                    show_colormap = len(color_by) > 0
+                    plot_config_widget(point_based=point_based, show_colormap=show_colormap,
+                                       show_count_toggle=show_colormap)
+
+                    # 3. Export as Python Script
+                    _extra = {}
+                    if method in univar_methods:
+                        _extra["selected_var"] = selected_var
+                        if method == "Feature Comparison":
+                            _extra["effect_size_method"] = selected_effect_size_method
+                            _extra["mean_or_median"] = mean_or_median
+                            _extra["statistical_test"] = statistical_test
+                        elif method == "Feature Histogram":
+                            try:
+                                _extra["apply_gmm"] = apply_gmm
+                            except NameError:
+                                _extra["apply_gmm"] = False
+                    elif method in bivar_methods:
+                        if "2D" in method:
+                            _extra["selected_x"] = selected_x
+                            _extra["selected_y"] = selected_y
+                        elif method == "Phasor Plot":
+                            _extra["selected_channel"] = selected_channel
+                            _extra["phasor_harmonic"] = selected_harmonic
+                            _extra["phasor_f"] = f
+                    elif method == "Dimension Reduction":
+                        _extra["selected_features"] = selected_features
+                        _extra["dr_method"] = dr_method
+                        _extra["hyperParam_dict"] = hyperParam_dict
+                    _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, **_extra)
+
+                _render_plot_and_controls(fig, _build_params)
 
         else:
             st.markdown(f"<h5 style='text-align: center; color: red'>No data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)

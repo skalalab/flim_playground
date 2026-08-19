@@ -565,11 +565,24 @@ def phasor_kmeans(X_raw, n_clusters, random_state=42):
 
     n_init=10 keeps the best of 10 seeded k-means++ restarts so clusters are
     stable. Must stay free of Streamlit dependencies — it is embedded verbatim
-    into exported analysis scripts via inspect.getsource().
+    into exported analysis scripts via inspect.getsource(), which is also why the
+    threadpoolctl import below sits inside the function rather than at module scope.
     """
+    # Pin the OpenMP pool to one thread. Two-column phasor coordinates give each thread
+    # almost nothing to do, so with n_init=10 restarts the default (one thread per core)
+    # spends nearly all its time in thread synchronisation. Measured on 112,808 rows across
+    # 5 colour groups: 4.6 s unpinned -> 0.09 s pinned. Cluster labels -- the only output
+    # that reaches the plot and the downloaded CSV -- were identical on every group; the
+    # centroids themselves drift by ~1e-11 because multi-threaded BLAS reduces in a
+    # different order. The residual risk is two of the n_init=10 restarts tying on inertia,
+    # where that drift could pick the other one. threadpoolctl ships as a scikit-learn
+    # dependency, so an exported script that can import sklearn can import this too.
+    from threadpoolctl import threadpool_limits
+
     scaler = StandardScaler().fit(X_raw)
     kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
-    kmeans.fit(scaler.transform(X_raw))
+    with threadpool_limits(1):
+        kmeans.fit(scaler.transform(X_raw))
     centers_raw = scaler.inverse_transform(kmeans.cluster_centers_)
     return kmeans.labels_, centers_raw
 
