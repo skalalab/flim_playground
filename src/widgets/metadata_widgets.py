@@ -3,6 +3,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -293,45 +294,96 @@ def export_metadata_widget(metadata_df, folder_path):
         st.session_state["last_extracted_metadata"] = metadata_df
         st.session_state["last_extracted_metadata_filepath"] = csv_file_path
 
-@st.cache_data
-def check_raw_decay_data(fov_df, channel_name):
-    """
-    Check if the raw decay data is available.
+# --- Raw-data checks --------------------------------------------------------
+# Each check below is split in two: an uncached wrapper keeping the
+# (fov_df, channel_name) signature check_assign_channel_widget calls with, and a
+# cached core keyed only on the columns the check actually reads.
+#
+# The split exists because caching on fov_df itself made every channel's check
+# depend on every other channel's answer: check_assign_channel_widget writes
+# `{channel}_channel` into that same frame between calls and Streamlit hashes a
+# DataFrame by its values, so reassigning channel 1 re-read every file for
+# channels 2..N. Unrelated widgets (laser rate, no. of components, fixed
+# lifetimes, derived features) invalidated all of them the same way.
 
-    Returns ``(error_msg, available_channels, shape, laser_rep_time, preview_images)``.
-    ``preview_images`` is a (C, Y, X) array of photon counts for the first FOV, summed
-    over the time axis, and backs the channel-assignment preview in
-    ``check_assign_channel_widget``. It is None whenever there is no channel to assign
-    (3D decay) or the data never got read. It has to travel in the return value rather
-    than a module-level stash: this function is cached, so on a cache hit the body never
-    runs and any side effect would silently vanish.
-    """
-    decay_column_name = f"{channel_name}_Decay"
-    mask_column_name = f"{channel_name}_Mask"
-    if decay_column_name not in fov_df.columns:
-        return "Error: No decay data found. Please check the data.", [], None, None, None
-    if mask_column_name not in fov_df.columns:
-        return "Error: No mask data found. Please check the data.", [], None, None, None
 
+def _column_values(fov_df, column_name):
+    """One column as a hashable tuple, values left exactly as they are.
+
+    Deliberately not stringified: a missing path has to stay NaN so the readers
+    still report "No decay file path provided" rather than hunting for a file
+    literally named "nan". `.tolist()` rather than `tuple(series)` keeps numpy
+    scalars out of the cache key, where they hash slowly.
+    """
+    return tuple(fov_df[column_name].tolist())
+
+
+def _fov_labels(fov_df):
+    """Per-row display labels, for error messages that have to point at a FOV.
+
+    Stringified here because every consumer wants text, and because a bare
+    RangeIndex would otherwise put numpy int64s in the cache key -- those miss
+    Streamlit's int fast path and fall through to slow generic hashing.
+    """
+    fov_name_col = get_fov_name_col()
+    source = fov_df[fov_name_col] if fov_name_col in fov_df.columns else fov_df.index
+    return tuple(str(label) for label in source)
+
+
+def _files_by_group_msg(header, label, mapping):
+    """Spell out which files disagreed: one group per distinct value, with the
+    offending basenames listed two per line underneath."""
+    msg = header
+    for value, files in mapping.items():
+        msg += f"- {label} {value} ({len(files)} file(s)):\n"
+        basenames = [os.path.basename(f) for f in files]
+        for i in range(0, len(basenames), 2):
+            msg += f"  - {', '.join(basenames[i : i + 2])}\n"
+    return msg
+
+
+class _DecayScan(NamedTuple):
+    """What reading the decay files tells us, before any channel-specific
+    interpretation. Built by _scan_decay_files, read by check_raw_decay_data."""
+
+    shape_list: list
+    shape_to_files: dict
+    laser_rep_time_list: list
+    laser_rep_time_to_files: dict
+    empty_fov_labels: list
+    channel_has_signal: object  # (C,) bool array, or None if no 4D FOV was read
+    preview_images: object  # (C, Y, X) float64 photon counts of the first 4D FOV, or None
+
+
+@st.cache_data(show_spinner="Reading decay files...")
+def _scan_decay_files(decay_paths, fov_labels):
+    """Read every decay file once and report the raw facts about them.
+
+    Deliberately channel-agnostic, and keyed on the file list alone: two channels
+    whose Decay suffixes resolve to the same multi-detector file then share one
+    decode instead of each paying for it. That only holds as long as nothing
+    channel-specific leaks in here -- error wording that names a channel, and the
+    channel the user eventually picks, both belong in check_raw_decay_data.
+
+    Returns ``(error_msg, _DecayScan | None)``.
+    """
     shape_list = []
     shape_to_files = {}  # shape -> list of decay file paths
     laser_rep_time_list = []
     laser_rep_time_to_files = {}  # laser_rep_time -> list of decay file paths
-    fov_name_col = get_fov_name_col()
     empty_fov_labels = []
     channel_has_signal = None  # set on first 4D decay; used if all FOVs agree on 4D shape
     preview_images = None  # (C, Y, X) intensity of the first 4D FOV, for the channel preview
-    for idx, row in fov_df.iterrows():
-        decay_path = row[decay_column_name]
+    for decay_path, fov_label in zip(decay_paths, fov_labels):
         error_msg, decay_data = read_decay(decay_path)
         if error_msg != "":
-            return error_msg, [], None, None, None
+            return error_msg, None
         shape = decay_data.shape
         shape_list.append(shape)
         shape_to_files.setdefault(shape, []).append(decay_path)
         error_msg, laser_rep_time = read_decay_metadata(decay_path)
         if error_msg != "":
-            return error_msg, [], None, None, None
+            return error_msg, None
         laser_rep_time_list.append(laser_rep_time)
         laser_rep_time_to_files.setdefault(laser_rep_time, []).append(decay_path)
 
@@ -344,83 +396,147 @@ def check_raw_decay_data(fov_df, channel_name):
                 # still in memory, so the preview costs no extra read. float64 keeps the
                 # photon totals shown under each thumbnail exact.
                 preview_images = np.sum(decay_data, axis=-1, dtype=np.float64)
-            fov_label = row[fov_name_col] if fov_name_col in fov_df.columns else idx
             if not np.any(decay_data):
-                empty_fov_labels.append(str(fov_label))
+                empty_fov_labels.append(fov_label)
             else:
                 for c in range(shape[0]):
                     if np.any(decay_data[c]):
                         channel_has_signal[c] = True
 
-    # check for the consistency of the shape, a tuple
-    if len(set(shape_list)) > 1:
-        error_msg = f"Inconsistent decay data shapes found for {channel_name} decay: \n"
-        for shape, files in shape_to_files.items():
-            error_msg += f"- Shape {shape} ({len(files)} file(s)):\n"
-            basenames = [os.path.basename(f) for f in files]
-            for i in range(0, len(basenames), 2):
-                line = ", ".join(basenames[i : i + 2])
-                error_msg += f"  - {line}\n"
-        return error_msg, [], None, None, None
-    if len(set(laser_rep_time_list)) > 1:
-        error_msg = f"Inconsistent laser rep time found for {channel_name} decay: \n"
-        for laser_rep_time, files in laser_rep_time_to_files.items():
-            error_msg += f"- Laser rep time {laser_rep_time} ({len(files)} file(s)):\n"
-            basenames = [os.path.basename(f) for f in files]
-            for i in range(0, len(basenames), 2):
-                line = ", ".join(basenames[i : i + 2])
-                error_msg += f"  - {line}\n"
-        return error_msg, [], None, None, None
-    else:
-        # get the first shape: CYXT or YXT
-        shape = shape_list[0]
-        laser_rep_time = laser_rep_time_list[0]
-        if len(shape) == 3:
-            # single channel per file: nothing to assign, so nothing to preview
-            return "", [-1], shape, laser_rep_time, None
-        elif len(shape) == 4:
-            if len(empty_fov_labels) > 0:
-                listed = ", ".join(empty_fov_labels)
-                return (
-                    f"{len(empty_fov_labels)} field(s) of view have entirely zero "
-                    f"{channel_name} decay data ({listed}). Please check the data."
-                ), [], None, None, None
-            non_zero_channels = [c for c in range(shape[0]) if channel_has_signal[c]]
-            return "", non_zero_channels, shape[1:], laser_rep_time, preview_images
+    return "", _DecayScan(
+        shape_list=shape_list,
+        shape_to_files=shape_to_files,
+        laser_rep_time_list=laser_rep_time_list,
+        laser_rep_time_to_files=laser_rep_time_to_files,
+        empty_fov_labels=empty_fov_labels,
+        channel_has_signal=channel_has_signal,
+        preview_images=preview_images,
+    )
 
-@st.cache_data
+
+def check_raw_decay_data(fov_df, channel_name):
+    """
+    Check if the raw decay data is available.
+
+    Returns ``(error_msg, available_channels, shape, laser_rep_time, preview_images)``.
+    ``shape`` is (Y, X, T) on *both* success paths -- 3D files have no channel axis to
+    drop, 4D ones get theirs sliced off here -- which is what lets the caller read time
+    bins as ``shape[-1]`` and spatial dims as ``shape[:-1]`` without caring which it got.
+    ``preview_images`` is a (C, Y, X) array of photon counts for the first FOV, summed
+    over the time axis, and backs the channel-assignment preview in
+    ``check_assign_channel_widget``. It is None whenever there is no channel to assign
+    (3D decay) or the data never got read.
+
+    The file reading lives in the cached _scan_decay_files; everything here is the
+    channel-specific interpretation of it, and stays uncached so that reassigning one
+    channel costs no re-reads for the others.
+    """
+    decay_column_name = f"{channel_name}_Decay"
+    mask_column_name = f"{channel_name}_Mask"
+    if decay_column_name not in fov_df.columns:
+        return "Error: No decay data found. Please check the data.", [], None, None, None
+    # Presence only -- the mask paths themselves are never read here, so they stay out
+    # of the cache key and this check stays per-channel.
+    if mask_column_name not in fov_df.columns:
+        return "Error: No mask data found. Please check the data.", [], None, None, None
+
+    error_msg, scan = _scan_decay_files(
+        _column_values(fov_df, decay_column_name), _fov_labels(fov_df)
+    )
+    if error_msg != "":
+        return error_msg, [], None, None, None
+    if len(scan.shape_list) == 0:
+        return f"Error: No {channel_name} decay files to check.", [], None, None, None
+
+    # check for the consistency of the shape, a tuple
+    if len(set(scan.shape_list)) > 1:
+        return _files_by_group_msg(
+            f"Inconsistent decay data shapes found for {channel_name} decay: \n",
+            "Shape",
+            scan.shape_to_files,
+        ), [], None, None, None
+    if len(set(scan.laser_rep_time_list)) > 1:
+        return _files_by_group_msg(
+            f"Inconsistent laser rep time found for {channel_name} decay: \n",
+            "Laser rep time",
+            scan.laser_rep_time_to_files,
+        ), [], None, None, None
+
+    # get the first shape: CYXT or YXT
+    shape = scan.shape_list[0]
+    laser_rep_time = scan.laser_rep_time_list[0]
+    if len(shape) == 3:
+        # single channel per file: nothing to assign, so nothing to preview
+        return "", [-1], shape, laser_rep_time, None
+    elif len(shape) == 4:
+        if len(scan.empty_fov_labels) > 0:
+            listed = ", ".join(scan.empty_fov_labels)
+            return (
+                f"{len(scan.empty_fov_labels)} field(s) of view have entirely zero "
+                f"{channel_name} decay data ({listed}). Please check the data."
+            ), [], None, None, None
+        # Reaching here means no FOV was entirely zero, so at least one channel carries
+        # signal and the caller's selectbox never gets an empty list of options.
+        non_zero_channels = [c for c in range(shape[0]) if scan.channel_has_signal[c]]
+        return "", non_zero_channels, shape[1:], laser_rep_time, scan.preview_images
+    # read_decay only ever yields 3D or 4D today; return an error rather than falling
+    # off the end, which would hand the caller a bare None to unpack five ways.
+    return (
+        f"Error: Unexpected {channel_name} decay data shape {shape}. "
+        "Expected 3 or 4 dimensions."
+    ), [], None, None, None
+
+
+@st.cache_data(show_spinner="Reading 2D decay files...")
+def _scan_2d_decay_files(decay_paths):
+    """Number of time bins (columns) in the 2D decay CSVs.
+
+    Only ``decay_paths[0]`` is ever read: the original loop returned on its first
+    iteration and that behaviour is preserved. The whole tuple is still the cache
+    key on purpose, so finishing the loop later cannot silently under-key this.
+
+    Returns ``(error_detail, time_bins)``; the caller adds the channel name.
+    """
+    for decay_path in decay_paths:
+        try:
+            decay_data = pd.read_csv(decay_path, header=None)
+        except Exception as e:
+            return str(e), None
+        return "", decay_data.shape[1]
+    return "no decay files to check", None
+
+
 def check_raw_2D_decay_data(fov_df, channel_name):
     decay_column_name = f"{channel_name}_Decay"
     if decay_column_name not in fov_df.columns:
         return f"Error: Decay data path not found for {channel_name}", None
-    for _, row in fov_df.iterrows():
-        try:
-            decay_data = pd.read_csv(row[decay_column_name], header=None)
-        except Exception as e:
-            return f"Error reading decay data for {channel_name}: {e}", None
-        return "", decay_data.shape[1]
+    error_detail, time_bins = _scan_2d_decay_files(_column_values(fov_df, decay_column_name))
+    if error_detail != "":
+        return f"Error reading decay data for {channel_name}: {error_detail}", None
+    return "", time_bins
 
-@st.cache_data
-def check_raw_intensity_data(fov_df, channel_name):
+
+@st.cache_data(show_spinner="Reading intensity images...")
+def _scan_intensity_images(intensity_paths, mask_paths):
+    """Read each intensity image with its mask, checking both are 2D and agree.
+
+    Keyed on both path tuples because unlike the decay check this one actually
+    reads the mask files, not just the presence of the column. Every message here
+    names a file rather than a channel, so none of them needs rewording upstream.
+
+    Returns ``(error_msg, dimension_list)``.
+    """
     dimension_list = []
-    intensity_column_name = f"{channel_name}_Intensity (2D)"
-    mask_column_name = f"{channel_name}_Mask"
-    if intensity_column_name not in fov_df.columns:
-        return f"Error: Intensity image path not found for {channel_name}", None
-    if mask_column_name not in fov_df.columns:
-        return f"Error: Mask path not found for {channel_name}", None
-    for _, row in fov_df.iterrows():
-        image_path = row[intensity_column_name]
+    for image_path, mask_path in zip(intensity_paths, mask_paths):
         try:
             image_data = load_image(image_path)
         except Exception as e:
             return f"Error reading intensity image: {image_path}: {e}", None
         if len(image_data.shape) != 2:
             return f"Error: Intensity image {image_path} is not a 2D array", None
-        
+
         dimension_list.append(image_data.shape)
         # check for the consistency of the shape between the intensity image and the mask image
-        mask_path = row[mask_column_name]
         try:
             mask_data = load_image(mask_path)
         except Exception as e:
@@ -429,7 +545,24 @@ def check_raw_intensity_data(fov_df, channel_name):
             return f"Error: Mask image {mask_path} is not a 2D array", None
         if image_data.shape != mask_data.shape:
             return f"Error: Intensity image {image_path} and mask image {mask_path} have different shapes: {image_data.shape} != {mask_data.shape}", None
-    
+    return "", dimension_list
+
+
+def check_raw_intensity_data(fov_df, channel_name):
+    intensity_column_name = f"{channel_name}_Intensity (2D)"
+    mask_column_name = f"{channel_name}_Mask"
+    if intensity_column_name not in fov_df.columns:
+        return f"Error: Intensity image path not found for {channel_name}", None
+    if mask_column_name not in fov_df.columns:
+        return f"Error: Mask path not found for {channel_name}", None
+
+    error_msg, dimension_list = _scan_intensity_images(
+        _column_values(fov_df, intensity_column_name),
+        _column_values(fov_df, mask_column_name),
+    )
+    if error_msg != "":
+        return error_msg, None
+
     if len(set(dimension_list)) > 1:
         return f"Inconsistent fov dimensions found for channel {channel_name}. Please check the data.", None
     elif len(dimension_list) == 0:
@@ -442,11 +575,14 @@ def clear_folder_scan_caches():
     scan re-reads all files from disk. Backs the "Rescan folder" button, whose
     "ignore cached results" promise only holds if *all* these readers are
     cleared, not just the folder listing.
+
+    These are the cached cores, not the check_raw_* wrappers that call them: the
+    wrappers are plain functions and have no .clear().
     """
     load_list_data_from_folder_widget.clear()
-    check_raw_decay_data.clear()
-    check_raw_2D_decay_data.clear()
-    check_raw_intensity_data.clear()
+    _scan_decay_files.clear()
+    _scan_2d_decay_files.clear()
+    _scan_intensity_images.clear()
 
 def _inconsistent_selected(x):
     return f"Inconsistent {x} found for the selected channels. Please check the data."
