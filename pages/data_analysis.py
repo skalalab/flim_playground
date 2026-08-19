@@ -37,7 +37,7 @@ from src.widgets.classification_widgets import (
     classifier_hyperparams_widget,
     classifier_options_widget,
 )
-from src.widgets.filter_widgets import filters_widget
+from src.widgets.filter_widgets import ALL_LABEL, filters_widget, selection_key
 from src.widgets.selection_widgets import (
     multi_feature_select_widget,
     single_feature_select_widget,
@@ -75,8 +75,8 @@ def _collect_categorical_filters(categorical_cols, df):
     filters = {}
     categories_to_filter = [c for c in categorical_cols if c in df.columns and df[c].nunique() > 1]
     for cat in categories_to_filter:
-        sel = st.session_state.get(f"{cat}_multiselect", ["All"])
-        if "All" not in sel and sel:
+        sel = st.session_state.get(selection_key(cat), [ALL_LABEL])
+        if ALL_LABEL not in sel and sel:
             filters[cat] = list(sel)
     return filters
 

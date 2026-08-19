@@ -2,70 +2,157 @@ import streamlit as st
 from src.vis.helpers import natural_tuple_sort
 import pandas as pd
 
-# Generic callback function to handle "All" logic and cascade resets
-def update_multiselect(key, options, categories_to_filter, current_category_index):
-    current_selection = st.session_state.get(key, ["All"])
+ALL_LABEL = "All"
+
+
+def selection_key(category):
+    return f"{category}_multiselect"
+
+
+# Generic callback function to handle "All" logic
+def update_multiselect(key):
+    current_selection = st.session_state.get(key, [ALL_LABEL])
     if len(current_selection) > 1:
-        if current_selection[-1] == "All":
-            st.session_state[key] = ["All"]
+        if current_selection[-1] == ALL_LABEL:
+            st.session_state[key] = [ALL_LABEL]
         else:
-            st.session_state[key] = [option for option in current_selection if option != "All"]
-    
-    # Reset all downstream filters to "All" when this filter changes
-    if current_category_index < len(categories_to_filter) - 1:
-        for j in range(current_category_index + 1, len(categories_to_filter)):
-            downstream_key = f"{categories_to_filter[j]}_multiselect"
-            st.session_state[downstream_key] = ["All"]
+            st.session_state[key] = [option for option in current_selection if option != ALL_LABEL]
+
+
+def reachable_values(df, categories, selections, target):
+    """
+    The values of `target` that still have rows once every OTHER category's selection is
+    applied. Excluding the target's own selection is what makes the filters symmetric:
+    each one is narrowed by all the others rather than only by the ones to its left, so
+    the order of categorical_cols no longer decides which combinations are reachable.
+    """
+    subset = df
+    for other in categories:
+        if other == target:
+            continue
+        selected = selections.get(other, [ALL_LABEL])
+        if ALL_LABEL not in selected:
+            subset = subset[subset[other].isin(selected)]
+    return set(subset[target].unique().tolist())
+
+
+def resolve_selections(df, categories, selections):
+    """
+    Prune the stored selections until each one only holds values that are reachable given
+    all the others, then report the option list for every filter.
+
+    Symmetric narrowing means a change to one filter can strip support from another
+    filter's selection, and that prune can in turn narrow a third, so this iterates to a
+    fixpoint. Every pass recomputes all option sets from the same snapshot and applies the
+    prunes together, so the result does not depend on the order of `categories`. Passes
+    only ever shrink a selection or fall back to "All" (which is then left alone), so the
+    loop terminates.
+
+    Returns (resolved selections, options per category, values dropped per category).
+    """
+    resolved = {category: list(selections.get(category, [ALL_LABEL])) for category in categories}
+    dropped = {category: [] for category in categories}
+
+    # Values that vanished from the data entirely (a newly loaded csv, a profile switch)
+    # are not a cross-filtering question, so clear them before the fixpoint runs.
+    for category in categories:
+        present = set(df[category].unique().tolist())
+        if ALL_LABEL in resolved[category]:
+            continue
+        stale = [value for value in resolved[category] if value not in present]
+        if stale:
+            kept = [value for value in resolved[category] if value in present]
+            resolved[category] = kept or [ALL_LABEL]
+
+    for _ in range(len(categories) + 1):
+        options = {category: reachable_values(df, categories, resolved, category) for category in categories}
+        changed = False
+        for category in categories:
+            if ALL_LABEL in resolved[category]:
+                continue
+            unsupported = [value for value in resolved[category] if value not in options[category]]
+            if not unsupported:
+                continue
+            kept = [value for value in resolved[category] if value in options[category]]
+            dropped[category].extend(unsupported)
+            resolved[category] = kept or [ALL_LABEL]
+            changed = True
+        if not changed:
+            break
+
+    options = {category: reachable_values(df, categories, resolved, category) for category in categories}
+    return resolved, options, dropped
+
 
 def filters_widget(df, categorical_cols):
 
-    # This dataframe is progressively filtered to determine the options for subsequent filters.
-    options_df = df.copy()
-    
-    # This dataframe is filtered at the end based on all selections.
+    # Filtered at the end based on all selections.
     final_filtered_df = df.copy()
-    
+
     categories_to_filter = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1]
     if categories_to_filter:
+        # Read every selection before rendering anything: each filter's options depend on
+        # the other filters, so they all have to come from one consistent snapshot.
+        stored_selections = {
+            category: st.session_state.get(selection_key(category), [ALL_LABEL])
+            for category in categories_to_filter
+        }
+        resolved_selections, reachable, dropped = resolve_selections(df, categories_to_filter, stored_selections)
+
         cols = st.columns(len(categories_to_filter))
         for i, category in enumerate(categories_to_filter):
             with cols[i]:
-                # Use the progressively filtered dataframe to get unique values for the current filter
-                unique_values_for_current_filter = options_df[category].unique().tolist()
-                unique_values_for_current_filter = natural_tuple_sort(unique_values_for_current_filter, delimiter='_')
-                unique_values_for_current_filter.append("All")
+                unique_values_for_current_filter = natural_tuple_sort(list(reachable[category]), delimiter='_')
+                unique_values_for_current_filter.append(ALL_LABEL)
 
-                key = f"{category}_multiselect"
-                
-                # Get current selection from session state, defaulting to "All"
-                current_selection = st.session_state.get(key, ["All"])
+                key = selection_key(category)
 
-                # Ensure that the current selection is valid given the available options
-                valid_selection = [v for v in current_selection if v in unique_values_for_current_filter]
-                if not valid_selection:
-                    valid_selection = ["All"]
-                
-                # If the selection in the session state is not valid, update it before rendering the widget.
-                if st.session_state.get(key) != valid_selection:
-                    st.session_state[key] = valid_selection
+                # The fixpoint above already guarantees this is a subset of the options,
+                # so writing it back cannot hand the widget a value it does not offer.
+                if st.session_state.get(key) != resolved_selections[category]:
+                    st.session_state[key] = resolved_selections[category]
 
-                selected_values = st.multiselect(
+                st.multiselect(
                     f"Select {category}(s)",
                     unique_values_for_current_filter,
                     key=key,
                     on_change=update_multiselect,
-                    args=(key, unique_values_for_current_filter, categories_to_filter, i),
+                    args=(key,),
                 )
 
-                # Progressively filter the dataframe for determining the next filter's options.
-                if "All" not in selected_values:
-                    options_df = options_df[options_df[category].isin(selected_values)]
+        # Surface anything the fixpoint had to drop, so a selection is never lost silently.
+        # Each value is reported with the selections that eliminated it, since the whole
+        # point of symmetric filtering is that another filter caused this.
+        explained, unexplained = [], []
+        for category, values in dropped.items():
+            if not values:
+                continue
+            causes = [
+                f"{other} = {', '.join(map(str, resolved_selections[other]))}"
+                for other in categories_to_filter
+                if other != category and ALL_LABEL not in resolved_selections[other]
+            ]
+            deselected = f"**{category}** = {', '.join(map(str, values))}"
+            # Naming a cause is only honest while the value is still unreachable. A
+            # category that fell back to "All" loosens the constraints, so those drops are
+            # grouped as one empty combination instead of blamed on a filter.
+            if causes and all(value not in reachable[category] for value in values):
+                explained.append(f"{deselected} (no rows with {' and '.join(causes)})")
+            else:
+                unexplained.append(deselected)
+        notices = explained
+        if unexplained:
+            notices.append(f"{' and '.join(unexplained)} (no rows in that combination)")
+        if notices:
+            # st.markdown rather than st.caption: caption renders at the theme's `sm` size,
+            # which is too quiet for a notice that says a selection was taken away.
+            st.markdown(f":primary[Deselected {'; '.join(notices)}.]")
 
-        # After creating all widgets, filter the original dataframe based on all selections.
+        # Apply every selection to an unfiltered copy. This is a plain conjunction of
+        # masks, so the resulting rows do not depend on the order of categorical_cols.
         for category in categories_to_filter:
-            key = f"{category}_multiselect"
-            selected_values = st.session_state.get(key, ["All"])
-            if "All" not in selected_values:
+            selected_values = st.session_state.get(selection_key(category), [ALL_LABEL])
+            if ALL_LABEL not in selected_values:
                 final_filtered_df = final_filtered_df[final_filtered_df[category].isin(selected_values)]
 
     numerical_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
