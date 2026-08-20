@@ -38,7 +38,8 @@ from src.widgets.classification_widgets import (
     classifier_hyperparams_widget,
     classifier_options_widget,
 )
-from src.widgets.filter_widgets import ALL_LABEL, filters_widget, selection_key
+from src.widgets.filter_widgets import filters_widget, selection_key
+from src.widgets.multiselect_modes import ALL_LABEL, chosen_items
 from src.widgets.selection_widgets import (
     multi_feature_select_widget,
     single_feature_select_widget,
@@ -72,13 +73,24 @@ if "plot_show_group_counts" not in st.session_state:
     st.session_state.plot_show_group_counts = False
 
 def _collect_categorical_filters(categorical_cols, df):
-    """Read categorical filter selections from session state."""
+    """Read categorical filter selections from session state.
+
+    Desugared through the same chosen_items the widget uses, so an "Except:" filter exports
+    as the values it keeps and the script cannot drift from the app. None means no
+    constraint, so the column is left out; an empty selection is not the same thing and
+    exports as isin([]), matching the empty frame the app shows for it.
+    """
     filters = {}
     categories_to_filter = [c for c in categorical_cols if c in df.columns and df[c].nunique() > 1]
     for cat in categories_to_filter:
         sel = st.session_state.get(selection_key(cat), [ALL_LABEL])
-        if ALL_LABEL not in sel and sel:
-            filters[cat] = list(sel)
+        chosen = chosen_items(sel, df[cat].unique().tolist())
+        # `is not None` rather than truthiness: an empty selection means no rows in the
+        # app, so the script has to say isin([]) instead of dropping the filter and
+        # quietly keeping everything. Easy to reach now that "Except:" can cover a whole
+        # column.
+        if chosen is not None:
+            filters[cat] = list(chosen)
     return filters
 
 def _collect_numerical_filters():

@@ -1,16 +1,13 @@
 import streamlit as st
+from src.widgets.multiselect_modes import (
+    ALL_LABEL,
+    EXCEPT_LABEL,
+    chosen_items,
+    normalize_mode_selection,
+)
 """
-This module contains functions to create single and multiple selection widgets. 
+This module contains functions to create single and multiple selection widgets.
 """
-
-def update_multiselect_feature(key, options):
-    """Callback function to handle "All" logic for feature selection widgets"""
-    current_selection = st.session_state.get(key, ["All"])
-    if len(current_selection) > 1:
-        if current_selection[-1] == "All":
-            st.session_state[key] = ["All"]
-        else:
-            st.session_state[key] = [option for option in current_selection if option != "All"]
 
 def reset_other_menus(selected_menu, menus):
     selected_value = st.session_state.get(selected_menu, "Select")
@@ -203,25 +200,32 @@ def multi_feature_select_widget(feature_groups_dict, data_extraction=True, n_per
 
             with cols[i]:
                 if len(feature_list) > 1:
-                    options = ["All"] + feature_list
-                    default = ["All"] if feature_group != "Uncategorized Features" else []
+                    options = [ALL_LABEL, EXCEPT_LABEL] + feature_list
+                    default = [ALL_LABEL] if feature_group != "Uncategorized Features" else []
                 else:
                     options = feature_list
                     default = feature_list
                 if key not in st.session_state:
                     st.session_state[key] = default
-                # use update_multiselect_feature to handle the "All" logic: if "All" is selected, clear all other selections
-                # if "All" is in selected list, and other options are selected, remove "All"
+                # normalize_mode_selection keeps the two sentinels coherent: picking "All"
+                # clears everything else, picking a feature drops "All" but keeps "Except:"
+                # so the exclusions stay additive.
                 selected = st.multiselect(
                     f"{feature_group}",
                     options=options,
                     #default=st.session_state[key],
                     key=key,
-                    on_change=update_multiselect_feature,
-                    args=(key, options),
-                    help=f"Select one or more columns corresponding to {feature_group} features."
+                    on_change=normalize_mode_selection,
+                    args=(key,),
+                    help=f'Select one or more columns corresponding to {feature_group} features. '
+                         f'Pick "{EXCEPT_LABEL}" together with a few to use all the others.'
                 )
-                chosen = feature_list if "All" in selected else selected
+                # None means no constraint, which here is every feature in the group. An
+                # explicit test, not `or`: an empty selection is a real state (that is the
+                # default for "Uncategorized Features") and must not expand to everything.
+                chosen = chosen_items(selected, feature_list)
+                if chosen is None:
+                    chosen = feature_list
                 selected_features.extend(display_to_col[name] for name in chosen)
                
     return selected_features

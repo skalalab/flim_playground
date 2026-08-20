@@ -1,22 +1,29 @@
 import streamlit as st
 from src.vis.helpers import natural_tuple_sort
+from src.widgets.multiselect_modes import (
+    ALL_LABEL,
+    EXCEPT_LABEL,
+    chosen_items,
+    excluded_items,
+    normalize_mode_selection,
+)
 import pandas as pd
-
-ALL_LABEL = "All"
 
 
 def selection_key(category):
     return f"{category}_multiselect"
 
 
-# Generic callback function to handle "All" logic
-def update_multiselect(key):
-    current_selection = st.session_state.get(key, [ALL_LABEL])
-    if len(current_selection) > 1:
-        if current_selection[-1] == ALL_LABEL:
-            st.session_state[key] = [ALL_LABEL]
-        else:
-            st.session_state[key] = [option for option in current_selection if option != ALL_LABEL]
+def describe_selection(category, stored):
+    """The stored selection as text, for the deselection notice.
+
+    Formatted from the stored (sentinel) form rather than the resolved one so an "Except:"
+    filter reads as the one value it drops instead of listing every value it keeps.
+    """
+    excluded = excluded_items(stored)
+    if excluded is not None:
+        return f"{category} ≠ {', '.join(map(str, excluded))}"
+    return f"{category} = {', '.join(map(str, stored))}"
 
 
 def reachable_values(df, categories, selections, target):
@@ -36,7 +43,7 @@ def reachable_values(df, categories, selections, target):
     return set(subset[target].unique().tolist())
 
 
-def resolve_selections(df, categories, selections):
+def resolve_selections(df, categories, selections, exempt=()):
     """
     Prune the stored selections until each one only holds values that are reachable given
     all the others, then report the option list for every filter.
@@ -48,6 +55,12 @@ def resolve_selections(df, categories, selections):
     only ever shrink a selection or fall back to "All" (which is then left alone), so the
     loop terminates.
 
+    Categories in `exempt` keep their selection verbatim. An "Except:" selection is
+    re-derived from the data on every rerun, so it holds nothing stale to prune, and
+    pruning it would report values the user never picked as deselected. They still narrow
+    every other category through `reachable_values`, which is what keeps a filter that
+    drops a value indistinguishable from one that never offered it.
+
     Returns (resolved selections, options per category, values dropped per category).
     """
     resolved = {category: list(selections.get(category, [ALL_LABEL])) for category in categories}
@@ -57,7 +70,7 @@ def resolve_selections(df, categories, selections):
     # are not a cross-filtering question, so clear them before the fixpoint runs.
     for category in categories:
         present = set(df[category].unique().tolist())
-        if ALL_LABEL in resolved[category]:
+        if ALL_LABEL in resolved[category] or category in exempt:
             continue
         stale = [value for value in resolved[category] if value not in present]
         if stale:
@@ -68,7 +81,7 @@ def resolve_selections(df, categories, selections):
         options = {category: reachable_values(df, categories, resolved, category) for category in categories}
         changed = False
         for category in categories:
-            if ALL_LABEL in resolved[category]:
+            if ALL_LABEL in resolved[category] or category in exempt:
                 continue
             unsupported = [value for value in resolved[category] if value not in options[category]]
             if not unsupported:
@@ -93,31 +106,70 @@ def filters_widget(df, categorical_cols):
     if categories_to_filter:
         # Read every selection before rendering anything: each filter's options depend on
         # the other filters, so they all have to come from one consistent snapshot.
-        stored_selections = {
-            category: st.session_state.get(selection_key(category), [ALL_LABEL])
-            for category in categories_to_filter
+        #
+        # Two forms are kept for each filter: the stored one the widget shows, which may
+        # carry the "Except:" sentinel, and the effective one the cross-filtering works
+        # on, which is always a plain list of values (or ["All"] for no constraint). The
+        # effective form is re-derived here on every rerun, so "all except X" keeps meaning
+        # that as the data changes rather than freezing into a list of everything-but-X.
+        present_values, stored_selections, effective_selections = {}, {}, {}
+        for category in categories_to_filter:
+            values = df[category].unique().tolist()
+            present_values[category] = natural_tuple_sort(values, delimiter='_')
+
+            stored = list(st.session_state.get(selection_key(category), [ALL_LABEL]))
+            excluded = excluded_items(stored)
+            if excluded is not None:
+                # Same reasoning as the stale pass in resolve_selections: a value that has
+                # vanished from the data is not a cross-filtering question. Rebuilt rather
+                # than filtered in place so the sentinel keeps leading the chips.
+                present = set(values)
+                stored = [EXCEPT_LABEL, *(value for value in excluded if value in present)]
+            stored_selections[category] = stored
+
+            chosen = chosen_items(stored, present_values[category])
+            effective_selections[category] = [ALL_LABEL] if chosen is None else chosen
+
+        exclude_mode = {
+            category for category in categories_to_filter
+            if excluded_items(stored_selections[category]) is not None
         }
-        resolved_selections, reachable, dropped = resolve_selections(df, categories_to_filter, stored_selections)
+        resolved_selections, reachable, dropped = resolve_selections(
+            df, categories_to_filter, effective_selections, exempt=exclude_mode
+        )
 
         cols = st.columns(len(categories_to_filter))
         for i, category in enumerate(categories_to_filter):
             with cols[i]:
-                unique_values_for_current_filter = natural_tuple_sort(list(reachable[category]), delimiter='_')
-                unique_values_for_current_filter.append(ALL_LABEL)
+                offered = reachable[category]
+                if category in exclude_mode:
+                    # Narrowed by the other filters like any other filter, so an exclusion
+                    # only ever offers values that combination actually has -- but the ones
+                    # already excluded stay on the list even once another filter has made
+                    # them unreachable. Dropping those would hand the widget a session-state
+                    # value it does not offer (Streamlit raises) and would silently forget
+                    # an exclusion the user still wants once they widen that filter again.
+                    offered = offered | set(excluded_items(stored_selections[category]))
+                unique_values_for_current_filter = natural_tuple_sort(list(offered), delimiter='_')
+                unique_values_for_current_filter.extend([ALL_LABEL, EXCEPT_LABEL])
 
                 key = selection_key(category)
 
-                # The fixpoint above already guarantees this is a subset of the options,
-                # so writing it back cannot hand the widget a value it does not offer.
-                if st.session_state.get(key) != resolved_selections[category]:
-                    st.session_state[key] = resolved_selections[category]
+                # Both forms are subsets of the options built just above -- the stored one
+                # by construction, the resolved one by the fixpoint -- so writing it back
+                # cannot hand the widget a value it does not offer.
+                desired = stored_selections[category] if category in exclude_mode else resolved_selections[category]
+                if st.session_state.get(key) != desired:
+                    st.session_state[key] = desired
 
                 st.multiselect(
                     f"Select {category}(s)",
                     unique_values_for_current_filter,
                     key=key,
-                    on_change=update_multiselect,
+                    on_change=normalize_mode_selection,
                     args=(key,),
+                    help=f'Pick the {category}s to keep, or pick "{EXCEPT_LABEL}" together with '
+                         'the ones to drop to keep everything else.',
                 )
 
         # Surface anything the fixpoint had to drop, so a selection is never lost silently.
@@ -128,7 +180,7 @@ def filters_widget(df, categorical_cols):
             if not values:
                 continue
             causes = [
-                f"{other} = {', '.join(map(str, resolved_selections[other]))}"
+                describe_selection(other, stored_selections[other])
                 for other in categories_to_filter
                 if other != category and ALL_LABEL not in resolved_selections[other]
             ]
@@ -148,10 +200,22 @@ def filters_widget(df, categorical_cols):
             # which is too quiet for a notice that says a selection was taken away.
             st.markdown(f":primary[Deselected {'; '.join(notices)}.]")
 
+        # Excluding every value is a click away once the sentinel is on, and the generic
+        # "no data after filtering" message downstream would not say why.
+        emptied = [
+            category for category in categories_to_filter
+            if category in exclude_mode and not resolved_selections[category]
+        ]
+        if emptied:
+            st.warning(f"Every value of {', '.join(emptied)} is excluded, so no rows are left.")
+
         # Apply every selection to an unfiltered copy. This is a plain conjunction of
         # masks, so the resulting rows do not depend on the order of categorical_cols.
+        # Taken from the resolved selections rather than re-read from session state: the
+        # two agree for a plain selection, but only the resolved form carries an "Except:"
+        # filter already expanded into the values it keeps.
         for category in categories_to_filter:
-            selected_values = st.session_state.get(selection_key(category), [ALL_LABEL])
+            selected_values = resolved_selections[category]
             if ALL_LABEL not in selected_values:
                 final_filtered_df = final_filtered_df[final_filtered_df[category].isin(selected_values)]
 
