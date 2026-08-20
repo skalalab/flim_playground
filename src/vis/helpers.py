@@ -530,6 +530,10 @@ def tuple_natural_key(tup):
 def natural_tuple_sort(strings, delimiter='::'):
     """
     Sort a list of delimited strings using natural sort for each column.
+    Values must already be strings: check_and_fix_df astype(str)s every categorical column
+    at load, and the callers that group on something else go through dropna/astype(str)
+    first. The split runs before tuple_natural_key, so its str() cannot cover for a
+    non-string here.
     :param strings: list of strings to sort
     :param delimiter: delimiter to split columns (default '::')
     :return: sorted list of strings

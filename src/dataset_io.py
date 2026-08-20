@@ -65,7 +65,11 @@ def match_col_name(col, col_list):
         # e.g. "cell_line", "cell line", "cell-line", "Cell line", "Cell_line", "cell_Lines" all match "cell_line"
         # "treatments", "Treatment", "Treatments" all match "treatment"
         col_processed = col.lower().replace(" ", "_").replace("-", "_")
-        col_name_processed = col_name.lower() # Canonical names are assumed to be already processed (lowercase, underscores)
+        # Both sides get the same normalisation: a configured name is allowed to carry the
+        # spacing and hyphens of the real header it names ("IL-18"), and a canonical name
+        # that was only lowercased could never match the column it was written for - which
+        # silently skipped the rename and the N/A fill below for every such column.
+        col_name_processed = col_name.lower().replace(" ", "_").replace("-", "_")
 
         # Check for direct match, match after removing/adding 's'
         if (col_processed == col_name_processed or
@@ -289,10 +293,31 @@ def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
     for col in df.columns:
         matched_categorical_col = match_col_name(col, categorical_cols)
         if matched_categorical_col is not None:
+            # Two different headers can normalise to the same canonical name ("IL-18" and
+            # "IL_18" both do). Renaming the second one would leave two columns with one
+            # name, and every later df[name] lookup would hand back a frame instead of a
+            # series, so it keeps its own name and is reported instead of silently merged.
+            # A column already spelled exactly right is never skipped, so the exact
+            # spelling wins the name regardless of column order.
+            if matched_categorical_col != col and matched_categorical_col in df.columns:
+                warning_msg += (f"Warning: column '{col}' also reads as the categorical column "
+                                f"'{matched_categorical_col}', which is already present. "
+                                f"'{col}' was left under its own name.\n")
+                continue
             # rename the column to match the canonical categorical column name
             df.rename(columns={col: matched_categorical_col}, inplace=True)
-            # fix na values
-            df[matched_categorical_col] = df[matched_categorical_col].fillna("N/A")
-            df[matched_categorical_col] = df[matched_categorical_col].astype(str) # make sure all the values are not numbers
+            # fix na values, and make sure all the values are labels rather than numbers
+            series = df[matched_categorical_col]
+            # A numeric column that has blanks is read as float, so a plate or day number
+            # would label itself "1.0" instead of the "1" that was typed. Whole numbers go
+            # through a nullable integer cast first to keep the label intact; genuinely
+            # fractional values keep their decimals.
+            if pd.api.types.is_float_dtype(series):
+                real = series.dropna()
+                if not real.empty and (real % 1 == 0).all():
+                    series = series.astype("Int64")
+            # Fill from the original null mask, not by matching the stringified "nan" /
+            # "<NA>" - a column with a genuine "nan" label would be caught by that.
+            df[matched_categorical_col] = series.astype(str).where(series.notna(), "N/A")
 
     return df, warning_msg, error_msg
