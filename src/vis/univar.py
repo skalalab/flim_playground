@@ -529,6 +529,64 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
 
     grouped_list.sort(key=group_sort_key)
 
+    # --- Rows drawn per (separate section, colour group) ---
+    # Pooled from the subgroups rather than sliced out of df, so this holds exactly the
+    # rows the loop below draws: a row whose shape/opacity value is NaN belongs to no
+    # subgroup and must not reach a statistic either.
+    #
+    # POSITIONS, not index labels, so a row can be found again without assuming anything
+    # about the filtered frame's index; sorted, so the pooled order is row order and does
+    # not depend on which subgroups exist or the order they are visited in.
+    all_y = df[selected_var].to_numpy(dtype=float)
+    pooled_rows = {}
+    for group_key, group_df in grouped_list:
+        if group_key[0] not in compare_groups:
+            continue
+        drawn = group_df.dropna(subset=[selected_var])
+        if drawn.empty:
+            continue
+        cell = (group_key[3], group_key[0])
+        pooled_rows.setdefault(cell, []).append(df.index.get_indexer(drawn.index))
+    pooled_rows = {cell: np.sort(np.concatenate(chunks))
+                   for cell, chunks in pooled_rows.items()}
+
+    def cell_x_position(separate_group, color_group):
+        if separate_groups:
+            return x_positions.get((separate_group, color_group))
+        return x_positions.get(color_group)
+
+    # --- Sina jitter: density-based horizontal spread, per colour group ---
+    # The KDE and the rng that place a point belong to the colour group, because the
+    # colour group is what owns the x position -- it is the only thing whose density the
+    # silhouette can be read as describing. Fitting them per (colour, shape, opacity)
+    # subgroup instead re-estimated every density over a fraction of the rows, so
+    # switching shape_by or opacity_by on redrew the whole silhouette and moved every
+    # point sideways: a change to the geometry that the reader would attribute to the
+    # data. Scoped here, those channels change what a point looks like and nothing else.
+    x_of_row = np.full(len(df), np.nan)
+    for (separate_group, color_group), rows in pooled_rows.items():
+        x_position = cell_x_position(separate_group, color_group)
+        if x_position is None:
+            continue
+        y_data = all_y[rows]
+        densities = _density_at_points(y_data)
+        # Normalize densities to a reasonable jitter width
+        max_jitter = 0.35  # Controls the max horizontal spread
+        if len(densities) > 0 and np.max(densities) > 0:
+            norm_densities = densities / np.max(densities)
+        else:
+            # Degenerate density (a constant column has no KDE): spread points with
+            # uniform jitter so they stay visible instead of stacking into one dot.
+            norm_densities = np.ones_like(densities)
+        # Randomly assign sign to spread points left/right
+        rng = np.random.default_rng(seed=42)
+        x_of_row[rows] = x_position + (rng.uniform(-1, 1, size=len(y_data))
+                                       * norm_densities * max_jitter)
+
+    # Filled by the subgroup loop, drained after it: drawing is deferred so a colour
+    # group's shape/opacity subgroups can be pooled into one trace.
+    point_buckets = {}
+
     for group_key, group_df in grouped_list:
         # Always unpack group_key by position
         color_group = group_key[0]
@@ -557,61 +615,68 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         final_hovertemplate = "".join(hovertemplate_parts)
         
         # --- Determine x-position and visual properties ---
-        if separate_groups:
-            x_position = x_positions.get((separate_group, color_group))
-            if x_position is None:
-                continue  # Skip if x_position not found
-        else:
-            x_position = x_positions.get(color_group)
-            if x_position is None:
-                continue  # Skip if x_position not found
-        
+        # The position itself is already baked into x_of_row; this is the same skip the
+        # jitter pass made, repeated so a subgroup with nowhere to go is not accumulated.
+        if cell_x_position(separate_group, color_group) is None:
+            continue
+
         marker_color = color_map[color_group]
         marker_opacity = opacity_map.get(opacity_group, 0.7) if opacity_map and opacity_group is not None else 0.7
         marker_symbol = shape_map.get(shape_group, 'circle') if shape_map and shape_group is not None else 'circle'
         
-        # --- Determine trace name and legend visibility ---
-        # Only show in legend if this color group hasn't been shown yet
+        # Legend bookkeeping belongs with the draw, which is now deferred to the second
+        # pass below -- claiming the entry here would mark every colour group as already
+        # shown before a single trace exists.
+
+        # Each row's x was assigned per colour group above; look it up rather than
+        # recomputing, so a subgroup cannot get a spread of its own.
+        y_data = group_df[selected_var].values
+        x_jittered = x_of_row[df.index.get_indexer(group_df.index)]
+
+        # Accumulate rather than draw. Shape and opacity subgroups of one colour group
+        # share its x band, so drawing each as its own trace paints them in sequence and
+        # the last one is never occluded. Pooling the colour group's points and carrying
+        # symbol/opacity as PER-POINT arrays is how every other point method avoids that
+        # (helpers.add_interleaved_points_trace, used by the scatter/UMAP/phasor pages);
+        # this brings the sina plot in line.
+        bucket = point_buckets.setdefault((separate_group, color_group), {
+            "x": [], "y": [], "text": [], "customdata": [],
+            "symbol": [], "opacity": [],
+        })
+        bucket["x"].append(x_jittered)
+        bucket["y"].append(y_data)
+        bucket["text"].append(group_df[cell_id_col].to_numpy())
+        bucket["customdata"].append(point_customdata.to_numpy())
+        # Constant within a subgroup because they come from the group key, so repeat
+        # rather than read one per row.
+        bucket["symbol"].append(np.repeat(marker_symbol, len(y_data)))
+        bucket["opacity"].append(np.repeat(marker_opacity, len(y_data)))
+
+    for (separate_group, color_group), bucket in point_buckets.items():
+        columns = {name: np.concatenate(chunks) for name, chunks in bucket.items()}
+        marker_kwargs = dict(
+            size=point_size,
+            symbol=columns["symbol"],
+            opacity=columns["opacity"],
+            line=dict(width=0.5, color='DarkSlateGrey'),
+        )
+        trace_kwargs = dict(mode='markers', hovertemplate=final_hovertemplate, zorder=1)
+
+        # One trace for the whole colour group. Its points carry per-point symbol and
+        # opacity, so those channels are already mixed and need no batching; the
+        # colour is constant, so there is nothing left for a paint order to bias.
         show_legend = color_group not in legend_entries
         if show_legend:
             legend_entries.add(color_group)
-        
-        trace_name = format_group_label(color_group, group_counts.get(color_group), show_counts)
-
-        # --- Sina plot: density-based horizontal jitter ---
-        y_data = group_df[selected_var].values
-        densities = _density_at_points(y_data)
-        # Normalize densities to a reasonable jitter width
-        max_jitter = 0.35  # Controls the max horizontal spread
-        if len(densities) > 0 and np.max(densities) > 0:
-            norm_densities = densities / np.max(densities)
-        else:
-            # Degenerate density (a constant column has no KDE): spread points with
-            # uniform jitter so they stay visible instead of stacking into one dot.
-            norm_densities = np.ones_like(densities)
-        # Randomly assign sign to spread points left/right
-        rng = np.random.default_rng(seed=42)
-        jitter_offsets = (rng.uniform(-1, 1, size=len(y_data))) * norm_densities * max_jitter
-        x_jittered = x_position + jitter_offsets
-        # Plot points (no violin, just sina)
         fig.add_trace(go.Scatter(
-            x=x_jittered,
-            y=y_data,
-            mode='markers',
-            name=trace_name,
-            marker=dict(
-                color=marker_color,
-                size=point_size,
-                opacity=marker_opacity,
-                symbol=marker_symbol,
-                line=dict(width=0.5, color='DarkSlateGrey')
-            ),
+            x=columns["x"], y=columns["y"],
+            name=format_group_label(color_group, group_counts.get(color_group), show_counts),
+            marker=dict(color=color_map[color_group], **marker_kwargs),
             showlegend=show_legend,
             legendgroup=color_group,
-            text=group_df[cell_id_col],
-            customdata=point_customdata,
-            hovertemplate=final_hovertemplate,
-            zorder=1
+            text=columns["text"],
+            customdata=columns["customdata"],
+            **trace_kwargs
         ))
 
     if connect_means:
@@ -800,34 +865,20 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         )
     
     # --- Loop 2: Boxplots (on top of points) ---
+    # One box per (section, colour group), from that group's pooled rows. It used to be
+    # one per (colour, shape, opacity) subgroup, every one of them drawn at its colour
+    # group's x -- so shape_by plus opacity_by stacked a dozen boxes on two positions and
+    # the quartiles the reader could see were whichever subgroup happened to be painted
+    # last, computed from a handful of rows.
     if add_boxplot:
-        for group_key, group_df in grouped_list:
-            # Always unpack group_key by position
-            color_group = group_key[0]
-            shape_group = group_key[1]
-            opacity_group = group_key[2]
-            separate_group = group_key[3]
-            
-            # Skip if not in our color groups
-            if color_group not in compare_groups:
-                continue
-                    
-            # Drop rows where the variable to plot is NaN
-            group_df = group_df.dropna(subset=[selected_var])
-            if group_df.empty:
+        for (separate_group, color_group), rows in pooled_rows.items():
+            x_position = cell_x_position(separate_group, color_group)
+            if x_position is None:
                 continue
 
-            # --- Determine x-position ---
-            if separate_groups:
-                x_position = x_positions.get((separate_group, color_group))
-                if x_position is None: continue
-            else:
-                x_position = x_positions.get(color_group)
-                if x_position is None: continue
-            
             marker_color = color_map[color_group]
             trace_name = color_group
-            y_data = group_df[selected_var].values
+            y_data = all_y[rows]
 
             # Calculate boxplot statistics manually to enforce 1.5 IQR whiskers
             q1 = np.percentile(y_data, 25)

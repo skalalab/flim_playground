@@ -499,12 +499,6 @@ with col2:
 
                 @st.fragment
                 def _render_plot_and_controls(base_fig, build_params):
-                    # Widget state is committed before a fragment rerun, so a changed
-                    # build-time param is already visible here. Escalate before rendering
-                    # anything rather than painting a stale figure first.
-                    if _plot_build_params() != build_params:
-                        st.rerun(scope="app")
-
                     # apply_plot_styling mutates the figure in place and appends ghost
                     # legend traces, so style a copy rather than base_fig itself. Repeated
                     # in-place passes do happen to be stable today (the showlegend guard
@@ -568,6 +562,23 @@ with col2:
                         _extra["dr_method"] = dr_method
                         _extra["hyperParam_dict"] = hyperParam_dict
                     _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, **_extra)
+
+                    # LAST in the fragment, deliberately. A build-time change needs a full
+                    # rerun, but escalating earlier -- which reads as the obvious place,
+                    # since it avoids painting a stale figure -- silently loses the change.
+                    # st.rerun() discards the state of every widget of this fragment that
+                    # was not rendered during the interrupted run, including untouched
+                    # ones, so the value is not stale but *gone*: the next run re-seeds the
+                    # module default from the block at the top of this file. That is why
+                    # Color Map, "Show group counts" and Axis Label Font Size appeared to
+                    # do nothing at all until some unrelated change forced a full rerun of
+                    # its own, and why "Confirm Reordering" reset Point Size and Legend
+                    # Font Size.
+                    #
+                    # The cost is one stale paint before the rebuild lands, which is
+                    # strictly better than the change never being applied.
+                    if st.session_state.pop("_plot_needs_rebuild", False) or _plot_build_params() != build_params:
+                        st.rerun(scope="app")
 
                 _render_plot_and_controls(fig, _build_params)
 

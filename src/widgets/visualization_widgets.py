@@ -311,4 +311,11 @@ def reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by):
                 st.session_state[session_key_cmp] = new_cmp_order
                 # Increment version to force re-render next time
                 st.session_state[version_key] += 1
-            st.rerun()
+            # A new order is a BUILD-time change, so the figure has to be remade -- but do
+            # not st.rerun() here. This widget is called from inside the plot fragment
+            # (pages/data_analysis.py) and the styling controls render *after* it, so
+            # rerunning at this point culls every widget of the fragment not yet rendered:
+            # Point Size, Color Map and the rest all snap back to their module defaults on
+            # the rebuild. Flag it instead and let the single escalation at the end of the
+            # fragment fire once everything has re-registered.
+            st.session_state["_plot_needs_rebuild"] = True

@@ -104,12 +104,15 @@ def scatter_with_encodings(ax, x, y, color, label, point_size,
                            shape_vals=None, shape_map=None,
                            opacity_vals=None, opacity_map=None,
                            base_alpha=0.7, linewidths=0.3, zorder=2):
-    """Scatter one color group's points, sub-grouped by shape/opacity values.
+    """Scatter one color group's points, sub-grouped by shape value.
 
-    Matplotlib cannot vary marker style within a single scatter call, so each
-    (shape, opacity) combination becomes its own call — mirroring the app's
-    per-point symbol/opacity arrays (helpers.add_interleaved_points_trace).
-    Only the first non-empty sub-group carries the legend label.
+    Matplotlib cannot vary marker style within a single scatter call, so each shape
+    becomes its own call. Opacity is NOT split that way: it goes in as a per-point
+    alpha array, mirroring the app's per-point opacity (helpers.add_interleaved_points_trace
+    and univar.feature_comparison_plot). Splitting it would draw one opacity group
+    wholly over another, and since create_opacity_mapping raises alpha with sort order
+    the most opaque group would always land on top — a paint order the screen does not
+    have. Only the first non-empty sub-group carries the legend label.
     """
     import numpy as np
     x = np.asarray(x, dtype=float)
@@ -122,23 +125,19 @@ def scatter_with_encodings(ax, x, y, color, label, point_size,
     use_shape = shape_vals is not None and bool(shape_map)
     use_opacity = opacity_vals is not None and bool(opacity_map)
     shape_arr = np.asarray([str(v) for v in shape_vals]) if use_shape else None
-    opacity_arr = np.asarray([str(v) for v in opacity_vals]) if use_opacity else None
+    alphas = (np.asarray([opacity_map[str(v)] for v in opacity_vals], dtype=float)
+              if use_opacity else None)
     labeled = False
     for shape_key in (list(shape_map) if use_shape else [None]):
-        for opacity_key in (list(opacity_map) if use_opacity else [None]):
-            mask = np.ones(len(x), dtype=bool)
-            if use_shape:
-                mask &= shape_arr == shape_key
-            if use_opacity:
-                mask &= opacity_arr == opacity_key
-            if not mask.any():
-                continue
-            ax.scatter(x[mask], y[mask], c=[color], s=point_size,
-                       alpha=opacity_map[opacity_key] if use_opacity else base_alpha,
-                       marker=shape_map[shape_key] if use_shape else 'o',
-                       edgecolors='DarkSlateGrey', linewidths=linewidths,
-                       label=label if not labeled else None, zorder=zorder)
-            labeled = True
+        mask = (shape_arr == shape_key) if use_shape else np.ones(len(x), dtype=bool)
+        if not mask.any():
+            continue
+        ax.scatter(x[mask], y[mask], c=[color], s=point_size,
+                   alpha=alphas[mask] if use_opacity else base_alpha,
+                   marker=shape_map[shape_key] if use_shape else 'o',
+                   edgecolors='DarkSlateGrey', linewidths=linewidths,
+                   label=label if not labeled else None, zorder=zorder)
+        labeled = True
 
 
 def add_encoding_legend_entries(ax, shape_map, opacity_map, point_size):
@@ -890,45 +889,29 @@ for sec_group in ordered_separate_groups:
         group_df = sec_df[sec_df["_color_group"] == cg]
         y_data = group_df[SELECTED_VAR].values
 
-        # KDE-based jitter (Sina plot), computed per (colour, shape, opacity) subgroup to
-        # match the app: get_point_visual_mappings() iterates
-        # product(color, shape, opacity, separate), and univar.py fits the KDE and reseeds
-        # rng(42) INSIDE that loop, so both the density support and the random sequence are
-        # per-subgroup. Jittering per colour group instead moved EVERY point as soon as
-        # shape_by or opacity_by was set (same y, same groups, different x).
-        # The sub-masks use the same str() comparison as scatter_with_encodings, so the
-        # jitter lands on exactly the points it draws; a row whose encoding value is NaN
-        # matches no key and is plotted by neither side.
+        # KDE-based jitter (Sina plot), fitted once per (section, colour group) to match
+        # the app: univar.py feature_comparison_plot assigns every row's x from its colour
+        # group's pooled density, because the colour group is what owns the x position.
+        # Neither side may fit it per (colour, shape, opacity) subgroup -- that estimated
+        # each density over a fraction of the rows, so setting shape_by or opacity_by
+        # redrew the silhouette and moved every point.
+        # _density_at_points, not _estimate_density_1d(y_data)(y_data): asking the KDE for
+        # the density at its own training points is O(n^2), which took 60 s for a single
+        # 113k-point group here. This is the app's function, so the jitter matches what was
+        # on screen.
         # There is deliberately no small-group branch: the app has none, and
         # _density_at_points already returns zeros below 2 points (the same fallback
         # _estimate_density_1d gives it), which the norm_d fallback turns into uniform
         # jitter.
-        x_vals = np.full(len(y_data), float(x_pos))
-        shape_keys = list(shape_map) if (SHAPE_BY and shape_map) else [None]
-        opacity_keys = list(opacity_map) if (OPACITY_BY and opacity_map) else [None]
-        for shape_key in shape_keys:
-            for opacity_key in opacity_keys:
-                sub = np.ones(len(y_data), dtype=bool)
-                if shape_key is not None:
-                    sub &= group_df[SHAPE_BY].astype(str).values == shape_key
-                if opacity_key is not None:
-                    sub &= group_df[OPACITY_BY].astype(str).values == opacity_key
-                if not sub.any():
-                    continue
-                sub_y = y_data[sub]
-                # _density_at_points, not _estimate_density_1d(sub_y)(sub_y): asking the
-                # KDE for the density at its own training points is O(n^2), which took 60 s
-                # for a single 113k-point group here. This is the app's function, so the
-                # jitter matches what was on screen.
-                densities = _density_at_points(sub_y)
-                if len(densities) > 0 and np.max(densities) > 0:
-                    norm_d = densities / np.max(densities)
-                else:
-                    # Degenerate density (a constant column has no KDE): spread points with
-                    # uniform jitter so they stay visible instead of stacking into one dot.
-                    norm_d = np.ones_like(densities)
-                rng = np.random.default_rng(42)
-                x_vals[sub] = x_pos + rng.uniform(-1, 1, len(sub_y)) * norm_d * 0.35
+        densities = _density_at_points(y_data)
+        if len(densities) > 0 and np.max(densities) > 0:
+            norm_d = densities / np.max(densities)
+        else:
+            # Degenerate density (a constant column has no KDE): spread points with
+            # uniform jitter so they stay visible instead of stacking into one dot.
+            norm_d = np.ones_like(densities)
+        rng = np.random.default_rng(42)
+        x_vals = x_pos + rng.uniform(-1, 1, len(y_data)) * norm_d * 0.35
 
         cg_label = (format_group_label(cg, group_counts.get(cg), SHOW_GROUP_COUNTS, engine='mpl')
                     if cg not in legend_entries else None)
