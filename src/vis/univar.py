@@ -19,12 +19,13 @@ from .helpers import (
     _prepare_group_data,
     add_point_legend_traces,
     create_subcolor_map,
-    interleave_point_batches,
     find_intersection,
     format_group_label,
     get_context_theme_color,
     get_point_visual_mappings,
+    interleave_point_batches,
     log_negative_error,
+    point_trace_class,
 )
 
 
@@ -355,6 +356,42 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
 
     return fig, df
 
+# Plotly's automatic box width for these plots. Adjacent groups sit exactly 1.0 apart (x
+# positions are consecutive integers within a section), and the default boxgap and
+# boxgroupgap of 0.3 each give (1 - 0.3) * (1 - 0.3) = 0.49 data units; whiskerwidth
+# defaults to half of that. Both were measured off the rendered SVG box to confirm.
+_BOX_WIDTH = 0.49
+_WHISKER_CAP_WIDTH = _BOX_WIDTH * 0.5
+
+
+def _add_box_outline_above_gl(fig, x, q1, median, q3, lower_fence, upper_fence, mean_val, color):
+    """Redraw a box outline as ``layer="above"`` shapes so it paints over WebGL points.
+
+    Plotly puts the WebGL canvas *above* every SVG cartesian layer -- the points live in
+    div.gl-container, which the DOM places after the svg holding the box -- so once the
+    figure crosses the WebGL threshold no zorder can lift a go.Box over the cloud (its
+    trace only moves between zorder subplots inside that same svg). Shapes declared
+    layer="above" land in g.layer-above, the one group painted on top of the canvas.
+
+    The go.Box trace itself is left untouched, hidden beneath the points, so its hover
+    statistics and legend entry still work.
+    """
+    half, cap = _BOX_WIDTH / 2, _WHISKER_CAP_WIDTH / 2
+    outline = dict(color=color, width=3)
+    common = dict(xref="x", yref="y", layer="above")
+    fig.add_shape(type="rect", x0=x - half, x1=x + half, y0=q1, y1=q3,
+                  line=outline, fillcolor="rgba(0,0,0,0)", **common)
+    fig.add_shape(type="line", x0=x - half, x1=x + half, y0=median, y1=median,
+                  line=outline, **common)
+    # Dashed mean line, matching boxmean=True on the trace.
+    fig.add_shape(type="line", x0=x - half, x1=x + half, y0=mean_val, y1=mean_val,
+                  line=dict(color=color, width=3, dash="dash"), **common)
+    for base, fence in ((q1, lower_fence), (q3, upper_fence)):
+        fig.add_shape(type="line", x0=x, x1=x, y0=base, y1=fence, line=outline, **common)
+        fig.add_shape(type="line", x0=x - cap, x1=x + cap, y0=fence, y1=fence,
+                      line=outline, **common)
+
+
 def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None", custom_order=None, subcolor_by=None):
 
     # Get theme color once at the start for all theme-aware elements
@@ -630,13 +667,25 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         if subcolor_of:
             bucket["subcolor"].append(group_df[subcolor_by].fillna("N/A").astype(str).to_numpy())
 
+    # One renderer for the whole figure, decided from the total the buckets hold. Chosen
+    # once rather than per trace: Plotly paints every WebGL trace beneath every SVG one, so
+    # a figure mixing the two would stack its colour groups by renderer, not by draw order.
+    scatter_cls = point_trace_class(
+        sum(len(chunk) for bucket in point_buckets.values() for chunk in bucket["y"])
+    )
+
     for (separate_group, color_group), bucket in point_buckets.items():
         columns = {name: np.concatenate(chunks)
                    for name, chunks in bucket.items() if chunks}
         # Only what both branches share. The matched branch draws a masked subset, so
         # symbol and opacity are passed per call rather than baked in here.
         marker_kwargs = dict(size=point_size, line=dict(width=0.5, color='DarkSlateGrey'))
-        trace_kwargs = dict(mode='markers', hovertemplate=final_hovertemplate, zorder=1)
+        trace_kwargs = dict(mode='markers', hovertemplate=final_hovertemplate)
+        if scatter_cls is go.Scatter:
+            # Scattergl rejects zorder outright, and has no use for it: the WebGL layer
+            # already sits beneath the SVG boxes, which is exactly what zorder=1 buys
+            # against the boxes' zorder=10 below.
+            trace_kwargs['zorder'] = 1
 
         if not subcolor_of:
             # One trace per colour group: symbol and opacity vary per point, colour does
@@ -644,7 +693,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             show_legend = color_group not in legend_entries
             if show_legend:
                 legend_entries.add(color_group)
-            fig.add_trace(go.Scatter(
+            fig.add_trace(scatter_cls(
                 x=columns["x"], y=columns["y"],
                 name=format_group_label(color_group, group_counts.get(color_group), show_counts),
                 marker=dict(color=color_map[color_group], symbol=columns["symbol"],
@@ -671,7 +720,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             show_entry = value not in legend_entries
             if show_entry:
                 legend_entries.add(value)
-            fig.add_trace(go.Scatter(
+            fig.add_trace(scatter_cls(
                 x=columns["x"][mask], y=columns["y"][mask],
                 name=format_group_label(value, subcolor_counts.get(value), show_counts),
                 marker=dict(color=subcolor_of[value],
@@ -688,6 +737,11 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             ))
 
     if connect_means:
+        # Above the points in BOTH modes. In WebGL the connector is a GL trace added after
+        # them, and GL traces stack in trace order; in SVG it needs an explicit zorder,
+        # since the points carry zorder=1 and it would otherwise default to 0 and hide
+        # under the cloud. Kept below the boxes' zorder=10.
+        mean_line_kwargs = {} if scatter_cls is go.Scattergl else {'zorder': 2}
         if separate_groups:
             # Create a line for each separate group
             for section_info in separate_sections_info:
@@ -715,14 +769,15 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                     x_coords = [p['x'] for p in means_to_plot]
                     y_coords = [p['y'] for p in means_to_plot]
 
-                    fig.add_trace(go.Scatter(
+                    fig.add_trace(scatter_cls(
                         x=x_coords,
                         y=y_coords,
                         mode='lines+markers',
                         name=f'Mean ({section_group_name})',
                         line=dict(width=1, dash='solid', color=theme_color),
                         marker=dict(size=8, symbol='x', color=theme_color),
-                        showlegend=True
+                        showlegend=True,
+                        **mean_line_kwargs
                     ))
         else: # No separate_by
             means_to_plot = []
@@ -741,14 +796,15 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 x_coords = [p['x'] for p in means_to_plot]
                 y_coords = [p['y'] for p in means_to_plot]
 
-                fig.add_trace(go.Scatter(
+                fig.add_trace(scatter_cls(
                     x=x_coords,
                     y=y_coords,
                     mode='lines+markers',
                     name='Mean',
                     line=dict(width=2, dash='solid', color=theme_color),
                     marker=dict(size=8, symbol='x', color=theme_color),
-                    showlegend=False
+                    showlegend=False,
+                    **mean_line_kwargs
                 ))
 
     # --- 2. Add legend traces for opacity and shape mappings ---
@@ -889,6 +945,10 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 hoverinfo='y', # Show stats on hover
                 zorder=10
             ))
+
+            if scatter_cls is go.Scattergl:
+                _add_box_outline_above_gl(fig, x_position, q1, median, q3,
+                                          lower_fence, upper_fence, mean_val, theme_color)
 
     # Set y-axis label based on log transform (pretty_var defined at top)
     y_axis_label = f"log₁₀({pretty_var})" if log_y else pretty_var

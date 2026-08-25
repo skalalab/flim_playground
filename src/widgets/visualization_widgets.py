@@ -418,13 +418,21 @@ def plot_config_widget(point_based=True, show_colormap=False, show_count_toggle=
     # and renders in ONE run and the warning fires. Seeding here as well keeps each
     # default beside the widget that owns it and covers the classification page's call,
     # which does not run data_analysis.py's block.
+    # Written EVERY run, not just when the key is missing. Streamlit only sends the
+    # frontend a set_value when the widget's value changed during that run; a widget whose
+    # key was seeded on an EARLIER run renders proto.default instead, which for these
+    # widgets is min_value -- so the row read 1/8/8 while the server (and the plot) held
+    # 5/24/24, and the next rerun echoed 1/8/8 back and shrank the plot. The page seeds
+    # these at its top on every run, but the row itself only appears once a plot exists,
+    # so the seed always landed a run early. Re-writing the stored value here puts the
+    # write in the same run as the widget, which is what makes Streamlit push it.
+    # `value=` would fix it too, but only by trading this for the duplication warning.
     for state_key, default in (("plot_point_size", DEFAULT_POINT_SIZE),
                                ("plot_axis_label_size", DEFAULT_AXIS_LABEL_FONT_SIZE),
                                ("plot_legend_size", DEFAULT_LEGEND_FONT_SIZE),
                                ("plot_colormap", DEFAULT_COLORMAP),
                                ("plot_show_group_counts", False)):
-        if state_key not in st.session_state:
-            st.session_state[state_key] = default
+        st.session_state[state_key] = st.session_state.get(state_key, default)
 
     cols = st.columns(num_cols)
     col_idx = 0

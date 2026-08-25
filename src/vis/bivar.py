@@ -214,7 +214,7 @@ def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
         xanchor='left'
     )
 
-def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i):
+def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i, scatter_cls=go.Scatter):
     """Helper function to plot GMM ellipses."""
    # Calculate eigenvalues and eigenvectors for ellipse orientation
     eigenvals, eigenvecs = np.linalg.eigh(cov)
@@ -235,8 +235,10 @@ def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i):
     ellipse_x_rot = ellipse_x * cos_angle - ellipse_y * sin_angle + mean_x
     ellipse_y_rot = ellipse_x * sin_angle + ellipse_y * cos_angle + mean_y
 
-    # Add ellipse to plot
-    fig.add_trace(go.Scatter(
+    # Add ellipse to plot. scatter_cls, not go.Scatter: the ellipse is drawn after the
+    # points on the same axes, and Plotly paints the whole WebGL canvas above every SVG
+    # trace, so an SVG ellipse would sit under the cloud it outlines.
+    fig.add_trace(scatter_cls(
         x=ellipse_x_rot,
         y=ellipse_y_rot,
         mode='lines',
@@ -313,7 +315,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     grouped_list = list(grouped)
 
     # Add all points using interleaved plotting function
-    add_interleaved_points_trace(
+    point_cls = add_interleaved_points_trace(
         fig=fig,
         grouped=grouped_list,
         color_map=color_map,
@@ -367,7 +369,9 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                 y_range = reg_model.predict(x_range.reshape(-1, 1))
 
                 # Add regression line to plot
-                fig.add_trace(go.Scatter(
+                # point_cls, not go.Scatter: this line is drawn after the points on the
+                # same axes, so in WebGL mode an SVG line would render under the cloud.
+                fig.add_trace(point_cls(
                     x=x_range,
                     y=y_range,
                     mode='lines',
@@ -413,7 +417,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
 
                         table_md.append(f"| {i+1} | {mean_x:.2f} | {std_x:.2f} | {mean_y:.2f} | {std_y:.2f} | {weight:.2f} |")
                         # plot the gmm component using Ellipse
-                        _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color_map[color_group], color_group, i+1)
+                        _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color_map[color_group], color_group, i+1, scatter_cls=point_cls)
                     # use the best gmm model to predict the component membership of the current group
                     data_indices = group_data_2d.index
                     subpopulation_labels = best_gmm.predict(group_data_2d)
@@ -493,7 +497,9 @@ def _plot_convex_hull(
     label_col="k_means_cluster",
     polygon_color="#1f77b4",
     centers_raw=None,
-    line_width=2):
+    line_width=2,
+    scatter_cls=go.Scatter,
+):
     """
     Overlay per-cluster convex hull polygons (same color) and black × centroids
     onto an existing Plotly figure.
@@ -526,7 +532,7 @@ def _plot_convex_hull(
 
         poly = _cluster_hull_polygon(sub.to_numpy())
 
-        fig.add_trace(go.Scatter(
+        fig.add_trace(scatter_cls(
             x=np.r_[poly[:, 0], poly[0, 0]],
             y=np.r_[poly[:, 1], poly[0, 1]],
             mode="lines",
@@ -540,7 +546,7 @@ def _plot_convex_hull(
         centers_raw = (df.groupby(label_col)[[g_col, s_col]]
                        .mean().reindex(unique_clusters).to_numpy())
 
-    fig.add_trace(go.Scatter(
+    fig.add_trace(scatter_cls(
         x=centers_raw[:, 0],
         y=centers_raw[:, 1],
         mode="markers",
@@ -648,7 +654,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
     grouped_list = list(grouped)
 
     # Add all points using interleaved plotting function
-    add_interleaved_points_trace(
+    point_cls = add_interleaved_points_trace(
         fig=fig,
         grouped=grouped_list,
         color_map=color_map,
@@ -680,7 +686,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
             group_df_with_clusters = group_df.copy()
             group_df_with_clusters["k_means_cluster"] = labels
 
-            _plot_convex_hull(fig, group_df_with_clusters, g_feature, s_feature, theme_color, "k_means_cluster", color_map.get(color_group, 'gray'), centers_raw, line_width=2)
+            _plot_convex_hull(fig, group_df_with_clusters, g_feature, s_feature, theme_color, "k_means_cluster", color_map.get(color_group, 'gray'), centers_raw, line_width=2, scatter_cls=point_cls)
 
             # Update the main dataframe with cluster labels
             assigned_labels = [f"{color_group}_group{label + 1}" for label in labels]

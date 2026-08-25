@@ -9,6 +9,7 @@ from scipy.stats import gaussian_kde, median_abs_deviation, norm, ttest_ind
 from sklearn.mixture import GaussianMixture
 
 from src.emojis import sad_emoji
+from src.vis.plot_defaults import WEBGL_POINT_THRESHOLD
 from src.widgets.visualization_widgets import comparison_pair_widget
 
 
@@ -23,6 +24,20 @@ def get_context_theme_color():
     None until the browser reports in, which falls through to the dark-mode color.
     """
     return "black" if st.context.theme.type == "light" else "white"
+
+
+def point_trace_class(n_points):
+    """``go.Scattergl`` once a figure draws ``WEBGL_POINT_THRESHOLD`` points, else ``go.Scatter``.
+
+    SVG costs one ``<path>`` DOM node per point, so a 14k-cell figure makes the browser
+    walk and re-rasterise 14k nodes every time the page scrolls. WebGL holds the same
+    points in typed-array buffers and adds no nodes.
+
+    Decide this ONCE per figure from its total point count, never per trace: Plotly paints
+    every WebGL trace beneath every SVG one, so a figure mixing the two would layer its
+    colour groups by renderer rather than by draw order.
+    """
+    return go.Scattergl if n_points >= WEBGL_POINT_THRESHOLD else go.Scatter
 
 def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
     """
@@ -807,7 +822,10 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
         if hasattr(trace, 'name') and trace.name in skip_trace_names:
             continue
         if hasattr(trace, 'marker') and trace.marker:
-            if trace.type == 'scatter' or trace.type == 'box' and trace.marker:
+            # 'scattergl' as well as 'scatter': point_trace_class swaps in the WebGL trace
+            # above WEBGL_POINT_THRESHOLD, and a gate that named only 'scatter' would walk
+            # straight past those traces and silently leave Point Size doing nothing.
+            if trace.type in ('scatter', 'scattergl') or trace.type == 'box' and trace.marker:
                 trace.marker.size = point_size
 
     # Update annotation font sizes to match axis label size
@@ -847,7 +865,11 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     ghost_traces = []
     seen_legendgroups = set()
     for trace in fig.data:
-        if trace.type != 'scatter':
+        # WebGL data traces must reach this block too, or a large figure keeps its
+        # trace-tied legend markers and never gets the decoupled ghost entries. The ghosts
+        # themselves stay go.Scatter below: they draw a single None point, so SVG is right
+        # for a legend swatch and costs no WebGL trace.
+        if trace.type not in ('scatter', 'scattergl'):
             continue
         if hasattr(trace, 'name') and trace.name in skip_trace_names:
             continue
@@ -1016,8 +1038,10 @@ def add_interleaved_points_trace(
     
     Returns:
     --------
-    fig : plotly.graph_objects.Figure
-        The figure with traces added
+    scatter_cls : type
+        The trace class used for the points (``go.Scatter`` or ``go.Scattergl``). Overlays
+        drawn on the same axes after this call must use it too -- see the note at the
+        return statement.
     """
     import math
     import random
@@ -1093,6 +1117,12 @@ def add_interleaved_points_trace(
     # Find maximum number of batches across all colors
     max_batches = max(len(batches) for batches in batches_by_color.values())
 
+    # One renderer for every batch of every colour, decided from the figure's total. Chosen
+    # once rather than per batch because Plotly paints every WebGL trace beneath every SVG
+    # one: a mixed figure would stack its colours by renderer and undo the interleaving this
+    # function exists to produce.
+    scatter_cls = point_trace_class(sum(len(c['x']) for c in points_by_color.values()))
+
     # Interleave batches: add batch i from each color before moving to batch i+1
     for batch_idx in range(max_batches):
         for color_group in sorted_color_groups:
@@ -1105,11 +1135,15 @@ def add_interleaved_points_trace(
             start_idx, end_idx = batches[batch_idx]
             columns = points_by_color[color_group]
 
-            # Build arrays for this batch
-            x_vals = columns['x'][start_idx:end_idx].tolist()
-            y_vals = columns['y'][start_idx:end_idx].tolist()
-            text_vals = columns['text'][start_idx:end_idx].tolist()
-            customdata_vals = columns['customdata'][start_idx:end_idx].tolist()
+            # Build arrays for this batch. Left as numpy rather than .tolist(): Plotly 6
+            # serialises a numpy array to base64 binary, which measured ~30% off the wire
+            # payload and skips building a Python list per batch, while a list round-trips
+            # as JSON numbers. The string columns gain nothing from it but stay numpy so
+            # every column is sliced the same way.
+            x_vals = columns['x'][start_idx:end_idx]
+            y_vals = columns['y'][start_idx:end_idx]
+            text_vals = columns['text'][start_idx:end_idx]
+            customdata_vals = columns['customdata'][start_idx:end_idx]
 
             # Map visual properties to arrays. These stay full-length lists even though
             # each batch has a single shape/opacity group: apply_plot_styling reads
@@ -1124,7 +1158,7 @@ def add_interleaved_points_trace(
             show_in_legend = (batch_idx == 0)
 
             fig.add_trace(
-                go.Scatter(
+                scatter_cls(
                     x=x_vals,
                     y=y_vals,
                     mode='markers',
@@ -1149,7 +1183,13 @@ def add_interleaved_points_trace(
         hovermode='closest'
     )
 
-    return fig
+    # The renderer, not the figure: callers mutate the figure they passed in, but any
+    # overlay they draw AFTER this call (regression line, cluster hulls, centroids) must
+    # use the SAME class. Plotly paints the whole WebGL canvas above every SVG trace, so
+    # trace order cannot rescue an SVG overlay -- it lands under the cloud it is meant to
+    # sit on. A GL overlay added after the points paints above them, because GL traces do
+    # stack in trace order within the canvas.
+    return scatter_cls
 
 def add_point_legend_traces(fig, shape_map, opacity_map, shape_by=None, opacity_by=None):
     """
