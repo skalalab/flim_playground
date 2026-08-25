@@ -14,10 +14,12 @@ FLIM Playground allows you to extract single-cell features from <span title="can
 
 ## 🎡 Playground Construction News
 
+- 🎨 **Subcolor: a second colour dimension** — In *Feature Comparison*, nest a categorical column inside the colour channel: every value gets its own colour, held consistent across the whole figure, so you can read two categories at once without spending the shape channel. It shares the encoding row with *Shape by* — flip the switch to choose which role the picker plays. Missing data (`N/A`) is held out of the opacity ramp so it can never outrank a real level.
+- ⚡ **Speed & scale** — Point plots switch to WebGL rendering above 5,000 drawn points, so large figures no longer freeze the page on scroll; styling tweaks restyle the existing figure instead of rebuilding it, and the KDE overlay is no longer quadratic in point count. In *Data Extraction*, lifetime curve fitting runs across CPU cores via multiprocessing, and raw-data checks are keyed on the files they actually read, so reassigning one channel no longer re-decodes every later channel's files.
+- 🎯 **"Except:" selections** — Every categorical filter and feature picker takes an *Except:* mode, so keeping all-but-a-few is one click instead of many. Filters also narrow symmetrically against each other, so the order of columns in your config no longer decides which filter combinations are reachable.
 - 🧪 **Derived feature extraction & analysis** — Build custom mathematical features (e.g., redox ratios like `A / (A + B)`, or ratio / difference formulas) using arithmetic expressions over existing features. These are appended as `Derived: <name>` columns and automatically consolidated into a unified **Derived Features** group in the Data Analysis layer.
 - 🗂️ **Multiple configuration profiles** — Save up to 10 named setups in *Data Extraction* (channels, file suffixes, feature extractors, fixed lifetimes, laser rate, …) and switch between them in one click from the Configuration page. *Data Analysis* configurations are profile-based too, so you can keep several datasets' settings side by side.
 - 📜 **Export Data Analysis as a Python script** — Download a standalone, editable Python script that reproduces all *Data Analysis* settings you see in FLIM Playground; also saves figures as publication-ready SVG.
-- 🚀 **Parallel curve fitting** — Lifetime curve fitting in *Data Extraction* runs across CPU cores via multiprocessing, so large batches finish much faster than sequential fitting.
 
 # Data Extraction Demo
 - Demo uses the T cell activation [dataset](example_data/Data_Extraction/T_cell_activation) from this [paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11425855/):
