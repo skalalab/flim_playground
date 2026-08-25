@@ -105,13 +105,11 @@ def filters_widget(df, categorical_cols):
     categories_to_filter = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1]
     if categories_to_filter:
         # Read every selection before rendering anything: each filter's options depend on
-        # the other filters, so they all have to come from one consistent snapshot.
-        #
-        # Two forms are kept for each filter: the stored one the widget shows, which may
-        # carry the "Except:" sentinel, and the effective one the cross-filtering works
-        # on, which is always a plain list of values (or ["All"] for no constraint). The
-        # effective form is re-derived here on every rerun, so "all except X" keeps meaning
-        # that as the data changes rather than freezing into a list of everything-but-X.
+        # the others, so they all come from one consistent snapshot. Each filter keeps two
+        # forms — the stored one the widget shows, which may carry the "Except:" sentinel,
+        # and the effective one the cross-filtering uses, always a plain list of values
+        # (or ["All"] for no constraint). The effective form is re-derived every rerun, so
+        # "all except X" tracks the data instead of freezing into a fixed list.
         present_values, stored_selections, effective_selections = {}, {}, {}
         for category in categories_to_filter:
             values = df[category].unique().tolist()
@@ -143,12 +141,10 @@ def filters_widget(df, categorical_cols):
             with cols[i]:
                 offered = reachable[category]
                 if category in exclude_mode:
-                    # Narrowed by the other filters like any other filter, so an exclusion
-                    # only ever offers values that combination actually has -- but the ones
-                    # already excluded stay on the list even once another filter has made
-                    # them unreachable. Dropping those would hand the widget a session-state
-                    # value it does not offer (Streamlit raises) and would silently forget
-                    # an exclusion the user still wants once they widen that filter again.
+                    # Narrowed by the other filters like any other filter, but already-
+                    # excluded values stay on the list even once unreachable: dropping them
+                    # would hand the widget a session-state value it does not offer
+                    # (Streamlit raises) and forget an exclusion the user still wants.
                     offered = offered | set(excluded_items(stored_selections[category]))
                 unique_values_for_current_filter = natural_tuple_sort(list(offered), delimiter='_')
                 unique_values_for_current_filter.extend([ALL_LABEL, EXCEPT_LABEL])
@@ -223,21 +219,21 @@ def filters_widget(df, categorical_cols):
     if numerical_cols:
         # Layout for numerical filter controls
         # Use a while loop to allow for multiple filters
-        
+
         i = 0
         while True:
             # Layout for the current filter row
             num_col1, num_col2, num_col3, num_col4 = st.columns([1, 0.5, 1, 0.5])
-            
+
             with num_col1:
                 feature = st.selectbox(f"Select Feature {i+1}", ["None"] + numerical_cols, key=f"num_filter_feature_{i}")
-            
+
             if feature == "None":
                 break
-            
+
             with num_col2:
                 op = st.selectbox("Operator", [">", "<="], key=f"num_filter_operator_{i}_{feature}")
-            
+
             with num_col3:
                 if final_filtered_df.empty:
                     st.warning("No data available.")
@@ -247,15 +243,15 @@ def filters_widget(df, categorical_cols):
                 f_min = float(final_filtered_df[feature].min())
                 f_max = float(final_filtered_df[feature].max())
                 f_mean = float(final_filtered_df[feature].mean())
-                
+
                 # Handle case where min == max (single value)
                 if f_min == f_max:
                     f_min -= 0.01
                     f_max += 0.01
-                
+
                 # Widget key including feature to ensure uniqueness when feature changes
                 threshold_key = f"num_filter_threshold_{i}_{feature}"
-                
+
                 # Clamp existing session state value to new range if it exists
                 if threshold_key in st.session_state:
                     current_val = st.session_state[threshold_key]
@@ -263,29 +259,29 @@ def filters_widget(df, categorical_cols):
                         st.session_state[threshold_key] = f_min
                     elif current_val > f_max:
                         st.session_state[threshold_key] = f_max
-                
+
                 thresh = st.number_input(
                     f"Threshold ({f_min:.2f} - {f_max:.2f})", 
-                    value=f_mean, 
-                    min_value=f_min, 
-                    max_value=f_max, 
+                    value=f_mean,
+                    min_value=f_min,
+                    max_value=f_max,
                     key=threshold_key
                 )
-            
+
             # Apply the filter immediately so the next iteration uses the filtered data
             if op == ">":
                 final_filtered_df = final_filtered_df[final_filtered_df[feature] > thresh]
             else:
                 final_filtered_df = final_filtered_df[final_filtered_df[feature] <= thresh]
-            
+
             with num_col4:
                 st.write("") # Spacer
                 st.write("")
                 add_another = st.checkbox("Add another", key=f"add_another_num_filter_{i}")
-            
+
             if not add_another:
                 break
-                
+
             i += 1
 
     return final_filtered_df

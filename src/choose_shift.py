@@ -52,21 +52,7 @@ def choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_a
     results = fit_curves(duration, time_bins, sample_decays, irf, num_components, fitting_algo, fitting_mode, fit_shift=True, shift_guess=shift_guess, start=start, end=end, fixed_lifetimes=fixed_lifetimes, _progress_callback=shift_progress_callback)
     shift_progress.empty()  # Remove progress bar when done
     results["decay_curves"] = sample_decays
-    #results["original_decay_curves"] = original_decays
     results["decay_id"] = list(decay_curves.keys())
     results["irf"] = irf
     return "", results
-
-def _floor_decay_curves(decay_curves: list) -> list:
-    # floor the decay curves to be non-negative
-    for i, decay_curve in enumerate(decay_curves):
-        # find the minimum value non-zero value from the start of the decay curve
-        try:
-            min_value = np.min(decay_curve[decay_curve > 0])
-        except Exception as e:
-            min_value = 0
-        decay_curves[i] = decay_curve - min_value
-        # clip the decay curve to be non-negative
-        decay_curves[i] = np.clip(decay_curves[i], 0, None)
-    return decay_curves
 

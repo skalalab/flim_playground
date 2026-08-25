@@ -7,10 +7,8 @@ from src.navigation import render_top_menu
 def main():
     """Main function to run the Streamlit app."""
     st.set_page_config(layout="wide", page_icon="⚙️")
-    
-    # Render the top menu on the main page
+
     render_top_menu()
-    # Display the logo
     import sys
     from pathlib import Path
 
@@ -43,14 +41,10 @@ def main():
     full_cfg = _migrate_extraction_config_to_profiles(load_config())
     active = get_current_profile_name()
 
-    # Logo and the profile controls share one compact row; the "Configuration"
-    # header sits above the three controls (sub-columns, not stacked). Quick links
-    # live at the very bottom of the page, below the "Update Configuration" button.
-    # On a fresh install there is no config.toml yet, so list_profiles() is
-    # empty. Fall back to the active ("default") profile so the selectbox below
-    # never renders with empty options (which would return None and crash on
-    # set_current_profile(None)); the profile is seeded with app defaults further
-    # down and persisted on the first "Update Configuration" click.
+    # On a fresh install there is no config.toml yet, so list_profiles() is empty. Fall
+    # back to the active ("default") profile: an empty selectbox returns None and
+    # set_current_profile(None) crashes. The profile is seeded with app defaults below
+    # and persisted on the first "Update Configuration" click.
     profiles = list_profiles() or [active]
     logo_col, welcome_col, profile_col = st.columns([1.5, 1.8, 3.5], vertical_alignment="center")
     with logo_col:
@@ -129,8 +123,8 @@ def main():
     all_feature_extractors = ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture"]
     if "all_feature_extractors" not in cfg:
         cfg["all_feature_extractors"] = all_feature_extractors
-    
-    # Initialization: 
+
+    # Initialization:
     if "flim_decay_input_types" not in cfg:
         cfg["flim_decay_input_types"] = all_flim_decay_input_types
 
@@ -187,7 +181,7 @@ def main():
             with cols[2]:
                 # get the fluorescence lifetime standard's lifetime (shared across channels)
                 cfg[flim_decay_input_type]["fluorescence_lifetime_standard_lifetime"] = st.number_input("Fluorescence lifetime standard's lifetime **(ns)**", value=cfg.get(flim_decay_input_type, {}).get("fluorescence_lifetime_standard_lifetime", 1.0), min_value=0.1, max_value=20.0, key=f"fluorescence_lifetime_standard_lifetime_{flim_decay_input_type}_{active}")
-       
+
         # feature extractor initialization
     if "available_feature_extractors" not in cfg[flim_decay_input_type]:
         if flim_decay_input_type == "Decay (2D)":
@@ -199,7 +193,7 @@ def main():
     if "available_feature_extractors" not in cfg[intensity_only_input_type]:
         cfg[intensity_only_input_type]["available_feature_extractors"] = ["Intensity morphology", "Intensity texture"]
 
-    # Migration: profiles seeded before "Intensity texture" was offered for 2D gain it now.
+    # Profiles seeded before "Intensity texture" was offered for 2D gain it here.
     d2d = cfg.get("Decay (2D)", {})
     if "available_feature_extractors" in d2d and "Intensity texture" not in d2d["available_feature_extractors"]:
         d2d["available_feature_extractors"].append("Intensity texture")
@@ -222,7 +216,7 @@ def main():
                 cfg[input_type]["file_types"] = ["Decay", "IRF"]
             elif input_type == "Intensity (2D)":
                 cfg[input_type]["file_types"] = ["Intensity (2D)", "Mask"]
-    
+
     # check for duplicate channel names
     channel_names = []
     # Channels render as side-by-side columns. With more than 4 channels, fold
@@ -274,11 +268,11 @@ def main():
             available_feature_extractors = cfg[input_type]["available_feature_extractors"]
             selected_feature_extractors = st.multiselect(f"Extract feature types from {custom_channel_name}", available_feature_extractors, default= cfg[channel_key][input_type].get("selected_feature_extractors", []), key=f"{input_type}_{channel_key}_feature_extractors_{active}")
             cfg[channel_key][input_type]["selected_feature_extractors"] = selected_feature_extractors
-            if len(selected_feature_extractors) == 0: 
+            if len(selected_feature_extractors) == 0:
                 error_msg = f"Please select at least one feature type for {custom_channel_name}. Or you can adjust the number of channels on the top. "
                 st.error(f"{error_msg} {sad_emoji}")
                 continue
-              
+
             # get the number of components for each channel if Lifetime is in selected feature extractors and fit is in selected modules
             if "Lifetime fit" in selected_feature_extractors:
                 num_components = st.number_input(f"Number of components for {custom_channel_name}", value=cfg[channel_key][input_type].get("num_components", 1), min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis", key=f"num_components_{channel_key}_{input_type}_{active}")
@@ -345,8 +339,8 @@ def main():
             cfg[flim_decay_input_type]["duration"] = st.number_input(f"{flim_decay_input_type} duration (**ns**)", value=cfg.get(flim_decay_input_type, {}).get("duration", 20.0), min_value=0.0, max_value=100.0, key=f"{flim_decay_input_type}_duration_{active}")
         with cols[1]:
             cfg[flim_decay_input_type]["time_bins"] = st.number_input(f"{flim_decay_input_type} time bins", value=cfg.get(flim_decay_input_type, {}).get("time_bins", 1024), min_value=10, key=f"{flim_decay_input_type}_time_bins_{active}")
-      
-       
+
+
     # render a multiselect for categorical columns
     categorical_cols = st.multiselect("Categorical columns (type to add more)", cfg.get("categorical_cols", []), default=cfg.get("categorical_cols", []),  accept_new_options=True, key=f"categorical_cols_{active}")
     cfg["categorical_cols"] = categorical_cols

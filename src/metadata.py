@@ -27,7 +27,7 @@ def get_ch_info(metadata_df):
         if channel_name not in metadata_dict:
             metadata_dict[channel_name] = {}
             metadata_dict["channel_names"].append(channel_name)
-       
+
         # get input type
         input_type_col = f"{channel_name}_input_type"
         # check for consistency of input type
@@ -89,11 +89,10 @@ def get_ch_info(metadata_df):
                 # no need to shift if channel-specific fluorescence lifetime standard file is provided
                 channel_ref_col = f"{channel_name}_Fluorescence Lifetime Standard"
                 # No IRF shift is needed when a per-channel fluorescence lifetime
-                # standard provides calibration; only fall back to "fit free"
-                # otherwise. (A bare `continue` here also skipped channel_no below.)
+                # standard provides calibration; only fall back to "fit free" otherwise.
                 if channel_ref_col not in metadata_df.columns:
                     metadata_dict["channels_shift"][channel_name] = "fit free"
-        
+
         if "Decay (3/4D)" in input_type:
             if "prefitted" in input_type:
                 if len(selected_feature_extractors) == 1 and "Lifetime fit" in selected_feature_extractors:
@@ -106,15 +105,15 @@ def get_ch_info(metadata_df):
 
     metadata_dict["unique_cell_id_col"] = get_unique_cell_id_col()
     metadata_dict["fov_name_col"] = get_fov_name_col()
-    
-    if fit_free:    # laser rate is only needed when fit free 
+
+    if fit_free:    # laser rate is only needed when fit free
         if "laser_rate" in metadata_df.columns:
             if metadata_df["laser_rate"].nunique() != 1:
                 return _inconsistent("Laser rate column laser_rate"), None
             metadata_dict["laser_rate"] = metadata_df["laser_rate"].iloc[0]
         else:
             return _not_found("Laser rate column laser_rate"), None
-        
+
         if "fit_free_calibration_method" in metadata_df.columns:
             if metadata_df["fit_free_calibration_method"].nunique() != 1:
                 return _inconsistent("Fit free calibration method column fit_free_calibration_method"), None
@@ -181,7 +180,7 @@ def parse_metadata_file(metadata_df, fov_name_col):
         available_file_types = get_file_types(input_type)
         for file_type in available_file_types:
             if f"{channel_name}_{file_type}" in metadata_df.columns and file_type != "IRF":
-               # then this is a column storing file paths 
+               # then this is a column storing file paths
                # check if all file paths are valid and if they are unique
                if metadata_df[f"{channel_name}_{file_type}"].duplicated().any():
                    return f"File paths for {channel_name}_{file_type} are not unique.", None
@@ -190,7 +189,7 @@ def parse_metadata_file(metadata_df, fov_name_col):
                for file_path in metadata_df[f"{channel_name}_{file_type}"]:
                    if not Path(file_path).exists():
                        return f"File path {file_path} for {channel_name}_{file_type} is not valid.", None
-    
+
     if has_flim:
         # check for time bins, duration
         if "time_bins" in metadata_df.columns:

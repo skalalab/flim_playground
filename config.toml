@@ -1,4 +1,4 @@
-current_profile = "default"
+current_profile = "test"
 
 [profiles.default]
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
@@ -9,14 +9,29 @@ intensity_only_input_type = "Intensity (2D)"
 num_channels = 2
 unique_cell_id_col = "cell_id"
 fov_name_col = "image_name"
+[[profiles.default.derived_features]]
+name = "redox_norm"
+expression = "A/(A+B)"
+operands = [ "Intensity texture_NAD(P)H: intensity_sum", "Intensity texture_FAD: intensity_sum",]
 
 [profiles.test]
 all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
-categorical_cols = [ "experiment", "patient_id", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "replicate",]
+categorical_cols = [ "experiment", "patient_id", "day", "hour", "cell_type", "media", "cell_line", "treatment", "condition", "replicate", "dish",]
 flim_decay_input_type = "Decay (3/4D)"
 intensity_only_input_type = "Intensity (2D)"
-num_channels = 2
+num_channels = 1
+unique_cell_id_col = "cell_id"
+fov_name_col = "image_name"
+derived_features = []
+
+[profiles.prefitted_test]
+all_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+flim_decay_input_types = [ "Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)",]
+categorical_cols = [ "treatment", "cell_line", "day",]
+flim_decay_input_type = "Decay (3/4D) pixel-prefitted"
+intensity_only_input_type = "Intensity (2D)"
+num_channels = 1
 unique_cell_id_col = "cell_id"
 fov_name_col = "image_name"
 
@@ -40,12 +55,15 @@ file_types = [ "Decay", "IRF", "Mask",]
 
 [profiles.default."Decay (3/4D) pixel-prefitted"]
 file_types = [ "Decay", "IRF", "Mask", "SPCImage t1",]
+laser_rate = 0.08
+fit_free_calibration = "IRF"
+available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
 
 [profiles.default."Decay (2D)"]
 file_types = [ "Decay", "IRF",]
 laser_rate = 0.05
 fit_free_calibration = "IRF"
-available_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
+available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity texture",]
 duration = 20.0
 time_bins = 1024
 
@@ -58,6 +76,11 @@ channel_name = "FAD"
 imaging_modality = "FLIM"
 input_type = "Decay (3/4D)"
 channel_name = "NAD(P)H"
+
+[profiles.default.ch3]
+imaging_modality = "Intensity-only"
+input_type = "Intensity (2D)"
+channel_name = "red"
 
 [profiles.test.spc_output_suffix]
 a1 = "_a1[%].asc"
@@ -82,16 +105,60 @@ file_types = [ "Decay", "IRF", "Mask", "SPCImage t1",]
 
 [profiles.test."Decay (2D)"]
 file_types = [ "Decay", "IRF",]
+laser_rate = 0.08
+fit_free_calibration = "IRF"
+available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity texture",]
+duration = 20.0
+time_bins = 1024
 
 [profiles.test.ch1]
 imaging_modality = "FLIM"
 input_type = "Decay (3/4D)"
-channel_name = "Channel 1"
+channel_name = "NADH"
 
 [profiles.test.ch2]
 imaging_modality = "FLIM"
+input_type = "Decay (2D)"
+channel_name = "FAD"
+
+[profiles.test.ch3]
+imaging_modality = "FLIM"
 input_type = "Decay (3/4D)"
-channel_name = "Channel 2"
+channel_name = "Channel 3"
+
+[profiles.test.ch4]
+imaging_modality = "FLIM"
+input_type = "Decay (3/4D)"
+channel_name = "Channel 4"
+
+[profiles.test.ch5]
+imaging_modality = "FLIM"
+input_type = "Decay (3/4D)"
+channel_name = "NAD(P)H"
+
+[profiles.test.ch6]
+imaging_modality = "Intensity-only"
+input_type = "Intensity (2D)"
+channel_name = "red"
+
+[profiles.prefitted_test.spc_output_suffix]
+a1 = "_a1[%].asc"
+t1 = "_t1.asc"
+a2 = "_a2[%].asc"
+t2 = "_t2.asc"
+a3 = "_a3[%].asc"
+t3 = "_t3.asc"
+
+[profiles.prefitted_test."Decay (3/4D) pixel-prefitted"]
+file_types = [ "Decay", "IRF", "Mask", "SPCImage t1",]
+laser_rate = 0.08
+fit_free_calibration = "IRF"
+available_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+
+[profiles.prefitted_test.ch1]
+imaging_modality = "FLIM"
+input_type = "Decay (3/4D) pixel-prefitted"
+channel_name = "NAD(P)H"
 
 [profiles.default.ch1."Decay (3/4D)"]
 selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Lifetime fit", "Intensity texture",]
@@ -104,6 +171,10 @@ num_components = 2
 [profiles.default.ch1."Intensity (2D)"]
 selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
+[profiles.default.ch1."Decay (3/4D) pixel-prefitted"]
+selected_feature_extractors = [ "Lifetime fit",]
+num_components = 2
+
 [profiles.default.ch2."Decay (3/4D)"]
 selected_feature_extractors = [ "Lifetime fit free", "Intensity morphology", "Intensity texture", "Lifetime fit",]
 num_components = 2
@@ -115,13 +186,50 @@ num_components = 2
 [profiles.default.ch2."Intensity (2D)"]
 selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
 
-[profiles.test.ch1."Decay (3/4D)"]
+[profiles.default.ch2."Decay (3/4D) pixel-prefitted"]
 selected_feature_extractors = [ "Lifetime fit",]
-num_components = 1
+num_components = 2
+
+[profiles.default.ch3."Intensity (2D)"]
+selected_feature_extractors = [ "Intensity morphology",]
+
+[profiles.test.ch1."Decay (3/4D)"]
+selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free",]
+num_components = 2
+
+[profiles.test.ch1."Decay (2D)"]
+selected_feature_extractors = [ "Intensity texture",]
 
 [profiles.test.ch2."Decay (3/4D)"]
 selected_feature_extractors = [ "Lifetime fit",]
+num_components = 2
+
+[profiles.test.ch2."Decay (2D)"]
+selected_feature_extractors = [ "Lifetime fit",]
 num_components = 1
+
+[profiles.test.ch3."Decay (3/4D)"]
+selected_feature_extractors = [ "Lifetime fit",]
+num_components = 1
+
+[profiles.test.ch4."Decay (3/4D)"]
+selected_feature_extractors = [ "Lifetime fit",]
+num_components = 1
+
+[profiles.test.ch5."Decay (3/4D)"]
+selected_feature_extractors = [ "Lifetime fit free", "Lifetime fit", "Intensity morphology", "Intensity texture",]
+num_components = 2
+
+[profiles.test.ch6."Decay (3/4D)"]
+selected_feature_extractors = [ "Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture",]
+num_components = 1
+
+[profiles.test.ch6."Intensity (2D)"]
+selected_feature_extractors = [ "Intensity morphology", "Intensity texture",]
+
+[profiles.prefitted_test.ch1."Decay (3/4D) pixel-prefitted"]
+selected_feature_extractors = [ "Lifetime fit",]
+num_components = 2
 
 [profiles.default.ch1."Decay (3/4D)".input_suffixes]
 Decay = "_f.sdt"
@@ -140,6 +248,12 @@ IRF = "IRF.txt"
 "Intensity (2D)" = "_nadh.tif"
 Mask = "_cellpose.tiff"
 
+[profiles.default.ch1."Decay (3/4D) pixel-prefitted".fixed_lifetimes]
+
+[profiles.default.ch1."Decay (3/4D) pixel-prefitted".input_suffixes]
+Mask = ""
+"SPCImage t1" = ""
+
 [profiles.default.ch2."Decay (3/4D)".input_suffixes]
 Decay = "_n.sdt"
 IRF = "nadh_irf.txt"
@@ -157,16 +271,73 @@ IRF = ""
 "Intensity (2D)" = "_fad.tif"
 Mask = "_cellpose.tiff"
 
+[profiles.default.ch2."Decay (3/4D) pixel-prefitted".fixed_lifetimes]
+
+[profiles.default.ch2."Decay (3/4D) pixel-prefitted".input_suffixes]
+Mask = ""
+"SPCImage t1" = ""
+
+[profiles.default.ch3."Intensity (2D)".input_suffixes]
+"Intensity (2D)" = "_r.tiff"
+Mask = "_stain_mask.tiff"
+
 [profiles.test.ch1."Decay (3/4D)".fixed_lifetimes]
 
 [profiles.test.ch1."Decay (3/4D)".input_suffixes]
-Decay = ""
-IRF = ""
-Mask = ""
+Decay = ".sdt"
+IRF = "nadh_irf.txt"
+Mask = "_Ch2_summed_cellpose.tiff"
+
+[profiles.test.ch1."Decay (2D)".input_suffixes]
+Decay = ".csv"
 
 [profiles.test.ch2."Decay (3/4D)".fixed_lifetimes]
 
 [profiles.test.ch2."Decay (3/4D)".input_suffixes]
+Decay = "_f.sdt"
+IRF = "Ch1_IRF_890_2024.txt"
+Mask = "_cellpose.tiff"
+
+[profiles.test.ch2."Decay (2D)".fixed_lifetimes]
+
+[profiles.test.ch2."Decay (2D)".input_suffixes]
+Decay = ""
+IRF = ""
+
+[profiles.test.ch3."Decay (3/4D)".fixed_lifetimes]
+
+[profiles.test.ch3."Decay (3/4D)".input_suffixes]
 Decay = ""
 IRF = ""
 Mask = ""
+
+[profiles.test.ch4."Decay (3/4D)".fixed_lifetimes]
+
+[profiles.test.ch4."Decay (3/4D)".input_suffixes]
+Decay = ""
+IRF = ""
+Mask = ""
+
+[profiles.test.ch5."Decay (3/4D)".fixed_lifetimes]
+
+[profiles.test.ch5."Decay (3/4D)".input_suffixes]
+Decay = "n.sdt"
+IRF = "NADH_IRF.txt"
+Mask = "_mask.tiff"
+
+[profiles.test.ch6."Decay (3/4D)".fixed_lifetimes]
+
+[profiles.test.ch6."Decay (3/4D)".input_suffixes]
+Decay = ""
+IRF = ""
+Mask = ""
+
+[profiles.test.ch6."Intensity (2D)".input_suffixes]
+"Intensity (2D)" = ".tiff"
+Mask = "_mask.tiff"
+
+[profiles.prefitted_test.ch1."Decay (3/4D) pixel-prefitted".fixed_lifetimes]
+
+[profiles.prefitted_test.ch1."Decay (3/4D) pixel-prefitted".input_suffixes]
+Mask = "_Ch2_summed_cellpose.tiff"
+"SPCImage t1" = "_Ch2_summed_t1.asc"

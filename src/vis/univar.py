@@ -29,7 +29,7 @@ from .helpers import (
 def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab10"):
     if (df[fov_name_col] == "missing fov name").any():
         st.markdown("<h5 style='text-align: center; color: Orange;'>Warning: We cannot find the fov column from your dataset.  </h5>", unsafe_allow_html=True)
-    
+
     fig = go.Figure()
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
@@ -37,9 +37,9 @@ def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab1
     group_counts = df.dropna(subset=[selected_var]).groupby(GROUP_COL_NAME).size().to_dict()
 
     fov_names = df[fov_name_col].unique()
-    
+
     legend_added = set()
-    
+
     # Group by color first, then by FOV within each color group
     for color_group in unique_color_groups:
         group_df = df[df[GROUP_COL_NAME] == color_group]
@@ -47,12 +47,12 @@ def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab1
             fov_group_df = group_df[group_df[fov_name_col] == fov_name]
             if fov_group_df.empty:
                 continue
-            
+
             # Show legend only for the first occurrence of each color group
             show_legend = color_group not in legend_added
             if show_legend:
                 legend_added.add(color_group)
-            
+
             fig.add_trace(go.Box(
                 y=fov_group_df[selected_var],
                 name=format_group_label(color_group, group_counts.get(color_group), show_counts),  # color group name (optionally with count)
@@ -66,19 +66,18 @@ def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab1
                     f"<b>Group:</b> {color_group}<br>"
                 )
             ))
-    
+
     fig.update_layout(
         title=f'Distribution of {format_feature_label(selected_var)} by Field of View',
         xaxis_title=fov_name_col,
         yaxis_title=format_feature_label(selected_var),
-        showlegend=True, # Hide legend 
+        showlegend=True,
         hovermode='closest',
-       # xaxis={'categoryorder':'array', 'categoryarray': sorted(fov_names)}, # Sort boxes by name
         margin=dict(l=50, r=20, t=50, b=max(80, len(max(fov_names, key=len, default=''))*5)) # Adjust bottom margin for long names
     )
     # remove the column after plotting
-    df.drop(columns=[GROUP_COL_NAME], inplace=True) 
-    
+    df.drop(columns=[GROUP_COL_NAME], inplace=True)
+
     return fig
 
 def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10", log_x=False):
@@ -93,7 +92,7 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10", log_
     for color_group in unique_color_groups:
         group_df = df[df[GROUP_COL_NAME] == color_group]
         x_data = group_df[selected_var].dropna()
-        x_data_skewness = x_data.skew()  
+        x_data_skewness = x_data.skew()
         # Determine skewness interpretation based on rule of thumb
         if x_data_skewness < -1:
             direction = "strongly left-skewed"
@@ -109,7 +108,7 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10", log_
             direction = "moderately right-skewed"
         else:  # x_data_skewness > 1
             direction = "strongly right-skewed"
-        
+
         # Color the text using the same color as the plot
         st.markdown(f'<span style="color: {color_map[color_group]}"><strong>{color_group}</strong> skewness: {x_data_skewness:.3f} → {direction}</span>', unsafe_allow_html=True)
 
@@ -118,9 +117,8 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10", log_
         # Calculate histogram counts using the common bin edges derived from bin_width
         counts, bin_edges = np.histogram(x_data, bins=bin_edges)
 
-        # Calculate bin centers
         bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-    
+
         # Add line trace connecting bin centers
         fig.add_trace(go.Scatter(
             x=bin_centers,
@@ -195,7 +193,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
     fig = go.Figure()
     theme_color = get_context_theme_color()
     # fit a Gaussian Mixture Model (GMM) to each color group
-    
+
     # Collect tables for two-column display
     gmm_tables = []
     for color_group in unique_color_groups:
@@ -205,21 +203,19 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
         if x_data.empty:
             continue # Skip empty groups
 
-        # Fit GMM to the data
         # --- Fit GMMs with 1 to 3 components ---
         best_gmm = _find_best_gmm(x_data.values, max_components=fit_gmm_max_components, min_weight_threshold=fit_gmm_min_weight_threshold) # Use x_data.values for 1D
-        
+
         if best_gmm is None: # if no valid model is found, skip this group
             st.warning(f"No valid GMM found for group {color_group} with current constraints.")
             continue
-                    
+
         # use plotly to plot curve of the best gmm
         x = np.linspace(x_data.min(), x_data.max(), 1000).reshape(-1, 1)
         logprob = best_gmm.score_samples(x)
         pdf = np.exp(logprob)
         responsibilities = best_gmm.predict_proba(x)  # Component weights per point
         pdf_individual = responsibilities * pdf[:, np.newaxis]  # Individual component densities
-        # Plot the GMM
         fig.add_trace(go.Scatter(
             x=x.flatten(),
             y=pdf,
@@ -230,26 +226,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
                 f"<b>Group:</b> {color_group}<br>"
             )
         ))
-        # # add histogram plot
-        # fig.add_trace(go.Histogram(
-        #     x=x_data,
-        #     histnorm='probability density',
-        #     name=f'{color_group} Histogram',
-        #     opacity=0.5,
-        #     marker_color="gray",
-        #     hovertemplate=(
-        #         f"<b>Group:</b> {color_group}<br>"
-        #         f"<b>Count:</b> %{{y}}<extra></extra>"
-        #     ),
-        #     # not showing the legend
-        #     showlegend=False,
-        # ))
-        # Plot individual components if more than one
         if best_gmm.n_components > 1:
-            
-            # Plot individual components
-            # pdf_individual is already calculated above
-            # Plot each component with a different color
             pi = best_gmm.weights_
             mu = best_gmm.means_.flatten()
             sigma = np.sqrt(best_gmm.covariances_.ravel())
@@ -262,8 +239,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
             table_md.append("|-----------|-------|-----------|--------|")
             for rank, i in enumerate(sorted_indices):
                 table_md.append(f"| {rank+1}       | {mu[i]:.2f} | {sigma[i]:.2f}    | {pi[i]:.2f}  |")
-            
-            # Store table for later display
+
             gmm_tables.append("\n".join(table_md))
 
             h_index = 0
@@ -299,7 +275,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
                 pi, mu, sigma = pi[sorted_indices], mu[sorted_indices], sigma[sorted_indices]
                 thresholds = []
                 for i in range(len(mu) - 1):
-                    try: 
+                    try:
                         t = find_intersection(pi[i], mu[i], sigma[i],
                               pi[i+1], mu[i+1], sigma[i+1])
                         thresholds.append(t)
@@ -333,7 +309,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
                 # numbered by ascending-mean rank to match the component table above.
                 assigned_labels = _assign_subpopulation_labels(x_data.values, best_gmm, None, color_group)
             df.loc[data_indices, "GMM_group"] = assigned_labels
-    
+
     # Display tables in two columns using modular arithmetic
     if gmm_tables:
         col1, col2 = st.columns(2)
@@ -344,10 +320,10 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
             else:  # Odd indices (1, 3, 5, ...) go to column 2
                 with col2:
                     st.markdown(table)
-            
+
     if h_index_msg != "": 
-        st.info(h_index_msg)    
-    
+        st.info(h_index_msg)
+
     # data is log-transformed upstream (data_analysis.py) when log_x is set; wrap the label to match
     pretty_var = format_feature_label(selected_var)
     x_axis_label = f"log₁₀({pretty_var})" if log_x else pretty_var
@@ -371,7 +347,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
         # hover tooltip styling is applied centrally in apply_plot_styling (theme-aware)
         margin=dict(l=50, r=20, t=50, b=80)
     )
-    
+
     # remove the column after plotting
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
 
@@ -391,10 +367,10 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         add_boxplot = st.checkbox("Add boxplot", value=False, key=f"add_boxplot_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
     with col3:
         connect_means = st.checkbox("Connect means", value=False, key=f"connect_means_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
-    
+
     # Create a working copy to avoid modifying the original dataframe
     df = df.copy()
-    
+
     # Apply log transform if requested (consistent with bivar.py)
     if log_y:
         if (df[selected_var] < 0).any():
@@ -420,7 +396,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
     compare_groups = list(color_map.keys())
     show_counts = st.session_state.get("plot_show_group_counts", False)
     group_counts = df.dropna(subset=[selected_var]).groupby(COLOR_GROUP_COL_NAME).size().to_dict()
-    
+
     # Apply custom order early so compare_pairs uses the reordered groups
     # This is critical for Glass's Delta where the first group in the pair is the control
     ordered_compare_groups = list(compare_groups)
@@ -428,20 +404,20 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         custom_cmp = [g for g in custom_order['compare_groups'] if g in ordered_compare_groups]
         remaining_cmp = [g for g in ordered_compare_groups if g not in custom_cmp]
         ordered_compare_groups = custom_cmp + remaining_cmp
-    
+
     # Generate pairs from ordered groups so Glass's Delta uses correct control group
     compare_pairs = list(combinations(ordered_compare_groups, 2))
-    point_size = 5   
-    
+    point_size = 5
+
     # Track legend entries to avoid duplicates
     legend_entries = set()
-    
+
     # Calculate x-positions for separate sections - only for existing combinations
-    
+
     if separate_groups:
         # First, find which combinations actually exist in the data
         existing_combinations = []
-        
+
         # Apply custom order to separate_groups if provided
         ordered_separate_groups = list(separate_groups)
         if custom_order and 'separate_groups' in custom_order:
@@ -453,7 +429,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
 
         for separate_group in ordered_separate_groups:
             section_combinations = []
-            
+
             # Use ordered_compare_groups (already set with custom order at function start)
             for color_group in ordered_compare_groups:
                 combo_exists = any(
@@ -464,25 +440,24 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 if combo_exists:
                     section_combinations.append((separate_group, color_group))
             existing_combinations.append(section_combinations)
-        
+
         # Now calculate positions only for existing combinations
         x_positions = {}
         x_tick_positions_actual = []
         x_tick_labels_actual = []
         section_spacing = 0.5  # Reduced gap size between sections
         current_x = 0
-        
+
         for section_idx, section_combinations in enumerate(existing_combinations):
             if section_idx > 0:
                 current_x += section_spacing  # Add spacing between sections
-            
+
             for separate_group, color_group in section_combinations:
                 x_positions[(separate_group, color_group)] = current_x
                 x_tick_positions_actual.append(current_x)
                 x_tick_labels_actual.append("" if color_group == "all_data" else color_group)
                 current_x += 1
-        
-        # Store for later use in x-axis configuration
+
         separate_sections_info = []
         current_x = 0
         for section_idx, section_combinations in enumerate(existing_combinations):
@@ -491,11 +466,10 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             section_start = current_x
             section_end = current_x + len(section_combinations) - 1
             section_center = (section_start + section_end) / 2 if section_combinations else current_x
-            # The group name comes from the first element of the first combination in the section, 
-            # or we need to track it from ordered_separate_groups. 
-            # Since existing_combinations aligns with ordered_separate_groups...
+            # existing_combinations is built in ordered_separate_groups order,
+            # so section_idx indexes both.
             group_name = ordered_separate_groups[section_idx]
-            
+
             separate_sections_info.append({
                 'group': group_name,
                 'center': section_center,
@@ -513,30 +487,24 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         g_key, _ = item
         color_g = g_key[0]
         separate_g = g_key[3]
-        
-        # Get indices with default fallback
+
         c_idx = float('inf')
         if color_g in ordered_compare_groups:
             c_idx = ordered_compare_groups.index(color_g)
-            
+
         s_idx = float('inf')
         if separate_groups and separate_g in ordered_separate_groups:
             s_idx = ordered_separate_groups.index(separate_g)
         elif not separate_groups:
             s_idx = 0
-            
+
         return (s_idx, c_idx)
 
     grouped_list.sort(key=group_sort_key)
 
-    # --- Rows drawn per (separate section, colour group) ---
-    # Pooled from the subgroups rather than sliced out of df, so this holds exactly the
-    # rows the loop below draws: a row whose shape/opacity value is NaN belongs to no
-    # subgroup and must not reach a statistic either.
-    #
-    # POSITIONS, not index labels, so a row can be found again without assuming anything
-    # about the filtered frame's index; sorted, so the pooled order is row order and does
-    # not depend on which subgroups exist or the order they are visited in.
+    # Row positions drawn in each (separate section, colour group) cell, pooled from the
+    # subgroups so a row with a NaN shape/opacity value is excluded here too. Positions
+    # rather than index labels, sorted, so the pooled order is row order.
     all_y = df[selected_var].to_numpy(dtype=float)
     pooled_rows = {}
     for group_key, group_df in grouped_list:
@@ -555,14 +523,9 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             return x_positions.get((separate_group, color_group))
         return x_positions.get(color_group)
 
-    # --- Sina jitter: density-based horizontal spread, per colour group ---
-    # The KDE and the rng that place a point belong to the colour group, because the
-    # colour group is what owns the x position -- it is the only thing whose density the
-    # silhouette can be read as describing. Fitting them per (colour, shape, opacity)
-    # subgroup instead re-estimated every density over a fraction of the rows, so
-    # switching shape_by or opacity_by on redrew the whole silhouette and moved every
-    # point sideways: a change to the geometry that the reader would attribute to the
-    # data. Scoped here, those channels change what a point looks like and nothing else.
+    # Sina jitter: horizontal spread proportional to local density. The KDE and the rng
+    # are scoped to the colour group, which owns the x position, so shape_by/opacity_by
+    # change point styling only and never move a point.
     x_of_row = np.full(len(df), np.nan)
     for (separate_group, color_group), rows in pooled_rows.items():
         x_position = cell_x_position(separate_group, color_group)
@@ -593,16 +556,16 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         shape_group = group_key[1]
         opacity_group = group_key[2]
         separate_group = group_key[3]
-        
+
         # Skip if not in our color groups (shouldn't happen but safety check)
         if color_group not in compare_groups:
             continue
-                
+
         # Drop rows where the variable to plot is NaN
         group_df = group_df.dropna(subset=[selected_var])
         if group_df.empty:
             continue
-            
+
         # --- Prepare Hover Information ---
         hovertemplate_parts = [
             f"<b>{pretty_var}:</b> %{{y:.3f}}<br>" # Display the Y value
@@ -613,32 +576,24 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         hovertemplate_parts.append("<b>fov:</b> %{customdata}<br>")
         hovertemplate_parts.append("<extra></extra>") # Hide the default trace info box
         final_hovertemplate = "".join(hovertemplate_parts)
-        
+
         # --- Determine x-position and visual properties ---
-        # The position itself is already baked into x_of_row; this is the same skip the
-        # jitter pass made, repeated so a subgroup with nowhere to go is not accumulated.
+        # Same skip as the jitter pass: a subgroup with no x position is not accumulated.
         if cell_x_position(separate_group, color_group) is None:
             continue
 
         marker_color = color_map[color_group]
         marker_opacity = opacity_map.get(opacity_group, 0.7) if opacity_map and opacity_group is not None else 0.7
         marker_symbol = shape_map.get(shape_group, 'circle') if shape_map and shape_group is not None else 'circle'
-        
-        # Legend bookkeeping belongs with the draw, which is now deferred to the second
-        # pass below -- claiming the entry here would mark every colour group as already
-        # shown before a single trace exists.
 
         # Each row's x was assigned per colour group above; look it up rather than
         # recomputing, so a subgroup cannot get a spread of its own.
         y_data = group_df[selected_var].values
         x_jittered = x_of_row[df.index.get_indexer(group_df.index)]
 
-        # Accumulate rather than draw. Shape and opacity subgroups of one colour group
-        # share its x band, so drawing each as its own trace paints them in sequence and
-        # the last one is never occluded. Pooling the colour group's points and carrying
-        # symbol/opacity as PER-POINT arrays is how every other point method avoids that
-        # (helpers.add_interleaved_points_trace, used by the scatter/UMAP/phasor pages);
-        # this brings the sina plot in line.
+        # Accumulate instead of drawing: the shape/opacity subgroups of one colour group
+        # share an x band, so they are pooled into one trace carrying symbol and opacity
+        # as per-point arrays, the same way helpers.add_interleaved_points_trace does.
         bucket = point_buckets.setdefault((separate_group, color_group), {
             "x": [], "y": [], "text": [], "customdata": [],
             "symbol": [], "opacity": [],
@@ -662,9 +617,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         )
         trace_kwargs = dict(mode='markers', hovertemplate=final_hovertemplate, zorder=1)
 
-        # One trace for the whole colour group. Its points carry per-point symbol and
-        # opacity, so those channels are already mixed and need no batching; the
-        # colour is constant, so there is nothing left for a paint order to bias.
+        # One trace per colour group: symbol and opacity vary per point, colour does not.
         show_legend = color_group not in legend_entries
         if show_legend:
             legend_entries.add(color_group)
@@ -684,31 +637,29 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             # Create a line for each separate group
             for section_info in separate_sections_info:
                 section_group_name = section_info['group']
-                
+
                 # These are the color groups that exist in this section
                 section_color_groups = [combo[1] for combo in section_info['combinations']]
-                
+
                 # Get the relevant data for this section
                 section_df = df[df[separate_by] == section_group_name]
-                
+
                 means_to_plot = []
                 for color_group in section_color_groups:
-                    # Get x position
                     x_pos = x_positions.get((section_group_name, color_group))
                     if x_pos is None: continue
 
-                    # Calculate mean
                     group_data = section_df[section_df[COLOR_GROUP_COL_NAME] == color_group]
                     if not group_data.empty:
                         mean_y = group_data[selected_var].mean()
                         means_to_plot.append({'x': x_pos, 'y': mean_y})
-                
+
                 # Sort by x position to draw line correctly
                 if len(means_to_plot) > 1:
                     means_to_plot.sort(key=lambda p: p['x'])
                     x_coords = [p['x'] for p in means_to_plot]
                     y_coords = [p['y'] for p in means_to_plot]
-                    
+
                     fig.add_trace(go.Scatter(
                         x=x_coords,
                         y=y_coords,
@@ -721,16 +672,14 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         else: # No separate_by
             means_to_plot = []
             for color_group in compare_groups:
-                # Get x position
                 x_pos = x_positions.get(color_group)
                 if x_pos is None: continue
 
-                # Calculate mean
                 group_data = df[df[COLOR_GROUP_COL_NAME] == color_group]
                 if not group_data.empty:
                     mean_y = group_data[selected_var].mean()
                     means_to_plot.append({'x': x_pos, 'y': mean_y})
-            
+
             # Sort by x position to draw line correctly
             if len(means_to_plot) > 1:
                 means_to_plot.sort(key=lambda p: p['x'])
@@ -749,18 +698,18 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
 
     # --- 2. Add legend traces for opacity and shape mappings ---
     add_point_legend_traces(fig, shape_map, opacity_map, shape_by=shape_by, opacity_by=opacity_by)
-     
+
     # --- 3. Add vertical dashed lines between separate sections ---
     if separate_groups and len(separate_groups) > 1:
         # Add vertical lines between sections using actual section boundaries
         for section_idx in range(len(separate_sections_info) - 1):
             current_section = separate_sections_info[section_idx]
             next_section = separate_sections_info[section_idx + 1]
-            
+
             # Calculate the end of current section and start of next section
             current_section_end = max([x_positions[(combo[0], combo[1])] for combo in current_section['combinations']])
             next_section_start = min([x_positions[(combo[0], combo[1])] for combo in next_section['combinations']])
-            
+
             # Place line at the center of the gap
             line_x = (current_section_end + next_section_start) / 2
             fig.add_vline(
@@ -769,7 +718,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 line_color=theme_color,
                 line_width=2
             )
-    
+
     # Build title with visual encoding information
     title_parts = [f'Distribution of {pretty_var} by {", ".join(color_by)}']
     if separate_by and separate_by.strip() != "":
@@ -778,44 +727,26 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         title_parts.append(f'opacity: {opacity_by}')
     if shape_by and shape_by.strip() != "":
         title_parts.append(f'shape: {shape_by}')
-    
+
     full_title = title_parts[0]
     if len(title_parts) > 1:
         full_title += f' ({", ".join(title_parts[1:])})'
-    
+
     # Configure x-axis labels and layout
     if separate_groups:
-        # Use the actual positions and labels we calculated
-        # Add section headers using annotations.
-        # The header goes directly under the axis line and the group tick labels are
-        # pushed down below it, rather than the header being dropped past them. That
-        # ordering is what makes the placement exact: the header occupies a slot whose
-        # height we set ourselves — one line of text, at a size we choose — so reserving
-        # room for it is arithmetic on the font size. Putting it underneath instead meant
-        # predicting how far the *labels* reach, which depends on their text, the tick
-        # angle and the browser's font metrics; that estimate is what used to collide.
+        # Section headers are annotations directly under the axis line; the group tick
+        # labels are pushed below them by ticklabelstandoff. The header slot is one line
+        # of text at a size set here, so reserving room for it is arithmetic on that size.
         header_font_size = st.session_state.get("plot_axis_label_size", 12)
         longest_tick_label = max((len(str(t)) for t in x_tick_labels_actual), default=0)
-        # One bold line plus padding above and below it. ticklabelstandoff pushes the
-        # group labels this much further from the axis, and that gap is the slot the
-        # header sits in. Plotly adds it to its own default standoff, so this is
-        # clearance on top of the space the labels would normally have.
+        # One bold line plus padding. ticklabelstandoff pushes the group labels this far
+        # from the axis, on top of Plotly's own default standoff; the header sits in that gap.
         header_slot_px = round(1.6 * header_font_size)
-        # Pin the tick angle rather than leaving it to Plotly, which measures the text in
-        # the browser and picks 0°, 45° or 90° from the container width — a width the
-        # server cannot know, since the chart is rendered with width='stretch'. The header
-        # no longer depends on the angle, but the exported Matplotlib figure
-        # (src/export_script.py) has to reproduce it, and it can only match an angle that
-        # is decided here.
-        # 45° is safe at any label length: rotated labels are parallel diagonal strips,
-        # so neighbours collide only when the perpendicular distance between them
-        # (slot * sin45) drops below one line height — a function of the slot, never of
-        # how long the text is. Labels of a few characters fit upright at any width, so
-        # those stay at 0°.
-        # Negative because Plotly's positive tickangle turns clockwise, which reads
-        # downhill left-to-right; -45 is the conventional uphill slant, the one Plotly's
-        # own automatic rotation picks and the one Matplotlib's rotation=45, ha='right'
-        # produces in the export.
+        # Pinned rather than left to Plotly, which picks 0/45/90° from a container width
+        # the server cannot know (the chart renders with width='stretch'); the Matplotlib
+        # export (src/export_script.py) can only reproduce an angle decided here. Labels of
+        # up to 4 characters fit upright at any width; longer ones slant. Negative is the
+        # uphill slant, matching the export's rotation=45, ha='right'.
         tick_angle = 0 if longest_tick_label <= 4 else -45
         for section_info in separate_sections_info:
             if section_info['combinations']:  # Only add annotation if section has data
@@ -829,10 +760,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                     showarrow=False,
                     xref="x",
                     yref="paper",
-                    # apply_plot_styling() overwrites every annotation size with
-                    # plot_axis_label_size, so state it here rather than let a
-                    # different-looking literal imply a size that never renders.
-                    # The color it leaves alone, which is why this must be theme-aware.
+                    # apply_plot_styling() overwrites every annotation's size with
+                    # plot_axis_label_size but leaves the colour, so that must be theme-aware.
                     font=dict(size=header_font_size, color=theme_color),
                     xanchor="center",
                     yanchor="top"
@@ -845,10 +774,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             ticklabelstandoff=header_slot_px,  # the section header sits in this gap
             zeroline=False,
             tickfont=dict(color=theme_color),
-            # The tick labels are the lowest thing in the figure now, so letting Plotly
-            # size the bottom margin from the labels it has actually rendered also covers
-            # the header sitting above them. It measures in the browser, which is the one
-            # place the true text extent is known.
+            # The tick labels are the lowest element, so a bottom margin sized from them
+            # also covers the header above. Plotly measures them in the browser.
             automargin=True,
         )
     else:
@@ -858,18 +785,13 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             ticktext=ordered_compare_groups,
             zeroline=False,
             tickfont=dict(color=theme_color),
-            # As in the separate_by branch above: Plotly grows the bottom margin from the
-            # tick labels it has rendered. Here it also rotates them itself, so the space
-            # they need is doubly something only the browser knows.
+            # As in the separate_by branch above; here Plotly rotates the labels itself.
             automargin=True,
         )
-    
+
     # --- Loop 2: Boxplots (on top of points) ---
-    # One box per (section, colour group), from that group's pooled rows. It used to be
-    # one per (colour, shape, opacity) subgroup, every one of them drawn at its colour
-    # group's x -- so shape_by plus opacity_by stacked a dozen boxes on two positions and
-    # the quartiles the reader could see were whichever subgroup happened to be painted
-    # last, computed from a handful of rows.
+    # One box per (section, colour group) from that cell's pooled rows — not per
+    # shape/opacity subgroup, which would stack several boxes on one x position.
     if add_boxplot:
         for (separate_group, color_group), rows in pooled_rows.items():
             x_position = cell_x_position(separate_group, color_group)
@@ -894,11 +816,11 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             # Add Box trace (Mean as dashed line, Median as solid line)
             fig.add_trace(go.Box(
                 x=[x_position], # Align with x-position
-                q1=[q1], 
-                median=[median], 
-                q3=[q3], 
-                lowerfence=[lower_fence], 
-                upperfence=[upper_fence], 
+                q1=[q1],
+                median=[median],
+                q3=[q3],
+                lowerfence=[lower_fence],
+                upperfence=[upper_fence],
                 mean=[mean_val],
                 name=trace_name,
                 marker_color=marker_color,
@@ -913,12 +835,9 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
 
     # Set y-axis label based on log transform (pretty_var defined at top)
     y_axis_label = f"log₁₀({pretty_var})" if log_y else pretty_var
-    
-    # A plain floor, so a plot with short labels still gets a comfortable gutter.
-    # It used to be max(120, len(longest_label) * 5) — a character count standing in for
-    # a pixel height, which is the same guess-at-someone-else's-text-metrics the section
-    # header used to make. xaxis.automargin now grows the margin past this floor by
-    # whatever the labels Plotly actually rendered need, so the guess had nothing to do.
+
+    # A floor only, so short labels still get a gutter; xaxis.automargin grows the
+    # margin past it to whatever the rendered labels need.
     bottom_margin = 120
 
     fig.update_layout(
@@ -939,7 +858,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         if separate_groups:
             # Get user selection for statistical comparisons once (to avoid duplicate widget keys)
             selected_pairs = comparison_pair_widget(compare_pairs)
-            
+
             # Get threshold once to avoid duplicate widgets across sections
             threshold = 0.0
             threshold_key_suffix = selected_var
@@ -955,30 +874,30 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                     step=0.1,
                     key=f"cohens_d_thresh_{threshold_key_suffix}",
                 )
-            
+
             if selected_pairs:  # Only proceed if user selected some pairs
                 # Calculate global data range ONCE for consistent spacing across all sections
                 global_min_y = df[selected_var].min(skipna=True)
                 global_max_y = df[selected_var].max(skipna=True)
                 global_data_range = (global_min_y, global_max_y)
-                
+
                 # Apply statistical annotations within each separate section
                 for section_info in separate_sections_info:
                     if len(section_info['combinations']) > 1:  # Need at least 2 groups for comparison
                         # Extract just the color groups that exist in this section
                         section_color_groups = [combo[1] for combo in section_info['combinations']]
                         section_compare_pairs = list(combinations(section_color_groups, 2))
-                        
+
                         # Filter to only include pairs that user selected and exist in this section
                         filtered_section_pairs = []
                         for pair in section_compare_pairs:
                             if pair in selected_pairs or tuple(reversed(pair)) in selected_pairs:
                                 filtered_section_pairs.append(pair)
-                        
+
                         if filtered_section_pairs:
                             # Filter the dataframe to only include this separate_by group
                             section_df = df[df[separate_by] == section_info['group']].copy()
-                            
+
                             # Create position mapping for this section
                             section_position_map = {}
                             actual_positions = []
@@ -987,7 +906,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                                 actual_x = x_positions[(separate_group, color_group)]
                                 section_position_map[color_group] = actual_x
                                 actual_positions.append(actual_x)
-                            
+
                             # Apply annotations for this section with actual positions
                             _add_effect_size_annotations(
                                 fig=fig,

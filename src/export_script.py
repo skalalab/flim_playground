@@ -159,10 +159,7 @@ def get_effect_size_threshold_capture(session_state, effect_size_method, selecte
     Mirrors the widget keys and defaults in src/vis/helpers.py (non-separate
     path) and src/vis/univar.py (separate path): the key suffix is the selected
     variable; Glass's Delta defaults to 0.7 and Absolute Cohen's d to 0.5 on
-    BOTH paths (helpers.py:373, univar.py:846). `separate_by` does not change
-    either default -- this used to fall back to 0.7 for Cohen's d whenever
-    separate_by was falsy, which silently diverged from the widget any time the
-    widget had not rendered and so had written no session value.
+    both paths. `separate_by` changes neither default.
     """
     if effect_size_method == "Glass's Delta":
         return float(session_state.get(f"glass_delta_thresh_{selected_var}", 0.7))
@@ -455,10 +452,9 @@ def _build_visual_encoding(state: dict, overlap_point: bool = True) -> str:
         tuple_natural_key,
     )
 
-    # Extract computation from actual source (include tuple_natural_key which natural_tuple_sort depends on)
-    # format_group_label is the app's own legend-label helper (src/vis/helpers.py), called
-    # below with engine='mpl' so the "n=" wording and the line break match the screen
-    # without a second copy of the text living here.
+    # Inlined from src/vis/helpers.py. tuple_natural_key comes along because
+    # natural_tuple_sort depends on it; format_group_label is called below with
+    # engine='mpl' so the "n=" wording and line break match the screen.
     helpers_src = _extract_source(natural_key, tuple_natural_key, natural_tuple_sort,
                                   create_opacity_mapping, format_group_label)
     # Extract Matplotlib-adapted color/shape maps and scatter helpers from this module
@@ -721,10 +717,9 @@ fig, ax = plt.subplots(figsize=(10, 6))
 
 all_vals = df[SELECTED_VAR].dropna().values
 # Common bin edges shared by all groups, mirroring histogram_bin_width_widget in
-# src/widgets/visualization_widgets.py: only when numpy's 'auto' yields more than
-# one bin is a width used at all. For a constant / near-constant feature the app's
-# widget never renders and it falls back to numpy's own single-bin edges — the
-# export used to invent a width of 1.0 instead, shifting the bar off centre.
+# src/widgets/visualization_widgets.py: a width is used only when numpy's 'auto'
+# yields more than one bin. A constant / near-constant feature falls back to numpy's
+# own single-bin edges, as the app's widget does when it never renders.
 _, _auto_edges = np.histogram(all_vals, bins='auto')
 if len(_auto_edges) - 1 > 1:
     bin_width = float(BIN_WIDTH) if BIN_WIDTH is not None else (_auto_edges[1] - _auto_edges[0])
@@ -744,7 +739,7 @@ for g in color_groups:
             label=format_group_label(g, len(gdata), SHOW_GROUP_COUNTS, engine='mpl'))
 
     # Bias-corrected skewness (pandas .skew()) + the app's 7-way label ladder
-    # (univar.py:74-87) — keep both identical to the app.
+    # (univar.py feature_histogram_plot) — keep both identical to the app.
     sk = pd.Series(gdata).skew()
     if sk < -1:
         desc = "strongly left-skewed"
@@ -780,12 +775,10 @@ def _build_feature_comparison(state: dict) -> str:
     )
 
     # _density_at_points is what the app calls for the sina jitter (src/vis/univar.py
-    # feature_comparison_plot), so extracting it keeps the jitter numerically identical
-    # rather than merely similar -- it evaluates the KDE on a grid and interpolates, which
-    # lands a hair off the exact per-point density. _estimate_density_1d comes along
-    # because _density_at_points delegates to it, and because sharing it is what gives
-    # degenerate groups (constant or single-point) the same zero-density fallback, and
-    # therefore the same uniform jitter, instead of collapsing onto one x position.
+    # feature_comparison_plot); inlining it keeps the jitter numerically identical rather
+    # than merely similar. _estimate_density_1d comes along because _density_at_points
+    # delegates to it, and because sharing it gives degenerate groups (constant or
+    # single-point) the same zero-density fallback and so the same uniform jitter.
     effect_size_src = _extract_source(
         glass_delta, cohens_d, _compute_bracket_position, _estimate_density_1d,
         _density_at_points,
@@ -844,12 +837,8 @@ for sec_i, sec_group in enumerate(ordered_separate_groups):
 
     if sec_i > 0:
         # Gap between sections, matching the app's section_spacing = 0.5
-        # (src/vis/univar.py). A full 1.0 here made every section after the first sit
-        # 0.5 further right than on screen, and the shift accumulated per section.
-        # The app draws the divider at the centre of that gap (univar.py: midpoint of
-        # the previous section's last position and the next section's first): the
-        # previous position is pos - 1 and the next section starts at pos + 0.5, so
-        # the centre is pos - 0.25.
+        # (src/vis/univar.py). The divider goes at the centre of that gap: the previous
+        # position is pos - 1 and the next section starts at pos + 0.5, so pos - 0.25.
         section_boundaries.append(pos - 0.25)
         pos += 0.5
 
@@ -889,20 +878,12 @@ for sec_group in ordered_separate_groups:
         group_df = sec_df[sec_df["_color_group"] == cg]
         y_data = group_df[SELECTED_VAR].values
 
-        # KDE-based jitter (Sina plot), fitted once per (section, colour group) to match
-        # the app: univar.py feature_comparison_plot assigns every row's x from its colour
-        # group's pooled density, because the colour group is what owns the x position.
-        # Neither side may fit it per (colour, shape, opacity) subgroup -- that estimated
-        # each density over a fraction of the rows, so setting shape_by or opacity_by
-        # redrew the silhouette and moved every point.
-        # _density_at_points, not _estimate_density_1d(y_data)(y_data): asking the KDE for
-        # the density at its own training points is O(n^2), which took 60 s for a single
-        # 113k-point group here. This is the app's function, so the jitter matches what was
-        # on screen.
-        # There is deliberately no small-group branch: the app has none, and
-        # _density_at_points already returns zeros below 2 points (the same fallback
-        # _estimate_density_1d gives it), which the norm_d fallback turns into uniform
-        # jitter.
+        # KDE-based jitter (Sina plot), fitted once per (section, colour group) as the app
+        # does — never per (colour, shape, opacity) subgroup, which would re-estimate each
+        # density over a fraction of the rows and move every point when shape_by or
+        # opacity_by is set. _density_at_points rather than evaluating the KDE at its own
+        # training points, which is O(n^2); it returns zeros below 2 points, and the norm_d
+        # fallback below turns those into uniform jitter.
         densities = _density_at_points(y_data)
         if len(densities) > 0 and np.max(densities) > 0:
             norm_d = densities / np.max(densities)
@@ -1091,10 +1072,8 @@ if max((len(str(lbl)) for lbl in x_labels), default=0) > 4:
 
 # One bold header per separate_by section, centred over its groups (univar.py
 # separate_sections_info). The header sits directly under the axis line and the tick
-# labels are pushed below it, mirroring the app's xaxis.ticklabelstandoff. Stacking them
-# this way is what makes the offsets exact at any font size: the reserved gap is one line
-# of header text, whose height we set, instead of a guess at how far the group labels
-# reach — which is the thing the app used to have to predict.
+# labels are pushed below it, mirroring the app's xaxis.ticklabelstandoff: the reserved
+# gap is one line of header text at a size set here.
 if section_headers:
     # 1.6 * the header size is the line plus padding, matching header_slot_px in the app;
     # the +3.5 is Matplotlib's default x-tick pad, which the app's standoff likewise adds
@@ -1170,9 +1149,8 @@ for g in color_groups:
                            base_alpha=BASE_ALPHA)
     legend_entries.add(g)
 
-    # Guard each marginal on its OWN axis, as the app does (_plot_marginal_density
-    # in src/vis/bivar.py returns early per axis). Requiring both axes to vary
-    # dropped the x marginal whenever y happened to be constant, and vice versa.
+    # Guard each marginal on its own axis, as the app does (_plot_marginal_density
+    # in src/vis/bivar.py returns early per axis), so a constant y still draws x.
     if ax_top is not None and gdf[SELECTED_X].nunique() > 1:
         from scipy.stats import gaussian_kde
         try:
@@ -1466,7 +1444,7 @@ def _build_classification(state: dict) -> str:
     )
     from src.tuned_threshold_classifier import TunedThresholdClassifierCV
 
-    # Extract all computation source from actual codebase
+    # Inlined from the app so the script computes exactly what the page did.
     computation_src = _extract_source(
         prepare_data, _build_classifier, calculate_metrics,
         calculate_roc_curve, plot_roc_curve, plot_confusion_matrix, plot_feature_importance,

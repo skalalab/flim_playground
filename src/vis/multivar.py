@@ -28,9 +28,8 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, ra
         # Standardize features before PCA and umap
         X_std = StandardScaler().fit_transform(X)
         if method == "PCA":
-            # Seed PCA like UMAP/t-SNE below: svd_solver="auto" can pick the
-            # randomized solver on larger inputs, which made live results vary
-            # between reruns while the exported script (random_state=42) did not.
+            # Seeded like UMAP/t-SNE below: svd_solver="auto" can pick the randomized
+            # solver on larger inputs, which varies between reruns unless seeded.
             pca = PCA(n_components=n_components, random_state=random_state)
             principal_components = pca.fit_transform(X_std)
             df = pd.DataFrame(principal_components, columns=["PC1", "PC2"])
@@ -38,7 +37,7 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, ra
         elif method == "UMAP":
             umap_neighbors = hyperParam_dict.get('n_neighbors', 15)
             umap_min_dist = hyperParam_dict.get('min_dist', 0.1)
-            reducer = umap.UMAP(n_neighbors=umap_neighbors,min_dist=umap_min_dist,   
+            reducer = umap.UMAP(n_neighbors=umap_neighbors,min_dist=umap_min_dist,
                 metric='euclidean', n_components=n_components, random_state=random_state)
             df = pd.DataFrame(reducer.fit_transform(X_std), columns=["UMAP1", "UMAP2"])
         elif method == "t-SNE":
@@ -51,7 +50,6 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, ra
 def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_features, colored_by=[], opacity_by=None, shape_by=None, colormap="tab10", method="UMAP", hyperParam_dict={}):
     """create a plotly plot to visualize the dimension-reduced data"""
     X = df[selected_features]
-    # perform dimension reduction
     df_reduced, exp_var = dimension_reduction(X, n_components=2, method=method, hyperParam_dict=hyperParam_dict)
     # augment df_reduced with required columns and categorical columns used for coloring
     df_reduced[unique_row_id_col] = df[unique_row_id_col].values
@@ -84,7 +82,7 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
         overlap_point=True,
         colormap=colormap
     )
-    
+
     # Use the reusable function to add interleaved points and legend
     add_interleaved_points_trace(
         fig=fig,
@@ -99,11 +97,10 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
         show_counts=st.session_state.get("plot_show_group_counts", False)
     )
 
-    # Get theme color for axis styling
     theme_color = get_context_theme_color()
-    
+
     # Update axis labels to include explained variance
-    if exp_var is not None: 
+    if exp_var is not None:
         fig.update_xaxes(
             title=dict(text=f"{axis_labels[0]}({exp_var[0]:.2f}%)", font=dict(color=theme_color)),
             tickfont=dict(color=theme_color)

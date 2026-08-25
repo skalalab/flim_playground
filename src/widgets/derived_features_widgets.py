@@ -80,14 +80,12 @@ def render_derived_features_widget(cfg, active_profile):
     section-level description lives on the reveal checkbox in main.py
     (``DERIVED_FEATURES_HELP``), not here.
     """
-    # Every builder INPUT widget is keyed by a per-profile "generation" counter
-    # that the Add handler bumps. A fresh generation gives those widgets brand-new
-    # keys on the next run, so they come up empty/default — the only reliable reset
-    # in the live app. (Deleting a widget's session_state key leaves its identity
-    # unchanged, so Streamlit restores the previous *frontend* value on the rerun:
-    # AppTest, which has no frontend, resets fine, but the live app does not — the
-    # bug this replaces.) The Template selectbox is deliberately NOT generation-
-    # scoped, so the chosen template persists across successive adds.
+    # Every builder INPUT widget is keyed by a per-profile "generation" counter that the
+    # Add handler bumps, so the next run gives them brand-new keys and they come up
+    # empty. This is the only reset that works live: deleting a widget's session_state
+    # key leaves its identity unchanged, so Streamlit restores the frontend value on the
+    # rerun (AppTest, having no frontend, resets either way). The Template selectbox is
+    # deliberately not generation-scoped, so the template persists across adds.
     gen = st.session_state.setdefault(f"df_gen_{active_profile}", 0)
 
     existing = cfg.get("derived_features", []) or []

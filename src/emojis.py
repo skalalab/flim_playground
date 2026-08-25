@@ -130,10 +130,8 @@ sad_regretful_emojis = [
     "🆘"   # SOS Button
 ]
 
-# Choose a random happy/celebratory emoji
 happy_emoji = random.choice(happy_celebratory_emojis)
 
-# Choose a random sad/regretful emoji
 sad_emoji = random.choice(sad_regretful_emojis)
 
 # Three distinct happy emojis for festive multi-emoji spots (e.g. the welcome banner).

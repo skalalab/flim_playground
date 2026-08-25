@@ -84,14 +84,13 @@ def get_config_mtime(config_path: Path | None = None) -> float:
 # ---------------------------------------------------------------------------
 # Multi-profile support
 #
-# The extraction config now stores named profiles, mirroring analysis_config:
+# The extraction config stores named profiles, mirroring analysis_config:
 #   current_profile = "default"
-#   [profiles.<name>]   # the entire legacy flat config lives in here
+#   [profiles.<name>]   # a complete flat config lives in here
 #
-# ``current_profile`` is the single source of truth and is read from disk so
-# this module stays Streamlit-free; the Configuration page (main.py) persists
-# it immediately on every switch/create/delete (before st.rerun()). Do NOT read
-# the active profile from st.session_state here.
+# ``current_profile`` is read from disk, so this module stays Streamlit-free.
+# main.py persists it on every switch/create/delete, before st.rerun(). Do not
+# read the active profile from st.session_state here.
 # ---------------------------------------------------------------------------
 
 def _migrate_extraction_config_to_profiles(cfg: dict) -> dict:
@@ -194,7 +193,7 @@ def get_default_file_suffixes(channel_key: str, input_type: str, selected_featur
             "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Fluorescence Lifetime Standard"
         ):
             continue
-        # skip a bunch of things 
+        # skip a bunch of things
         if file_type == "SPCImage t1" and "Lifetime fit" not in selected_feature_extractors:
             continue
         # skip IRF if no Lifetime extractors OR if prefitted and no fit free extractors

@@ -35,7 +35,7 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
         file_suffixes = get_default_file_suffixes(channel_key, input_type, selected_feature_extractors[channel_key])
         if len(file_suffixes) == 0:
             return "", f"No file suffixes found for {channel_name} {sad_emoji}"
-        else: 
+        else:
             actual_file_suffix[channel_name] = file_suffixes
 
         st.subheader(f"File suffixes: {channel_name}")
@@ -140,13 +140,13 @@ def _permission_denied_message(folder_path, err):
     return msg
 
 @st.cache_data
-def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):    
+def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
     """
     Load data from a folder and check its validity. Display the file sets for each image group. 
     file_names = image_name + suffix (exactly that, no more, no less)
     image_group: keyed by image_name, and the value is a list of all the files that belong to that image
     """
-    
+
     valid_image_groups = {}
 
     # Single recursive scan to get all files
@@ -176,19 +176,19 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
     if len(all_files) == 0:
         st.warning(f"No files found in folder: **{folder_path}**.")
         return {}
-    
+
     # Build lookup dictionaries for fast access
     files_by_name = {}  # exact filename -> list of file paths
     files_by_suffix = {}  # suffix -> list of file paths
-    
+
     for file_path in all_files:
         filename = os.path.basename(file_path)
-        
+
         # Index by exact filename
         if filename not in files_by_name:
             files_by_name[filename] = []
         files_by_name[filename].append(file_path)
-        
+
         # Index by suffix for each suffix we care about
         for suffix in set(file_suffix.values()):
             if filename.endswith(suffix):
@@ -202,7 +202,7 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
     if len(image_files) == 0:
         st.warning(f"No image files found with suffix: **{image_search_suffix}**.")
         return {}
-    
+
     # get the image names from the file names by removing the suffix
     image_names = [os.path.basename(file).removesuffix(image_search_suffix) for file in image_files]
     # for each image name, build a widget card with the image name and the files that belong to it
@@ -212,7 +212,7 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
 
     if num_images > 0:
         st.markdown("##### :green[Fields of view:] \n")
-        
+
     for row in range(rows):
         cols = st.columns(num_cols)
         for col_idx in range(num_cols):
@@ -231,7 +231,7 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
                     matched_files = files_by_name.get(filename, [])
                 else:
                     matched_files = files_by_suffix.get(suffix, [])
-                    
+
                 if len(matched_files) != 1:
                     if len(matched_files) > 1:
                         duplicate_keys.append(key) # more than one file found
@@ -240,8 +240,8 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
                 else:
                     image_group[key] = matched_files[0]
 
-         
-            # create the card 
+
+            # create the card
             with cols[col_idx]:
                 with st.container(border=True):
                     st.markdown(f"**{image_name}**")
@@ -260,7 +260,7 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
 
                     else:
                         st.write("✅ All files found.")
-                   
+
 
             if missing_keys == [] and duplicate_keys == []:
                 valid_image_groups[image_name] = image_group
@@ -278,10 +278,10 @@ def preview_metadata_widget(metadata_df, num_cols=3):
         st.write(metadata_df)
 
 def export_metadata_widget(metadata_df, folder_path):
-    # use a botton to export the fovs as one csv file (one fov per row) to the folder_path 
+    # use a botton to export the fovs as one csv file (one fov per row) to the folder_path
     confirm_export = st.button("Export FOV Metadata as CSV", help=f"Export the fov metadata as one csv file (one fov per row) to {folder_path}", key="export_metadata_button")
     if confirm_export:
-        # convert the dictionary to a dataframe     
+        # convert the dictionary to a dataframe
         # save the dataframe to a csv file
         time_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         csv_file_path = os.path.join(folder_path, f"fov_metadata_{time_stamp}.csv")
@@ -295,16 +295,12 @@ def export_metadata_widget(metadata_df, folder_path):
         st.session_state["last_extracted_metadata_filepath"] = csv_file_path
 
 # --- Raw-data checks --------------------------------------------------------
-# Each check below is split in two: an uncached wrapper keeping the
-# (fov_df, channel_name) signature check_assign_channel_widget calls with, and a
-# cached core keyed only on the columns the check actually reads.
-#
-# The split exists because caching on fov_df itself made every channel's check
-# depend on every other channel's answer: check_assign_channel_widget writes
-# `{channel}_channel` into that same frame between calls and Streamlit hashes a
-# DataFrame by its values, so reassigning channel 1 re-read every file for
-# channels 2..N. Unrelated widgets (laser rate, no. of components, fixed
-# lifetimes, derived features) invalidated all of them the same way.
+# Each check is split in two: an uncached wrapper keeping the (fov_df, channel_name)
+# signature check_assign_channel_widget calls with, and a cached core keyed only on
+# the columns the check actually reads. Caching on fov_df instead would key every
+# channel's check on every other channel's answer, because Streamlit hashes a
+# DataFrame by its values and check_assign_channel_widget writes `{channel}_channel`
+# into that same frame between calls.
 
 
 def _column_values(fov_df, column_name):
@@ -635,7 +631,7 @@ def _render_channel_preview(fov_df, preview_images, available_channels, selected
             )
 
 
-def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type, imaging_modalities, selected_ch_feature_extractors, duration=None, time_bins=None):   
+def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type, imaging_modalities, selected_ch_feature_extractors, duration=None, time_bins=None):
     error_msg = ""
     time_bins_list = []
     laser_rep_time_list = []
@@ -662,7 +658,7 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
             else:
                 has_flim = True
 
-            if has_flim: 
+            if has_flim:
                 decay_col_name = f"{channel_name}_Decay"
                 if decay_col_name not in fov_df.columns:
                     return "Error: File paths for decay data are not provided.", None
@@ -742,7 +738,7 @@ def lifetime_data_config_widget(selected_feature_extractors, input_type):
             default_laser_rate = get_default_laser_rate(input_type)
             with cols[2]:
                 laser_rate = st.number_input("Laser rate **(GHz)**", value=default_laser_rate, min_value=0.0, max_value=1.0, key="2D_decay_laser_rate")
-    else: 
+    else:
         if fit_free:
             default_laser_rate = get_default_laser_rate(input_type)
             laser_rate = st.number_input("Laser rate **(GHz)**", value=default_laser_rate, min_value=0.0, max_value=1.0, key="laser_rate")

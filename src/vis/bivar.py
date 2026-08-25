@@ -109,7 +109,7 @@ def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
         line=dict(color=theme_color),
         name='Curve', 
         hoverinfo='skip',# Hide the hover info for this trace
-        showlegend=False 
+        showlegend=False
     ))
 
     # Add S axis line (vertical line from (0,0) to (0,0.5))
@@ -145,7 +145,7 @@ def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
         xanchor='right',
         yanchor='middle'
     )
-    
+
     # G axis annotation at 0
     fig.add_annotation(
         x=0,
@@ -156,7 +156,7 @@ def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
         xanchor='center',
         yanchor='top'
     )
-    
+
     # G axis annotation at 1
     fig.add_annotation(
         x=1,
@@ -168,11 +168,9 @@ def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
         yanchor='top'
     )
 
-    # Calculate and plot specific points.
-    # The n-th harmonic phasor is evaluated at n*omega, so a lifetime marker for tau
-    # belongs at n*2*pi*f*tau. Omitting the harmonic put every 2nd-harmonic marker at
-    # the coordinate of a lifetime twice the one it was labelled with. The semicircle
-    # itself is parameterised by omega*tau and so needs no harmonic correction.
+    # Lifetime markers. The n-th harmonic phasor is evaluated at n*omega, so a marker
+    # for tau belongs at n*2*pi*f*tau. The semicircle is parameterised by omega*tau and
+    # needs no harmonic correction.
     wt = 2 * np.pi * f * harmonic * np.array([0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=float)
     x_points = 1 / (1 + wt**2)
     y_points = wt / (1 + wt**2)
@@ -201,7 +199,7 @@ def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
             font=dict(size=12, color=theme_color),
             xanchor='left'
         )
-    
+
     # Add text inside the plot. Report the frequency the geometry is drawn at, which
     # for harmonic n is n x the laser repetition rate.
     freq_text = f"f = {f * harmonic * 1000} MHz"
@@ -222,7 +220,7 @@ def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i):
     eigenvals, eigenvecs = np.linalg.eigh(cov)
     angle = np.degrees(np.arctan2(eigenvecs[1, 0], eigenvecs[0, 0]))
     # Create confidence ellipse (e.g., 2-sigma ~ 95% confidence)
-    r = np.sqrt(chi2.ppf(0.95, df=2)) 
+    r = np.sqrt(chi2.ppf(0.95, df=2))
     width = 2 * r * np.sqrt(eigenvals[0])
     height = 2 * r * np.sqrt(eigenvals[1])
 
@@ -305,7 +303,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         colormap=colormap
     )
     fig = go.Figure()
-    
+
 
 
     if fit_gmm:
@@ -313,7 +311,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
 
     # Convert grouped iterator to list so we can iterate multiple times
     grouped_list = list(grouped)
-    
+
     # Add all points using interleaved plotting function
     add_interleaved_points_trace(
         fig=fig,
@@ -332,14 +330,10 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         ),
         show_counts=st.session_state.get("plot_show_group_counts", False)
     )
-    
-    # Note: hovermode='closest' is already set by add_interleaved_points_trace
-    # But we'll update it later with additional layout settings
 
     table_md = []
-    # Per-group analysis keys on COLOR groups only — never per shape/opacity
-    # sub-group — matching the GMM block below, phasor k-means, feature-comparison
-    # statistics, and the exported script. shape/opacity affect point styling only.
+    # Per-group analysis keys on colour groups only, never per shape/opacity subgroup:
+    # those two channels affect point styling and nothing else.
     for color_group in color_map.keys():
         group_df = df[df[GROUP_COL_NAME] == color_group]
         if group_df.empty or group_df[selected_x].nunique() < 2 or group_df[selected_y].nunique() < 2:
@@ -351,27 +345,27 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         table_md.append(f"Correlation Coefficient b/w {selected_x} and {selected_y}: **{corr_coef:.2f}** (p-value: {p_value:.2f}).\n")
         x_data = group_df[selected_x].dropna()
         y_data = group_df[selected_y].dropna()
-            
+
         if len(x_data) >= 2 and len(y_data) >= 2:
             # Ensure x_data and y_data have the same indices (both drop NaN)
             valid_indices = x_data.index.intersection(y_data.index)
             x_clean = x_data.loc[valid_indices].values.reshape(-1, 1)
             y_clean = y_data.loc[valid_indices].values
 
-        if fit_regression:              
+        if fit_regression:
             if len(x_clean) >= 2:  # Need at least 2 points for regression
                 # Fit linear regression
                 reg_model = LinearRegression()
                 reg_model.fit(x_clean, y_clean)
-                
+
                 # Calculate R²
                 y_pred = reg_model.predict(x_clean)
                 r2 = r2_score(y_clean, y_pred)
-                
+
                 # Create regression line points for plotting
                 x_range = np.linspace(x_clean.min(), x_clean.max(), 100)
                 y_range = reg_model.predict(x_range.reshape(-1, 1))
-                
+
                 # Add regression line to plot
                 fig.add_trace(go.Scatter(
                     x=x_range,
@@ -381,14 +375,12 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                     showlegend=False,
                     hovertemplate=f'<b>Regression Line</b><br>R² = {r2:.3f}<br>Slope = {reg_model.coef_[0]:.3f}<br>Intercept = {reg_model.intercept_:.3f}<extra></extra>'
                 ))
-                
+
                 # Add R² to the table
                 table_md.append(f"**Regression R²:** {r2:.3f} (Slope: {reg_model.coef_[0]:.3f}, Intercept: {reg_model.intercept_:.3f})")
 
-        # Marginal density for X-axis
         _plot_marginal_density(fig, x_data, 'x', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'yaxis': 'y2'})
 
-        # Marginal density for Y-axis
         _plot_marginal_density(fig, y_data, 'y', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'xaxis': 'x2'})
 
     # --- GMM fitting per color group (not per shape/opacity) ---
@@ -396,14 +388,14 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         for color_group in color_map.keys():
             # Filter data for this color group using the helper column
             group_df = df[df[GROUP_COL_NAME] == color_group]
-            
+
             if group_df.empty or group_df[selected_x].nunique() < 2 or group_df[selected_y].nunique() < 2:
                 continue
 
             # Fit GMM for the current COLOR group (aggregating all shapes/opacities)
             group_data_2d = group_df[[selected_x, selected_y]]
             if len(group_data_2d) > 1: # Need at least 2 points for GMM
-                best_gmm = _find_best_gmm(group_data_2d, max_components=fit_gmm_max_components, min_weight_threshold=fit_gmm_min_weight_threshold) 
+                best_gmm = _find_best_gmm(group_data_2d, max_components=fit_gmm_max_components, min_weight_threshold=fit_gmm_min_weight_threshold)
                 if best_gmm and best_gmm.n_components > 1:
                     table_md += [f"\n**{color_group} GMM Components:**"]
                     table_md.append("")
@@ -441,7 +433,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     # Set axis labels based on log transform (pretty_x/pretty_y defined above)
     x_axis_label = f"log₁₀({pretty_x})" if log_x else pretty_x
     y_axis_label = f"log₁₀({pretty_y})" if log_y else pretty_y
-    
+
     fig.update_layout(
         title=dict(
             text=f'2D Distribution of {pretty_x} and {pretty_y} by {", ".join(color_by)}',
@@ -450,15 +442,15 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         xaxis=dict(
             title=dict(text=x_axis_label, font=dict(color=theme_color)),
             tickfont=dict(color=theme_color),
-            domain=[0, 0.9], 
-            showgrid=False, 
+            domain=[0, 0.9],
+            showgrid=False,
             zeroline=False
         ),
         yaxis=dict(
             title=dict(text=y_axis_label, font=dict(color=theme_color)),
             tickfont=dict(color=theme_color),
-            domain=[0, 0.9], 
-            showgrid=True, 
+            domain=[0, 0.9],
+            showgrid=True,
             zeroline=False
         ),
         # Configure axes for marginal plots
@@ -568,15 +560,10 @@ def phasor_kmeans(X_raw, n_clusters, random_state=42):
     into exported analysis scripts via inspect.getsource(), which is also why the
     threadpoolctl import below sits inside the function rather than at module scope.
     """
-    # Pin the OpenMP pool to one thread. Two-column phasor coordinates give each thread
-    # almost nothing to do, so with n_init=10 restarts the default (one thread per core)
-    # spends nearly all its time in thread synchronisation. Measured on 112,808 rows across
-    # 5 colour groups: 4.6 s unpinned -> 0.09 s pinned. Cluster labels -- the only output
-    # that reaches the plot and the downloaded CSV -- were identical on every group; the
-    # centroids themselves drift by ~1e-11 because multi-threaded BLAS reduces in a
-    # different order. The residual risk is two of the n_init=10 restarts tying on inertia,
-    # where that drift could pick the other one. threadpoolctl ships as a scikit-learn
-    # dependency, so an exported script that can import sklearn can import this too.
+    # Pin the OpenMP pool to one thread: two-column phasor coordinates give each thread
+    # too little work to pay for synchronising them across n_init=10 restarts. Centroids
+    # then differ by ~1e-11 from the multi-threaded reduction order, which can only matter
+    # if two restarts tie on inertia; cluster labels are unaffected.
     from threadpoolctl import threadpool_limits
 
     scaler = StandardScaler().fit(X_raw)
@@ -591,7 +578,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
 
     # Get theme color once at the start for all theme-aware elements
     theme_color = get_context_theme_color()
-    
+
     # Create the figure
     fig = go.Figure()
 
@@ -604,7 +591,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         harmonic_str = "2nd"
         g_feature = f"{feature_prefix}G(2nd)"
         s_feature = f"{feature_prefix}S(2nd)"
-    
+
     # drop rows with NaN values in the g_feature and s_feature columns
     df = df[df[g_feature].notna() & df[s_feature].notna()]
 
@@ -635,7 +622,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
 
     # Create phasor background (semicircle, axes, annotations, lifetime markers)
     _create_phasor_background(fig, theme_color, f, harmonic)
-    
+
     # plot the phasor coordinates
     GROUP_COL_NAME = 'unique_color_group'
     # Use the unified helper for color, shape, opacity
@@ -659,7 +646,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
 
     # Convert grouped iterator to list so we can iterate multiple times
     grouped_list = list(grouped)
-    
+
     # Add all points using interleaved plotting function
     add_interleaved_points_trace(
         fig=fig,
@@ -680,10 +667,10 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         for color_group in color_map.keys():
             # Filter data for this color group using the helper column
             group_df = df[df[GROUP_COL_NAME] == color_group]
-            
+
             if group_df.empty:
                 continue
-                
+
             # cluster on a standardized copy — raw G,S stay untouched
             X_raw = group_df[[g_feature, s_feature]].to_numpy(copy=True)
             labels, centers_raw = phasor_kmeans(X_raw, k_means_clusters)
@@ -698,9 +685,9 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
             # Update the main dataframe with cluster labels
             assigned_labels = [f"{color_group}_group{label + 1}" for label in labels]
             df.loc[group_df.index, "k_means_cluster"] = assigned_labels
-    
+
     # Note: Legend traces and hovermode are already added by add_interleaved_points_trace
     # Remove the temporary group column after plotting
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
-    
+
     return fig, df

@@ -8,13 +8,12 @@ from src.choose_shift import choose_shift_fit_free, choose_shift_fit
 from src.fit_helper import forward_pass, irf_shift, nll_poisson, reduced_chi_square
 
 def display_shift_data_widget(results, channel_name, choose_shift_method, time_axis=None, period=None, num_components=None, log_y=True, start=None, end=None, fixed_lifetimes=None):
-    
+
     # combines image_name and shift from results into a df
     # kflow decay_id is the cell_name, otherwise it is the image_name
     plot_df =  pd.DataFrame({"decay_id": results["decay_id"], "shift": results["shift"]})
-    # Get theme-aware color
     color = get_context_theme_color()
-    
+
     cols = st.columns(2)
     with cols[0]:
         fig = go.Figure()
@@ -68,9 +67,8 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
         else:
             # display the shift in an interactive plot scatter plot, the y-axis is the shift. When click on the point, it will show the curve with the fitted line
             # prepare the data
-            try: 
+            try:
                 decay_curves = results["decay_curves"]
-                #original_decay_curves = results["original_decay_curves"]
                 shift_data = results["shift"]
                 amp1 = results["amp1"]
                 t1 = results["t1"]
@@ -102,18 +100,6 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
                 bin_numbers = time_axis / period
             except:
                 return "Error: Time axis not found for channel: " + channel_name
-            
-            # # plot the original decay curve
-            # fig2.add_trace(go.Scatter(
-            #     x=time_axis,
-            #     y=original_decay_curves[idx],
-            #     mode='markers',
-            #     name='Original Decay Curve',
-            #     line=dict(color='lightblue'),
-            #     marker=dict(size=4),
-            #     customdata=bin_numbers,
-            #     hovertemplate="bin #: %{customdata:.0f}<br>Intensity: %{y:.0f}<extra></extra>"
-            # ))
 
             fig2.add_trace(go.Scatter(
                 x=time_axis,
@@ -137,7 +123,6 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
                 amp3_data, t3_data = None, None
             shift_data = shift_data[idx]
 
-            # shift the irf
             shifted_irf = irf_shift(irf, shift_data)
             fitted_curve = forward_pass(
                 amp1=amp1_data,
@@ -237,7 +222,7 @@ def choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name, 
         start = None
         end = None
     else:
-        try: 
+        try:
             fitting_algo = metadata_dict["fitting_algo"]
             fitting_mode =  metadata_dict["fitting_mode"]
             num_components = metadata_dict[channel_name]["num_components"]
@@ -278,18 +263,18 @@ def choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name, 
     results = dict(results)
     results["shift"] = shift_values
     results["decay_id"] = decay_ids
-    
+
     period = duration / time_bins
     time_axis = np.linspace(0, (time_bins - 1) * period, time_bins, dtype=np.float64)
     fixed_lifetimes = metadata_dict[channel_name].get("fixed_lifetimes", {})
     display_shift_data_widget(results, channel_name, choose_shift_method, time_axis, period, metadata_dict[channel_name].get("num_components", 0), log_y, start, end, fixed_lifetimes=fixed_lifetimes)
-    
+
     if metadata_dict["fix_shift"]:
         median_shift = np.median(shift_values)
         shift_data = st.number_input(f"{channel_name} Shift", value=median_shift, step=0.1, help=f"The shift for {channel_name} channel. The provided default value is the median of the shifts. You can change it to a specific value.")
     else:
         if "2D" in input_type:
-            # get one shift value for each fov 
+            # get one shift value for each fov
             fovs = metadata_df[fov_name_col].unique()
             fov_shifts = []
             for fov in fovs:
@@ -317,14 +302,14 @@ def fit_options_widget(metadata_dict):
     """
     # Create columns for layout
     cols_per_row = 2
-    
+
     # First row - metric and fitting mode
     cols1 = st.columns(cols_per_row)
     with cols1[0]:
         fitting_algo = st.selectbox(
             "Metric", 
             ["MLE", "WLS"],
-            index=0, 
+            index=0,
             key="fitting_metric",
             help="MLE: Maximum Likelihood Estimation. WLS: Weighted Least Squares."
         )
@@ -340,40 +325,40 @@ def fit_options_widget(metadata_dict):
                 + ("" if needs_shift
                    else " Local: warm-start on mean decay, then local fit per cell (faster).")
         )
-    
-   
+
+
     # Handle channel-specific number of components
     channel_components = {}
     channels_fit = metadata_dict["Lifetime fit"]
-    
+
     # Create additional rows for channel components
     if channels_fit:
         st.write("**Number of components:**")
         num_channels = len(channels_fit)
         num_rows = math.ceil(num_channels / cols_per_row)
-        
+
         for row in range(num_rows):
             cols = st.columns(cols_per_row)
             for col_idx in range(cols_per_row):
                 channel_idx = row * cols_per_row + col_idx
                 if channel_idx >= num_channels:
                     break
-                
+
                 channel_name = channels_fit[channel_idx]
                 with cols[col_idx]:
                     channel_components[channel_name] = st.number_input(
                         f"{channel_name}", 
                         value=metadata_dict[channel_name]["num_components"], 
-                        step=1, 
-                        min_value=1, 
+                        step=1,
+                        min_value=1,
                         max_value=3,
                         key=f"{channel_name}_num_components"
                     )
-    
+
     # Update metadata_dict with results
     metadata_dict["fitting_algo"] = fitting_algo
     metadata_dict["fitting_mode"] = fitting_mode
-   
+
     # Update channel-specific components
     for channel_name in channels_fit:
         metadata_dict[channel_name]["num_components"] = channel_components[channel_name]
@@ -411,7 +396,7 @@ def fit_options_widget(metadata_dict):
                     else:
                         fixed_lifetimes[t_key] = None
         metadata_dict[channel_name]["fixed_lifetimes"] = fixed_lifetimes
-    
+
     return metadata_dict
 
 def start_end_widget(time_bins, channel):
@@ -419,18 +404,18 @@ def start_end_widget(time_bins, channel):
     with col1:
         start = st.number_input(
             f"{channel} Start (T1)", 
-            value=0, 
-            step=1, 
-            min_value=0, 
+            value=0,
+            step=1,
+            min_value=0,
             max_value=time_bins-1,
             key=f"{channel}_start"
         )
     with col2:
         end = st.number_input(
             f"{channel} End (T2)", 
-            value=time_bins, 
-            step=1, 
-            min_value=1, 
+            value=time_bins,
+            step=1,
+            min_value=1,
             max_value=time_bins,
             key=f"{channel}_end"
         )

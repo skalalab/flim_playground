@@ -385,7 +385,6 @@ def _render_shift_controls(metadata_df, metadata_dict):
         col1_1, col1_2 = st.columns(2)
         with col1_1:
             if st.button("Confirm and Start", width='stretch'):
-                # Update metadata_df in session state
                 st.session_state["last_extracted_metadata"] = metadata_df
                 st.session_state["choosing_shift"] = False
                 st.session_state["shift_ready"] = True
@@ -538,7 +537,6 @@ STEP_RENDERERS = {
 }
 
 st.set_page_config(layout="wide", page_icon="🔬")
-# Render the top menu
 render_top_menu()
 init_session_state()
 st.title("Data Extraction")

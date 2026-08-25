@@ -15,13 +15,13 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
     color_by = []
     opacity_by = shape_by = separate_by = None
-    
+
     if len(available_categories) == 0:
         return color_by, opacity_by, shape_by, separate_by
-    
+
     if not color_based:
         return color_by, opacity_by, shape_by, separate_by
-    
+
     # Determine number of columns
     num_cols = 4 if point_based and separate_by_available else 3 if point_based else 1
     cols = st.columns(num_cols)
@@ -35,7 +35,7 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
         available_for_color = [cat for cat in available_categories if cat != separate_by]
         with cols[1]:
             color_by = st.multiselect("Color by", available_for_color, default=[available_for_color[0]] if available_for_color else [])
-    else: 
+    else:
         with cols[0]:
             color_by = st.multiselect("Color by", available_categories, default=[available_categories[0]] if available_categories else [])
 
@@ -68,7 +68,7 @@ def umap_hyperParams_widget():
         min_dist = st.number_input(
             "min_dist",
             value=0.1,  # Initial value
-            step=0.1,            
+            step=0.1,
         )
         umap_hyperParams_dict["min_dist"] = min_dist
 
@@ -96,17 +96,17 @@ def comparison_pair_widget(available_pairs):
             # Fallback for other formats
             label = str(pair)
         pair_labels.append(label)
-    
+
     # Create a mapping from labels back to original pairs
     label_to_pair = dict(zip(pair_labels, available_pairs))
-    
+
     selected_labels = st.multiselect(
         "Select comparison pairs",
         pair_labels,
         default=pair_labels,
         key="compare_pairs"
     )
-    
+
     # Convert selected labels back to original pairs
     selected_pairs = [label_to_pair[label] for label in selected_labels]
     return selected_pairs
@@ -130,7 +130,7 @@ def histogram_bin_width_widget(x_data, key=None):
         epsilon = 1e-9
         # Calculate common bin edges based on the user-provided bin_width
         common_bin_edges = np.arange(min_val, max_val + bin_width + epsilon, bin_width)
-    
+
     else:
         # Constant / near-constant feature: numpy's 'auto' yields a single bin;
         # fall back to those edges instead of leaving common_bin_edges unbound.
@@ -253,7 +253,7 @@ def get_custom_order_widget(items, key):
     if sort_items is None:
         st.warning("streamlit-sortables is not installed. Please install it to use this feature.")
         return items
-    
+
     sorted_items = sort_items(items, key=key)
     return sorted_items
 
@@ -272,13 +272,13 @@ def reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by):
     Use this function *after* plotting to allow the user to adjust the order for next render.
     """
     from src.vis.helpers import natural_tuple_sort
-    
+
     session_key_sep, session_key_cmp = get_visual_group_keys(filtered_df, selected_var, color_by, separate_by)
 
     # specific to streamlit-sortables: it may not render correctly inside a collapsed expander because of 0 height
     # We use a checkbox to trigger a rerun and render it only when visible
     show_order_config = st.checkbox("Reorder X-axis Groups", value=False)
-    
+
     if show_order_config:
         # Color groups (Compare groups)
         # Grouping logic
@@ -287,9 +287,9 @@ def reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by):
             temp_df_groups = ["all_data"]
         else:
             temp_df_groups = filtered_df[group_by_cols].astype(str).agg('::'.join, axis=1).unique()
-        
+
         cmp_groups = natural_tuple_sort(temp_df_groups, delimiter='::')
-        
+
         # Merge with existing stored order to preserve relative ordering of known items while adding new ones
         if session_key_cmp in st.session_state:
             stored = st.session_state[session_key_cmp]
@@ -299,23 +299,20 @@ def reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by):
         version_key = f"sort_version_{'_'.join(color_by)}"
         if version_key not in st.session_state:
             st.session_state[version_key] = 0
-            
+
         st.write(f"**Reorder Groups ({', '.join(color_by) if color_by else 'All Data'})**")
-        
+
         # Use version in key to force re-mount when confirmed
         widget_key = f"sort_cmp_{'_'.join(color_by)}_{st.session_state[version_key]}"
         new_cmp_order = get_custom_order_widget(cmp_groups, key=widget_key)
-        
+
         if st.button("Confirm Reordering"):
             if new_cmp_order:
                 st.session_state[session_key_cmp] = new_cmp_order
                 # Increment version to force re-render next time
                 st.session_state[version_key] += 1
-            # A new order is a BUILD-time change, so the figure has to be remade -- but do
-            # not st.rerun() here. This widget is called from inside the plot fragment
-            # (pages/data_analysis.py) and the styling controls render *after* it, so
-            # rerunning at this point culls every widget of the fragment not yet rendered:
-            # Point Size, Color Map and the rest all snap back to their module defaults on
-            # the rebuild. Flag it instead and let the single escalation at the end of the
-            # fragment fire once everything has re-registered.
+            # A new order is a build-time change, but do not st.rerun() here: this widget
+            # runs inside the plot fragment (pages/data_analysis.py) and the styling
+            # controls render after it, so rerunning now would reset them to their module
+            # defaults. Flag it and let the escalation at the end of the fragment fire.
             st.session_state["_plot_needs_rebuild"] = True

@@ -53,7 +53,7 @@ def cohens_d(group1, group2, mean_or_median):
     """Compute absolute Cohen's d (|d|) for two independent samples."""
     # sample sizes
     n1, n2 = len(group1), len(group2)
-   
+
     if mean_or_median == "Mean": 
         # mean difference
         diff = np.mean(group1) - np.mean(group2)
@@ -89,11 +89,11 @@ def create_shape_mapping(groups):
 
 def create_color_map(groups, overlap_point, colormap="tab10"):
     # if points in the visualization is going to overlap, use a transparent color
-    if overlap_point: 
+    if overlap_point:
         alpha = 0.6 if len(groups) > 1 else 1.0
     else:
         alpha = 1.0
-    
+
     # Handle different colormap types
     try:
         if colormap in ["viridis", "plasma", "inferno", "magma", "cividis"]:
@@ -111,7 +111,7 @@ def create_color_map(groups, overlap_point, colormap="tab10"):
     except (ValueError, ImportError):
         # Fallback to tab10 if colormap is not available
         palette = sns.color_palette("tab10", n_colors=len(groups))
-    
+
     color_sequence = [f"rgba({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)}, {alpha})" for color in palette]
     color_map = {t: color_sequence[i] for i, t in enumerate(groups)}
     return color_map
@@ -334,7 +334,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
             data_range_y = 1  # Default if overall data is all NaN or not enough points
         else:
             data_range_y = global_max_y - global_min_y
-        
+
         if data_range_y == 0:  # Avoid division by zero or if all values are the same
             data_range_y = 1 # Use a nominal range to prevent zero spacing
 
@@ -359,7 +359,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
             sorted_pairs = sorted(selected_pairs,
                                   key=lambda p: (min(compare_groups.index(p[0]), compare_groups.index(p[1])),
                                                  max(compare_groups.index(p[0]), compare_groups.index(p[1]))))
-        
+
         # --- Threshold input based on selected method ---
         if threshold is None:
             threshold = 0.0
@@ -405,7 +405,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
                     star_text=stars,
                     show_effect_size=True
                 )
-          
+
 
         # No explicit "else" for unsupported methods here as _calculate_effect_size handles the warning,
         # and effect_size_value would be None, thus skipping annotation.
@@ -489,17 +489,12 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
     best_gmm = None
     lowest_bic = np.inf
 
-    # Pin the BLAS/OpenMP pool to one thread for the sweep. Counter-intuitively this is
-    # ~9x faster here: a 1-D or 2-D FLIM feature gives each thread so little work that
-    # spawning and synchronising them costs far more than the arithmetic, so the default
-    # (one thread per core) spends the fit thrashing. Measured on 112,808 rows across 5
-    # colour groups: 2.3 s unpinned -> 0.22 s pinned. Not bit-identical: multi-threaded BLAS
-    # reduces in a different order, so fitted means drift by ~1e-12. Everything the user sees
-    # is unchanged -- the selected n_components and the per-cell component assignment matched
-    # exactly on every group. The residual risk is a near-tie in BIC between two component
-    # counts, where that drift could flip the choice. Imported inside the function so the
-    # source stays self-contained when export_script.py inlines it via inspect.getsource();
-    # threadpoolctl ships as a scikit-learn dependency.
+    # Pin the BLAS/OpenMP pool to one thread: a 1-D or 2-D feature gives each thread too
+    # little work to pay for synchronising them, so the sweep runs ~9x faster single-
+    # threaded. Fitted means then differ by ~1e-12 from the multi-threaded reduction
+    # order, which can only matter on a near-tie in BIC between two component counts.
+    # Imported inside the function so the source stays self-contained when
+    # export_script.py inlines it via inspect.getsource().
     from threadpoolctl import threadpool_limits
 
     with threadpool_limits(1):
@@ -637,18 +632,11 @@ def get_point_visual_mappings(
         key_positions.append(3)
 
     def ordered_group_iter():
-        # Group once, then walk the Cartesian product and look each combination up.
-        # Masking per combination meant a full-length scan of the frame for every
-        # entry in the product -- and the product is mostly combinations that match
-        # no rows at all (20 of 120 in a representative dataset), so the great
-        # majority of those scans found nothing. Walking `product` here rather than
-        # iterating the groupby is what keeps trace order, legend order and
-        # legendrank byte-for-byte identical to the mask version.
-        #
-        # groupby drops NaN keys, which is the same rows the old masks dropped: a
-        # `df[col] == value` comparison is False against NaN, so those rows never
-        # matched any combination. The shape/opacity/separate key lists are built
-        # from `.dropna().unique()` anyway, so a NaN key is never looked up.
+        # Group once, then walk the Cartesian product and look each combination up, so
+        # the frame is scanned once rather than once per combination (most of which match
+        # no rows). Walking `product` rather than the groupby is what fixes trace, legend
+        # and legendrank order. groupby drops NaN keys, and the shape/opacity/separate key
+        # lists come from `.dropna().unique()`, so a NaN key is never looked up.
         groups = {}
         for key, group_df in df.groupby(key_cols, sort=False, observed=True):
             if not isinstance(key, tuple):
@@ -665,7 +653,6 @@ def get_point_visual_mappings(
 
     return grouped_ordered, color_map, shape_map, opacity_map, separate_groups
 
-# Function to apply plot styling to any figure
 def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     """Apply consistent styling to plotly figures.
 
@@ -697,9 +684,7 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
             else:
                 annotation.font = dict(size=axis_label_size)
 
-    # Theme-aware hover tooltips, applied centrally so EVERY plot's hover matches the
-    # axes instead of Plotly's default gray: black-on-white in light mode,
-    # white-on-dark in dark mode.
+    # Theme-aware hover tooltips: black-on-white in light mode, white-on-dark in dark.
     theme_color = get_context_theme_color()
 
     # Update layout with axis and legend font sizes
@@ -907,7 +892,7 @@ def add_interleaved_points_trace(
     # touching (or being perturbed by) the global `random` state. Seeded by
     # default; pass random_seed=None for a nondeterministic order.
     rng = random.Random(random_seed)
-    
+
     # Collect each colour's points as columns rather than one dict per cell. A single
     # colour can receive points from several (shape, opacity, separate) subgroups, so
     # gather the chunks in iteration order and concatenate once at the end.
@@ -935,15 +920,14 @@ def add_interleaved_points_trace(
                 np.array([o for _, _, o in chunks], dtype=object), lengths),
         }
 
-    # Shuffle points within each color group. Shuffling an index permutation rather
-    # than the rows draws from `rng` in exactly the same sequence as shuffling a list
-    # of that length did, so the interleave order is unchanged.
+    # Shuffle points within each color group. An index permutation is shuffled rather
+    # than the rows, so `rng` is drawn from in the same sequence either way.
     for color_group, columns in points_by_color.items():
         order = list(range(len(columns['x'])))
         rng.shuffle(order)
         order = np.asarray(order, dtype=int)
         points_by_color[color_group] = {k: v[order] for k, v in columns.items()}
-    
+
     # Split each color group into batches. Batches are (start, end) bounds into the
     # colour's arrays; slicing at trace-build time avoids copying the points twice.
     batches_by_color = {}
@@ -952,47 +936,47 @@ def add_interleaved_points_trace(
         # Adjust num_batches if there are fewer points
         actual_batches = min(num_batches, max(1, num_points // 5))  # At least 5 points per batch
         batch_size = math.ceil(num_points / actual_batches)
-        
+
         batches = []
         for i in range(actual_batches):
             start_idx = i * batch_size
             end_idx = min((i + 1) * batch_size, num_points)
             if start_idx < num_points:
                 batches.append((start_idx, end_idx))
-        
+
         batches_by_color[color_group] = batches
-    
+
     # Get color groups in their natural order
     color_group_order = {color_group: i for i, color_group in enumerate(color_map.keys())}
     sorted_color_groups = sorted(points_by_color.keys(), key=lambda x: color_group_order.get(x, float('inf')))
-    
+
     # Add <extra></extra> to hovertemplate to hide trace name from hover
     if "<extra>" not in hovertemplate:
         hover_without_trace = hovertemplate + "<extra></extra>"
     else:
         hover_without_trace = hovertemplate
-    
+
     # Find maximum number of batches across all colors
     max_batches = max(len(batches) for batches in batches_by_color.values())
-    
+
     # Interleave batches: add batch i from each color before moving to batch i+1
     for batch_idx in range(max_batches):
         for color_group in sorted_color_groups:
             batches = batches_by_color[color_group]
-            
+
             # Skip if this color doesn't have this many batches
             if batch_idx >= len(batches):
                 continue
-            
+
             start_idx, end_idx = batches[batch_idx]
             columns = points_by_color[color_group]
-            
+
             # Build arrays for this batch
             x_vals = columns['x'][start_idx:end_idx].tolist()
             y_vals = columns['y'][start_idx:end_idx].tolist()
             text_vals = columns['text'][start_idx:end_idx].tolist()
             customdata_vals = columns['customdata'][start_idx:end_idx].tolist()
-            
+
             # Map visual properties to arrays. These stay full-length lists even though
             # each batch has a single shape/opacity group: apply_plot_styling reads
             # marker.symbol/marker.opacity and branches on whether they are sequences
@@ -1001,10 +985,10 @@ def add_interleaved_points_trace(
             batch_opacity_groups = columns['opacity_group'][start_idx:end_idx]
             marker_symbols = [shape_map[g] if g is not None and shape_map else 'circle' for g in batch_shape_groups]
             marker_opacities = [opacity_map[g] if g is not None and opacity_map else 0.8 for g in batch_opacity_groups]
-            
+
             # Only show legend for the first batch of each color
             show_in_legend = (batch_idx == 0)
-            
+
             fig.add_trace(
                 go.Scatter(
                     x=x_vals,
@@ -1024,15 +1008,13 @@ def add_interleaved_points_trace(
                     legendrank=color_group_order[color_group]
                 )
             )
-    
-    # Add shape/opacity legends if needed
+
     add_point_legend_traces(fig, shape_map, opacity_map, shape_by=shape_by, opacity_by=opacity_by)
-    
-    # Update layout with hovermode
+
     fig.update_layout(
         hovermode='closest'
     )
-    
+
     return fig
 
 def add_point_legend_traces(fig, shape_map, opacity_map, shape_by=None, opacity_by=None):

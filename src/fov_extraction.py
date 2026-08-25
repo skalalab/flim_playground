@@ -116,18 +116,18 @@ def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, i
         return f"Error: {channel_name} intensity image has a different shape than the mask: {intensity_image.shape} != {mask.shape}", pd.DataFrame()
     single_cell_texture_features_fov = extract_texture_features_from_arrays(intensity_image, mask, fov_name, feature_prefix)
     return "", single_cell_texture_features_fov
- 
+
 def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask):
     # get mask morphology features
     feature_prefix = f"Intensity morphology_{channel_name}: "
     mask_morphology_features = ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length", "circularity"]
-    
+
     try:
         mask_props = regionprops(label_image=mask)
     except TypeError:
         error_msg = f"Error processing mask for {channel_name}: Mask appears to be in boolean format. Please ensure the mask is properly labeled with integer values for different regions."
         return error_msg, pd.DataFrame()
-    
+
     fov_name = metadata[fov_col_name]
     single_cell_morph_features_fov = {}
     for region in mask_props:
@@ -186,16 +186,16 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
 
     fit_feature_prefix = f"Lifetime fit_{channel_name}: "
     intensity_images = {}
-   
+
     try:
         mask = load_image(metadata[f"{channel_name}_Mask"])
     except Exception as e:
         return _read_fail_msg(channel_name, "mask", metadata[f"{channel_name}_Mask"], e), pd.DataFrame()
-   
+
     err, t1 = _load_masked_component(metadata, channel_name, "t1", f"{channel_name}_SPCImage t1", mask)
     if err:
         return err, pd.DataFrame()
-    
+
     intensity_images[f"{fit_feature_prefix}t1"] = t1
 
     if num_components >= 2:
@@ -205,7 +205,7 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
         err, t2 = _load_masked_component(metadata, channel_name, "t2", f"{channel_name}_t2", mask)
         if err:
             return err, pd.DataFrame()
-        
+
         intensity_images[f"{fit_feature_prefix}a1"] = a1
         intensity_images[f"{fit_feature_prefix}t2"] = t2
         if num_components == 2:
@@ -218,13 +218,13 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
         err, t3 = _load_masked_component(metadata, channel_name, "t3", f"{channel_name}_t3", mask)
         if err:
             return err, pd.DataFrame()
-        
+
         intensity_images[f"{fit_feature_prefix}a2"] = a2
         intensity_images[f"{fit_feature_prefix}t3"] = t3
         intensity_images[f"{channel_name}_a3"] = 100 - a1 - a2
 
     if num_components == 1:
-        tm = t1 
+        tm = t1
         tm_iw = t1
     elif num_components == 2:
         tm = (a1 / 100 * t1) + ((100 - a1) / 100 * t2)
@@ -237,25 +237,25 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
         alpha2 = a2 / 100.0
         alpha3 = (100.0 - a1 - a2) / 100.0
         tm_iw = (alpha1 * (t1 ** 2) + alpha2 * (t2 ** 2) + alpha3 * (t3 ** 2)) / tm
-    
+
     intensity_images[f"{fit_feature_prefix}tm"] = tm
     intensity_images[f"{fit_feature_prefix}tm_iw"] = tm_iw
 
     # Get unique region labels from the mask (excluding background label 0)
     unique_labels = np.unique(mask)
     unique_labels = unique_labels[unique_labels != 0]
-    
+
     if len(unique_labels) == 0:
         return _NO_CELLS_IN_MASK, pd.DataFrame()
 
     image_name = metadata[fov_colname]
     single_cell_features_img = {}
-    
+
     # Calculate mean intensity for each region and each intensity image
     for region_label in unique_labels:
         cell_id = f"{image_name}_{region_label}"
         single_cell_features_img[cell_id] = {}
-        
+
         for prop_name, intensity_image in intensity_images.items():
             region_mask = (mask == region_label)
             region_intensities = intensity_image[region_mask]
@@ -263,12 +263,11 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
             # Convert masked array to regular array with NaN for masked values
             mean_intensity = np.nan if np.ma.is_masked(mean_intensity) else float(mean_intensity)
             single_cell_features_img[cell_id][prop_name] = mean_intensity
-         
-   # convert single_cell_features_img to a dataframe
+
     single_cell_fit_features_fov = pd.DataFrame(single_cell_features_img).T
     if single_cell_fit_features_fov.empty:
         return _NO_CELLS_IN_MASK, pd.DataFrame()
-   
+
     return "", single_cell_fit_features_fov
 
 def extract_fit_results(channel_name, decay_curves, results, num_components, shifted_irf, time_axis, start, end, fixed_lifetimes=None):
@@ -341,7 +340,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}tm_iw"] = (
                 ((alpha1 * (t1_val ** 2) + alpha2 * (t2_val ** 2)) / tm_ns) * 1000 if tm_ns != 0 else 0.0
             )
-            
+
         elif num_components == 3:
             single_cell_features_fov[cell_id][f"{channel_name}_amp2"] = results["amp2"][i]
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}t2"] = results["t2"][i] * 1000  # Convert to ps
@@ -400,7 +399,7 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
 
     fit_free_feature_prefix = f"Lifetime fit free_{channel_name}: "
     single_cell_features_fov = {}
-    
+
     # Pre-calculate time_axis and w for reuse across all decay curves
     time_axis = None
     w = 2*np.pi*laser_rate
@@ -424,11 +423,11 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         except Exception as e:
             return f"Error calculating the phasor of fluorescence lifetime standard: {e}", pd.DataFrame()
     else:
-        if shifted_irf is not None: 
+        if shifted_irf is not None:
             # calculate the phasor of irf
             g_irf, s_irf = get_raw_phasor(shifted_irf, h=1,  w=w, time_axis=time_axis, full_period=full_period)
             g_irf_2nd, s_irf_2nd = get_raw_phasor(shifted_irf, h=2,  w=w, time_axis=time_axis, full_period=full_period)
-        else: 
+        else:
             return _shifted_irf_missing(channel_name), pd.DataFrame()
     for cell_id, decay_curve in decay_curves.items():
         if cell_id not in single_cell_features_fov:
@@ -440,10 +439,10 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         # clip the timebin to above or equal to 0
         decay_curve = np.clip(decay_curve, 0, None)
 
-         # calculate the raw phasor coordinates    
+         # calculate the raw phasor coordinates
         g_raw, s_raw = get_raw_phasor(decay_curve, h=1, w=w, time_axis=time_axis, full_period=full_period)
         g_raw_2nd, s_raw_2nd = get_raw_phasor(decay_curve, h=2, w=w, time_axis=time_axis, full_period=full_period)
-        
+
         if calibration_method == "Fluorescence Lifetime Standard":
             G, S = lifetime.phasor_calibrate(g_raw, s_raw, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=fluorescence_lifetime_standard_lifetime)
             G_2nd, S_2nd = lifetime.phasor_calibrate(g_raw_2nd, s_raw_2nd, ref_mean, ref_real, ref_imag, frequency=laser_rate, lifetime=fluorescence_lifetime_standard_lifetime, harmonic=2)
@@ -451,7 +450,7 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
             G, S = phasor.phasor_divide(g_raw, s_raw, g_irf, s_irf)
             G_2nd, S_2nd = phasor.phasor_divide(g_raw_2nd, s_raw_2nd, g_irf_2nd, s_irf_2nd)
 
-        phi = np.arctan2(S, G) 
+        phi = np.arctan2(S, G)
         mod = np.sqrt(G**2 + S**2)
         tau_phase = 1/w * np.tan(phi)
         if mod > 0 and mod < 1:
@@ -489,7 +488,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         error_msg, decay_curves = get_decay_curves(metadata, input_type, channel_name, time_bins, shift=False)
         if error_msg != "":
             return error_msg, pd.DataFrame()
-        
+
         shift_col = f"{channel_name}_shift"
         if shift_required and shift_col in metadata.index:
             error_msg, irf = get_irf(metadata, channel_name, time_bins)
@@ -532,7 +531,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         if "prefitted" not in input_type or fit_free:
             st.info(f"Extracting Lifetime Features (fitting/fit free) for {channel_name}: for {len(decay_curves)} cells...")
         channel_progress = st.progress(0)
-    
+
     channel_progress_callback = create_progress_callback(channel_progress)
     if need_to_fit:
         results = fit_curves(duration, time_bins, list(decay_curves.values()), shifted_irf, num_components, fitting_algo, fitting_mode, start=start, end=end, fixed_lifetimes=fixed_lifetimes, _progress_callback=channel_progress_callback)
@@ -630,7 +629,6 @@ def fov_extraction(metadata, metadata_dict):
     """
     fov_col_name = metadata_dict["fov_name_col"]
     fov_name = metadata[fov_col_name]
-    # unique cell id colname
     unique_cell_id_colname = metadata_dict["unique_cell_id_col"]
     # Collect DataFrames from each channel
     fov_feature_dfs = []
@@ -666,7 +664,7 @@ def fov_extraction(metadata, metadata_dict):
                     fluorescence_lifetime_standard_image = None
                     fluorescence_lifetime_standard_lifetime = None
                     fluorescence_lifetime_standard_time_axis = None
-            else: 
+            else:
                 calibration_method = None
                 fluorescence_lifetime_standard_file = None
                 fluorescence_lifetime_standard_image = None

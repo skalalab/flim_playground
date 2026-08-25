@@ -86,9 +86,8 @@ def _collect_categorical_filters(categorical_cols, df):
         sel = st.session_state.get(selection_key(cat), [ALL_LABEL])
         chosen = chosen_items(sel, df[cat].unique().tolist())
         # `is not None` rather than truthiness: an empty selection means no rows in the
-        # app, so the script has to say isin([]) instead of dropping the filter and
-        # quietly keeping everything. Easy to reach now that "Except:" can cover a whole
-        # column.
+        # app, so the script has to say isin([]) rather than drop the filter and keep
+        # everything. "Except:" covering a whole column reaches this.
         if chosen is not None:
             filters[cat] = list(chosen)
     return filters
@@ -130,9 +129,6 @@ def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opac
         "axis_label_size": st.session_state.plot_axis_label_size,
         "legend_size": st.session_state.plot_legend_size,
         "colormap": st.session_state.plot_colormap,
-        # .get(), not attribute access: the toggle only renders when something is
-        # coloured by (plot_config_widget's show_count_toggle), so the key is absent
-        # for uncoloured plots — which is also when it has nothing to show.
         "show_group_counts": st.session_state.get("plot_show_group_counts", False),
     }
 
@@ -309,7 +305,7 @@ with col1:
                     if selected_effect_size_method != "None":
                         mean_or_median = st.radio("Mean or Median", ["Mean", "Median"])
                 statistical_test = st.radio("Statistical Comparison between Two Groups", ["None", "Independent t-test", "Welch's t-test"], index=0)
-               
+
         elif method in bivar_methods:
             if "2D" in method:
                 selected_x, selected_y = twod_single_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
@@ -333,7 +329,7 @@ with col1:
                     splits = st.slider("Train size (proportion of training data)", 0.5, 0.9, 0.7, 0.1)
                 st.markdown("**Classifier Hyperparameters**")
                 classifier_params = classifier_hyperparams_widget(classification_method)
-    
+
 with col2:
     if upload_complete:
         # click_ready: boolean to check if the plot is ready for click events
@@ -353,23 +349,12 @@ with col2:
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        # Prepare groups for reordering
-                        custom_order = {}
-                        # We need to access the logic for determining groups to propose them for sorting
-                        # Since we can't easily run the internal logic of feature_comparison_plot without calling it,
-                        # we can infer the groups from the dataframe directly here.
-                        
-                        # Logic to determine keys for "separate_by" and "color_by"
-                        # We mimic the logic in feature_comparison_plot somewhat or we just pass the raw data
-                        # But to save state, we need to know what the groups are.
-                        
-                        # Define the reordering UI *before* the plot or *after*? 
-                        # User said: "below the actual plot, I want to have an interactive setup... confirm button. After confirm the plot is rerendered"
-                        # So we render the plot first (with default or current session state order), then show widgets below.
-                        
-                        # Check session state for existing custom order
+                        # Group order for the reorder controls, which render below the plot
+                        # (reorder_x_axis_widget). The keys are derived from the frame here
+                        # because feature_comparison_plot builds its groups internally and
+                        # cannot be asked for them without being called.
                         session_key_sep, session_key_cmp = get_visual_group_keys(filtered_df, selected_var, color_by, separate_by)
-                        
+
                         current_custom_order = {}
                         if session_key_sep in st.session_state:
                             current_custom_order['separate_groups'] = st.session_state[session_key_sep]
@@ -377,7 +362,7 @@ with col2:
                             current_custom_order['compare_groups'] = st.session_state[session_key_cmp]
 
                         fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, colormap=st.session_state.plot_colormap, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test, custom_order=current_custom_order)
-                        
+
 
                     elif method == "FOV Comparison":
                         fig = fov_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, colormap=st.session_state.plot_colormap)
@@ -391,7 +376,7 @@ with col2:
                             for each color group on the selected feature with 1 to 5 components (fit on raw distribution, not on the histograms). \
                             Choose the one in which all the components are at least of x% weight and has the lowest BIC score. \
                             The default x% is 10%.")
-                        
+
                         # Apply log transform if requested (consistent with bivar.py)
                         if log_x:
                             import numpy as np
@@ -403,8 +388,8 @@ with col2:
                         if apply_gmm:
                             fig, gmm_df = feature_gmm_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x)
                             data_export_ready = True
-                        else: 
-                            fig = feature_histogram_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x)    
+                        else:
+                            fig = feature_histogram_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x)
                 else:
                     st.write(f"No data available after removing rows with missing values {sad_emoji}")
             elif method in bivar_methods:
@@ -428,15 +413,15 @@ with col2:
                             data_export_ready = True
                     else:
                         st.write("Your data does not contain the required features for phasor plot.")
-                                   
+
             elif method in multivar_methods:
                 if method == "Dimension Reduction":
                     if len(selected_features) < 2:
                         st.write("Please select at least two features for dimension reduction methods like PCA or UMAP.")
-                    else: 
+                    else:
                         # drop rows with NaN values in the selected_features columns
                         filtered_df = filtered_df[filtered_df[selected_features].notna().all(axis=1)]
-                        
+
                         if len(filtered_df) > 0:
                             try:
                                 fig = dimension_reduction_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_features=selected_features, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by, colormap=st.session_state.plot_colormap, method=dr_method, hyperParam_dict=hyperParam_dict)
@@ -479,15 +464,12 @@ with col2:
                                                   classify_classes=df_classify['classes'].unique().tolist())
 
             if fig is not None:
-                # Three of the five styling controls are baked into the figure and cannot be
-                # re-applied to a finished one: the colormap is passed into the plot
-                # functions, the group-count toggle is read inside them (it becomes part of
-                # each trace name), and feature_comparison_plot sizes its section headers
-                # from the axis-label size (src/vis/univar.py:733). Changing any of those has
-                # to rebuild, so the fragment escalates to a full rerun. Point size and legend
-                # size are applied afterwards by apply_plot_styling, so they stay inside the
-                # fragment -- which is the point: adjusting them no longer re-reads the CSV,
-                # re-applies the filters and rebuilds every trace.
+                # Build-time styling: the colormap is passed into the plot functions, the
+                # group-count toggle becomes part of each trace name, and
+                # feature_comparison_plot sizes its section headers from the axis-label
+                # size. Changing any of the three requires a rebuild, so the fragment
+                # escalates to a full rerun; point size and legend size are applied
+                # afterwards by apply_plot_styling and stay inside the fragment.
                 def _plot_build_params():
                     return (
                         st.session_state.plot_colormap,
@@ -500,12 +482,8 @@ with col2:
                 @st.fragment
                 def _render_plot_and_controls(base_fig, build_params):
                     # apply_plot_styling mutates the figure in place and appends ghost
-                    # legend traces, so style a copy rather than base_fig itself. Repeated
-                    # in-place passes do happen to be stable today (the showlegend guard
-                    # makes them a no-op after the first), but the fragment reruns against
-                    # this same object indefinitely, and that idempotence is incidental
-                    # rather than something apply_plot_styling promises. The copy costs
-                    # ~0.06 s against a ~7 s rebuild, so keep the invariant explicit.
+                    # legend traces, so style a copy: the fragment reruns against this same
+                    # base_fig indefinitely. The copy costs ~0.06 s against a ~7 s rebuild.
                     fig = apply_plot_styling(go.Figure(base_fig), st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
                     if method == "2D Feature Distribution":
                         col2_1, col2_2 = st.columns([1, 1])
@@ -529,8 +507,8 @@ with col2:
                         # Widgets for reordering below
                         reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by)
 
-                    # 2. Plot configuration widget at the bottom - allows users to adjust styling after seeing plots
-                    # Widgets use key= to write directly to session state; Streamlit reruns naturally on change
+                    # 2. Plot styling. Widgets write to session state via key=, so
+                    # Streamlit reruns on change.
                     st.subheader("📊 Plot Styling")
                     show_colormap = len(color_by) > 0
                     plot_config_widget(point_based=point_based, show_colormap=show_colormap,
@@ -563,20 +541,11 @@ with col2:
                         _extra["hyperParam_dict"] = hyperParam_dict
                     _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, **_extra)
 
-                    # LAST in the fragment, deliberately. A build-time change needs a full
-                    # rerun, but escalating earlier -- which reads as the obvious place,
-                    # since it avoids painting a stale figure -- silently loses the change.
-                    # st.rerun() discards the state of every widget of this fragment that
-                    # was not rendered during the interrupted run, including untouched
-                    # ones, so the value is not stale but *gone*: the next run re-seeds the
-                    # module default from the block at the top of this file. That is why
-                    # Color Map, "Show group counts" and Axis Label Font Size appeared to
-                    # do nothing at all until some unrelated change forced a full rerun of
-                    # its own, and why "Confirm Reordering" reset Point Size and Legend
-                    # Font Size.
-                    #
-                    # The cost is one stale paint before the rebuild lands, which is
-                    # strictly better than the change never being applied.
+                    # Must be last in the fragment: st.rerun() discards the state of every
+                    # widget of this fragment that was not rendered during the interrupted
+                    # run, so escalating before the styling controls register would reset
+                    # them to their module defaults. The cost is one stale paint before the
+                    # rebuild lands.
                     if st.session_state.pop("_plot_needs_rebuild", False) or _plot_build_params() != build_params:
                         st.rerun(scope="app")
 

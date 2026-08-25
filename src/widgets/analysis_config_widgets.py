@@ -37,7 +37,7 @@ def _migrate_old_config_to_profiles(cfg: dict) -> dict:
     """Migrate old config format (flat) to new profile-based format."""
     if "profiles" in cfg:
         return cfg  # Already migrated
-    
+
     # Check if old format exists
     if any(key in cfg for key in ["unique_row_id_col", "fov_name_col", "categorical_cols", "feature_groups", "all_numerical_features"]):
         # Migrate to profile-based format
@@ -55,7 +55,7 @@ def _migrate_old_config_to_profiles(cfg: dict) -> dict:
             cfg.pop(key, None)
         cfg["profiles"] = profiles
         cfg["current_profile"] = "default"
-    
+
     return cfg
 
 def _get_current_profile() -> str:
@@ -76,25 +76,25 @@ def _get_profile_config(profile_name: str = None) -> dict:
     """Get config for a specific profile, or current profile if None."""
     if profile_name is None:
         profile_name = _get_current_profile()
-    
+
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
     cfg = _migrate_old_config_to_profiles(cfg)
-    
+
     if "profiles" not in cfg:
         cfg["profiles"] = {}
     if profile_name not in cfg["profiles"]:
         cfg["profiles"][profile_name] = {}
-    
+
     return cfg["profiles"][profile_name]
 
 def _save_profile_config(profile_name: str, profile_data: dict):
     """Save config for a specific profile."""
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
     cfg = _migrate_old_config_to_profiles(cfg)
-    
+
     if "profiles" not in cfg:
         cfg["profiles"] = {}
-    
+
     cfg["profiles"][profile_name] = profile_data
     cfg["current_profile"] = profile_name
     save_config(cfg, _ANALYSIS_CONFIG_PATH)
@@ -110,15 +110,14 @@ def dataset_config_widget(use_data_extraction=True):
     fov_name_col = get_fov_name_col()
     categorical_cols = get_categorical_cols()
     categorical_cols.extend([fov_name_col])
-    
+
     # Load and migrate config
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
     cfg = _migrate_old_config_to_profiles(cfg)
-    
-    # Get current profile
+
     current_profile = _get_current_profile()
     profile_cfg = _get_profile_config(current_profile)
-    
+
     # Initialize profile config with defaults if needed
     if "unique_row_id_col" not in profile_cfg:
         profile_cfg["unique_row_id_col"] = unique_cell_id_col
@@ -126,23 +125,22 @@ def dataset_config_widget(use_data_extraction=True):
         profile_cfg["fov_name_col"] = fov_name_col
     if "categorical_cols" not in profile_cfg:
         profile_cfg["categorical_cols"] = categorical_cols
-        
+
     if use_data_extraction:
-        # do nothing 
+        # do nothing
         _save_profile_config(current_profile, profile_cfg)
         return
-    
+
     st.header("Tell me about ur data")
-    
+
     # Profile selector at top left in three columns
     cols_header = st.columns(3)
-    
-    # Get available profiles
+
     available_profiles = list(cfg.get("profiles", {}).keys())
     if not available_profiles:
         available_profiles = ["default"]
         cfg["profiles"] = {"default": {}}
-    
+
     with cols_header[0]:
         # Profile selector
         selected_profile = st.selectbox(
@@ -152,7 +150,7 @@ def dataset_config_widget(use_data_extraction=True):
             help="Select which profile to configure",
             key="profile_selector"
         )
-        
+
         # Update current profile if changed
         if selected_profile != current_profile:
             st.session_state.current_profile = selected_profile
@@ -178,7 +176,7 @@ def dataset_config_widget(use_data_extraction=True):
             if new_categorical_cols_key in st.session_state:
                 del st.session_state[new_categorical_cols_key]
             st.rerun()
-    
+
     with cols_header[1]:
         # Create new profile button
         if len(available_profiles) < MAX_PROFILES:
@@ -190,7 +188,7 @@ def dataset_config_widget(use_data_extraction=True):
                     key="new_profile_name_input"
                 )
                 create_submitted = st.form_submit_button("➕ Create Profile", type="secondary")
-                
+
                 if create_submitted and new_profile_name:
                     new_profile_name = new_profile_name.strip()
                     if new_profile_name and new_profile_name not in available_profiles:
@@ -217,14 +215,14 @@ def dataset_config_widget(use_data_extraction=True):
                         st.error(f"Profile '{new_profile_name}' already exists! {sad_emoji}")
         else:
             st.info(f"Maximum {MAX_PROFILES} profiles reached")
-    
+
     with cols_header[2]:
         # Delete profile form
         if len(available_profiles) > 1:
             with st.form("delete_profile_form", clear_on_submit=True):
                 st.write("**Delete Profile**")
                 delete_submitted = st.form_submit_button("🗑️ Delete Profile", type="secondary")
-                
+
                 if delete_submitted:
                     # Delete the profile from config
                     del cfg["profiles"][selected_profile]
@@ -246,17 +244,17 @@ def dataset_config_widget(use_data_extraction=True):
                     st.rerun()
         else:
             st.info("Cannot delete the only profile")
-    
+
     # Reload profile config after potential profile switch
     current_profile = _get_current_profile()
     profile_cfg = _get_profile_config(current_profile)
-    
+
     cols = st.columns(2)
     with cols[0]:
         profile_cfg["unique_row_id_col"] = st.text_input("Unique Row ID", value=profile_cfg.get("unique_row_id_col", unique_cell_id_col), help="The column name that uniquely identifies each row in the dataset.")
     with cols[1]:
         profile_cfg["fov_name_col"] = st.text_input("FOV column name (if applicable)", value=profile_cfg.get("fov_name_col", fov_name_col), help="The column name that uniquely identifies each field of view in the dataset. Your dataset may not have this. It is ok.")
-    
+
     selected_categorical_cols = st.multiselect(
         "Select Categorical Columns", 
         profile_cfg.get("categorical_cols", categorical_cols), 
@@ -265,11 +263,11 @@ def dataset_config_widget(use_data_extraction=True):
         key=f"categorical_cols_multiselect_{current_profile}",
         accept_new_options=True
     )
-  
+
     # now let user define feature groups
     feature_groups_widget()
     col1, col2 = st.columns(2)
-   
+
     with col1:
         if st.button("Save Configuration"):
             profile_cfg["categorical_cols"] = selected_categorical_cols
@@ -286,7 +284,7 @@ def dataset_config_widget(use_data_extraction=True):
             _save_profile_config(current_profile, profile_cfg)
             st.session_state.config_saved = True  # Set flag for success message
             st.rerun()
-        
+
         # Display success message if flag is set
         if st.session_state.get("config_saved", False):
             st.success(f"Configuration saved successfully! {happy_emoji}")
@@ -308,34 +306,32 @@ def dataset_config_widget(use_data_extraction=True):
                 del st.session_state[numerical_features_key]
             st.session_state.config_reset = True  # Set flag for success message
             st.rerun()
-        
+
         # Display success message if flag is set
         if st.session_state.get("config_reset", False):
             st.success(f"Configuration reset successfully! {happy_emoji}")
             st.session_state.config_reset = False  # Clear the flag
 
 def feature_groups_widget():
-    # Get current profile and its config
     current_profile = _get_current_profile()
     profile_cfg = _get_profile_config(current_profile)
 
     # Initialize feature groups in profile config if not exists
     if "feature_groups" not in profile_cfg:
         profile_cfg["feature_groups"] = {}
-        
+
     # step 1: use text area to let user copy and paste all the features
     raw = st.text_area(
         "Paste numerical features (comma, semicolon, or whitespace separated)",
         placeholder="feat1, feat2; feat3\nfeat4 feat5",
         key=f"paste_box_{current_profile}",
     )
-    
-    # Parse features from raw text
+
     parsed_features = parse_features(raw)
-    
+
     # Get features from profile config if available
     config_features = profile_cfg.get("all_numerical_features", [])
-    
+
     # Determine available features based on logic:
     # If config has all_numerical_features, use union of paste + config
     # If no config, use parsed features from paste area
@@ -343,12 +339,12 @@ def feature_groups_widget():
         available_features = list(set(parsed_features + config_features))
     else:
         available_features = parsed_features
-    
+
     # Initialize profile-specific session state keys (needed in both if/else branches)
     feature_groups_key = f"feature_groups_{current_profile}"
     sortable_refresh_key_name = f"sortable_refresh_key_{current_profile}"
     previous_features_key = f"previous_features_{current_profile}"
-    
+
     # Show multiselect for all numerical features
     if available_features:
         st.subheader("📊 Select Numerical Features")
@@ -359,37 +355,37 @@ def feature_groups_widget():
             help="Include the numerical features you want to organize into groups",
             key=f"all_numerical_features_multiselect_{current_profile}"
         )
-        
+
         # Use selected features as the main features list
         features = selected_features
-        
+
         # Initialize session state for feature groups (profile-specific)
         if feature_groups_key not in st.session_state:
             st.session_state[feature_groups_key] = profile_cfg.get("feature_groups", {})
-        
+
         # Ensure feature_groups is a dictionary
         if not isinstance(st.session_state[feature_groups_key], dict):
             st.session_state[feature_groups_key] = {}
-        
+
         # Initialize sortable refresh counter (profile-specific)
         if sortable_refresh_key_name not in st.session_state:
             st.session_state[sortable_refresh_key_name] = 0
-        
+
         # Track previous multiselect selection to detect changes (profile-specific)
         if previous_features_key not in st.session_state:
             st.session_state[previous_features_key] = features
-        
+
         # Sync feature groups with multiselect selection
         # Remove features that are no longer selected from all groups
         features_set = set(features)
         previous_features_set = set(st.session_state[previous_features_key])
-        
+
         # If selection changed, update groups and refresh sortable
         if features_set != previous_features_set:
             for group_name in st.session_state[feature_groups_key]:
                 # Filter out deselected features from each group
                 st.session_state[feature_groups_key][group_name] = [
-                    f for f in st.session_state[feature_groups_key][group_name] 
+                    f for f in st.session_state[feature_groups_key][group_name]
                     if f in features_set
                 ]
             # Force sortable refresh when multiselect changes
@@ -404,16 +400,16 @@ def feature_groups_widget():
             st.session_state[sortable_refresh_key_name] = 0
         if previous_features_key not in st.session_state:
             st.session_state[previous_features_key] = []
-    
+
     if not features:
         st.info("Please paste numerical features above and we will help you organize them into groups.")
         return
-    
+
     st.subheader("Feature Groups Management")
-    
+
     # Create and Delete forms side by side
     col1, col2 = st.columns(2)
-    
+
     with col1:
         # Form to create new feature groups
         with st.form(f"create_feature_group_form_{current_profile}", clear_on_submit=True):
@@ -424,7 +420,7 @@ def feature_groups_widget():
                 help="Enter a name for the new feature group"
             )
             submitted = st.form_submit_button("Create Group")
-            
+
             if submitted and new_group_name:
                 if new_group_name not in st.session_state[feature_groups_key]:
                     st.session_state[feature_groups_key][new_group_name] = []
@@ -433,7 +429,7 @@ def feature_groups_widget():
                     st.rerun()
                 else:
                     st.error(f"Group '{new_group_name}' already exists! {sad_emoji}")
-    
+
     with col2:
         # Delete feature groups
         if st.session_state[feature_groups_key]:
@@ -445,31 +441,30 @@ def feature_groups_widget():
                     help="Select a feature group to remove. Features will be moved back to available pool."
                 )
                 delete_submitted = st.form_submit_button("🗑️ Delete Group", type="secondary")
-                
+
                 if delete_submitted and group_to_delete:
-                    # Remove the group from session state
                     del st.session_state[feature_groups_key][group_to_delete]
                     st.session_state[sortable_refresh_key_name] += 1  # Force sortable refresh
                     st.success(f"Deleted feature group: '{group_to_delete}' {happy_emoji}")
                     st.rerun()
         else:
             st.info("Create some feature groups first to enable deletion.")
-    
-    # Drag and Drop Interface  
+
+    # Drag and Drop Interface
     if features or st.session_state[feature_groups_key]:
         st.subheader("📋 Drag & Drop Feature Assignment")
-        
+
         # Show helpful message when no features selected but groups exist
         if not features and st.session_state[feature_groups_key]:
             st.warning("⚠️ No features selected in multiselect above. Your feature groups are now empty. Select features to populate groups again.")
-        
+
         # Calculate uncategorized features
         categorized_features = set()
         for group_name, group_features in st.session_state[feature_groups_key].items():
             if isinstance(group_features, list):
                 categorized_features.update(group_features)
         uncategorized_features = [f for f in features if f not in categorized_features]
-        
+
         # Prepare containers for sortables (correct format for multi_containers)
         container_list = [
             {
@@ -477,14 +472,14 @@ def feature_groups_widget():
                 "items": uncategorized_features
             }
         ]
-        
+
         # Add feature group containers
         for group_name, group_features in st.session_state[feature_groups_key].items():
             container_list.append({
                 "header": f"📁 {group_name}",
                 "items": group_features
             })
-        
+
         # Create the sortable interface
         try:
             sorted_items = sort_items(
@@ -493,17 +488,17 @@ def feature_groups_widget():
                 direction="vertical",
                 key=f"feature_groups_sortable_{current_profile}_{st.session_state[sortable_refresh_key_name]}"
             )
-            
+
             # Update session state with new assignments
             if sorted_items:
                 # Check if there were actual changes by comparing the content
                 has_changes = False
                 new_assignments = {}
-                
+
                 for container in sorted_items:
                     header = container["header"]
                     items = container["items"]
-                    
+
                     # Extract group name from header (remove emoji and spaces)
                     if header.startswith("📁 "):
                         group_name = header[2:].strip()  # Remove "📁 " prefix
@@ -512,7 +507,7 @@ def feature_groups_widget():
                             # Check if this group's items actually changed
                             if st.session_state[feature_groups_key][group_name] != items:
                                 has_changes = True
-                
+
                 # Only update and rerun if there were actual changes
                 if has_changes:
                     for group_name, items in new_assignments.items():
@@ -521,8 +516,8 @@ def feature_groups_widget():
         except Exception as e:
             st.error(f"Error with drag and drop interface: {str(e)} {sad_emoji}")
             st.info("Please try refreshing the page or recreating your feature groups.")
-   
-    
+
+
 def parse_features(text: str):
     if not text:
         return []

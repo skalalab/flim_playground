@@ -22,33 +22,33 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
     st.write("--------------------------------")
     st.write("Now your task is to map the categories to (combination of) slots.")
     st.info(f"Example fov_name: {exp_fov_name} has slots: {slots}")
-    
+
     chosen_categories = st.multiselect("Choose Categorical features (specfied in Configuration @ Home tab) to populate", available_categories)
-    
+
     if len(chosen_categories) > len(slots):
         st.warning(f"⚠️ Maximum {len(slots)} categories can be selected. Only the first {len(slots)} will be processed.")
         chosen_categories = chosen_categories[: len(slots)]
-    
+
     cat_label_map = {}
-    
+
     # Render multiselect widgets in columns (n_per_row)
-    n_per_row = 3 
+    n_per_row = 3
     num_categories = len(chosen_categories)
-    
+
     if num_categories > 0:
         num_rows = (num_categories + n_per_row - 1) // n_per_row  # Ceiling division
-        
+
         for row in range(num_rows):
             start_idx = row * n_per_row
             end_idx = min(start_idx + n_per_row, num_categories)
-            
+
             # Create columns for this row
             cols = st.columns(end_idx - start_idx)
-            
+
             # Add multiselect widgets to this row
             for i, cat_idx in enumerate(range(start_idx, end_idx)):
                 cat = chosen_categories[cat_idx]
-                
+
                 with cols[i]:
                     selected_slots = st.multiselect(
                         f"Slots for **{cat}**",
@@ -62,15 +62,14 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
     # construct a new df with the selected categories and slots and cell_id from the first 5 unique fov_name_col values
     unique_fov_values = combined_df[fov_name_col].unique()
     if len(unique_fov_values) <= 5:
-        # use all unique values
         preview_fov_values = unique_fov_values
     else:
         # use only the first 5 unique values
         preview_fov_values = unique_fov_values[:5]
-    
+
     # filter the dataframe to only include one row for each selected unique fov_name_col value
     preview_df = combined_df[combined_df[fov_name_col].isin(preview_fov_values)].drop_duplicates(subset=[fov_name_col])[[fov_name_col]].copy()
-    
+
     # add the chosen categories to the preview df and assign values based on the selected_indices from that category and concatenate them using delimiter
     for cat in chosen_categories:
         if cat_label_map[cat]:  # Only if user has selected slots for this category
@@ -122,21 +121,21 @@ def find_available_dfs_widget(df_folder_path, delimiter):
     if not os.path.isdir(df_folder_path):
         st.warning("Please provide a valid folder path.")
         return []
-    
+
     path = Path(df_folder_path)
     # Find all CSV files recursively
     all_csv_files = [str(file) for file in path.rglob("*.csv")]
-    
+
     # Filter out files ending with _merged.csv and _metadata.csv
     all_csv_files = [
-        file for file in all_csv_files 
+        file for file in all_csv_files
         if not (file.endswith('_combined.csv') or file.endswith('_metadata.csv'))
     ]
     available_csv_files = []
     existing_cell_ids = []
     prev_num_parts = 0
     for file in all_csv_files:
-        try: 
+        try:
             df = pd.read_csv(file)
         except Exception:
             st.warning(f"Failed to read the file {file}.")
@@ -153,12 +152,8 @@ def find_available_dfs_widget(df_folder_path, delimiter):
             # reject if not
             cell_ids = df[unique_cell_id_col].tolist()
             fov_names = df[fov_name_col].unique()
-            # If any cell_id here was already seen in a previously-loaded file, the
-            # ids collide across files: warn ONCE and skip this file (consistent with
-            # the checks above, which each warn and `continue`). The old code put the
-            # warning inside the per-cell loop, so a fully-overlapping file printed the
-            # identical warning once per row; its `continue` also only advanced the
-            # inner loop, so the colliding file was not actually skipped.
+            # A cell_id already seen in a previously-loaded file means the ids collide
+            # across files: warn once and skip the whole file, as the checks above do.
             existing_ids = set(existing_cell_ids)
             if any(cell_id in existing_ids for cell_id in cell_ids):
                 st.warning(_dup_values_msg(unique_cell_id_col, file))
@@ -189,11 +184,11 @@ def find_available_dfs_widget(df_folder_path, delimiter):
                 continue
 
             available_csv_files.append(file)
-        
+
     return available_csv_files
 
 def check_and_merge_df_widget(available_dfs):
-    # what we can assume about each df: 
+    # what we can assume about each df:
     # it is openable, has a unique and no-nan cell_id column
     # between df, the cell_id is unique
     first_df = pd.read_csv(available_dfs[0])
@@ -206,7 +201,7 @@ def check_and_merge_df_widget(available_dfs):
         nxt_df = nxt_df.dropna(axis=1, how='all')
          # --- 1.  Compute column differences -----------------------------
         only_left  = combined.columns.difference(nxt_df.columns)      # in combined, not in nxt
-        only_right = nxt_df.columns.difference(combined.columns)  
+        only_right = nxt_df.columns.difference(combined.columns)
         if len(only_left) != 0:
             st.write(f"Columns dropped from combined : {list(only_left)}")
         if len(only_right) != 0:
@@ -216,7 +211,7 @@ def check_and_merge_df_widget(available_dfs):
             [combined[common], nxt_df[common]],        # input list
             axis=0,                                # stack rows
             ignore_index=True,                     # re-number the index
-            verify_integrity=False,                # raise if rows double-counted
+            verify_integrity=False,                # no duplicate-index check; ignore_index renumbers
             join="inner"                           # redundant but explicit
         )
     st.write(f"Finished combining all datasets and got {len(combined)} cells!")
@@ -224,4 +219,3 @@ def check_and_merge_df_widget(available_dfs):
     available_categories = [category for category in categorical_cols if category not in combined.columns]
     return combined, available_categories
 
-    

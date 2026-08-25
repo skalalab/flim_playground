@@ -71,26 +71,26 @@ def resolve_pending_selection(feature_groups_dict, key_prefix, data_extraction=T
 def single_feature_select_widget(feature_groups_dict, data_extraction=True, n_per_row=2, key_prefix=""):
     """
     n_per_row: number of selectboxs in a row"""
-    
-    menus = []       
+
+    menus = []
     for feature_group in feature_groups_dict.keys():
         menus.append(f"{key_prefix}_menu_{feature_group}")
-    
+
     selected_var = "Select"
     feature_groups = list(feature_groups_dict.keys())
-    
+
     # Calculate number of rows needed
     num_groups = len(feature_groups)
     num_rows = (num_groups + n_per_row - 1) // n_per_row  # Ceiling division
-    
+
     # Create rows of columns
     for row in range(num_rows):
         start_idx = row * n_per_row
         end_idx = min(start_idx + n_per_row, num_groups)
-        
+
         # Create columns for this row
         cols = st.columns(end_idx - start_idx)
-        
+
         # Add menus to this row
         for i, col_idx in enumerate(range(start_idx, end_idx)):
             feature_group = feature_groups[col_idx]
@@ -115,7 +115,7 @@ def single_feature_select_widget(feature_groups_dict, data_extraction=True, n_pe
                 # If this menu has a non-Select value, it becomes our selected_var
                 if current_selection != "Select":
                     selected_var = display_to_col[current_selection]
-    
+
     return selected_var
 
 def _axis_select_block(feature_groups_dict, axis_name, key_prefix, data_extraction=True, n_per_row=2):
@@ -170,23 +170,23 @@ def twod_single_feature_select_widget(feature_groups_dict, data_extraction=True,
     return selected_x, selected_y
 
 def multi_feature_select_widget(feature_groups_dict, data_extraction=True, n_per_row=2):
-   
+
     selected_features = []
-    # feature groups that have one or more features available for selection 
+    # feature groups that have one or more features available for selection
     feature_groups = list(feature_groups_dict.keys())
-    
+
     # Calculate number of rows needed
     num_groups = len(feature_groups)
     num_rows = (num_groups + n_per_row - 1) // n_per_row  # Ceiling division
-    
+
     # Create rows of columns
     for row in range(num_rows):
         start_idx = row * n_per_row
         end_idx = min(start_idx + n_per_row, num_groups)
-        
+
         # Create columns for this row
         cols = st.columns(end_idx - start_idx)
-        
+
         # Add multiselect widgets to this row
         for i, col_idx in enumerate(range(start_idx, end_idx)):
             feature_group = feature_groups[col_idx]
@@ -213,7 +213,6 @@ def multi_feature_select_widget(feature_groups_dict, data_extraction=True, n_per
                 selected = st.multiselect(
                     f"{feature_group}",
                     options=options,
-                    #default=st.session_state[key],
                     key=key,
                     on_change=normalize_mode_selection,
                     args=(key,),
@@ -227,5 +226,5 @@ def multi_feature_select_widget(feature_groups_dict, data_extraction=True, n_per
                 if chosen is None:
                     chosen = feature_list
                 selected_features.extend(display_to_col[name] for name in chosen)
-               
+
     return selected_features

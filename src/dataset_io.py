@@ -30,7 +30,7 @@ def load_csv(uploaded_csv, categorical_cols, use_data_extraction=True):
     """
     upload_complete = False
     df = feature_groups_dict = None
-        # check and fix the uploaded csv 
+        # check and fix the uploaded csv
     if uploaded_csv is not None:
         # Read the uploaded data (cached parse; index_col=False keeps the first column as data)
         df = _read_csv_cached(uploaded_csv)
@@ -65,10 +65,8 @@ def match_col_name(col, col_list):
         # e.g. "cell_line", "cell line", "cell-line", "Cell line", "Cell_line", "cell_Lines" all match "cell_line"
         # "treatments", "Treatment", "Treatments" all match "treatment"
         col_processed = col.lower().replace(" ", "_").replace("-", "_")
-        # Both sides get the same normalisation: a configured name is allowed to carry the
-        # spacing and hyphens of the real header it names ("IL-18"), and a canonical name
-        # that was only lowercased could never match the column it was written for - which
-        # silently skipped the rename and the N/A fill below for every such column.
+        # Both sides get the same normalisation, so a configured name may carry the
+        # spacing and hyphens of the header it names ("IL-18") and still match.
         col_name_processed = col_name.lower().replace(" ", "_").replace("-", "_")
 
         # Check for direct match, match after removing/adding 's'
@@ -128,14 +126,14 @@ def get_feature_groups_data_extraction(cols):
         uncategorized = feature_groups_dict.pop("Uncategorized Features")
         if uncategorized:
             feature_groups_dict["Uncategorized Features"] = uncategorized
-            
+
     return feature_groups_dict
 
 def get_feature_groups_user_defined(cols):
     all_feature_groups = get_all_feature_groups()
     feature_groups_dict = {}
     feature_groups_dict["Uncategorized Features"] = []
-    
+
     for col in cols:
         found_group = False
         for feature_group in all_feature_groups:
@@ -146,11 +144,11 @@ def get_feature_groups_user_defined(cols):
                 feature_groups_dict[feature_group].append(col)
                 found_group = True
                 break  # Column found in this group, no need to check other groups
-        
+
         # Only add to uncategorized if it wasn't found in any group
         if not found_group:
             feature_groups_dict["Uncategorized Features"].append(col)
-    
+
     # Move "Uncategorized Features" to the end of the dictionary
     if "Uncategorized Features" in feature_groups_dict:
         uncategorized = feature_groups_dict.pop("Uncategorized Features")
@@ -216,8 +214,8 @@ def get_features(df, categorical_cols, use_data_extraction=True):
     avilable_categorical_cols = [col for col in categorical_cols if col in df.columns]
     required_cols = [unique_row_id_col, fov_name_col] if fov_name_col not in avilable_categorical_cols else [unique_row_id_col]
     columns_to_keep = required_cols + avilable_categorical_cols + all_numerical_features_cols
-    df = df[columns_to_keep]  
-   
+    df = df[columns_to_keep]
+
     # Print columns that contain NaN values
     columns_with_na = df.columns[df.isna().any()].tolist()
     if columns_with_na:
@@ -226,7 +224,7 @@ def get_features(df, categorical_cols, use_data_extraction=True):
             warning_msg += f"Warning: {', '.join(columns_with_na)} column{'s' if num_na_columns > 1 else ''} contain{'s' if num_na_columns == 1 else ''} NaN values. "
         else:
             warning_msg += f"Warning: {', '.join(columns_with_na[:5])} and {num_na_columns - 5} more columns contain NaN values. "
-    
+
     return df, feature_groups_dict, warning_msg, error_msg
 
 def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
@@ -240,7 +238,7 @@ def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
     """
     warning_msg = error_msg = ""
     df = df.reset_index(drop=True)
-   
+
     # drop off the all empty columns
     empty_cols = df.columns[df.isnull().all()]
     if len(empty_cols) > 0:
@@ -263,12 +261,12 @@ def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
         warning_msg += "The duplicate columns were dropped, only the first was kept.\n"
         # drop the duplicate columns, only keep the first one
         df = df.loc[:, ~df.columns.duplicated(keep='first')]
-        
+
     # handle the required unique cell identifier column
     if unique_row_id_col not in df.columns:
         error_msg += f"Error: {unique_row_id_col} column is missing in the uploaded file. It is required. \n"
         return None, warning_msg, error_msg
-    
+
     if df[unique_row_id_col].duplicated().any():
         original_row_count = len(df)
         first_duplicate = df[unique_row_id_col].duplicated()
@@ -282,23 +280,22 @@ def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
         rows_removed = original_row_count - len(df)
         if rows_removed > 0:
             warning_msg += f"{rows_removed} rows were removed."
-        
+
     # make sure unique_row_id_col is of type str
     df[unique_row_id_col] = df[unique_row_id_col].astype(str)
     if fov_name_col not in df.columns:
         df[fov_name_col] = df[unique_row_id_col].apply(safe_split_with_logging)
-    else: 
+    else:
         df[fov_name_col] = df[fov_name_col].fillna("missing fov name")
 
     for col in df.columns:
         matched_categorical_col = match_col_name(col, categorical_cols)
         if matched_categorical_col is not None:
-            # Two different headers can normalise to the same canonical name ("IL-18" and
-            # "IL_18" both do). Renaming the second one would leave two columns with one
-            # name, and every later df[name] lookup would hand back a frame instead of a
-            # series, so it keeps its own name and is reported instead of silently merged.
-            # A column already spelled exactly right is never skipped, so the exact
-            # spelling wins the name regardless of column order.
+            # Two headers can normalise to the same canonical name ("IL-18" and "IL_18"
+            # both do). Renaming the second would leave two columns sharing a name and
+            # every df[name] lookup would return a frame, so it keeps its own name and is
+            # reported. An exactly-spelled column is never skipped, so it wins the name
+            # regardless of column order.
             if matched_categorical_col != col and matched_categorical_col in df.columns:
                 warning_msg += (f"Warning: column '{col}' also reads as the categorical column "
                                 f"'{matched_categorical_col}', which is already present. "
