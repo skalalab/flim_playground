@@ -136,15 +136,25 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     # Resolved before the switch's slot, because that slot needs to know whether anything
     # is grouped by. Independent of every other control, so hoisting it changes nothing
     # except making it available early. `effective_color` is what the multiselect will
-    # hold once it renders -- the stored selection, or the default it will fall back to
-    # -- so a fresh page does not disable the Color picker for one run.
+    # hold once it renders -- always the stored selection, because the first-run default
+    # is SEEDED into state here rather than handed to the multiselect as `default=`.
+    #
+    # Seeding is what `default=` amounted to anyway: under an explicit key the stored
+    # value wins, so the argument only ever decided the run with nothing stored -- the
+    # one this branch covers. Passing both is what Streamlit warns about ("created with
+    # a default value but also had its value set via the Session State API"), and the
+    # pruning below writes this same key in the same run the multiselect renders, so the
+    # warning fires for real: on a filter that retires a chosen column, or on Separate by
+    # claiming it. Same shape as the feature multiselects in selection_widgets.py.
     default_color = [available_for_color[0]] if available_for_color else []
+    if COLOR_BY_KEY not in st.session_state:
+        st.session_state[COLOR_BY_KEY] = default_color
     pruned_color = prune_to_options(
-        st.session_state.get(COLOR_BY_KEY), available_for_color, fallback=default_color,
+        st.session_state[COLOR_BY_KEY], available_for_color, fallback=default_color,
     )
-    if pruned_color is not None and st.session_state.get(COLOR_BY_KEY) != pruned_color:
+    if st.session_state[COLOR_BY_KEY] != pruned_color:
         st.session_state[COLOR_BY_KEY] = pruned_color
-    effective_color = pruned_color if pruned_color is not None else default_color
+    effective_color = pruned_color
 
     # The switch's slot is the LAST column, but it is EVALUATED here, before the Color by
     # multiselect renders -- st.columns hands back containers, so writing into them out of
@@ -222,7 +232,6 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
         color_by = st.multiselect(
             color_multiselect_label(show_subcolor, as_colour),
             available_for_color,
-            default=default_color,
             key=COLOR_BY_KEY,
             help="Groups compared along the x axis. These groups set the color too, "
                  "unless the Shape/subcolor switch is on \u2014 then that column sets the "
@@ -397,26 +406,43 @@ def plot_config_widget(point_based=True, show_colormap=False, show_count_toggle=
     if show_colormap:
         num_cols += 1
 
+    # Every default is SEEDED into session state rather than handed to its widget as
+    # `value=`/`index=`. Under an explicit key the stored value wins, so those arguments
+    # only ever decided a run with nothing stored -- and passing both is what makes
+    # Streamlit warn ("created with a default value but also had its value set via the
+    # Session State API") on any run that also WRITES the key, which seeding does.
+    #
+    # data_analysis.py seeds these at the page top, which normally lands a run before this
+    # row -- the row renders only once a dataset is loaded. But leaving the page purges
+    # widget state while `vis_df`, a plain session key, survives, so a return visit seeds
+    # and renders in ONE run and the warning fires. Seeding here as well keeps each
+    # default beside the widget that owns it and covers the classification page's call,
+    # which does not run data_analysis.py's block.
+    for state_key, default in (("plot_point_size", DEFAULT_POINT_SIZE),
+                               ("plot_axis_label_size", DEFAULT_AXIS_LABEL_FONT_SIZE),
+                               ("plot_legend_size", DEFAULT_LEGEND_FONT_SIZE),
+                               ("plot_colormap", DEFAULT_COLORMAP),
+                               ("plot_show_group_counts", False)):
+        if state_key not in st.session_state:
+            st.session_state[state_key] = default
+
     cols = st.columns(num_cols)
     col_idx = 0
 
     # Point size widget — key= binds directly to session state
     if point_based:
         with cols[col_idx]:
-            st.number_input("Point Size", value=st.session_state.get("plot_point_size", DEFAULT_POINT_SIZE),
-                          min_value=1, step=1, key="plot_point_size")
+            st.number_input("Point Size", min_value=1, step=1, key="plot_point_size")
         col_idx += 1
 
     # Axis label size widget
     with cols[col_idx]:
-        st.number_input("Axis Label Font Size", value=st.session_state.get("plot_axis_label_size", DEFAULT_AXIS_LABEL_FONT_SIZE),
-                       min_value=8, step=1, key="plot_axis_label_size")
+        st.number_input("Axis Label Font Size", min_value=8, step=1, key="plot_axis_label_size")
     col_idx += 1
 
     # Legend size widget
     with cols[col_idx]:
-        st.number_input("Legend Font Size", value=st.session_state.get("plot_legend_size", DEFAULT_LEGEND_FONT_SIZE),
-                       min_value=8, step=1, key="plot_legend_size")
+        st.number_input("Legend Font Size", min_value=8, step=1, key="plot_legend_size")
     col_idx += 1
 
     # Colormap widget
@@ -425,10 +451,13 @@ def plot_config_widget(point_based=True, show_colormap=False, show_count_toggle=
             "tab10", "tab20", "colorblind", "Set1", "Set2", "Set3", "Pastel1", "Pastel2",
             "Accent", "viridis", "plasma", "inferno", "magma", "cividis"
         ]
-        current_colormap = st.session_state.get("plot_colormap", DEFAULT_COLORMAP)
+        # The dropped `index=` carried a fallback for a stored colormap this list does not
+        # offer, and that fallback is still needed: Streamlit RAISES on an unoffered value
+        # under an explicit key, where an out-of-range index would only have been ignored.
+        if st.session_state["plot_colormap"] not in colormap_options:
+            st.session_state["plot_colormap"] = colormap_options[0]
         with cols[col_idx]:
             st.selectbox("Color Map", colormap_options,
-                        index=colormap_options.index(current_colormap) if current_colormap in colormap_options else 0,
                         key="plot_colormap",
                         help="Choose color palette for categorical data")
 
@@ -436,7 +465,6 @@ def plot_config_widget(point_based=True, show_colormap=False, show_count_toggle=
     if show_count_toggle:
         st.checkbox(
             "Show group counts (n) in legend",
-            value=st.session_state.get("plot_show_group_counts", False),
             key="plot_show_group_counts",
             help="Append each color group's sample size to its legend entry, e.g. 'Control (n=42)'.",
         )
