@@ -10,7 +10,6 @@ logo/
 sdt_headers/
 analysis_config.toml
 !.streamlit/config.toml
-tests/
 .claude/
 scripts/
 CLAUDE.md

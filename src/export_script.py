@@ -826,7 +826,7 @@ def _build_feature_comparison(state: dict) -> str:
 # ============================================================
 from scipy.stats import gaussian_kde, ttest_ind, median_abs_deviation
 
-# Matched-colour palette (module extracted from FLIM Playground source)
+# Subcolor palette (module extracted from FLIM Playground source)
 {subcolor_src}
 
 # Effect size + bracket positioning functions (extracted from FLIM Playground source)
