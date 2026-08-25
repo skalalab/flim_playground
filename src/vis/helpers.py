@@ -3,7 +3,6 @@ import re
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import seaborn as sns
 import streamlit as st
 from scipy.optimize import brentq
 from scipy.stats import gaussian_kde, median_abs_deviation, norm, ttest_ind
@@ -70,14 +69,33 @@ def cohens_d(group1, group2, mean_or_median):
         return np.nan
     return abs(diff / pooled_sd)
 
-def create_opacity_mapping(groups, min_opacity=0.3, max_opacity=1.0):
-    """Create opacity mapping for groups with evenly spaced values, preserving natural order"""
+def create_opacity_mapping(groups, min_opacity=0.3, max_opacity=1.0,
+                           na_value="N/A", na_opacity=0.15):
+    """Opacity mapping for groups, evenly spaced in natural order, with ``na_value`` held out.
+
+    Opacity is the only ordinal channel, so a ramp slot is a rank and missing data has no
+    claim to one. ``na_value`` is pinned below ``min_opacity``, leaving the real levels the
+    full spread. "N/A" is the loader's marker for a missing categorical (check_and_fix_df
+    in src/dataset_io.py).
+
+    Keep ``na_opacity`` a default argument, not a module constant: export_script's
+    _extract_source copies this function's source and defaults but no module state.
+    """
     groups = list(groups)
-    groups = natural_tuple_sort(groups) if len(groups) > 1 else groups
-    if len(groups) == 1:
-        return {groups[0]: max_opacity}
-    opacity_values = np.linspace(min_opacity, max_opacity, len(groups))
-    return {group: opacity_values[i] for i, group in enumerate(groups)}
+    real = [group for group in groups if group != na_value]
+    real = natural_tuple_sort(real) if len(real) > 1 else real
+    if len(real) == 1:
+        mapping = {real[0]: max_opacity}
+    else:
+        # len(real) == 0 (an all-N/A column) yields an empty linspace and an empty map,
+        # which is the honest answer: no real level to rank.
+        opacity_values = np.linspace(min_opacity, max_opacity, len(real))
+        mapping = {group: opacity_values[i] for i, group in enumerate(real)}
+    if na_value in groups:
+        # Added last so N/A sits at the end of the legend's opacity block --
+        # add_point_legend_traces ranks entries by dict order.
+        mapping[na_value] = na_opacity
+    return mapping
 
 def create_shape_mapping(groups):
     """Create shape mapping for groups using different plotly symbols, preserving natural order"""
@@ -87,6 +105,29 @@ def create_shape_mapping(groups):
                'triangle-down', 'pentagon', 'hexagon', 'octagon', 'star', 'diamond-tall']
     return {group: symbols[i % len(symbols)] for i, group in enumerate(groups)}
 
+def _palette_rgb(colormap, count):
+    """``count`` (r, g, b) float triples from a named colormap, falling back to tab10.
+
+    Shared with the subcolor palette (``create_subcolor_map``), which needs the same
+    colours by the same rules; both are drawn in one figure.
+    """
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    count = max(int(count), 1)
+    try:
+        if colormap in ["viridis", "plasma", "inferno", "magma", "cividis"]:
+            # Continuous colormaps have no discrete entries to take, so sample them.
+            cmap = plt.colormaps[colormap]
+            colors = [cmap(0.5)] if count == 1 else [cmap(i / (count - 1)) for i in range(count)]
+            return [(color[0], color[1], color[2]) for color in colors]
+        return [tuple(color[:3]) for color in sns.color_palette(colormap, n_colors=count)]
+    # ValueError for a name seaborn does not know; KeyError should the whitelist above
+    # drift from plt.colormaps. Not ImportError: the imports sit above the try so
+    # _extract_source carries them into the exported script, and the fallback needs
+    # seaborn anyway.
+    except (ValueError, KeyError):
+        return [tuple(color[:3]) for color in sns.color_palette("tab10", n_colors=count)]
+
 def create_color_map(groups, overlap_point, colormap="tab10"):
     # if points in the visualization is going to overlap, use a transparent color
     if overlap_point:
@@ -94,24 +135,7 @@ def create_color_map(groups, overlap_point, colormap="tab10"):
     else:
         alpha = 1.0
 
-    # Handle different colormap types
-    try:
-        if colormap in ["viridis", "plasma", "inferno", "magma", "cividis"]:
-            # Use matplotlib colormaps for these
-            import matplotlib.pyplot as plt
-            cmap = plt.cm.get_cmap(colormap)
-            if len(groups) == 1:
-                colors = [cmap(0.5)]
-            else:
-                colors = [cmap(i / (len(groups) - 1)) for i in range(len(groups))]
-            palette = [(color[0], color[1], color[2]) for color in colors]
-        else:
-            # Use seaborn for all other colormap names
-            palette = sns.color_palette(colormap, n_colors=len(groups))
-    except (ValueError, ImportError):
-        # Fallback to tab10 if colormap is not available
-        palette = sns.color_palette("tab10", n_colors=len(groups))
-
+    palette = _palette_rgb(colormap, len(groups))
     color_sequence = [f"rgba({int(color[0]*255)}, {int(color[1]*255)}, {int(color[2]*255)}, {alpha})" for color in palette]
     color_map = {t: color_sequence[i] for i, t in enumerate(groups)}
     return color_map
@@ -535,29 +559,139 @@ def natural_tuple_sort(strings, delimiter='::'):
     """
     return sorted(strings, key=lambda x: tuple_natural_key(x.split(delimiter)))
 
-def create_opacity_groups_and_map(df, opacity_by_col):
+def _sorted_levels(values):
+    """The distinct values of a Series, in natural-sort order."""
+    return natural_tuple_sort(values.unique())
+
+def _channel_groups_and_map(df, column, mapper):
+    """Shared body of the shape and opacity channels: their levels, and ``mapper``'s map.
+
+    Keep the raw values and the ``dropna()``: these maps' keys are looked up against a
+    ``df.groupby`` on the raw column in ``get_point_visual_mappings``, so each key must
+    equal a real groupby key. Stringifying makes every lookup miss; folding nulls to
+    "N/A" invents a level no group matches, since groupby drops NaN keys. To include
+    nulls, fill the column before the groupby rather than relabelling levels after.
     """
-    Given a DataFrame and a column name, return sorted unique groups and an opacity map.
-    """
-    if opacity_by_col and opacity_by_col in df.columns:
-        groups = df[opacity_by_col].dropna().unique()
-        groups = natural_tuple_sort(groups)
-        opacity_map = create_opacity_mapping(groups)
-        return groups, opacity_map
-    else:
+    if not column or column not in df.columns:
         return [], None
+    groups = _sorted_levels(df[column].dropna())
+    return groups, mapper(groups)
+
+def create_opacity_groups_and_map(df, opacity_by_col):
+    """Sorted unique groups of ``opacity_by_col`` and their opacity map."""
+    return _channel_groups_and_map(df, opacity_by_col, create_opacity_mapping)
 
 def create_shape_groups_and_map(df, shape_by_col):
+    """Sorted unique groups of ``shape_by_col`` and their symbol map."""
+    return _channel_groups_and_map(df, shape_by_col, create_shape_mapping)
+
+def interleave_point_batches(index_by_level, num_batches=15, random_seed=42):
+    """Split each level's point indices into batches and cycle through the levels.
+
+    Returns ``[(level, indices), ...]`` in the order the traces should be added.
+
+    Plotly paints later traces over earlier ones, so emitting one trace per level draws
+    each level entirely on top of the previous — in a sina plot, where the levels share
+    one jittered x band, the last level ends up systematically the most visible.
+    Cycling through the levels a batch at a time spreads that bias evenly. All batches
+    of a level keep its legendgroup, so the legend still holds one entry per level.
+
+    Indices are shuffled within a level before batching, so a batch is a sample across
+    the level rather than a contiguous run of rows: contiguous batches would be
+    correlated with whatever the frame happens to be sorted by, which puts the same
+    bias back in a different guise. The shuffle is a fixed-seed permutation of the
+    index array, so it reorders only the paint order — every point keeps the x it was
+    already assigned.
+
+    Batches hold at least ~5 points, matching add_interleaved_points_trace, below which
+    the extra traces cost more than the interleaving buys.
     """
-    Given a DataFrame and a column name, return sorted unique groups and a shape map.
+    import math
+
+    rng = np.random.default_rng(random_seed)
+    batched = []
+    for level, indices in index_by_level.items():
+        indices = np.asarray(indices)
+        if not len(indices):
+            continue
+        shuffled = indices.copy()
+        rng.shuffle(shuffled)
+        count = min(num_batches, max(1, len(shuffled) // 5))
+        size = math.ceil(len(shuffled) / count)
+        batched.append((level, [shuffled[i:i+size] for i in range(0, len(shuffled), size)]))
+
+    ordered = []
+    for round_index in range(max((len(b) for _level, b in batched), default=0)):
+        for level, batches in batched:
+            if round_index < len(batches):
+                ordered.append((level, batches[round_index]))
+    return ordered
+
+def create_subcolor_map(df, subcolor_by, group_col, color_groups, engine="plotly",
+                                  colormap="tab10"):
+    """Colour a nested categorical column, one colour per value across the whole figure.
+
+    Returns ``{value: colour}``, or None when the channel is off.
+
+    Colour encodes the nested value while the colour group keeps its x position. The map
+    is global -- one colour per distinct value for the whole figure -- so a value in
+    several groups is the same colour in each and one legend entry serves it.
+
+    The keys are in natural-sort order and are the figure's value list, which callers
+    iterate to decide what to draw in a group's x band; a value absent from a group
+    yields an empty mask the batcher skips.
+
+    Colours come from ``make_palette`` seeded by the first entry of ``colormap``, not from
+    the colormap directly: entries are scored composited at the alpha points are drawn
+    with, and generating for the requested count avoids seaborn cycling a qualitative
+    palette past its length into duplicates. Nulls fold to "N/A" (check_and_fix_df in
+    src/dataset_io.py) so those rows still plot.
+
+    ``engine`` follows format_group_label: "plotly" returns "rgba(...)" strings, "mpl"
+    returns (r, g, b) tuples for the exported Matplotlib script.
     """
-    if shape_by_col and shape_by_col in df.columns:
-        groups = df[shape_by_col].dropna().unique()
-        groups = natural_tuple_sort(groups)
-        shape_map = create_shape_mapping(groups)
-        return groups, shape_map
-    else:
-        return [], None
+    from src.vis.subcolor_palette import make_palette_cached
+
+    if (not subcolor_by or subcolor_by not in df.columns
+            or group_col not in df.columns or not len(color_groups)):
+        return None
+
+    values = df[subcolor_by].fillna("N/A").astype(str)
+    groups = df[group_col].astype(str)
+    # Restricted to the groups the figure actually draws, not every row in the frame, so
+    # a group filtered out upstream cannot spend a colour nothing displays. Equivalent to
+    # unioning each group's own values, which is how this was written when the per-group
+    # breakdown was also returned.
+    in_figure = groups.isin([str(group) for group in color_groups])
+    # Every distinct value in the figure, not per group: that is what makes the colour
+    # mean the value itself, the same one wherever the value appears.
+    all_values = _sorted_levels(values[in_figure])
+    if not len(all_values):
+        return None
+    # alpha=0.7 is not a default worth inheriting silently -- it has to match the
+    # opacity the points are actually drawn at (univar.feature_comparison_plot, and
+    # scatter_with_encodings' base_alpha in the export), because make_palette scores
+    # candidates on how they look composited at that alpha over the background. Passed
+    # explicitly so changing one side shows up as disagreeing with the other.
+    palette = make_palette_cached(_palette_rgb(colormap, 1)[0], len(all_values), alpha=0.7)
+
+    colour_of = {}
+    for index, value in enumerate(all_values):
+        red, green, blue = palette[index]
+        if engine == "mpl":
+            colour_of[value] = (red, green, blue)
+        else:
+            # round(), not int(): int() truncates, so a channel that should be 31
+            # arrives as 30 whenever the float sits a hair below it -- landing a byte off
+            # the same palette's unrounded floats, which is what the Matplotlib export
+            # draws from. check_subcolor.py pins the two engines against each other.
+            # Opaque here: the points carry their own alpha through marker.opacity, and
+            # baking a second one in would compound with it.
+            colour_of[value] = (
+                f"rgba({round(red * 255)}, {round(green * 255)}, {round(blue * 255)}, 1.0)"
+            )
+
+    return colour_of
 
 def format_group_label(group, count=None, show_count=False, engine="plotly"):
     """Legend label for a color group.

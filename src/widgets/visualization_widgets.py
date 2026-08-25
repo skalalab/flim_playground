@@ -9,21 +9,120 @@ from src.vis.plot_defaults import (
     DEFAULT_LEGEND_FONT_SIZE,
     DEFAULT_POINT_SIZE,
 )
+from src.widgets.encoding_state import color_multiselect_label, prune_to_options
+
+# Explicit keys. Without them the state of the Color by multiselect lives under an
+# auto-generated ID that includes its label -- so renaming it to "Group by" would wipe
+# the user's selection on every toggle flip.
+COLOR_BY_KEY = "vis_encoding_color_by"
+AS_COLOUR_KEY = "vis_encoding_as_colour"
+
+# ONE key for the shape/subcolor picker's column, shared by both of its roles. The switch chooses
+# which channel the column drives; it does not choose a different column, so flipping it
+# leaves the selection alone rather than swapping in whatever that channel held last.
+#
+# One key also avoids any restore machinery: Streamlit purges the state of a widget that
+# stops rendering, and under a shared key one role or the other always renders on a
+# POINT-BASED method. Methods with no point channel (FOV Comparison, Feature Histogram,
+# Classification) render neither, so leaving for one of those does clear the column.
+#
+# The cost: a column picked as shape on Scatter arrives preselected in Feature
+# Comparison's picker, and vice versa.
+PICKER_COL_KEY = "vis_encoding_picker_col"
 
 
-def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False):
+def _picker_selectbox(label, options, **kwargs):
+    """The shape/subcolor picker, in whichever role the switch has put it.
+
+    Two things can retire the held column: the row offers only categories with
+    ``nunique() > 1``, so a filter can disqualify it; and the subcolor role excludes
+    whatever Color by is grouping on, so a column legal as opacity can be illegal as
+    subcolor. Streamlit raises on an unoffered value under an explicit key, so it must be
+    dropped here -- the one case where a flip clears the selection.
+    """
+    stored = st.session_state.get(PICKER_COL_KEY)
+    pruned = prune_to_options(stored, options)
+    if stored != pruned:
+        st.session_state[PICKER_COL_KEY] = pruned
+    return st.selectbox(label, options, index=None,
+                        placeholder="Choose an option...", key=PICKER_COL_KEY, **kwargs)
+
+
+# The name handed to the shape/subcolor picker WIDGET, keyed on the switch. Its visible label is
+# collapsed in favour of the switch phrase below, so this is what a screen reader reads.
+PICKER_LABELS = {True: "Subcolor by", False: "Shape by"}
+
+# The switch reads as one phrase with the channels either side of it:
+#
+#     Opacity [o---] subcolor by     <- opacity drives the picker below
+#     Opacity [---o] subcolor by     <- subcolor does
+#
+# Static, so both channels stay on screen and the knob alone says which is active. Ends
+# on "by" so it runs into the picker below: "shape/subcolor by <column>". Shape rather
+# than opacity is the partner because shape and colour are both NOMINAL -- either is a
+# sensible encoding for the same column, so the flip is a real choice. Opacity is the one
+# ordinal channel (create_opacity_mapping ranks values on a ramp), so pairing it here
+# would have offered to put an unordered column on an ordered scale.
+SWITCH_LEAD = "Shape"
+SWITCH_TRAIL = "subcolor by"
+
+
+def _shape_selectbox(available_categories, **kwargs):
+    """The Shape by picker, shared by the switch's Shape role and every method that has no
+    switch. ``kwargs`` carries ``label_visibility`` where the switch draws the label
+    itself; methods with no switch keep the native one."""
+    return _picker_selectbox(PICKER_LABELS[False], available_categories, **kwargs)
+
+
+def _picker_label(text):
+    """Draw the shape/subcolor picker's label, so the switch can sit after it.
+
+    Streamlit puts a widget's label in the same block as its input, so a switch placed
+    beside the picker lands beside the *input*. Hence the hand-drawn label and the
+    collapsed native one.
+
+    Every number here was measured in a browser and nothing re-checks it, so a Streamlit
+    upgrade drifts it silently:
+
+    * 0.875rem is Streamlit's widget-label size (theme ``fontSizes.sm``). Colour is left
+      to inherit so it follows the active theme.
+    * A toggle's box carries trailing space under the visible switch, so aligning boxes
+      leaves the switch above the label: 7.5px on ``vertical_alignment="center"``, 16.4px
+      on ``"bottom"``. A box padded to the switch's height with ``"top"`` gives 0.5px.
+    * Toggle labels render at body size, 16px against this row's 14px, so the phrase came
+      out in two sizes. The ``st-key-`` rule fixing that is why the switch needs an
+      explicit key, and it rides in this same markdown call because a separate
+      ``<style>`` would be another child of a gapped container and widen the row.
+    """
+    st.markdown(
+        f"<style>.st-key-{AS_COLOUR_KEY} p{{font-size:0.875rem;line-height:1.6}}</style>"
+        f"<div style='font-size:0.875rem; margin:0; white-space:nowrap;"
+        f" display:flex; align-items:center; min-height:1.5rem;'>{text}</div>",
+        unsafe_allow_html=True,
+    )
+
+
+def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False, subcolor_available=False):
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
     color_by = []
-    opacity_by = shape_by = separate_by = None
+    opacity_by = shape_by = separate_by = subcolor_by = None
 
     if len(available_categories) == 0:
-        return color_by, opacity_by, shape_by, separate_by
+        return color_by, opacity_by, shape_by, separate_by, subcolor_by
 
     if not color_based:
-        return color_by, opacity_by, shape_by, separate_by
+        return color_by, opacity_by, shape_by, separate_by, subcolor_by
 
-    # Determine number of columns
-    num_cols = 4 if point_based and separate_by_available else 3 if point_based else 1
+    # A plain count, so every column is equal. The channel switch is absorbed inside the
+    # LAST column -- sharing its picker's top line -- rather than given a column of its
+    # own, so this row still lays out identically on Scatter, Phasor and Dimension
+    # Reduction, which have no switch at all. If the column is too narrow to hold picker
+    # and switch side by side the switch wraps underneath, which is the old layout and
+    # still readable; widening that column instead would misalign every other method.
+    if point_based:
+        num_cols = 4 if separate_by_available else 3
+    else:
+        num_cols = 1
     cols = st.columns(num_cols)
 
     # Separate by widget
@@ -31,25 +130,118 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
         with cols[0]:
             separate_by = st.selectbox("Separate by", available_categories, index=None, placeholder="Choose an option...")
 
-    # Color by widget (exclude separate_by option)
-        available_for_color = [cat for cat in available_categories if cat != separate_by]
-        with cols[1]:
-            color_by = st.multiselect("Color by", available_for_color, default=[available_for_color[0]] if available_for_color else [])
-    else:
-        with cols[0]:
-            color_by = st.multiselect("Color by", available_categories, default=[available_categories[0]] if available_categories else [])
+    available_for_color = [cat for cat in available_categories if cat != separate_by]
+    show_subcolor = subcolor_available and point_based
 
-    # Initialize defaults
-    opacity_by = shape_by = None
+    # Resolved before the switch's slot, because that slot needs to know whether anything
+    # is grouped by. Independent of every other control, so hoisting it changes nothing
+    # except making it available early. `effective_color` is what the multiselect will
+    # hold once it renders -- the stored selection, or the default it will fall back to
+    # -- so a fresh page does not disable the Color picker for one run.
+    default_color = [available_for_color[0]] if available_for_color else []
+    pruned_color = prune_to_options(
+        st.session_state.get(COLOR_BY_KEY), available_for_color, fallback=default_color,
+    )
+    if pruned_color is not None and st.session_state.get(COLOR_BY_KEY) != pruned_color:
+        st.session_state[COLOR_BY_KEY] = pruned_color
+    effective_color = pruned_color if pruned_color is not None else default_color
 
-    # Point-based widgets (opacity and shape)
+    # The switch's slot is the LAST column, but it is EVALUATED here, before the Color by
+    # multiselect renders -- st.columns hands back containers, so writing into them out of
+    # order still lays them out left to right. That is what lets the multiselect's label
+    # read the switch and picker values from this run. Reading them from session state
+    # instead left "Group by" a run behind whenever the picker changed for a reason other
+    # than a click: pruning dropping the column, the selection being cleared, or the
+    # disabled branch forcing subcolor_by to None.
+    as_colour = False
+    if point_based:
+        with cols[3 if separate_by_available else 2]:
+            if show_subcolor:
+                # The switch sits immediately after the phrase's first word, on the same
+                # line, with the picker at full width underneath -- see SWITCH_LEAD for
+                # the shape. Both halves take only their own width in a horizontal row,
+                # so the switch lands right after the words rather than out at the far
+                # edge. That is why the label is drawn by hand and the picker's own
+                # collapsed: Streamlit puts a widget's label in the same block as its
+                # input, so a switch set beside the picker is pushed out to wherever the
+                # *input* ends. The picker keeps the whole column width, which the long
+                # column names this row offers need.
+                # gap="xsmall" (0.5rem) rather than the "small" default (1rem): the
+                # switch is meant to read as attached to the label it modifies, and a
+                # full 1rem sets it adrift halfway to the next column.
+                # gap="xxsmall" (0.25rem) reunites the drawn label with its picker.
+                # Streamlit puts a native label and its input in ONE child of the column
+                # with 4px between them; drawing the label separately makes it a second
+                # child, so the column's own 1rem gap opens up and drops the picker below
+                # the ones either side of it -- measured at 12px against a sibling
+                # selectbox. Wrapping both in a container whose gap is 4px restores the
+                # native spacing exactly (0px displacement); gap=None overshoots to -4px.
+                with st.container(gap="xxsmall"):
+                    with st.container(horizontal=True, vertical_alignment="top",
+                                      gap="xsmall"):
+                        with st.container(width="content"):
+                            _picker_label(SWITCH_LEAD)
+                        as_colour = st.toggle(
+                            SWITCH_TRAIL, key=AS_COLOUR_KEY, width="content",
+                            # Leads with the two states, because that is the question
+                            # someone opens this tooltip to answer. The one fact worth
+                            # the words is that a colour means the VALUE, figure-wide --
+                            # that is what makes the channel useful rather than merely
+                            # colourful, and nothing on screen says it. The mechanism is
+                            # described against "values" and "groups" because this text
+                            # ships to every dataset; the column names appear only behind
+                            # an explicit "e.g.", which reads as an illustration rather
+                            # than as an assumption about what the user's columns are.
+                            help="**Off** \u2014 the column below sets point shape."
+                                 "\n\n**On** \u2014 it sets color: each value keeps one "
+                                 "color plot-wide, so you can spot it in every group it "
+                                 "appears in and see the spread within each. Best for a "
+                                 "column nested inside the grouping one (e.g. donors "
+                                 "within each treatment).",
+                        )
+                    # Still named for the channel it drives even though that name is
+                    # collapsed: it is what a screen reader announces, and the switch
+                    # phrase above is decoration to anything that does not render CSS.
+                    if as_colour:
+                        available_for_subcolor = [cat for cat in available_for_color if cat not in effective_color]
+                        subcolor_by = _picker_selectbox(
+                            PICKER_LABELS[True], available_for_subcolor,
+                            disabled=not effective_color, label_visibility="collapsed",
+                        )
+                        # A disabled selectbox still returns what it last held, so the
+                        # forcing is not redundant with `disabled` above.
+                        if not effective_color:
+                            subcolor_by = None
+                    else:
+                        shape_by = _shape_selectbox(available_categories,
+                                                    label_visibility="collapsed")
+            else:
+                shape_by = _shape_selectbox(available_categories)
+
+    with cols[1 if separate_by_available and point_based else 0]:
+        color_by = st.multiselect(
+            color_multiselect_label(show_subcolor, as_colour),
+            available_for_color,
+            default=default_color,
+            key=COLOR_BY_KEY,
+            help="Groups compared along the x axis. These groups set the color too, "
+                 "unless the Shape/subcolor switch is on \u2014 then that column sets the "
+                 "color and these only set the x positions.",
+        )
+
+    # subcolor_by was decided against the stored selection above; re-check it against what
+    # the multiselect actually returned, so clearing every group in this same run does
+    # not leave a subcolor column setting colour for a plot that has no groups to draw.
+    if not color_by:
+        subcolor_by = None
+
+    # Opacity has no switch: it is the only ordinal channel, so it shares a column with
+    # nothing. Unkeyed, as it was before this row took explicit keys.
     if point_based:
         with cols[2 if separate_by_available else 1]:
             opacity_by = st.selectbox("Opacity by", available_categories, index=None, placeholder="Choose an option...")
-        with cols[3 if separate_by_available else 2]:
-            shape_by = st.selectbox("Shape by", available_categories, index=None, placeholder="Choose an option...")
 
-    return color_by, opacity_by, shape_by, separate_by
+    return color_by, opacity_by, shape_by, separate_by, subcolor_by
 
 def umap_hyperParams_widget():
     col1, col2 = st.columns(2)

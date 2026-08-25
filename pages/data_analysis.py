@@ -109,7 +109,7 @@ def _collect_numerical_filters():
         i += 1
     return num_filters
 
-def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, **extra_params):
+def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by, **extra_params):
     """Render the export-as-script download button with full state collection."""
     # Shared state
     state = {
@@ -123,6 +123,7 @@ def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opac
         "opacity_by": opacity_by,
         "shape_by": shape_by,
         "separate_by": separate_by,
+        "subcolor_by": subcolor_by,
         "categorical_cols": list(categorical_cols) if categorical_cols else [],
         "analysis_columns": st.session_state.get("analysis_columns"),
         "point_size": st.session_state.plot_point_size,
@@ -339,10 +340,13 @@ with col2:
         point_based = method not in ["FOV Comparison", "Feature Histogram", "Classification"]
         color_based = method not in [ "Classification"]
         separate_by_available = method in ["Feature Comparison"]
+        # Subcolor reads the colour group off the x axis, which only the sina
+        # plot lays out that way; elsewhere the group has nowhere else to be shown.
+        subcolor_available = method in ["Feature Comparison"]
         fig = None
         # check if the df is empty after filtering
         if not filtered_df.empty:
-            color_by, opacity_by, shape_by, separate_by = visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=color_based, point_based=point_based, separate_by_available=separate_by_available)
+            color_by, opacity_by, shape_by, separate_by, subcolor_by = visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=color_based, point_based=point_based, separate_by_available=separate_by_available, subcolor_available=subcolor_available)
             if method in univar_methods and selected_var != "Select":
                 # drop rows with NaN values in the selected_var column
                 filtered_df = filtered_df[filtered_df[selected_var].notna()]
@@ -361,7 +365,7 @@ with col2:
                         if session_key_cmp in st.session_state:
                             current_custom_order['compare_groups'] = st.session_state[session_key_cmp]
 
-                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, colormap=st.session_state.plot_colormap, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test, custom_order=current_custom_order)
+                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, colormap=st.session_state.plot_colormap, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test, custom_order=current_custom_order, subcolor_by=subcolor_by)
 
 
                     elif method == "FOV Comparison":
@@ -456,7 +460,7 @@ with col2:
                             st.error(f"{error_msg} {sad_emoji}")
                         else:
                             classification_plot_widget(results, classification_method, threshold_method)
-                            _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by,
+                            _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by,
                                                   classification_method=classification_method, splits=splits,
                                                   sampling_method=sampling_method, class_weight=apply_class_weight,
                                                   threshold_method=threshold_method, classifier_params=classifier_params,
@@ -539,7 +543,7 @@ with col2:
                         _extra["selected_features"] = selected_features
                         _extra["dr_method"] = dr_method
                         _extra["hyperParam_dict"] = hyperParam_dict
-                    _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, **_extra)
+                    _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by, **_extra)
 
                     # Must be last in the fragment: st.rerun() discards the state of every
                     # widget of this fragment that was not rendered during the interrupted

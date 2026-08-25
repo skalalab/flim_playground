@@ -18,6 +18,8 @@ from .helpers import (
     _find_best_gmm,
     _prepare_group_data,
     add_point_legend_traces,
+    create_subcolor_map,
+    interleave_point_batches,
     find_intersection,
     format_group_label,
     get_context_theme_color,
@@ -353,7 +355,7 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
 
     return fig, df
 
-def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None", custom_order=None):
+def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None", custom_order=None, subcolor_by=None):
 
     # Get theme color once at the start for all theme-aware elements
     theme_color = get_context_theme_color()
@@ -395,7 +397,23 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
     group_keys = [group_key for group_key, _ in grouped_list]
     compare_groups = list(color_map.keys())
     show_counts = st.session_state.get("plot_show_group_counts", False)
-    group_counts = df.dropna(subset=[selected_var]).groupby(COLOR_GROUP_COL_NAME).size().to_dict()
+    plotted = df.dropna(subset=[selected_var])
+    group_counts = plotted.groupby(COLOR_GROUP_COL_NAME).size().to_dict()
+
+    # Subcolor takes the colour channel AWAY from the colour group: colour comes
+    # to mean the nested value while x keeps encoding the group. The map is global -- one
+    # colour per distinct value -- so a value appearing in several groups wears one colour
+    # and its single bare legend entry is true everywhere. Positions, tick labels, the box
+    # overlay and every statistic stay at the colour-group level either way.
+    subcolor_of = create_subcolor_map(
+        plotted, subcolor_by, COLOR_GROUP_COL_NAME, list(color_map.keys()), colormap=colormap,
+    )
+    # Counted per value across the whole frame, matching the global mapping: one legend
+    # entry covers every group the value appears in, so its count has to as well.
+    subcolor_counts = {}
+    if subcolor_of:
+        subcolor_counts = (plotted[subcolor_by].fillna("N/A").astype(str)
+                          .value_counts().to_dict())
 
     # Apply custom order early so compare_pairs uses the reordered groups
     # This is critical for Glass's Delta where the first group in the pair is the control
@@ -596,7 +614,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         # as per-point arrays, the same way helpers.add_interleaved_points_trace does.
         bucket = point_buckets.setdefault((separate_group, color_group), {
             "x": [], "y": [], "text": [], "customdata": [],
-            "symbol": [], "opacity": [],
+            "symbol": [], "opacity": [], "subcolor": [],
         })
         bucket["x"].append(x_jittered)
         bucket["y"].append(y_data)
@@ -606,31 +624,68 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         # rather than read one per row.
         bucket["symbol"].append(np.repeat(marker_symbol, len(y_data)))
         bucket["opacity"].append(np.repeat(marker_opacity, len(y_data)))
+        # Only under subcolor: this is the one channel read in just that
+        # branch, and filling it otherwise allocates a full-length array of empty
+        # strings per subgroup on every ordinary sina plot for nothing.
+        if subcolor_of:
+            bucket["subcolor"].append(group_df[subcolor_by].fillna("N/A").astype(str).to_numpy())
 
     for (separate_group, color_group), bucket in point_buckets.items():
-        columns = {name: np.concatenate(chunks) for name, chunks in bucket.items()}
-        marker_kwargs = dict(
-            size=point_size,
-            symbol=columns["symbol"],
-            opacity=columns["opacity"],
-            line=dict(width=0.5, color='DarkSlateGrey'),
-        )
+        columns = {name: np.concatenate(chunks)
+                   for name, chunks in bucket.items() if chunks}
+        # Only what both branches share. The matched branch draws a masked subset, so
+        # symbol and opacity are passed per call rather than baked in here.
+        marker_kwargs = dict(size=point_size, line=dict(width=0.5, color='DarkSlateGrey'))
         trace_kwargs = dict(mode='markers', hovertemplate=final_hovertemplate, zorder=1)
 
-        # One trace per colour group: symbol and opacity vary per point, colour does not.
-        show_legend = color_group not in legend_entries
-        if show_legend:
-            legend_entries.add(color_group)
-        fig.add_trace(go.Scatter(
-            x=columns["x"], y=columns["y"],
-            name=format_group_label(color_group, group_counts.get(color_group), show_counts),
-            marker=dict(color=color_map[color_group], **marker_kwargs),
-            showlegend=show_legend,
-            legendgroup=color_group,
-            text=columns["text"],
-            customdata=columns["customdata"],
-            **trace_kwargs
-        ))
+        if not subcolor_of:
+            # One trace per colour group: symbol and opacity vary per point, colour does
+            # not, so there is no paint order for a batcher to fix.
+            show_legend = color_group not in legend_entries
+            if show_legend:
+                legend_entries.add(color_group)
+            fig.add_trace(go.Scatter(
+                x=columns["x"], y=columns["y"],
+                name=format_group_label(color_group, group_counts.get(color_group), show_counts),
+                marker=dict(color=color_map[color_group], symbol=columns["symbol"],
+                            opacity=columns["opacity"], **marker_kwargs),
+                showlegend=show_legend,
+                legendgroup=color_group,
+                text=columns["text"],
+                customdata=columns["customdata"],
+                **trace_kwargs
+            ))
+            continue
+
+        # Subcolor: colour varies by value, so each value needs its own trace to stay
+        # clickable in the legend. Batch them and cycle, so no value paints over another.
+        for value, mask in interleave_point_batches({
+            value: np.flatnonzero(columns["subcolor"] == value)
+            # The map's keys are the figure's value list in natural-sort order; a value
+            # this group has no points for yields an empty mask, which the batcher skips.
+            for value in subcolor_of
+        }):
+            # One legend entry per value, and every batch of it -- in this colour group
+            # and in every other -- repeats the value, so the entry appears once and its
+            # legendgroup toggles all of them.
+            show_entry = value not in legend_entries
+            if show_entry:
+                legend_entries.add(value)
+            fig.add_trace(go.Scatter(
+                x=columns["x"][mask], y=columns["y"][mask],
+                name=format_group_label(value, subcolor_counts.get(value), show_counts),
+                marker=dict(color=subcolor_of[value],
+                            symbol=columns["symbol"][mask],
+                            opacity=columns["opacity"][mask], **marker_kwargs),
+                showlegend=show_entry,
+                # \x1f rather than '::' because apply_plot_styling dedupes on the joined
+                # legendgroup string, and '::' would let a real group name collide with
+                # this synthetic one.
+                legendgroup=f"subcolor\x1f{value}",
+                text=columns["text"][mask],
+                customdata=columns["customdata"][mask],
+                **trace_kwargs
+            ))
 
     if connect_means:
         if separate_groups:
@@ -727,6 +782,8 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         title_parts.append(f'opacity: {opacity_by}')
     if shape_by and shape_by.strip() != "":
         title_parts.append(f'shape: {shape_by}')
+    if subcolor_by and subcolor_by.strip() != "":
+        title_parts.append(f'subcolor: {subcolor_by}')
 
     full_title = title_parts[0]
     if len(title_parts) > 1:

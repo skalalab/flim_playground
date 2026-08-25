@@ -66,9 +66,31 @@ def _extract_source(*funcs_or_classes, strip_src_imports=True) -> str:
         # so it needs no cache anyway.
         src = re.sub(r"\A(?:@[^\n]*\n)+", "", src)
         if strip_src_imports:
-            src = re.sub(r"^from src\..*$", "", src, flags=re.MULTILINE)
+            # Indented too: an import inside a function body survives textwrap.dedent
+            # with its leading whitespace, and would ImportError in the standalone
+            # script (create_subcolor_map imports the palette this way).
+            src = re.sub(r"^[ \t]*from src\..*$", "", src, flags=re.MULTILINE)
         parts.append(src.strip())
     return "\n\n".join(parts) + "\n"
+
+
+def _extract_module_source(module) -> str:
+    """Inline a whole module verbatim, for a dependency too large to name per function.
+
+    _extract_source names one function at a time and resolves no transitive
+    dependencies, which does not scale to a module whose functions call each other a
+    dozen ways (src/vis/subcolor_palette). Taking the module whole also carries its
+    top-level imports and constants across, so the inlined copy needs no per-function
+    import boilerplate and runs the same code as the app.
+
+    Two things are dropped: ``from __future__`` (legal only as a file's first statement,
+    so a SyntaxError once inlined mid-script) and the module docstring (a stray
+    expression here, describing a module the reader of this script cannot open).
+    """
+    src = inspect.getsource(module)
+    src = re.sub(r"^from __future__ import .*$\n?", "", src, flags=re.MULTILINE)
+    src = re.sub(r'\A\s*(?:"""(?:.|\n)*?"""|\'\'\'(?:.|\n)*?\'\'\')[ \t]*\n', "", src)
+    return src.strip() + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -322,6 +344,7 @@ def _build_config_section(state: dict) -> str:
         lines.append(f"SELECTED_VAR = {mp.get('selected_var')!r}")
     if method == "Feature Comparison":
         lines.append(f"SEPARATE_BY = {state.get('separate_by')!r}")
+        lines.append(f"SUBCOLOR_BY = {state.get('subcolor_by')!r}")
         lines.append(f"EFFECT_SIZE_METHOD = {mp.get('effect_size_method', 'None')!r}")
         lines.append(f"MEAN_OR_MEDIAN = {mp.get('mean_or_median')!r}")
         lines.append(f"STATISTICAL_TEST = {mp.get('statistical_test', 'None')!r}")
@@ -766,12 +789,17 @@ ax.legend(fontsize=LEGEND_SIZE)
 
 
 def _build_feature_comparison(state: dict) -> str:
+    from src.vis import subcolor_palette
     from src.vis.helpers import (
         _compute_bracket_position,
         _density_at_points,
         _estimate_density_1d,
+        _palette_rgb,
+        _sorted_levels,
         cohens_d,
+        create_subcolor_map,
         glass_delta,
+        interleave_point_batches,
     )
 
     # _density_at_points is what the app calls for the sina jitter (src/vis/univar.py
@@ -779,6 +807,14 @@ def _build_feature_comparison(state: dict) -> str:
     # than merely similar. _estimate_density_1d comes along because _density_at_points
     # delegates to it, and because sharing it gives degenerate groups (constant or
     # single-point) the same zero-density fallback and so the same uniform jitter.
+    # The palette module goes in whole and first, so its constants and memo exist before
+    # anything calls in. Extracted here rather than in _build_visual_encoding, which feeds
+    # all seven method builders and would gain dead code and an undefined SUBCOLOR_BY.
+    # _sorted_levels must be named because create_subcolor_map calls it and
+    # _extract_source resolves no transitive dependencies.
+    subcolor_src = _extract_module_source(subcolor_palette) + "\n" + _extract_source(
+        _palette_rgb, _sorted_levels, interleave_point_batches, create_subcolor_map,
+    )
     effect_size_src = _extract_source(
         glass_delta, cohens_d, _compute_bracket_position, _estimate_density_1d,
         _density_at_points,
@@ -789,6 +825,9 @@ def _build_feature_comparison(state: dict) -> str:
 # Feature Comparison — Sina Plot
 # ============================================================
 from scipy.stats import gaussian_kde, ttest_ind, median_abs_deviation
+
+# Matched-colour palette (module extracted from FLIM Playground source)
+{subcolor_src}
 
 # Effect size + bracket positioning functions (extracted from FLIM Playground source)
 {effect_size_src}
@@ -863,6 +902,15 @@ fig, ax = plt.subplots(figsize=(max(10, len(tick_positions) * 1.2), 6))
 # group_counts the same way (univar.py feature_comparison_plot), so a colour group
 # that appears in several separate_by sections shows its total in the one legend entry.
 group_counts = df.groupby("_color_group").size().to_dict()
+# Subcolor takes the colour channel away from the colour group: colour comes to
+# mean the nested value itself, one colour per distinct value across the whole figure, so
+# a value appearing in several groups wears the same colour in each. Positions, tick
+# labels, the box overlay and every statistic stay at the colour-group level either way.
+subcolor_of = create_subcolor_map(
+    df, SUBCOLOR_BY, "_color_group", ordered_color_groups, engine='mpl', colormap=COLORMAP)
+subcolor_counts = {{}}
+if subcolor_of:
+    subcolor_counts = df[SUBCOLOR_BY].fillna("N/A").astype(str).value_counts().to_dict()
 legend_entries = set()
 for sec_group in ordered_separate_groups:
     if sec_group is not None:
@@ -894,14 +942,41 @@ for sec_group in ordered_separate_groups:
         rng = np.random.default_rng(42)
         x_vals = x_pos + rng.uniform(-1, 1, len(y_data)) * norm_d * 0.35
 
-        cg_label = (format_group_label(cg, group_counts.get(cg), SHOW_GROUP_COUNTS, engine='mpl')
-                    if cg not in legend_entries else None)
-        scatter_with_encodings(ax, x_vals, y_data, color_map[cg][:3],
-                               cg_label, POINT_SIZE,
-                               shape_vals=group_df[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
-                               opacity_vals=group_df[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
-                               linewidths=0.5)
-        legend_entries.add(cg)
+        if not subcolor_of:
+            cg_label = (format_group_label(cg, group_counts.get(cg), SHOW_GROUP_COUNTS, engine='mpl')
+                        if cg not in legend_entries else None)
+            scatter_with_encodings(ax, x_vals, y_data, color_map[cg][:3],
+                                   cg_label, POINT_SIZE,
+                                   shape_vals=group_df[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
+                                   opacity_vals=group_df[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
+                                   linewidths=0.5)
+            legend_entries.add(cg)
+        else:
+            # Slice the x/y already jittered above; the KDE and rng(42) belong to the
+            # colour group, so every point keeps the same x it has without matching.
+            # One legend entry per value, covering every group it appears in.
+            _subcolor_vals = group_df[SUBCOLOR_BY].fillna("N/A").astype(str).values
+            _shape_vals = group_df[SHAPE_BY].values if SHAPE_BY else None
+            _opacity_vals = group_df[OPACITY_BY].values if OPACITY_BY else None
+            # Interleaved, matching the app (univar.py feature_comparison_plot): these
+            # share the colour group's jittered x band, so one trace per value would paint
+            # each entirely over the previous. An absent value contributes no batch, which
+            # also keeps an empty array out of scatter_with_encodings -- it would still
+            # emit that value's legend label.
+            for _value, _mask in interleave_point_batches({{
+                    _v: np.flatnonzero(_subcolor_vals == _v) for _v in subcolor_of}}):
+                _label = (format_group_label(_value, subcolor_counts.get(_value),
+                                             SHOW_GROUP_COUNTS, engine='mpl')
+                          if _value not in legend_entries else None)
+                # .values before indexing: interleave_point_batches returns POSITIONAL
+                # indices, and a Series indexed with an integer array looks up labels
+                # instead, which KeyErrors on any frame whose index is not 0..n-1.
+                scatter_with_encodings(ax, x_vals[_mask], y_data[_mask], subcolor_of[_value][:3],
+                                       _label, POINT_SIZE,
+                                       shape_vals=_shape_vals[_mask] if SHAPE_BY else None, shape_map=shape_map,
+                                       opacity_vals=_opacity_vals[_mask] if OPACITY_BY else None, opacity_map=opacity_map,
+                                       linewidths=0.5)
+                legend_entries.add(_value)
 
 # --- Boxplot overlay ---
 if ADD_BOXPLOT:
@@ -1057,6 +1132,8 @@ if OPACITY_BY:
     _title_parts.append(f"opacity: {{OPACITY_BY}}")
 if SHAPE_BY:
     _title_parts.append(f"shape: {{SHAPE_BY}}")
+if SUBCOLOR_BY:
+    _title_parts.append(f"subcolor: {{SUBCOLOR_BY}}")
 _full_title = _title_parts[0] + (f" ({{', '.join(_title_parts[1:])}})" if len(_title_parts) > 1 else "")
 ax.set_title(_full_title, fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='y', labelsize=AXIS_LABEL_SIZE - 2)
