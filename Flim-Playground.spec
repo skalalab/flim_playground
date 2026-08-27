@@ -16,6 +16,13 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('imblearn')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
+# Add python-calamine — the spreadsheet reader. pandas pulls it in lazily through
+# import_optional_dependency, so static analysis never sees the import and the
+# compiled extension module has to be collected explicitly.
+tmp_ret = collect_all('python_calamine')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+hiddenimports += ['pandas.io.excel._calamine']
+
 # Add streamlit-sortables with explicit frontend build directory
 tmp_ret = collect_all('streamlit-sortables')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]

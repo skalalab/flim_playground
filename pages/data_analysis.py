@@ -7,7 +7,7 @@ import streamlit as st
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.classify import run_classification
-from src.dataset_io import load_csv
+from src.dataset_io import SUPPORTED_SUFFIXES, load_table
 from src.emojis import sad_emoji
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import render_top_menu
@@ -109,11 +109,16 @@ def _collect_numerical_filters():
         i += 1
     return num_filters
 
-def _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by, **extra_params):
+def _export_script_button(method, uploaded_file, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by, delimiter=",", **extra_params):
     """Render the export-as-script download button with full state collection."""
     # Shared state
     state = {
-        "csv_filename": uploaded_csv.name if uploaded_csv else "data.csv",
+        "csv_filename": uploaded_file.name if uploaded_file else "data.csv",
+        # The separator load_table actually read the file with, baked in rather
+        # than re-detected by the script — see _build_read_call. Re-detecting here
+        # would also re-read the upload on every fragment rerun, and a probe that
+        # failed to rewind would cost a full reparse each time.
+        "delimiter": delimiter,
         "unique_row_id_col": get_unique_row_id_col(st.session_state.get("_use_data_extraction", True)),
         "fov_name_col": get_fov_name_col_analysis(st.session_state.get("_use_data_extraction", True)),
         "method": method,
@@ -274,16 +279,24 @@ with col1:
     unique_row_id_col = get_unique_row_id_col(use_data_extraction)
     fov_name_col = get_fov_name_col_analysis(use_data_extraction)
     categorical_cols = get_categorical_cols_analysis(use_data_extraction)
-    instruction_text = "Upload the CSV file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "**Use the right panel to configure before loading your data ===>**"
-    uploaded_csv = st.file_uploader(
+    instruction_text = "Upload the file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "**Use the right panel to configure before loading your data ===>**"
+    uploaded_file = st.file_uploader(
         instruction_text,
-        type=["csv"],
+        # Kept in sync with SUPPORTED_SUFFIXES and dataset_io._diagnose_table.
+        help="CSV, tab-, semicolon- or pipe-separated text (.tsv, .txt), Excel (.xlsx, .xlsm) "
+             "or OpenDocument (.ods). The table must be a plain grid: column names on the first "
+             "row, one row per data point, and — in a spreadsheet — on the first sheet.",
+        type=[suffix.lstrip(".") for suffix in SUPPORTED_SUFFIXES],
+        # Without a key the widget's identity comes from its parameters, and
+        # instruction_text varies with the checkbox above — so a toggle would
+        # remount it and silently drop the user's file.
+        key="analysis_file_upload",
     )
     try:
-        df, feature_groups_dict, upload_complete = load_csv(uploaded_csv, categorical_cols, use_data_extraction=use_data_extraction)
+        df, feature_groups_dict, upload_complete, delimiter = load_table(uploaded_file, categorical_cols, use_data_extraction=use_data_extraction)
     except Exception as e:
-        st.error(f"Failed to process the uploaded CSV: {e} {sad_emoji}")
-        df, feature_groups_dict, upload_complete = None, None, False
+        st.error(f"Failed to process the uploaded file: {e} {sad_emoji}")
+        df, feature_groups_dict, upload_complete, delimiter = None, None, False, ","
     st.session_state.vis_df = df
     # Snapshot the column universe get_features() pruned to, before any plot adds
     # derived columns (GMM_group, _color_group, ...). The exported script replays
@@ -460,7 +473,8 @@ with col2:
                             st.error(f"{error_msg} {sad_emoji}")
                         else:
                             classification_plot_widget(results, classification_method, threshold_method)
-                            _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by,
+                            _export_script_button(method, uploaded_file, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by,
+                                                  delimiter=delimiter,
                                                   classification_method=classification_method, splits=splits,
                                                   sampling_method=sampling_method, class_weight=apply_class_weight,
                                                   threshold_method=threshold_method, classifier_params=classifier_params,
@@ -543,7 +557,7 @@ with col2:
                         _extra["selected_features"] = selected_features
                         _extra["dr_method"] = dr_method
                         _extra["hyperParam_dict"] = hyperParam_dict
-                    _export_script_button(method, uploaded_csv, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by, **_extra)
+                    _export_script_button(method, uploaded_file, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by, delimiter=delimiter, **_extra)
 
                     # Must be last in the fragment: st.rerun() discards the state of every
                     # widget of this fragment that was not rendered during the interrupted

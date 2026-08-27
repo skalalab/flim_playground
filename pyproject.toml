@@ -33,6 +33,7 @@ dependencies = [
     "pyinstaller>=6.13.0",
     "pynndescent==0.5.13",
     "pyparsing==3.2.3",
+    "python-calamine>=0.8.2",
     "python-dateutil==2.9.0.post0",
     "pytz==2025.2",
     "scikit-image>=0.25.2",
@@ -56,6 +57,8 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "odfpy>=1.4.1",
+    "openpyxl>=3.1.5",
     "pytest>=9.0.3",
 ]
 

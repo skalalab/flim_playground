@@ -99,7 +99,7 @@ def base_state(method, csv_name, categorical_cols, unique_row_id_col="cell_id",
 def run_export(state, csv_path, workdir, transform=None):
     """Generate the script for `state`, run it against `csv_path`, return its namespace.
 
-    Returns (namespace, script_text). The generated script reads CSV_PATH relative to
+    Returns (namespace, script_text). The generated script reads DATA_PATH relative to
     its own working directory, so the CSV is copied in beside it.
     """
     from src.export_script import generate_script

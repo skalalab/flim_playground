@@ -1,7 +1,7 @@
 """
 Script generator for exporting FLIM Playground analyses as self-contained Python scripts.
 
-Each generated script uses Matplotlib for plotting, references the CSV by file path,
+Each generated script uses Matplotlib for plotting, references the data file by path,
 and includes all filters, parameters, and analysis logic as editable constants.
 
 Architecture: Uses inspect.getsource() to extract computation functions from the actual
@@ -312,7 +312,7 @@ def _build_config_section(state: dict) -> str:
         "# " + "=" * 60,
         "# Configuration \u2014 edit these values to customize the analysis",
         "# " + "=" * 60,
-        f'CSV_PATH = {state.get("csv_filename", "data.csv")!r}  # Run this script in the same directory as your data',
+        f'DATA_PATH = {state.get("csv_filename", "data.csv")!r}  # Run this script in the same directory as your data',
         f"POINT_SIZE = {state.get('point_size', DEFAULT_POINT_SIZE)}",
         f"AXIS_LABEL_SIZE = {state.get('axis_label_size', DEFAULT_AXIS_LABEL_FONT_SIZE)}",
         f"LEGEND_SIZE = {state.get('legend_size', DEFAULT_LEGEND_FONT_SIZE)}",
@@ -406,17 +406,59 @@ def _build_config_section(state: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _build_read_call(filename: str, delimiter: str = ",") -> str:
+    """The one read line, matching the branch src.dataset_io._read_table_cached took.
+
+    App<->export parity includes *how the file is opened*: an exported script that
+    read a workbook with read_csv would fail on the very file the app just plotted.
+    The parameters differ per branch and are not interchangeable — see the
+    _read_table_cached docstring for why index_col/low_memory cannot be shared.
+    """
+    from src.dataset_io import SPREADSHEET_SUFFIXES, suffix_of_name
+
+    suffix = suffix_of_name(filename)
+    if suffix in SPREADSHEET_SUFFIXES:
+        return ('# Reading a spreadsheet needs the calamine engine:  pip install python-calamine\n'
+                'df = pd.read_excel(DATA_PATH, sheet_name=0, engine="calamine")\n'
+                '# A spreadsheet yields each header cell\'s native type; the app stringifies\n'
+                '# them so a numeric header cannot crash match_col_name on .lower().\n'
+                'df.columns = [str(col) for col in df.columns]')
+    # Every other name is read as delimited text. The separator is the app's own
+    # answer, baked in: the script must not re-run detection and reach a different
+    # one than the plot it reproduces.
+    return (f"SEPARATOR = {delimiter!r}  # the separator the app detected\n"
+            "df = pd.read_csv(DATA_PATH, index_col=False, sep=SEPARATOR, low_memory=False)")
+
+
+def _extract_constants(*names: str) -> str:
+    """Emit the module-level constants the inlined helpers read.
+
+    _extract_source copies function *bodies*; a helper that closes over a
+    module-level constant would otherwise raise NameError in the generated
+    script. Values are read off the live module so they cannot drift from the app.
+    """
+    from src import dataset_io
+
+    return "\n".join(f"{name} = {getattr(dataset_io, name)!r}" for name in names)
+
+
 def _build_data_loading(state: dict) -> str:
     from src.dataset_io import (
         check_and_fix_df,
         coerce_majority_numeric_cols,
+        drop_unnamed_columns,
         match_col_name,
         safe_split_with_logging,
     )
     from src.feature_labels import format_feature_label
 
-    loading_src = _extract_source(match_col_name, safe_split_with_logging,
-                                  check_and_fix_df, coerce_majority_numeric_cols)
+    read_call = _build_read_call(state.get("csv_filename", "data.csv"),
+                                 state.get("delimiter", ","))
+    # safe_split_with_logging and check_and_fix_df both read _MISSING_FOV_NAME.
+    loading_src = (_extract_constants("_MISSING_FOV_NAME") + "\n\n"
+                   + _extract_source(match_col_name, safe_split_with_logging,
+                                     drop_unnamed_columns, check_and_fix_df,
+                                     coerce_majority_numeric_cols))
     # Inline the exact same axis-label helper the app uses, so exported plots render
     # identical FLIM notation (e.g. "nadh τ₁ (ps)") — no second copy of the mapping.
     label_src = _extract_source(format_feature_label)
@@ -432,7 +474,9 @@ def _build_data_loading(state: dict) -> str:
 {divider}
 {label_src}
 
-df = pd.read_csv(CSV_PATH, index_col=False, low_memory=False)
+{read_call}
+# Same as the app: columns whose header cell was blank are not analysed.
+df = drop_unnamed_columns(df)
 df, _warning_msg, _error_msg = check_and_fix_df(df, CATEGORICAL_COLS, UNIQUE_ROW_ID_COL, FOV_NAME_COL)
 if _error_msg:
     raise SystemExit(_error_msg.strip())
@@ -442,13 +486,13 @@ _warning_msg += _coerce_warning
 if ANALYSIS_COLUMNS is not None:
     # Same prune the app applies in get_features() — see ANALYSIS_COLUMNS above.
     # Missing columns are skipped rather than raising, so the script still runs on a
-    # CSV that lost a column; anything dropped here was never part of the analysis.
+    # file that lost a column; anything dropped here was never part of the analysis.
     _missing = [col for col in ANALYSIS_COLUMNS if col not in df.columns]
     if _missing:
-        print("Warning: analysed column(s) missing from the CSV: " + ", ".join(_missing))
+        print("Warning: analysed column(s) missing from the data file: " + ", ".join(_missing))
     df = df[[col for col in ANALYSIS_COLUMNS if col in df.columns]]
 if _warning_msg:
-    print(_warning_msg.replace("<br>", "\\n").strip())
+    print(_warning_msg.strip())
 """
 
 
