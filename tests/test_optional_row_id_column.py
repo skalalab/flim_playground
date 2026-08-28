@@ -398,19 +398,28 @@ def test_an_exported_script_reinvents_the_row_id_and_runs(tmp_path):
 
 # ------------------------------------------------------------------- profile defaults
 
-def test_a_fresh_analysis_profile_seeds_a_blank_identifier(monkeypatch, tmp_path):
-    """This panel configures a *user* table, which need not have an identifier. Seeding
-    it from the extraction config would reject every table lacking that column, and
-    would be the analysis layer calling its rows cells."""
+def test_a_fresh_analysis_profile_seeds_blank_column_names(monkeypatch, tmp_path):
+    """This panel configures a *user* table, which need not have any of these columns.
+    Seeding a name from the extraction config would reject every table lacking the
+    identifier, would be the analysis layer calling its rows cells, and would describe
+    someone else's FOV column and categoricals as if they were this table's."""
     from src.widgets import analysis_config_widgets as acw
 
     monkeypatch.setattr(acw, "_ANALYSIS_CONFIG_PATH", tmp_path / "analysis_config.toml")
     acw.st.session_state.pop("current_profile", None)
-    # A configured extraction identifier that must not leak into the new profile.
+    # A configured extraction setup that must not leak into the new profile.
     monkeypatch.setattr(acw, "get_unique_cell_id_col", lambda: "cell_id")
     monkeypatch.setattr(acw, "get_fov_name_col", lambda: "image_name")
     monkeypatch.setattr(acw, "get_categorical_cols", lambda: ["treatment"])
 
     acw.dataset_config_widget(use_data_extraction=True)   # the early-return seeding path
 
-    assert acw._get_profile_config()["unique_row_id_col"] == ""
+    seeded = acw._get_profile_config()
+    assert seeded["unique_row_id_col"] == ""
+    assert seeded["fov_name_col"] == ""
+    assert seeded["categorical_cols"] == []
+    # And the accessors read that seed back as "no FOV column, no categoricals of the
+    # user's own" -- only the three cluster columns the plots add themselves.
+    assert acw.get_fov_name_col_analysis(use_data_extraction=False) == ""
+    assert acw.get_categorical_cols_analysis(use_data_extraction=False) == [
+        "GMM_group", "2D_GMM_group", "k_means_cluster"]

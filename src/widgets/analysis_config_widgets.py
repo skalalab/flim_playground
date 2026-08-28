@@ -105,11 +105,6 @@ def dataset_config_widget(use_data_extraction=True):
     if "config_reset" not in st.session_state:
         st.session_state.config_reset = False
 
-    # read from the data_extraction configuration and modify based on the use_data_extraction flag
-    fov_name_col = get_fov_name_col()
-    categorical_cols = get_categorical_cols()
-    categorical_cols.extend([fov_name_col])
-
     # Load and migrate config
     cfg = load_config(_ANALYSIS_CONFIG_PATH)
     cfg = _migrate_old_config_to_profiles(cfg)
@@ -117,17 +112,18 @@ def dataset_config_widget(use_data_extraction=True):
     current_profile = _get_current_profile()
     profile_cfg = _get_profile_config(current_profile)
 
-    # Initialize profile config with defaults if needed. The identifier seeds blank --
-    # this panel configures a *user* table, which need not have one, and a seeded name
-    # would reject every table that lacks that column. Same fallback
-    # _migrate_old_config_to_profiles uses. The extraction section keeps its own
-    # identifier in config.toml; nothing here borrows it.
+    # Initialize profile config with defaults if needed. All three seed empty --
+    # this panel configures a *user* table, and every seeded name is a claim about a
+    # column that table need not have: a seeded identifier rejects the file outright,
+    # and a seeded FOV name or categorical list quietly describes someone else's data.
+    # Same fallbacks _migrate_old_config_to_profiles uses. The extraction section keeps
+    # its own names in config.toml; nothing here borrows them.
     if "unique_row_id_col" not in profile_cfg:
         profile_cfg["unique_row_id_col"] = ""
     if "fov_name_col" not in profile_cfg:
-        profile_cfg["fov_name_col"] = fov_name_col
+        profile_cfg["fov_name_col"] = ""
     if "categorical_cols" not in profile_cfg:
-        profile_cfg["categorical_cols"] = categorical_cols
+        profile_cfg["categorical_cols"] = []
 
     if use_data_extraction:
         # do nothing
@@ -198,8 +194,8 @@ def dataset_config_widget(use_data_extraction=True):
                         # Create new profile with defaults
                         cfg["profiles"][new_profile_name] = {
                             "unique_row_id_col": "",
-                            "fov_name_col": fov_name_col,
-                            "categorical_cols": categorical_cols.copy(),
+                            "fov_name_col": "",
+                            "categorical_cols": [],
                             "feature_groups": {},
                             "all_numerical_features": []
                         }
@@ -256,12 +252,12 @@ def dataset_config_widget(use_data_extraction=True):
     with cols[0]:
         profile_cfg["unique_row_id_col"] = st.text_input("Unique Row ID (if applicable)", value=profile_cfg.get("unique_row_id_col", ""), help="The column name that uniquely identifies each row in the dataset. Your dataset may not have this. It is ok — leave this blank and the rows are numbered 1, 2, 3, … in file order. Name a column here and it must be present: duplicates are dropped, and a missing column is an error.")
     with cols[1]:
-        profile_cfg["fov_name_col"] = st.text_input("FOV column name (if applicable)", value=profile_cfg.get("fov_name_col", fov_name_col), help="The column name that uniquely identifies each field of view in the dataset. Your dataset may not have this. It is ok.")
+        profile_cfg["fov_name_col"] = st.text_input("FOV column name (if applicable)", value=profile_cfg.get("fov_name_col", ""), help="The column name that uniquely identifies each field of view in the dataset. Your dataset may not have this. It is ok.")
 
     selected_categorical_cols = st.multiselect(
         "Select Categorical Columns", 
-        profile_cfg.get("categorical_cols", categorical_cols), 
-        default=profile_cfg.get("categorical_cols", categorical_cols),
+        profile_cfg.get("categorical_cols", []), 
+        default=profile_cfg.get("categorical_cols", []),
         help="Select the categorical columns you may have in this or future datasets.",
         key=f"categorical_cols_multiselect_{current_profile}",
         accept_new_options=True
@@ -295,8 +291,8 @@ def dataset_config_widget(use_data_extraction=True):
     with col2:
         if st.button("Reset Configuration"):
             profile_cfg["unique_row_id_col"] = ""
-            profile_cfg["fov_name_col"] = fov_name_col
-            profile_cfg["categorical_cols"] = categorical_cols
+            profile_cfg["fov_name_col"] = ""
+            profile_cfg["categorical_cols"] = []
             profile_cfg["feature_groups"] = {}
             profile_cfg["all_numerical_features"] = []
             _save_profile_config(current_profile, profile_cfg)
