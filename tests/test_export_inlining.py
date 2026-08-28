@@ -29,7 +29,6 @@ from src.export_script import generate_script
 
 # The helpers src/export_script.py::_build_data_loading inlines verbatim.
 INLINED_HELPERS = (
-    dataset_io.match_col_name,
     dataset_io.drop_unnamed_columns,
     dataset_io.check_and_fix_df,
     dataset_io.resolve_row_id_col,

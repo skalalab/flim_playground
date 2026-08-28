@@ -424,7 +424,8 @@ def _build_read_call(filename: str, delimiter: str = ",") -> str:
         return ('# Reading a spreadsheet needs the calamine engine:  pip install python-calamine\n'
                 'df = pd.read_excel(DATA_PATH, sheet_name=0, engine="calamine")\n'
                 '# A spreadsheet yields each header cell\'s native type; the app stringifies\n'
-                '# them so a numeric header cannot crash match_col_name on .lower().\n'
+                '# them so a numeric header is a str everywhere downstream — the categorical\n'
+                '# lookup and every df[name] access assume it.\n'
                 'df.columns = [str(col) for col in df.columns]')
     # Every other name is read as delimited text. The separator is the app's own
     # answer, baked in: the script must not re-run detection and reach a different
@@ -438,14 +439,13 @@ def _build_data_loading(state: dict) -> str:
         check_and_fix_df,
         coerce_majority_numeric_cols,
         drop_unnamed_columns,
-        match_col_name,
         resolve_row_id_col,
     )
     from src.feature_labels import format_feature_label
 
     read_call = _build_read_call(state.get("csv_filename", "data.csv"),
                                  state.get("delimiter", ","))
-    loading_src = _extract_source(match_col_name, drop_unnamed_columns,
+    loading_src = _extract_source(drop_unnamed_columns,
                                   check_and_fix_df, resolve_row_id_col,
                                   coerce_majority_numeric_cols)
     # Inline the exact same axis-label helper the app uses, so exported plots render

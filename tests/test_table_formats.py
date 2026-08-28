@@ -108,7 +108,7 @@ def test_delimited_text_separator_is_detected_not_assumed(sep, suffix):
 
 
 def test_spreadsheet_header_cells_are_stringified():
-    """A numeric header cell arrives as an int and would crash match_col_name."""
+    """A numeric header cell arrives as an int; everything downstream assumes str."""
     df, _meta = _read(_upload(pd.DataFrame({1: [1, 2], "cell_id": ["a", "b"]}), ".xlsx"))
     assert [type(col) for col in df.columns] == [str, str]
     assert list(df.columns) == ["1", "cell_id"]

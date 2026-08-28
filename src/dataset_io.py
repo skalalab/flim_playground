@@ -458,10 +458,9 @@ def _render_reject(error_msg, warning_msg=""):
 def resolve_effective_fov_col(df, fov_name_col):
     """The FOV column the analysis actually has: the configured name, or None.
 
-    Call this *after* check_and_fix_df, never before. The fuzzy categorical match
-    can rename a column *into* the configured name ("Image-Name" -> "image_name"),
-    and the empty-column rule can drop one that was blank in every row -- so
-    presence is only knowable once normalization has run.
+    Call this *after* check_and_fix_df, never before: the empty-column rule can drop
+    a column that was blank in every row, so presence is only knowable once
+    normalization has run.
     """
     if df is None or not fov_name_col:
         return None
@@ -572,26 +571,6 @@ def load_table(uploaded_file, categorical_cols, use_data_extraction=True):
                 st.write(f"Data uploaded successfully {happy_emoji}")
                 upload_complete = True
     return df, feature_groups_dict, upload_complete, delimiter, row_id_col
-
-def match_col_name(col, col_list):
-    """
-    match_col_name: a function that takes a column name and a list of canonical column names and returns the first canonical column name that matches the column name
-    """
-    for col_name in col_list:
-        # fuzzy match the column name with the canonical column name
-        # e.g. "cell_line", "cell line", "cell-line", "Cell line", "Cell_line", "cell_Lines" all match "cell_line"
-        # "treatments", "Treatment", "Treatments" all match "treatment"
-        col_processed = col.lower().replace(" ", "_").replace("-", "_")
-        # Both sides get the same normalisation, so a configured name may carry the
-        # spacing and hyphens of the header it names ("IL-18") and still match.
-        col_name_processed = col_name.lower().replace(" ", "_").replace("-", "_")
-
-        # Check for direct match, match after removing/adding 's'
-        if (col_processed == col_name_processed or
-            (col_processed.endswith('s') and col_processed[:-1] == col_name_processed) or
-            (col_name_processed.endswith('s') and col_processed == col_name_processed[:-1])):
-            return col_name
-    return None
 
 def get_feature_groups_data_extraction(cols):
     """
@@ -748,8 +727,16 @@ def get_features(df, categorical_cols, use_data_extraction=True, unique_row_id_c
         more = f" and {len(dropped) - 5} more" if len(dropped) > 5 else ""
         plural = "s" if len(dropped) > 1 else ""
         was_were = "were" if len(dropped) > 1 else "was"
-        warning_msg += (f"Warning: {len(dropped)} column{plural} {was_were} not analysed "
-                        f"(neither categorical nor numerical): {listed}{more}.\n")
+        warning_msg += (f"Warning: {len(dropped)} column{plural} {was_were} not analysed: "
+                        f"{listed}{more}.\n")
+        if use_data_extraction:
+            # Extraction categoricals are named in config.toml and matched exactly, so
+            # a name that has drifted out of step with an older extraction CSV lands
+            # here -- name the fix, not just the casualty. The user-table branch needs
+            # no such line: its names come off the file's own headers.
+            warning_msg += ("If one of these is a categorical feature, add it under "
+                            "Categorical Features on the Home page — "
+                            "the name must match the column exactly.\n")
 
     df = df[columns_to_keep]
 
@@ -831,23 +818,14 @@ def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
     if fov_name_col and fov_name_col not in categorical_cols:
         categorical_cols = list(categorical_cols) + [fov_name_col]
 
+    # Exact names, and the column keeps its own. Folding case and punctuation would
+    # make "n" and "ns" one column, and renaming to a canonical spelling makes the
+    # frame disagree with the header the user picked -- a plot axis reading
+    # "cell_line" for a file whose column says "Cell Line".
     for col in df.columns:
-        matched_categorical_col = match_col_name(col, categorical_cols)
-        if matched_categorical_col is not None:
-            # Two headers can normalise to the same canonical name ("IL-18" and "IL_18"
-            # both do). Renaming the second would leave two columns sharing a name and
-            # every df[name] lookup would return a frame, so it keeps its own name and is
-            # reported. An exactly-spelled column is never skipped, so it wins the name
-            # regardless of column order.
-            if matched_categorical_col != col and matched_categorical_col in df.columns:
-                warning_msg += (f"Warning: column '{col}' also reads as the categorical column "
-                                f"'{matched_categorical_col}', which is already present. "
-                                f"'{col}' was left under its own name.\n")
-                continue
-            # rename the column to match the canonical categorical column name
-            df.rename(columns={col: matched_categorical_col}, inplace=True)
+        if col in categorical_cols:
             # fix na values, and make sure all the values are labels rather than numbers
-            series = df[matched_categorical_col]
+            series = df[col]
             # A numeric column that has blanks is read as float, so a plate or day number
             # would label itself "1.0" instead of the "1" that was typed. Whole numbers go
             # through a nullable integer cast first to keep the label intact; genuinely
@@ -858,6 +836,6 @@ def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
                     series = series.astype("Int64")
             # Fill from the original null mask, not by matching the stringified "nan" /
             # "<NA>" - a column with a genuine "nan" label would be caught by that.
-            df[matched_categorical_col] = series.astype(str).where(series.notna(), "N/A")
+            df[col] = series.astype(str).where(series.notna(), "N/A")
 
     return df, warning_msg, error_msg

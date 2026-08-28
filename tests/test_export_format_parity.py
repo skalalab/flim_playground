@@ -134,8 +134,9 @@ def test_spreadsheet_read_call_never_uses_read_csv():
         call = _build_read_call(filename)
         assert "read_excel" in call and "read_csv" not in call
         assert 'engine="calamine"' in call
-        # The app stringifies spreadsheet headers; so must the script, or a
-        # numeric header cell crashes match_col_name inside the inlined helpers.
+        # The app stringifies spreadsheet headers; so must the script, or a numeric
+        # header reaches the inlined helpers as an int and the categorical lookup
+        # and df[name] accesses inside them silently miss it.
         assert "str(col) for col in df.columns" in call
 
 

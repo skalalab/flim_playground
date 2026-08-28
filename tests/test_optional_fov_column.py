@@ -131,14 +131,18 @@ def test_a_blank_configured_fov_name_creates_no_column():
     assert list(fixed.columns) == ["row", "feat"]
 
 
-def test_a_fuzzily_named_fov_column_is_renamed_into_place():
+def test_an_all_empty_fov_column_is_dropped_before_it_is_resolved():
     """Why the effective column is resolved *after* check_and_fix_df, not before."""
-    df = pd.DataFrame({"cell_id": ["a", "b"], "Image-Name": ["f1", "f2"],
+    df = pd.DataFrame({"cell_id": ["a", "b"], "image_name": [None, None],
                        "feat": [1.0, 2.0]})
+    # Before: the configured name is present, so a naive check would say it exists.
+    assert dataset_io.resolve_effective_fov_col(df, "image_name") == "image_name"
+
     fixed, _warning, _error = dataset_io.check_and_fix_df(
         df, [], "cell_id", "image_name")
-    assert "image_name" in fixed.columns
-    assert dataset_io.resolve_effective_fov_col(fixed, "image_name") == "image_name"
+    # After: the column was all-empty and dropped, so the analysis has no FOV.
+    assert "image_name" not in fixed.columns
+    assert dataset_io.resolve_effective_fov_col(fixed, "image_name") is None
 
 
 def test_load_table_warns_when_the_configured_fov_column_is_absent(monkeypatch):
@@ -210,8 +214,7 @@ def test_the_prune_warning_is_singular_for_exactly_one_dropped_column(monkeypatc
                        "Lifetime fit_ch1: T1": [1.0, 2.0]})
     _out, _groups, warning, _error = dataset_io.get_features(
         df, [], use_data_extraction=True)
-    assert ("Warning: 1 column was not analysed (neither categorical nor numerical): "
-            "text_col.\n") in warning
+    assert "Warning: 1 column was not analysed: text_col.\n" in warning
 
 
 def test_the_prune_warning_truncates_and_pluralizes_past_five_dropped_columns(monkeypatch):
@@ -221,7 +224,7 @@ def test_the_prune_warning_truncates_and_pluralizes_past_five_dropped_columns(mo
                        "Lifetime fit_ch1: T1": [1.0, 2.0]})
     _out, _groups, warning, _error = dataset_io.get_features(
         df, [], use_data_extraction=True)
-    assert "Warning: 7 columns were not analysed (neither categorical nor numerical): " in warning
+    assert "Warning: 7 columns were not analysed: " in warning
     assert "and 2 more." in warning
 
 

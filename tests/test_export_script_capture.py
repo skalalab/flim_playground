@@ -126,17 +126,18 @@ def test_categorical_filter_matches_numeric_column(tmp_path, monkeypatch):
     assert ns["df"]["day"].dtype == object
 
 
-def test_fuzzy_categorical_column_renamed_for_grouping(tmp_path, monkeypatch):
-    """The app fuzzy-renames 'Treatments' -> 'treatment' on load; the script must too."""
+def test_categorical_column_keeps_its_own_spelling_for_grouping(tmp_path, monkeypatch):
+    """A categorical is matched by exact name and never renamed; the script must agree."""
     df = _grouped_df({"ctrl": 1.0, "drug": 2.0}, group_col="Treatments")
     state = _base_state(
         "FOV Comparison",
-        categorical_cols=["treatment"],
-        color_by=["treatment"],
+        categorical_cols=["Treatments"],
+        color_by=["Treatments"],
         method_params={"selected_var": "feature_a"},
     )
     ns = _run_script(tmp_path, state, df, monkeypatch)
-    assert "treatment" in ns["df"].columns
+    assert "Treatments" in ns["df"].columns
+    assert "treatment" not in ns["df"].columns
     assert sorted(ns["color_groups"]) == ["ctrl", "drug"]
 
 
