@@ -497,79 +497,121 @@ def resolve_row_id_col(df, unique_row_id_col):
     return df, row_id_col
 
 
+def read_table(uploaded_file):
+    """Read an upload into a frame and judge its structure. Nothing about meaning.
+
+    Returns `(df, read_meta, delimiter, scope_warning, error_msg)`; an empty error
+    means the file is structurally usable. Reports the problems only the reader can
+    see: wrong separator, no header, empty sheet, name and content disagreeing.
+
+    Consults no config and no analysis profile, so it answers "what columns does this
+    file have" before anything has decided what they mean. That is what lets a caller
+    stop here -- with the headers in hand and no profile yet applied -- rather than
+    having to satisfy a profile before it can see the file at all.
+
+    Unlike interpret_table it renders nothing: a caller that pauses here owns where
+    these messages sit relative to whatever it shows next.
+    """
+    delimiter = ","
+    filename = getattr(uploaded_file, "name", "") or "the uploaded file"
+    # The read branch is chosen by suffix, so a renamed file reaches the wrong
+    # parser and raises something that names neither cause nor fix.
+    mismatch = _name_content_mismatch(uploaded_file, filename)
+    if mismatch != "":
+        return None, {}, delimiter, "", mismatch
+    suffix = suffix_of(uploaded_file)
+    df, read_meta = _read_table_cached(uploaded_file, suffix)
+    # A spreadsheet sets no delimiter; "," is what the export side uses there.
+    delimiter = read_meta.get("delimiter", ",")
+    # Name any breach of the supported shape first. Otherwise check_and_fix_df
+    # reports a missing identifier, which is the symptom rather than the cause.
+    scope_warning, scope_error = _diagnose_table(df, read_meta, filename)
+    if scope_error != "":
+        return None, read_meta, delimiter, scope_warning, scope_error
+    return df, read_meta, delimiter, scope_warning, ""
+
+
+def interpret_table(df, categorical_cols, unique_row_id_col, fov_name_col,
+                    scope_warning="", use_data_extraction=True):
+    """Turn a structurally-sound frame into an analysis frame, given what columns mean.
+
+    Returns `(df, feature_groups_dict, upload_complete, row_id_col)`. `row_id_col` goes
+    back because an invented identifier's name is a fact about this frame that no caller
+    can recover from the config -- after the insert it is indistinguishable from a column
+    the file had.
+
+    Takes the column roles as arguments rather than reading them, so the same code
+    serves a name that came from the saved profile and one the user just picked.
+
+    Renders its own messages, unlike read_table: this half only runs once the page is
+    ready to show results. The two _render_warning calls are separated by get_features
+    deliberately -- structural warnings appear above feature-level ones.
+    """
+    # Kept for the hint below: check_and_fix_df returns None when it fails.
+    table = df
+    df, warning_msg, error_msg = check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col)
+    warning_msg = scope_warning + warning_msg
+    if error_msg != "":
+        # scope_warning is context for this error too: when the data sits on
+        # sheet 2, "<identifier> is missing" only makes sense alongside
+        # "'Data' was skipped".
+        _render_reject(error_msg + _comma_decimal_hint(table), warning_msg)
+        return None, None, False, unique_row_id_col
+
+    _render_warning(warning_msg)
+    # After check_and_fix_df -- see resolve_row_id_col -- and before get_features,
+    # which needs the resolved name to keep an invented identifier out of the
+    # numeric features.
+    df, row_id_col = resolve_row_id_col(df, unique_row_id_col)
+    df, feature_groups_dict, warning_msg, error_msg = get_features(
+        df, categorical_cols, use_data_extraction=use_data_extraction,
+        unique_row_id_col=row_id_col)
+    if error_msg != "":
+        _render_reject(error_msg + _comma_decimal_hint(table))
+        return None, None, False, row_id_col
+
+    # Only the extraction branch genuinely expects this column -- extraction always
+    # emits it. A user-table profile's fov_name_col may be a stale extraction default
+    # the table never had, which resolve_effective_fov_col already turns into a silent
+    # None; warning about it here would fire on every load of a table that legitimately
+    # has no FOV column.
+    if use_data_extraction and fov_name_col and resolve_effective_fov_col(df, fov_name_col) is None:
+        warning_msg += (f"Warning: the FOV column '{fov_name_col}' was not found. "
+                        "FOV Comparison is unavailable and the FOV name is left "
+                        "out of hover text.\n")
+    _render_warning(warning_msg)
+    st.write(f"Data uploaded successfully {happy_emoji}")
+    return df, feature_groups_dict, True, row_id_col
+
+
 def load_table(uploaded_file, categorical_cols, use_data_extraction=True):
     """Load an uploaded table (CSV, delimited text or spreadsheet) and validate it.
 
     Returns `(df, feature_groups_dict, upload_complete, delimiter, row_id_col)`. The
     separator goes back so the exported script reuses this answer rather than detecting
-    one of its own that might differ. `row_id_col` goes back because an invented
-    identifier's name is a fact about this frame that no caller can recover from the
-    config -- after the insert it is indistinguishable from a column the file had.
+    one of its own that might differ.
 
-    Two layers, in order. The reader reports structural problems: wrong separator,
-    no header, empty sheet, name and content disagreeing. Only then do
-    check_and_fix_df and get_features speak about what the columns mean.
+    Read then interpret, back to back, taking every column role from the active
+    profile. A caller that needs to do something between the two halves -- show the
+    file's own headers before any profile has been chosen -- calls read_table and
+    interpret_table itself instead.
     """
-    upload_complete = False
-    df = feature_groups_dict = None
-    delimiter = ","
     unique_row_id_col = get_unique_row_id_col(use_data_extraction)
     # What the caller gets back until resolve_row_id_col has run -- which is also what
     # the rejection paths below return, where no frame was loaded to invent one for.
     row_id_col = unique_row_id_col
-    if uploaded_file is not None:
-        filename = getattr(uploaded_file, "name", "") or "the uploaded file"
-        # The read branch is chosen by suffix, so a renamed file reaches the wrong
-        # parser and raises something that names neither cause nor fix.
-        mismatch = _name_content_mismatch(uploaded_file, filename)
-        if mismatch != "":
-            _render_reject(mismatch)
-            return None, None, False, delimiter, row_id_col
-        suffix = suffix_of(uploaded_file)
-        df, read_meta = _read_table_cached(uploaded_file, suffix)
-        # A spreadsheet sets no delimiter; "," is what the export side uses there.
-        delimiter = read_meta.get("delimiter", ",")
-        # Kept for the hint below: check_and_fix_df returns None when it fails.
-        table = df
-        # Name any breach of the supported shape first. Otherwise check_and_fix_df
-        # reports a missing identifier, which is the symptom rather than the cause.
-        scope_warning, scope_error = _diagnose_table(df, read_meta, filename)
-        if scope_error != "":
-            _render_reject(scope_error, scope_warning)
-            return None, None, False, delimiter, row_id_col
-        fov_name_col = get_fov_name_col_analysis(use_data_extraction)
-        df, warning_msg, error_msg = check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col)
-        warning_msg = scope_warning + warning_msg
+    if uploaded_file is None:
+        return None, None, False, ",", row_id_col
 
-        if error_msg != "":
-            # scope_warning is context for this error too: when the data sits on
-            # sheet 2, "<identifier> is missing" only makes sense alongside
-            # "'Data' was skipped".
-            _render_reject(error_msg + _comma_decimal_hint(table), warning_msg)
-        else:
-            _render_warning(warning_msg)
-            # After check_and_fix_df -- see resolve_row_id_col -- and before
-            # get_features, which needs the resolved name to keep an invented
-            # identifier out of the numeric features.
-            df, row_id_col = resolve_row_id_col(df, unique_row_id_col)
-            df, feature_groups_dict, warning_msg, error_msg = get_features(
-                df, categorical_cols, use_data_extraction=use_data_extraction,
-                unique_row_id_col=row_id_col)
-            if error_msg != "":
-                _render_reject(error_msg + _comma_decimal_hint(table))
-            else:
-                # Only the extraction branch genuinely expects this column -- extraction
-                # always emits it. A user-table profile's fov_name_col may be a stale
-                # extraction default the table never had, which resolve_effective_fov_col
-                # already turns into a silent None; warning about it here would fire on
-                # every load of a table that legitimately has no FOV column.
-                if use_data_extraction and fov_name_col and resolve_effective_fov_col(df, fov_name_col) is None:
-                    warning_msg += (f"Warning: the FOV column '{fov_name_col}' was not found. "
-                                    "FOV Comparison is unavailable and the FOV name is left "
-                                    "out of hover text.\n")
-                _render_warning(warning_msg)
-                st.write(f"Data uploaded successfully {happy_emoji}")
-                upload_complete = True
+    df, _read_meta, delimiter, scope_warning, error_msg = read_table(uploaded_file)
+    if error_msg != "":
+        _render_reject(error_msg, scope_warning)
+        return None, None, False, delimiter, row_id_col
+
+    fov_name_col = get_fov_name_col_analysis(use_data_extraction)
+    df, feature_groups_dict, upload_complete, row_id_col = interpret_table(
+        df, categorical_cols, unique_row_id_col, fov_name_col,
+        scope_warning=scope_warning, use_data_extraction=use_data_extraction)
     return df, feature_groups_dict, upload_complete, delimiter, row_id_col
 
 def get_feature_groups_data_extraction(cols):
