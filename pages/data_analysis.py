@@ -120,6 +120,9 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
         # would also re-read the upload on every fragment rerun, and a probe that
         # failed to rewind would cost a full reparse each time.
         "delimiter": delimiter,
+        # The *configured* name, blank included: the script re-runs resolve_row_id_col
+        # and must invent the same column. Baking in the invented name would have
+        # check_and_fix_df demand a column the data file never had.
         "unique_row_id_col": get_unique_row_id_col(st.session_state.get("_use_data_extraction", True)),
         # The effective column, not the configured name: a script for a FOV-less
         # dataset must not name a column its data file does not have.
@@ -295,7 +298,15 @@ with col1:
         )
     use_data_extraction = st.checkbox("**Use Dataset from Data Extraction**", value=True)
     st.session_state._use_data_extraction = use_data_extraction
-    unique_row_id_col = get_unique_row_id_col(use_data_extraction)
+    # The *configured* identifier, which may be blank: load_table below overwrites this
+    # with the one the loaded frame actually has, inventing a row-number column when the
+    # table has none. Kept as the fallback for the failed-upload path, where no plot runs.
+    configured_row_id_col = get_unique_row_id_col(use_data_extraction)
+    unique_row_id_col = configured_row_id_col
+    # What the hover calls the identifier. Extraction data is always cells, so that
+    # branch says "Cell ID"; a user table is called what the user called it, and an
+    # invented row number is just "ID".
+    row_id_label = "Cell ID" if use_data_extraction else (configured_row_id_col or "ID")
     categorical_cols = get_categorical_cols_analysis(use_data_extraction)
     instruction_text = "Upload the file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "**Use the right panel to configure before loading your data ===>**"
     uploaded_file = st.file_uploader(
@@ -311,7 +322,7 @@ with col1:
         key="analysis_file_upload",
     )
     try:
-        df, feature_groups_dict, upload_complete, delimiter = load_table(uploaded_file, categorical_cols, use_data_extraction=use_data_extraction)
+        df, feature_groups_dict, upload_complete, delimiter, unique_row_id_col = load_table(uploaded_file, categorical_cols, use_data_extraction=use_data_extraction)
     except Exception as e:
         st.error(f"Failed to process the uploaded file: {e} {sad_emoji}")
         df, feature_groups_dict, upload_complete, delimiter = None, None, False, ","
@@ -410,7 +421,7 @@ with col2:
                         if session_key_cmp in st.session_state:
                             current_custom_order['compare_groups'] = st.session_state[session_key_cmp]
 
-                        fig = feature_comparison_plot(filtered_df, cell_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, colormap=st.session_state.plot_colormap, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test, custom_order=current_custom_order, subcolor_by=subcolor_by)
+                        fig = feature_comparison_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, colormap=st.session_state.plot_colormap, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test, custom_order=current_custom_order, subcolor_by=subcolor_by, row_id_label=row_id_label)
 
 
                     elif method == "FOV Comparison":
@@ -455,7 +466,7 @@ with col2:
                     # drop rows with NaN values in the selected_x and selected_y columns
                     filtered_df = filtered_df[filtered_df[selected_x].notna() & filtered_df[selected_y].notna()]
                     if len(filtered_df) > 0:
-                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_x=selected_x, selected_y=selected_y, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap)
+                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_x=selected_x, selected_y=selected_y, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap, row_id_label=row_id_label)
                         data_export_ready = True
                     else:
                         st.write(f"No data available after removing rows with missing values {sad_emoji}")
@@ -467,7 +478,7 @@ with col2:
                         if g_col not in filtered_df.columns or s_col not in filtered_df.columns:
                             st.error(f"Required phasor columns ({g_col}, {s_col}) not found in your data. {sad_emoji}")
                         else:
-                            fig, kmeans_df = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap, f=f, harmonic=selected_harmonic)
+                            fig, kmeans_df = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap, f=f, harmonic=selected_harmonic, row_id_label=row_id_label)
                             data_export_ready = True
                     else:
                         st.write("Your data does not contain the required features for phasor plot.")
@@ -482,7 +493,7 @@ with col2:
 
                         if len(filtered_df) > 0:
                             try:
-                                fig = dimension_reduction_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_features=selected_features, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by, colormap=st.session_state.plot_colormap, method=dr_method, hyperParam_dict=hyperParam_dict)
+                                fig = dimension_reduction_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_features=selected_features, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by, colormap=st.session_state.plot_colormap, method=dr_method, hyperParam_dict=hyperParam_dict, row_id_label=row_id_label)
                             except Exception as e:
                                 st.error(f"Dimension reduction failed: {e}. Check that selected features don't contain constant or all-NaN columns. {sad_emoji}")
                                 fig = None

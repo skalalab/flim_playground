@@ -173,7 +173,7 @@ def test_feature_comparison_hover_uses_flim_notation():
         for j in range(8):
             rows.append({"cell_id": f"{grp}_{j}", "image_name": "fov1", "group": grp,
                          "Lifetime fit_nadh: t1": 380 + j})
-    fig = feature_comparison_plot(pd.DataFrame(rows), cell_id_col="cell_id",
+    fig = feature_comparison_plot(pd.DataFrame(rows), unique_row_id_col="cell_id",
                                   fov_name_col="image_name",
                                   selected_var="Lifetime fit_nadh: t1", color_by=["group"])
     tmpl = next(t.hovertemplate for t in fig.data

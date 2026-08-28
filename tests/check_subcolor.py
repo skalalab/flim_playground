@@ -102,7 +102,7 @@ null_colour = create_subcolor_map(null_df, "d", "g", ["ExpA", "ExpB", "ExpC"])
 check("nulls fold to N/A and still get a colour", "N/A" in null_colour, sorted(null_colour))
 
 print("5. the figure")
-PLOT = dict(cell_id_col="cell_id", fov_name_col="fov", selected_var="y",
+PLOT = dict(unique_row_id_col="cell_id", fov_name_col="fov", selected_var="y",
             color_by=["g"], colormap="tab10")
 fig = feature_comparison_plot(frame(mixed), subcolor_by="d", **PLOT)
 shown = [t.name for t in fig.data if t.showlegend]

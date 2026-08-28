@@ -130,7 +130,7 @@ def _shapes_above(fig):
 
 def _run_feature_comparison(df):
     return _figure(feature_comparison_plot(
-        df, cell_id_col="cell_id", fov_name_col="image_name",
+        df, unique_row_id_col="cell_id", fov_name_col="image_name",
         selected_var="feat_x", color_by=["group"],
     ))
 

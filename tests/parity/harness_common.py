@@ -44,11 +44,15 @@ def load_app_df(csv_path, categorical_cols, unique_row_id_col, fov_name_col):
         check_and_fix_df,
         coerce_majority_numeric_cols,
         get_feature_groups_data_extraction,
+        resolve_row_id_col,
     )
 
     df = pd.read_csv(csv_path, index_col=False)
     df, _w, err = check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col)
     assert err == "", err
+    # A no-op for every fixture here, which all name a real identifier -- but the app
+    # runs it between these two steps, and this function's job is to be that path.
+    df, unique_row_id_col = resolve_row_id_col(df, unique_row_id_col)
     skip = set([unique_row_id_col] + list(categorical_cols))
     df, _ = coerce_majority_numeric_cols(df, skip)
     numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]

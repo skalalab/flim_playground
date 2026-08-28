@@ -40,7 +40,7 @@ from src.vis import univar  # noqa: E402
 from src.vis.univar import feature_comparison_plot  # noqa: E402
 
 VAR = "redox_ratio"
-BASE = dict(cell_id_col="cell_id", fov_name_col="image_name", selected_var=VAR,
+BASE = dict(unique_row_id_col="cell_id", fov_name_col="image_name", selected_var=VAR,
             color_by=["experiment"], colormap="tab10")
 
 # Reference plots, and the channels layered on top of each. A channel may change what a

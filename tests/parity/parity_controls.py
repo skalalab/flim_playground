@@ -266,7 +266,7 @@ def run_fc(ctrl, tag):
     if log_y:
         plot_df[VAR] = np.log10(plot_df[VAR] + 1e-6)
     fig = feature_comparison_plot(
-        plot_df, cell_id_col="cell_id", fov_name_col="image_name", selected_var=VAR,
+        plot_df, unique_row_id_col="cell_id", fov_name_col="image_name", selected_var=VAR,
         color_by=ctrl.get("color_by", ["treatment"]),
         opacity_by=ctrl.get("opacity_by"), shape_by=ctrl.get("shape_by"),
         separate_by=ctrl.get("separate_by"), colormap=ctrl.get("colormap", "tab10"),

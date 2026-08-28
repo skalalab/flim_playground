@@ -16,6 +16,7 @@ from .helpers import (
     add_interleaved_points_trace,
     get_context_theme_color,
     get_point_visual_mappings,
+    hover_field,
 )
 
 
@@ -47,7 +48,7 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, ra
             df = pd.DataFrame(tsne.fit_transform(X_std), columns=["t-SNE1", "t-SNE2"])
     return df, exp_var
 
-def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_features, colored_by=[], opacity_by=None, shape_by=None, colormap="tab10", method="UMAP", hyperParam_dict={}):
+def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_features, colored_by=[], opacity_by=None, shape_by=None, colormap="tab10", method="UMAP", hyperParam_dict={}, row_id_label="ID"):
     """create a plotly plot to visualize the dimension-reduced data"""
     X = df[selected_features]
     df_reduced, exp_var = dimension_reduction(X, n_components=2, method=method, hyperParam_dict=hyperParam_dict)
@@ -94,7 +95,9 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
         axis_labels=axis_labels,
         text_col=unique_row_id_col,
         customdata_col=fov_name_col,
-        hovertemplate="<b>%{text}</b>",
+        # The identifier may be an invented row number, so the value needs its label:
+        # a bare "42" says nothing about what it counts.
+        hovertemplate=hover_field(row_id_label, "%{text}"),
         show_counts=st.session_state.get("plot_show_group_counts", False)
     )
 

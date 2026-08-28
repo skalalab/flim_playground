@@ -16,6 +16,7 @@ from .helpers import (
     add_interleaved_points_trace,
     get_context_theme_color,
     get_point_visual_mappings,
+    hover_field,
     log_negative_error,
 )
 
@@ -248,7 +249,7 @@ def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i, scatter_c
         hoverinfo='skip'   # Don't show hover for ellipse lines
     ))
 
-def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x, selected_y, color_by=[], shape_by=None, opacity_by=None, marginal_plot_type='gaussian fit', colormap="tab10"):
+def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x, selected_y, color_by=[], shape_by=None, opacity_by=None, marginal_plot_type='gaussian fit', colormap="tab10", row_id_label="ID"):
     GROUP_COL_NAME = 'unique_color_group'
     # Create valid copy to allow modification
     df = df.copy()
@@ -315,11 +316,15 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     grouped_list = list(grouped)
 
     # Add all points using interleaved plotting function
-    hover_lines = ["<b>Cell ID:</b> %{text}<br>"]
+    # Every label is the column's own name, so the same column reads the same here and
+    # in univar.py. hover_field escapes them; building a line by hand here would let a
+    # column named `a<b` swallow the rest of its line.
+    hover_lines = [hover_field(row_id_label, "%{text}")]
     if fov_name_col is not None:
-        hover_lines.append("<b>Image:</b> %{customdata}<br>")
-    hover_lines.append(f"<b>{pretty_x}:</b> %{{x}}<br>")
-    hover_lines.append(f"<b>{pretty_y}:</b> %{{y}}<extra></extra>")
+        hover_lines.append(hover_field(fov_name_col, "%{customdata}"))
+    hover_lines.append(hover_field(pretty_x, "%{x}"))
+    hover_lines.append(hover_field(pretty_y, "%{y}"))
+    hover_lines.append("<extra></extra>")   # hide the default trace info box
     point_cls = add_interleaved_points_trace(
         fig=fig,
         grouped=grouped_list,
@@ -580,7 +585,7 @@ def phasor_kmeans(X_raw, n_clusters, random_state=42):
     return kmeans.labels_, centers_raw
 
 
-def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, colormap="tab10", f=0.08, harmonic=1):
+def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, colormap="tab10", f=0.08, harmonic=1, row_id_label="ID"):
 
     # Get theme color once at the start for all theme-aware elements
     theme_color = get_context_theme_color()
@@ -663,7 +668,9 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         axis_labels=[g_feature, s_feature],
         text_col=unique_row_id_col,
         customdata_col=fov_name_col,
-        hovertemplate="<b>%{text}</b>",
+        # The identifier may be an invented row number, so the value needs its label:
+        # a bare "42" says nothing about what it counts.
+        hovertemplate=hover_field(row_id_label, "%{text}"),
         show_counts=st.session_state.get("plot_show_group_counts", False)
     )
 

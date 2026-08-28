@@ -155,7 +155,7 @@ def test_load_table_warns_when_the_configured_fov_column_is_absent(monkeypatch):
     # always supplies it -- real usage never omits the configured FOV column here.
     raw = b"cell_id,treatment,Lifetime fit_ch1: T1\na,ctrl,0.40\nb,drug,0.55\n"
     upload = _uploaded_file(raw, "no_fov.csv")
-    df, _groups, complete, _delimiter = dataset_io.load_table(
+    df, _groups, complete, _delimiter, _row_id = dataset_io.load_table(
         upload, ["treatment", "image_name"], use_data_extraction=True)
 
     assert complete is True
@@ -181,7 +181,7 @@ def test_user_table_branch_stays_silent_about_a_missing_fov_column(monkeypatch):
 
     raw = b"wine_id,treatment,Lifetime fit_ch1: T1\na,ctrl,0.40\nb,drug,0.55\n"
     upload = _uploaded_file(raw, "no_fov.csv")
-    df, _groups, complete, _delimiter = dataset_io.load_table(
+    df, _groups, complete, _delimiter, _row_id = dataset_io.load_table(
         upload, ["treatment"], use_data_extraction=False)
 
     assert complete is True
@@ -278,7 +278,7 @@ def test_the_point_plots_render_without_a_fov_column():
     })
 
     fig = feature_comparison_plot(
-        df, cell_id_col="cell_id", fov_name_col=None,
+        df, unique_row_id_col="cell_id", fov_name_col=None,
         selected_var="Lifetime fit_ch1: T1", color_by=["treatment"])
     assert fig is not None
     # Plotly renders a stray %{customdata} silently as a literal token, so a fig that
@@ -333,7 +333,7 @@ def test_fov_comparison_hides_when_a_loaded_frame_lacks_a_fov_column(monkeypatch
     monkeypatch.setattr(acw, "get_fov_name_col_analysis",
                         lambda use_data_extraction=True: "image_name")
     monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (
-        _no_fov_frame(), {"Uncategorized Features": ["Lifetime fit_ch1: T1"]}, True, ","))
+        _no_fov_frame(), {"Uncategorized Features": ["Lifetime fit_ch1: T1"]}, True, ",", "cell_id"))
 
     page = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
     at = AppTest.from_file(page)
@@ -357,7 +357,7 @@ def test_fov_comparison_appears_the_same_run_a_fov_bearing_file_is_first_read(mo
             "treatment": ["ctrl", "drug", "ctrl", "drug"],
             "Lifetime fit_ch1: T1": [0.4, 0.5, 0.6, 0.45],
         })
-        return df, {"Uncategorized Features": ["Lifetime fit_ch1: T1"]}, True, ","
+        return df, {"Uncategorized Features": ["Lifetime fit_ch1: T1"]}, True, ",", "cell_id"
 
     monkeypatch.setattr(dataset_io, "load_table", fake_load_table)
 
@@ -444,7 +444,7 @@ def test_phasor_hides_when_loaded_feature_groups_lack_a_complete_gs_pair(monkeyp
         "Uncategorized Features": ["feat1", "feat2"],
         "Lifetime fit free_ch1": ["Lifetime fit free_ch1: G(1st)"],
     }
-    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (df, feature_groups, True, ","))
+    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (df, feature_groups, True, ",", "cell_id"))
 
     page = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
     at = AppTest.from_file(page)
@@ -472,7 +472,7 @@ def test_phasor_shows_when_loaded_feature_groups_have_a_complete_gs_pair(monkeyp
         "Uncategorized Features": ["feat1", "feat2"],
         "Lifetime fit free_ch1": ["Lifetime fit free_ch1: G(1st)", "Lifetime fit free_ch1: S(1st)"],
     }
-    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (df, feature_groups, True, ","))
+    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (df, feature_groups, True, ",", "cell_id"))
 
     page = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
     at = AppTest.from_file(page)
@@ -495,7 +495,7 @@ def test_transition_rerun_fires_once_and_then_settles(monkeypatch):
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (
-        _no_fov_frame(), {"Uncategorized Features": ["Lifetime fit_ch1: T1"]}, True, ","))
+        _no_fov_frame(), {"Uncategorized Features": ["Lifetime fit_ch1: T1"]}, True, ",", "cell_id"))
 
     rerun_calls = []
     real_rerun = st.rerun
@@ -538,7 +538,7 @@ def test_extraction_happy_path_causes_no_rerun(monkeypatch):
     })
     feature_groups = {"Lifetime fit free_ch1": [
         "Lifetime fit free_ch1: G(1st)", "Lifetime fit free_ch1: S(1st)"]}
-    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (df, feature_groups, True, ","))
+    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (df, feature_groups, True, ",", "cell_id"))
 
     rerun_calls = []
     real_rerun = st.rerun

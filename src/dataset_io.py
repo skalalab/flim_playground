@@ -468,12 +468,44 @@ def resolve_effective_fov_col(df, fov_name_col):
     return fov_name_col if fov_name_col in df.columns else None
 
 
+def resolve_row_id_col(df, unique_row_id_col):
+    """The row identifier the analysis will use, inventing one if the table has none.
+
+    Returns `(df, row_id_col)`, inserting into `df` in place. A blank name means the
+    table has no identifier of its own, so rows are numbered 1..N and that column *is*
+    the identifier from here on. A configured name is returned untouched: by the time
+    this runs, check_and_fix_df has rejected the file if that column was missing.
+
+    Call this *after* check_and_fix_df, which drops all-empty columns -- a name checked
+    before it could collide with a header this frame is about to lose.
+
+    Must stay free of Streamlit/config dependencies -- it is embedded verbatim into
+    exported analysis scripts via inspect.getsource(). Naming is therefore a pure
+    function of the frame, so the app and its exported script invent the same name.
+    """
+    if unique_row_id_col:
+        return df, unique_row_id_col
+    # Suffixed until unique, because df.insert raises on a name the table already has.
+    row_id_col = "Row number"
+    suffix = 0
+    while row_id_col in df.columns:
+        suffix += 1
+        row_id_col = f"Row number.{suffix}"
+    # str, like every configured identifier after check_and_fix_df, so hover text and
+    # exported CSVs cannot render "1" as "1.0". 1-based: these are row numbers, not
+    # offsets. Inserted first so it reads as an identifier in a downloaded table.
+    df.insert(0, row_id_col, [str(i) for i in range(1, len(df) + 1)])
+    return df, row_id_col
+
+
 def load_table(uploaded_file, categorical_cols, use_data_extraction=True):
     """Load an uploaded table (CSV, delimited text or spreadsheet) and validate it.
 
-    Returns `(df, feature_groups_dict, upload_complete, delimiter)`. The separator
-    goes back so the exported script reuses this answer rather than detecting one
-    of its own that might differ.
+    Returns `(df, feature_groups_dict, upload_complete, delimiter, row_id_col)`. The
+    separator goes back so the exported script reuses this answer rather than detecting
+    one of its own that might differ. `row_id_col` goes back because an invented
+    identifier's name is a fact about this frame that no caller can recover from the
+    config -- after the insert it is indistinguishable from a column the file had.
 
     Two layers, in order. The reader reports structural problems: wrong separator,
     no header, empty sheet, name and content disagreeing. Only then do
@@ -482,6 +514,10 @@ def load_table(uploaded_file, categorical_cols, use_data_extraction=True):
     upload_complete = False
     df = feature_groups_dict = None
     delimiter = ","
+    unique_row_id_col = get_unique_row_id_col(use_data_extraction)
+    # What the caller gets back until resolve_row_id_col has run -- which is also what
+    # the rejection paths below return, where no frame was loaded to invent one for.
+    row_id_col = unique_row_id_col
     if uploaded_file is not None:
         filename = getattr(uploaded_file, "name", "") or "the uploaded file"
         # The read branch is chosen by suffix, so a renamed file reaches the wrong
@@ -489,7 +525,7 @@ def load_table(uploaded_file, categorical_cols, use_data_extraction=True):
         mismatch = _name_content_mismatch(uploaded_file, filename)
         if mismatch != "":
             _render_reject(mismatch)
-            return None, None, False, delimiter
+            return None, None, False, delimiter, row_id_col
         suffix = suffix_of(uploaded_file)
         df, read_meta = _read_table_cached(uploaded_file, suffix)
         # A spreadsheet sets no delimiter; "," is what the export side uses there.
@@ -501,20 +537,25 @@ def load_table(uploaded_file, categorical_cols, use_data_extraction=True):
         scope_warning, scope_error = _diagnose_table(df, read_meta, filename)
         if scope_error != "":
             _render_reject(scope_error, scope_warning)
-            return None, None, False, delimiter
-        unique_row_id_col = get_unique_row_id_col(use_data_extraction)
+            return None, None, False, delimiter, row_id_col
         fov_name_col = get_fov_name_col_analysis(use_data_extraction)
         df, warning_msg, error_msg = check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col)
         warning_msg = scope_warning + warning_msg
 
         if error_msg != "":
             # scope_warning is context for this error too: when the data sits on
-            # sheet 2, "cell_id is missing" only makes sense alongside
+            # sheet 2, "<identifier> is missing" only makes sense alongside
             # "'Data' was skipped".
             _render_reject(error_msg + _comma_decimal_hint(table), warning_msg)
         else:
             _render_warning(warning_msg)
-            df, feature_groups_dict, warning_msg, error_msg = get_features(df, categorical_cols, use_data_extraction=use_data_extraction)
+            # After check_and_fix_df -- see resolve_row_id_col -- and before
+            # get_features, which needs the resolved name to keep an invented
+            # identifier out of the numeric features.
+            df, row_id_col = resolve_row_id_col(df, unique_row_id_col)
+            df, feature_groups_dict, warning_msg, error_msg = get_features(
+                df, categorical_cols, use_data_extraction=use_data_extraction,
+                unique_row_id_col=row_id_col)
             if error_msg != "":
                 _render_reject(error_msg + _comma_decimal_hint(table))
             else:
@@ -530,7 +571,7 @@ def load_table(uploaded_file, categorical_cols, use_data_extraction=True):
                 _render_warning(warning_msg)
                 st.write(f"Data uploaded successfully {happy_emoji}")
                 upload_complete = True
-    return df, feature_groups_dict, upload_complete, delimiter
+    return df, feature_groups_dict, upload_complete, delimiter, row_id_col
 
 def match_col_name(col, col_list):
     """
@@ -653,15 +694,24 @@ def coerce_majority_numeric_cols(df, skip_cols):
                 df[col] = converted
     return df, warning_msg
 
-def get_features(df, categorical_cols, use_data_extraction=True):
+def get_features(df, categorical_cols, use_data_extraction=True, unique_row_id_col=None):
     """
     Extract all numeric features from the dataframe. Group them (by channel) based on the feature extractors:
     - morphology (mask morphology)
     - texture (texture features)
     - lifetime fit variables
     - lifetime fit free variables
+
+    `unique_row_id_col` must be the *resolved* identifier -- resolve_row_id_col's
+    answer, not the configured name -- because an invented one is a column of digit
+    strings, and it only stays an identifier by sitting in skip_cols below. Left out
+    of skip_cols it would coerce to numbers and be offered as a measured feature.
+    None resolves the identifier here instead, inventing one if the config names none;
+    a blank configured name would otherwise reach the prune and raise a bare KeyError.
     """
-    unique_row_id_col = get_unique_row_id_col(use_data_extraction)
+    if unique_row_id_col is None:
+        df, unique_row_id_col = resolve_row_id_col(
+            df, get_unique_row_id_col(use_data_extraction))
     error_msg = ""
 
     skip_cols = set([unique_row_id_col] + list(categorical_cols))
@@ -717,7 +767,7 @@ def get_features(df, categorical_cols, use_data_extraction=True):
 def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
     """
     check for df's metadata:
-    - single-cell unique_identifier
+    - the unique row identifier
     - fill in na values for categorical columns
 
     Must stay free of Streamlit/config dependencies — it is embedded verbatim
@@ -740,34 +790,39 @@ def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
             return None, warning_msg, error_msg
 
     # No duplicate-column check: pandas de-duplicates headers while parsing, on both
-    # read branches — "cell_id,T1,T1" arrives as ['cell_id', 'T1', 'T1.1'] from
+    # read branches — "id,T1,T1" arrives as ['id', 'T1', 'T1.1'] from
     # read_csv and from read_excel alike — so df.columns.duplicated() is never true
     # for a file that came through a reader, here or in an exported script. Warning
     # about it for real would mean capturing the header row before pandas touches
     # it; the second column is not lost meanwhile, it is simply named 'T1.1'.
 
-    # handle the required unique cell identifier column
-    if unique_row_id_col not in df.columns:
-        error_msg += f"Error: {unique_row_id_col} column is missing in the uploaded file. It is required. \n"
-        return None, warning_msg, error_msg
+    # The unique row identifier is optional. A *named* one is still required to be
+    # present -- naming a column the file does not have is a mistake, not a choice --
+    # but a blank name means the table simply has no identifier, and resolve_row_id_col
+    # invents one after this returns. None of this applies to an invented column: row
+    # numbers cannot go missing and cannot repeat.
+    if unique_row_id_col:
+        if unique_row_id_col not in df.columns:
+            error_msg += f"Error: {unique_row_id_col} column is missing in the uploaded file. It is required. \n"
+            return None, warning_msg, error_msg
 
-    if df[unique_row_id_col].duplicated().any():
-        original_row_count = len(df)
-        first_duplicate = df[unique_row_id_col].duplicated()
-        first_duplicate_value = df[unique_row_id_col][first_duplicate].iloc[0]
-        first_duplicate_index = df.loc[first_duplicate].index[0]
-        warning_msg += (f"Warning: duplicate values found in '{unique_row_id_col}'. The first is "
-                        f"'{first_duplicate_value}' at row {first_duplicate_index}. Duplicate rows "
-                        "were dropped, only the first was kept. ")
-        # drop the duplicate rows, only keep the first one
-        df = df.drop_duplicates(subset=[unique_row_id_col], keep="first")
-        # after fixing the df, print out the number of rows removed
-        rows_removed = original_row_count - len(df)
-        if rows_removed > 0:
-            warning_msg += f"{rows_removed} rows were removed.\n"
+        if df[unique_row_id_col].duplicated().any():
+            original_row_count = len(df)
+            first_duplicate = df[unique_row_id_col].duplicated()
+            first_duplicate_value = df[unique_row_id_col][first_duplicate].iloc[0]
+            first_duplicate_index = df.loc[first_duplicate].index[0]
+            warning_msg += (f"Warning: duplicate values found in '{unique_row_id_col}'. The first is "
+                            f"'{first_duplicate_value}' at row {first_duplicate_index}. Duplicate rows "
+                            "were dropped, only the first was kept. ")
+            # drop the duplicate rows, only keep the first one
+            df = df.drop_duplicates(subset=[unique_row_id_col], keep="first")
+            # after fixing the df, print out the number of rows removed
+            rows_removed = original_row_count - len(df)
+            if rows_removed > 0:
+                warning_msg += f"{rows_removed} rows were removed.\n"
 
-    # make sure unique_row_id_col is of type str
-    df[unique_row_id_col] = df[unique_row_id_col].astype(str)
+        # make sure unique_row_id_col is of type str
+        df[unique_row_id_col] = df[unique_row_id_col].astype(str)
     # A present FOV column is a categorical like any other: the loop below stringifies
     # it and fills "N/A". An absent one is valid — load_table resolves it to None, the
     # plots drop the FOV hover label and the page hides FOV Comparison. Prepended here

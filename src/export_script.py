@@ -321,7 +321,10 @@ def _build_config_section(state: dict) -> str:
         f"COLOR_BY = {state.get('color_by', [])!r}",
         f"SHAPE_BY = {state.get('shape_by')!r}",
         f"OPACITY_BY = {state.get('opacity_by')!r}",
-        f"UNIQUE_ROW_ID_COL = {state.get('unique_row_id_col', 'cell_id')!r}",
+        # Blank when unset, never a guessed column name: blank makes the script invent
+        # row numbers, while a name it guessed would make check_and_fix_df demand a
+        # column the data file may not have.
+        f"UNIQUE_ROW_ID_COL = {state.get('unique_row_id_col', '')!r}",
         f"FOV_NAME_COL = {state.get('fov_name_col')!r}",
         f"CATEGORICAL_COLS = {state.get('categorical_cols', [])!r}",
     ]
@@ -436,13 +439,15 @@ def _build_data_loading(state: dict) -> str:
         coerce_majority_numeric_cols,
         drop_unnamed_columns,
         match_col_name,
+        resolve_row_id_col,
     )
     from src.feature_labels import format_feature_label
 
     read_call = _build_read_call(state.get("csv_filename", "data.csv"),
                                  state.get("delimiter", ","))
     loading_src = _extract_source(match_col_name, drop_unnamed_columns,
-                                  check_and_fix_df, coerce_majority_numeric_cols)
+                                  check_and_fix_df, resolve_row_id_col,
+                                  coerce_majority_numeric_cols)
     # Inline the exact same axis-label helper the app uses, so exported plots render
     # identical FLIM notation (e.g. "nadh τ₁ (ps)") — no second copy of the mapping.
     label_src = _extract_source(format_feature_label)
@@ -464,8 +469,13 @@ df = drop_unnamed_columns(df)
 df, _warning_msg, _error_msg = check_and_fix_df(df, CATEGORICAL_COLS, UNIQUE_ROW_ID_COL, FOV_NAME_COL)
 if _error_msg:
     raise SystemExit(_error_msg.strip())
+# Same as the app: a blank UNIQUE_ROW_ID_COL means the table has no identifier of its
+# own, so one is invented here under the same name the app invented.
+df, ROW_ID_COL = resolve_row_id_col(df, UNIQUE_ROW_ID_COL)
+# ROW_ID_COL, not UNIQUE_ROW_ID_COL: an invented identifier is a column of digit
+# strings, and left out of this skip set it would coerce to numbers and stop being one.
 df, _coerce_warning = coerce_majority_numeric_cols(
-    df, set([UNIQUE_ROW_ID_COL] + list(CATEGORICAL_COLS)))
+    df, set([ROW_ID_COL] + list(CATEGORICAL_COLS)))
 _warning_msg += _coerce_warning
 if ANALYSIS_COLUMNS is not None:
     # Same prune the app applies in get_features() — see ANALYSIS_COLUMNS above.

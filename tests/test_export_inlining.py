@@ -32,6 +32,7 @@ INLINED_HELPERS = (
     dataset_io.match_col_name,
     dataset_io.drop_unnamed_columns,
     dataset_io.check_and_fix_df,
+    dataset_io.resolve_row_id_col,
     dataset_io.coerce_majority_numeric_cols,
 )
 

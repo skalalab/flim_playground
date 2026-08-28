@@ -27,7 +27,7 @@ for g in ["E1", "E2"]:
                                  "patient_id": d, "sep_col": ["s1", "s2"][len(rows) % 2],
                                  "redox_ratio": rng.normal(1.5, 0.22)})
 df = pd.DataFrame(rows)
-base = dict(cell_id_col="cell_id", fov_name_col="image_name", selected_var="redox_ratio",
+base = dict(unique_row_id_col="cell_id", fov_name_col="image_name", selected_var="redox_ratio",
             color_by=["experiment"], colormap="tab10")
 
 CASES = {

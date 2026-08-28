@@ -23,6 +23,7 @@ from .helpers import (
     format_group_label,
     get_context_theme_color,
     get_point_visual_mappings,
+    hover_field,
     interleave_point_batches,
     log_negative_error,
     point_trace_class,
@@ -62,8 +63,8 @@ def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab1
                 showlegend=show_legend,  # Show legend only once per color group
                 legendgroup=color_group,  # Group legend entries by color
                 hovertemplate=(
-                    f"<b>FOV:</b> {fov_name}<br>"
-                    f"<b>Group:</b> {color_group}<br>"
+                    hover_field(fov_name_col, fov_name)
+                    + hover_field("Group", color_group)
                 )
             ))
 
@@ -389,7 +390,7 @@ def _add_box_outline_above_gl(fig, x, q1, median, q3, lower_fence, upper_fence, 
                       line=outline, **common)
 
 
-def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None", custom_order=None, subcolor_by=None):
+def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None", custom_order=None, subcolor_by=None, row_id_label="ID"):
 
     # Get theme color once at the start for all theme-aware elements
     theme_color = get_context_theme_color()
@@ -619,14 +620,14 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             continue
 
         # --- Prepare Hover Information ---
-        hovertemplate_parts = [
-            f"<b>{pretty_var}:</b> %{{y:.3f}}<br>" # Display the Y value
-        ]
-        hovertemplate_parts.append("<b>Cell ID:</b> %{text}<br>")
+        # Every label is the column's own name -- for the identifier, the configured
+        # column or "ID" for the row numbers invented for a table that has none.
+        hovertemplate_parts = [hover_field(pretty_var, "%{y:.3f}")]
+        hovertemplate_parts.append(hover_field(row_id_label, "%{text}"))
         if fov_name_col is not None:
             point_customdata = group_df[fov_name_col]
             # Add the corresponding part to the hovertemplate, referencing customdata
-            hovertemplate_parts.append("<b>fov:</b> %{customdata}<br>")
+            hovertemplate_parts.append(hover_field(fov_name_col, "%{customdata}"))
         hovertemplate_parts.append("<extra></extra>") # Hide the default trace info box
         final_hovertemplate = "".join(hovertemplate_parts)
 
@@ -653,7 +654,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         })
         bucket["x"].append(x_jittered)
         bucket["y"].append(y_data)
-        bucket["text"].append(group_df[cell_id_col].to_numpy())
+        bucket["text"].append(group_df[unique_row_id_col].to_numpy())
         # Only when the frame has a FOV column. The concat below skips a key with no
         # chunks, so an omitted one simply never reaches the trace.
         if fov_name_col is not None:

@@ -106,7 +106,6 @@ def dataset_config_widget(use_data_extraction=True):
         st.session_state.config_reset = False
 
     # read from the data_extraction configuration and modify based on the use_data_extraction flag
-    unique_cell_id_col = get_unique_cell_id_col()
     fov_name_col = get_fov_name_col()
     categorical_cols = get_categorical_cols()
     categorical_cols.extend([fov_name_col])
@@ -118,9 +117,13 @@ def dataset_config_widget(use_data_extraction=True):
     current_profile = _get_current_profile()
     profile_cfg = _get_profile_config(current_profile)
 
-    # Initialize profile config with defaults if needed
+    # Initialize profile config with defaults if needed. The identifier seeds blank --
+    # this panel configures a *user* table, which need not have one, and a seeded name
+    # would reject every table that lacks that column. Same fallback
+    # _migrate_old_config_to_profiles uses. The extraction section keeps its own
+    # identifier in config.toml; nothing here borrows it.
     if "unique_row_id_col" not in profile_cfg:
-        profile_cfg["unique_row_id_col"] = unique_cell_id_col
+        profile_cfg["unique_row_id_col"] = ""
     if "fov_name_col" not in profile_cfg:
         profile_cfg["fov_name_col"] = fov_name_col
     if "categorical_cols" not in profile_cfg:
@@ -194,7 +197,7 @@ def dataset_config_widget(use_data_extraction=True):
                     if new_profile_name and new_profile_name not in available_profiles:
                         # Create new profile with defaults
                         cfg["profiles"][new_profile_name] = {
-                            "unique_row_id_col": unique_cell_id_col,
+                            "unique_row_id_col": "",
                             "fov_name_col": fov_name_col,
                             "categorical_cols": categorical_cols.copy(),
                             "feature_groups": {},
@@ -251,7 +254,7 @@ def dataset_config_widget(use_data_extraction=True):
 
     cols = st.columns(2)
     with cols[0]:
-        profile_cfg["unique_row_id_col"] = st.text_input("Unique Row ID", value=profile_cfg.get("unique_row_id_col", unique_cell_id_col), help="The column name that uniquely identifies each row in the dataset.")
+        profile_cfg["unique_row_id_col"] = st.text_input("Unique Row ID (if applicable)", value=profile_cfg.get("unique_row_id_col", ""), help="The column name that uniquely identifies each row in the dataset. Your dataset may not have this. It is ok — leave this blank and the rows are numbered 1, 2, 3, … in file order. Name a column here and it must be present: duplicates are dropped, and a missing column is an error.")
     with cols[1]:
         profile_cfg["fov_name_col"] = st.text_input("FOV column name (if applicable)", value=profile_cfg.get("fov_name_col", fov_name_col), help="The column name that uniquely identifies each field of view in the dataset. Your dataset may not have this. It is ok.")
 
@@ -291,7 +294,7 @@ def dataset_config_widget(use_data_extraction=True):
             st.session_state.config_saved = False  # Clear the flag
     with col2:
         if st.button("Reset Configuration"):
-            profile_cfg["unique_row_id_col"] = unique_cell_id_col
+            profile_cfg["unique_row_id_col"] = ""
             profile_cfg["fov_name_col"] = fov_name_col
             profile_cfg["categorical_cols"] = categorical_cols
             profile_cfg["feature_groups"] = {}

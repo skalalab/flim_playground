@@ -1,3 +1,4 @@
+import html
 import re
 
 import numpy as np
@@ -17,6 +18,16 @@ def log_negative_error(var_name):
     return f"Cannot apply log to {var_name}: contains negative values. {sad_emoji}"
 
 
+def hover_field(label, value_ref):
+    """One bolded `label: value` line of a hovertemplate, with `label` escaped.
+
+    Every label is a column name, and Plotly renders a hovertemplate as markup -- so a
+    column called `a<b` swallows the rest of its line as a tag. Escape here, where the
+    name enters the template, never over the whole string: the <b> tags are ours.
+    """
+    return f"<b>{html.escape(str(label))}:</b> {value_ref}<br>"
+
+
 def get_context_theme_color():
     """Plot color for the current theme: 'black' in light mode, 'white' otherwise.
 
@@ -29,7 +40,7 @@ def get_context_theme_color():
 def point_trace_class(n_points):
     """``go.Scattergl`` once a figure draws ``WEBGL_POINT_THRESHOLD`` points, else ``go.Scatter``.
 
-    SVG costs one ``<path>`` DOM node per point, so a 14k-cell figure makes the browser
+    SVG costs one ``<path>`` DOM node per point, so a 14k-point figure makes the browser
     walk and re-rasterise 14k nodes every time the page scrolls. WebGL holds the same
     points in typed-array buffers and adds no nodes.
 
@@ -1052,7 +1063,7 @@ def add_interleaved_points_trace(
     # default; pass random_seed=None for a nondeterministic order.
     rng = random.Random(random_seed)
 
-    # Collect each colour's points as columns rather than one dict per cell. A single
+    # Collect each colour's points as columns rather than one dict per point. A single
     # colour can receive points from several (shape, opacity, separate) subgroups, so
     # gather the chunks in iteration order and concatenate once at the end.
     chunks_by_color = {}

@@ -177,7 +177,7 @@ def feature_comparison(separate_by, effect_size, statistical_test="Welch's t-tes
 
     df, _ = load_app_df(CSV, CATS, "cell_id", "image_name")
     fig = feature_comparison_plot(
-        df.copy(), cell_id_col="cell_id", fov_name_col="image_name", selected_var=VAR,
+        df.copy(), unique_row_id_col="cell_id", fov_name_col="image_name", selected_var=VAR,
         color_by=["treatment"], separate_by=separate_by, colormap="tab10",
         effect_size_method=effect_size, mean_or_median="mean",
         statistical_test=statistical_test, custom_order=None)
