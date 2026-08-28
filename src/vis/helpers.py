@@ -1021,8 +1021,9 @@ def add_interleaved_points_trace(
         List of [x_label, y_label] for the axes
     text_col : str
         Column name for text/hover labels
-    customdata_col : str
-        Column name for customdata
+    customdata_col : str or None
+        Column name for customdata, or None when the frame has no FOV column —
+        every trace is then built with customdata=None.
     shape_by : str or None
         Column name used for shape grouping
     opacity_by : str or None
@@ -1067,7 +1068,6 @@ def add_interleaved_points_trace(
             'x': np.concatenate([c[axis_labels[0]].to_numpy() for c, _, _ in chunks]),
             'y': np.concatenate([c[axis_labels[1]].to_numpy() for c, _, _ in chunks]),
             'text': np.concatenate([c[text_col].to_numpy() for c, _, _ in chunks]),
-            'customdata': np.concatenate([c[customdata_col].to_numpy() for c, _, _ in chunks]),
             # The shape and opacity groups are constant within a chunk (they come from
             # the group key), so repeat them instead of reading one per row. Object
             # dtype is what keeps an inactive channel's None group as None rather than
@@ -1077,6 +1077,11 @@ def add_interleaved_points_trace(
             'opacity_group': np.repeat(
                 np.array([o for _, _, o in chunks], dtype=object), lengths),
         }
+        # Omitted rather than set to None when there is no FOV column: the shuffle
+        # below reindexes every value in this dict with v[order].
+        if customdata_col is not None:
+            points_by_color[color_group]['customdata'] = np.concatenate(
+                [c[customdata_col].to_numpy() for c, _, _ in chunks])
 
     # Shuffle points within each color group. An index permutation is shuffled rather
     # than the rows, so `rng` is drawn from in the same sequence either way.
@@ -1143,7 +1148,8 @@ def add_interleaved_points_trace(
             x_vals = columns['x'][start_idx:end_idx]
             y_vals = columns['y'][start_idx:end_idx]
             text_vals = columns['text'][start_idx:end_idx]
-            customdata_vals = columns['customdata'][start_idx:end_idx]
+            customdata_vals = (columns['customdata'][start_idx:end_idx]
+                               if 'customdata' in columns else None)
 
             # Map visual properties to arrays. These stay full-length lists even though
             # each batch has a single shape/opacity group: apply_plot_styling reads

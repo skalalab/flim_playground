@@ -455,6 +455,19 @@ def _render_reject(error_msg, warning_msg=""):
     st.write(f"Therefore, we cannot extract data from your uploaded file {sad_emoji}")
 
 
+def resolve_effective_fov_col(df, fov_name_col):
+    """The FOV column the analysis actually has: the configured name, or None.
+
+    Call this *after* check_and_fix_df, never before. The fuzzy categorical match
+    can rename a column *into* the configured name ("Image-Name" -> "image_name"),
+    and the empty-column rule can drop one that was blank in every row -- so
+    presence is only knowable once normalization has run.
+    """
+    if df is None or not fov_name_col:
+        return None
+    return fov_name_col if fov_name_col in df.columns else None
+
+
 def load_table(uploaded_file, categorical_cols, use_data_extraction=True):
     """Load an uploaded table (CSV, delimited text or spreadsheet) and validate it.
 
@@ -505,6 +518,15 @@ def load_table(uploaded_file, categorical_cols, use_data_extraction=True):
             if error_msg != "":
                 _render_reject(error_msg + _comma_decimal_hint(table))
             else:
+                # Only the extraction branch genuinely expects this column -- extraction
+                # always emits it. A user-table profile's fov_name_col may be a stale
+                # extraction default the table never had, which resolve_effective_fov_col
+                # already turns into a silent None; warning about it here would fire on
+                # every load of a table that legitimately has no FOV column.
+                if use_data_extraction and fov_name_col and resolve_effective_fov_col(df, fov_name_col) is None:
+                    warning_msg += (f"Warning: the FOV column '{fov_name_col}' was not found. "
+                                    "FOV Comparison is unavailable and the FOV name is left "
+                                    "out of hover text.\n")
                 _render_warning(warning_msg)
                 st.write(f"Data uploaded successfully {happy_emoji}")
                 upload_complete = True
@@ -529,18 +551,6 @@ def match_col_name(col, col_list):
             (col_name_processed.endswith('s') and col_processed == col_name_processed[:-1])):
             return col_name
     return None
-
-_MISSING_FOV_NAME = "missing fov name"
-
-
-def safe_split_with_logging(cell_id):
-    try:
-        if "_" not in cell_id:
-            return _MISSING_FOV_NAME
-        else:
-            return cell_id.rsplit('_', 1)[0]
-    except Exception:
-        return _MISSING_FOV_NAME
 
 def get_feature_groups_data_extraction(cols):
     """
@@ -652,10 +662,9 @@ def get_features(df, categorical_cols, use_data_extraction=True):
     - lifetime fit free variables
     """
     unique_row_id_col = get_unique_row_id_col(use_data_extraction)
-    fov_name_col = get_fov_name_col_analysis(use_data_extraction)
     error_msg = ""
 
-    skip_cols = set([unique_row_id_col, fov_name_col] + list(categorical_cols))
+    skip_cols = set([unique_row_id_col] + list(categorical_cols))
     df, warning_msg = coerce_majority_numeric_cols(df, skip_cols)
 
     numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
@@ -673,10 +682,25 @@ def get_features(df, categorical_cols, use_data_extraction=True):
         # convention, and a caller concatenating this warning would raise on None.
         return None, None, "", error_msg
 
-    # keep only the columns that are later used in downstream analysis
+    # keep only the columns that are later used in downstream analysis. The FOV
+    # column, when the file has one, arrives through avilable_categorical_cols like
+    # any other categorical -- it needs no slot of its own.
     avilable_categorical_cols = [col for col in categorical_cols if col in df.columns]
-    required_cols = [unique_row_id_col, fov_name_col] if fov_name_col not in avilable_categorical_cols else [unique_row_id_col]
-    columns_to_keep = required_cols + avilable_categorical_cols + all_numerical_features_cols
+    columns_to_keep = [unique_row_id_col] + avilable_categorical_cols + all_numerical_features_cols
+
+    # Name what the prune drops: a column that is neither the row id, nor a matched
+    # categorical, nor numeric enough for the 1% rule. Up to 5 names, then a count —
+    # same shape as the empty-column and NaN-column warnings.
+    columns_to_keep_set = set(columns_to_keep)
+    dropped = [col for col in df.columns if col not in columns_to_keep_set]
+    if dropped:
+        listed = ", ".join(dropped[:5])
+        more = f" and {len(dropped) - 5} more" if len(dropped) > 5 else ""
+        plural = "s" if len(dropped) > 1 else ""
+        was_were = "were" if len(dropped) > 1 else "was"
+        warning_msg += (f"Warning: {len(dropped)} column{plural} {was_were} not analysed "
+                        f"(neither categorical nor numerical): {listed}{more}.\n")
+
     df = df[columns_to_keep]
 
     # Print columns that contain NaN values
@@ -744,10 +768,13 @@ def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
 
     # make sure unique_row_id_col is of type str
     df[unique_row_id_col] = df[unique_row_id_col].astype(str)
-    if fov_name_col not in df.columns:
-        df[fov_name_col] = df[unique_row_id_col].apply(safe_split_with_logging)
-    else:
-        df[fov_name_col] = df[fov_name_col].fillna(_MISSING_FOV_NAME)
+    # A present FOV column is a categorical like any other: the loop below stringifies
+    # it and fills "N/A". An absent one is valid — load_table resolves it to None, the
+    # plots drop the FOV hover label and the page hides FOV Comparison. Prepended here
+    # rather than trusted from the caller because this function is getsource()-inlined
+    # into standalone scripts, where the categorical list is a baked literal.
+    if fov_name_col and fov_name_col not in categorical_cols:
+        categorical_cols = list(categorical_cols) + [fov_name_col]
 
     for col in df.columns:
         matched_categorical_col = match_col_name(col, categorical_cols)

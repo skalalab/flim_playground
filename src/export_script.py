@@ -322,16 +322,16 @@ def _build_config_section(state: dict) -> str:
         f"SHAPE_BY = {state.get('shape_by')!r}",
         f"OPACITY_BY = {state.get('opacity_by')!r}",
         f"UNIQUE_ROW_ID_COL = {state.get('unique_row_id_col', 'cell_id')!r}",
-        f"FOV_NAME_COL = {state.get('fov_name_col', 'image_name')!r}",
+        f"FOV_NAME_COL = {state.get('fov_name_col')!r}",
         f"CATEGORICAL_COLS = {state.get('categorical_cols', [])!r}",
     ]
 
     # The column universe the app analyses. get_features() (src/dataset_io.py) keeps
-    # the row id, the FOV column, the configured categorical columns and every
-    # recognised numerical feature, dropping the rest; anything the app never saw
-    # must not reappear in this script's derived-data CSVs either. Captured from the
-    # loaded frame rather than re-derived, because re-deriving needs config.toml /
-    # analysis_config.toml and this script has to stand alone.
+    # the row id, every present configured categorical (the FOV column among them)
+    # and every recognised numerical feature, dropping the rest; anything the app
+    # never saw must not reappear in this script's derived-data CSVs either. Captured
+    # from the loaded frame rather than re-derived, because re-deriving needs
+    # config.toml / analysis_config.toml and this script has to stand alone.
     analysis_columns = state.get("analysis_columns")
     if analysis_columns:
         lines.append("ANALYSIS_COLUMNS = [")
@@ -430,35 +430,19 @@ def _build_read_call(filename: str, delimiter: str = ",") -> str:
             "df = pd.read_csv(DATA_PATH, index_col=False, sep=SEPARATOR, low_memory=False)")
 
 
-def _extract_constants(*names: str) -> str:
-    """Emit the module-level constants the inlined helpers read.
-
-    _extract_source copies function *bodies*; a helper that closes over a
-    module-level constant would otherwise raise NameError in the generated
-    script. Values are read off the live module so they cannot drift from the app.
-    """
-    from src import dataset_io
-
-    return "\n".join(f"{name} = {getattr(dataset_io, name)!r}" for name in names)
-
-
 def _build_data_loading(state: dict) -> str:
     from src.dataset_io import (
         check_and_fix_df,
         coerce_majority_numeric_cols,
         drop_unnamed_columns,
         match_col_name,
-        safe_split_with_logging,
     )
     from src.feature_labels import format_feature_label
 
     read_call = _build_read_call(state.get("csv_filename", "data.csv"),
                                  state.get("delimiter", ","))
-    # safe_split_with_logging and check_and_fix_df both read _MISSING_FOV_NAME.
-    loading_src = (_extract_constants("_MISSING_FOV_NAME") + "\n\n"
-                   + _extract_source(match_col_name, safe_split_with_logging,
-                                     drop_unnamed_columns, check_and_fix_df,
-                                     coerce_majority_numeric_cols))
+    loading_src = _extract_source(match_col_name, drop_unnamed_columns,
+                                  check_and_fix_df, coerce_majority_numeric_cols)
     # Inline the exact same axis-label helper the app uses, so exported plots render
     # identical FLIM notation (e.g. "nadh τ₁ (ps)") — no second copy of the mapping.
     label_src = _extract_source(format_feature_label)
@@ -481,7 +465,7 @@ df, _warning_msg, _error_msg = check_and_fix_df(df, CATEGORICAL_COLS, UNIQUE_ROW
 if _error_msg:
     raise SystemExit(_error_msg.strip())
 df, _coerce_warning = coerce_majority_numeric_cols(
-    df, set([UNIQUE_ROW_ID_COL, FOV_NAME_COL] + list(CATEGORICAL_COLS)))
+    df, set([UNIQUE_ROW_ID_COL] + list(CATEGORICAL_COLS)))
 _warning_msg += _coerce_warning
 if ANALYSIS_COLUMNS is not None:
     # Same prune the app applies in get_features() — see ANALYSIS_COLUMNS above.
@@ -585,7 +569,7 @@ print("Figure saved to {fname}.svg")
 # ---------------------------------------------------------------------------
 
 def _build_fov_comparison(state: dict) -> str:
-    fov_col = state.get("fov_name_col", "image_name")
+    fov_col = state["fov_name_col"]
     return _build_visual_encoding(state, overlap_point=False) + f"\nfov_col = {fov_col!r}\n" + """
 # ============================================================
 # FOV Comparison — Box Plots per FOV
@@ -597,8 +581,6 @@ fig, ax = plt.subplots(figsize=(12, 6))
 
 # FOVs in CSV appearance order, matching the app (univar.py: df[fov_name_col].unique())
 fovs = df[fov_col].unique().tolist()
-if (df[fov_col] == "missing fov name").any():
-    print("WARNING: Could not find the FOV column in your dataset.")
 positions = []
 tick_labels = []
 

@@ -49,15 +49,13 @@ def load_app_df(csv_path, categorical_cols, unique_row_id_col, fov_name_col):
     df = pd.read_csv(csv_path, index_col=False)
     df, _w, err = check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col)
     assert err == "", err
-    skip = set([unique_row_id_col, fov_name_col] + list(categorical_cols))
+    skip = set([unique_row_id_col] + list(categorical_cols))
     df, _ = coerce_majority_numeric_cols(df, skip)
     numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
     groups = get_feature_groups_data_extraction(numeric_cols)
     all_num = [c for g in groups.values() for c in g]
     avail_cat = [c for c in categorical_cols if c in df.columns]
-    required = ([unique_row_id_col, fov_name_col]
-                if fov_name_col not in avail_cat else [unique_row_id_col])
-    return df[required + avail_cat + all_num], groups
+    return df[[unique_row_id_col] + avail_cat + all_num], groups
 
 
 def base_state(method, csv_name, categorical_cols, unique_row_id_col="cell_id",

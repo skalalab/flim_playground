@@ -53,7 +53,8 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
     df_reduced, exp_var = dimension_reduction(X, n_components=2, method=method, hyperParam_dict=hyperParam_dict)
     # augment df_reduced with required columns and categorical columns used for coloring
     df_reduced[unique_row_id_col] = df[unique_row_id_col].values
-    df_reduced[fov_name_col] = df[fov_name_col].values
+    if fov_name_col is not None:
+        df_reduced[fov_name_col] = df[fov_name_col].values
     # Add all color columns at once if there are any
     if len(colored_by) > 0:
         df_reduced[colored_by] = df[colored_by].values

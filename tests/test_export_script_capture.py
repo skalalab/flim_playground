@@ -1406,12 +1406,25 @@ def test_fov_skips_empty_color_fov_combinations(tmp_path, monkeypatch):
     assert "img2\nA" in labels and "img2\nB" in labels
 
 
-def test_fov_warns_when_fov_column_missing(tmp_path, monkeypatch):
-    """App shows a warning when the FOV column is absent; the export should print one."""
+def test_fov_comparison_labels_a_blank_fov_na_and_prints_no_warning(tmp_path, monkeypatch):
+    """A blank FOV cell is an ordinary N/A level: the export labels it "N/A" and
+    prints no warning."""
+    rows = []
+    for i in range(10):
+        rows.append({"cell_id": f"a{i}", "image_name": "img1", "treatment": "A", "feature_a": float(i)})
+    for i in range(10):
+        rows.append({"cell_id": f"b{i}", "image_name": "img2", "treatment": "A", "feature_a": float(i)})
+    for i in range(10):
+        rows.append({"cell_id": f"c{i}", "image_name": None, "treatment": "A", "feature_a": float(i)})
+    df = pd.DataFrame(rows)
     state = _base_state("FOV Comparison", categorical_cols=["treatment"], color_by=["treatment"],
                         method_params={"selected_var": "feature_a"})
     script = generate_script(state)
-    assert "Could not find the FOV column" in script
+    assert "Could not find the FOV column" not in script
+    assert "missing fov name" not in script
+    ns = _run_script(tmp_path, state, df, monkeypatch)
+    labels = [t.get_text() for t in ns["ax"].get_xticklabels()]
+    assert any("N/A" in label for label in labels)
 
 
 def test_phasor_annotates_six_lifetime_markers_like_app(tmp_path, monkeypatch):

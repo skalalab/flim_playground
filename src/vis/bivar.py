@@ -315,6 +315,11 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     grouped_list = list(grouped)
 
     # Add all points using interleaved plotting function
+    hover_lines = ["<b>Cell ID:</b> %{text}<br>"]
+    if fov_name_col is not None:
+        hover_lines.append("<b>Image:</b> %{customdata}<br>")
+    hover_lines.append(f"<b>{pretty_x}:</b> %{{x}}<br>")
+    hover_lines.append(f"<b>{pretty_y}:</b> %{{y}}<extra></extra>")
     point_cls = add_interleaved_points_trace(
         fig=fig,
         grouped=grouped_list,
@@ -324,12 +329,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         axis_labels=[selected_x, selected_y],
         text_col=unique_row_id_col,
         customdata_col=fov_name_col,
-        hovertemplate=(
-            f"<b>Cell ID:</b> %{{text}}<br>"
-            f"<b>Image:</b> %{{customdata}}<br>"
-            f"<b>{pretty_x}:</b> %{{x}}<br>"
-            f"<b>{pretty_y}:</b> %{{y}}<extra></extra>"
-        ),
+        hovertemplate="".join(hover_lines),
         show_counts=st.session_state.get("plot_show_group_counts", False)
     )
 

@@ -24,7 +24,7 @@ from harness_common import (
 )
 from harness_widgets import patch_streamlit
 
-CATS = ["cell_line", "treatment", "dish"]
+CATS = ["cell_line", "treatment", "dish", "image_name"]
 CSV = EXAMPLES / "inhibitors.csv"
 WORK = WORK_ROOT / "phasor"
 CHANNEL = "nadh"

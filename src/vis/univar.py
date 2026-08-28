@@ -30,9 +30,6 @@ from .helpers import (
 
 
 def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab10"):
-    if (df[fov_name_col] == "missing fov name").any():
-        st.markdown("<h5 style='text-align: center; color: Orange;'>Warning: We cannot find the fov column from your dataset.  </h5>", unsafe_allow_html=True)
-
     fig = go.Figure()
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
@@ -626,9 +623,10 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
             f"<b>{pretty_var}:</b> %{{y:.3f}}<br>" # Display the Y value
         ]
         hovertemplate_parts.append("<b>Cell ID:</b> %{text}<br>")
-        point_customdata = group_df[fov_name_col]
-        # Add the corresponding part to the hovertemplate, referencing customdata
-        hovertemplate_parts.append("<b>fov:</b> %{customdata}<br>")
+        if fov_name_col is not None:
+            point_customdata = group_df[fov_name_col]
+            # Add the corresponding part to the hovertemplate, referencing customdata
+            hovertemplate_parts.append("<b>fov:</b> %{customdata}<br>")
         hovertemplate_parts.append("<extra></extra>") # Hide the default trace info box
         final_hovertemplate = "".join(hovertemplate_parts)
 
@@ -656,7 +654,10 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
         bucket["x"].append(x_jittered)
         bucket["y"].append(y_data)
         bucket["text"].append(group_df[cell_id_col].to_numpy())
-        bucket["customdata"].append(point_customdata.to_numpy())
+        # Only when the frame has a FOV column. The concat below skips a key with no
+        # chunks, so an omitted one simply never reaches the trace.
+        if fov_name_col is not None:
+            bucket["customdata"].append(point_customdata.to_numpy())
         # Constant within a subgroup because they come from the group key, so repeat
         # rather than read one per row.
         bucket["symbol"].append(np.repeat(marker_symbol, len(y_data)))
@@ -677,6 +678,9 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
     for (separate_group, color_group), bucket in point_buckets.items():
         columns = {name: np.concatenate(chunks)
                    for name, chunks in bucket.items() if chunks}
+        # `columns` is built with `if chunks`, so the key is simply absent when the
+        # frame has no FOV column.
+        customdata_all = columns.get("customdata")
         # Only what both branches share. The matched branch draws a masked subset, so
         # symbol and opacity are passed per call rather than baked in here.
         marker_kwargs = dict(size=point_size, line=dict(width=0.5, color='DarkSlateGrey'))
@@ -701,7 +705,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 showlegend=show_legend,
                 legendgroup=color_group,
                 text=columns["text"],
-                customdata=columns["customdata"],
+                customdata=customdata_all,
                 **trace_kwargs
             ))
             continue
@@ -732,7 +736,7 @@ def feature_comparison_plot(df, cell_id_col, fov_name_col, selected_var, color_b
                 # this synthetic one.
                 legendgroup=f"subcolor\x1f{value}",
                 text=columns["text"][mask],
-                customdata=columns["customdata"][mask],
+                customdata=None if customdata_all is None else customdata_all[mask],
                 **trace_kwargs
             ))
 

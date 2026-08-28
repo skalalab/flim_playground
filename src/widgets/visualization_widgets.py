@@ -379,6 +379,9 @@ def phasor_params_widget(feature_groups_dict):
     elif len(channel_harmonics.keys()) == 1:
         selected_channel = list(channel_harmonics.keys())[0]
     else:
+        # Unreachable from Data Analysis, whose method gate hides Phasor Plot when no
+        # channel has a complete G/S pair. Kept because the empty-dict case still has
+        # to return a well-formed triple.
         st.error(f"No available channels found for phasor plot {sad_emoji}")
         return None, None, None
     if not channel_harmonics.get(selected_channel):

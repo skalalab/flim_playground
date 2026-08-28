@@ -30,7 +30,7 @@ from harness_widgets import patch_streamlit
 
 from src.widgets.multiselect_modes import EXCEPT_LABEL
 
-CATS = ["cell_line", "treatment", "dish"]
+CATS = ["cell_line", "treatment", "dish", "image_name"]
 CSV = EXAMPLES / "inhibitors.csv"
 WORK = WORK_ROOT / "controls"
 VAR = "Lifetime fit_nadh: tm"

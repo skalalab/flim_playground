@@ -555,6 +555,15 @@ def get_categorical_cols_analysis(use_data_extraction=True):
     profile_cfg = _get_profile_config(current_profile)
     categorical_cols = profile_cfg.get("categorical_cols", [])
 
+    # A present FOV column is a categorical in both branches. That is what gets it
+    # stringified, "N/A"-filled, filterable and offered as an encoding channel --
+    # and what stops a numeric FOV column (a plate or well number) reading as a
+    # measurement and landing in the analysis frame twice. The extraction branch
+    # above has always included it; this makes the user-table branch match.
+    fov_name_col = profile_cfg.get("fov_name_col", "")
+    if fov_name_col and fov_name_col not in categorical_cols:
+        categorical_cols.append(fov_name_col)
+
     ## platform specific categorical columns (used by 1d GMM and 2d GMM and K-Means clustering)
     if "GMM_group" not in categorical_cols:
         categorical_cols.append("GMM_group")

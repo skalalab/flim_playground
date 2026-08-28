@@ -7,7 +7,7 @@ import streamlit as st
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.classify import run_classification
-from src.dataset_io import SUPPORTED_SUFFIXES, load_table
+from src.dataset_io import SUPPORTED_SUFFIXES, load_table, resolve_effective_fov_col
 from src.emojis import sad_emoji
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import render_top_menu
@@ -46,6 +46,7 @@ from src.widgets.selection_widgets import (
     twod_single_feature_select_widget,
 )
 from src.widgets.visualization_widgets import (
+    _compute_channel_harmonics,
     get_visual_group_keys,
     phasor_params_widget,
     plot_config_widget,
@@ -120,7 +121,9 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
         # failed to rewind would cost a full reparse each time.
         "delimiter": delimiter,
         "unique_row_id_col": get_unique_row_id_col(st.session_state.get("_use_data_extraction", True)),
-        "fov_name_col": get_fov_name_col_analysis(st.session_state.get("_use_data_extraction", True)),
+        # The effective column, not the configured name: a script for a FOV-less
+        # dataset must not name a column its data file does not have.
+        "fov_name_col": st.session_state.get("effective_fov_name_col"),
         "method": method,
         "categorical_filters": _collect_categorical_filters(categorical_cols, st.session_state.vis_df) if st.session_state.vis_df is not None else {},
         "numerical_filters": _collect_numerical_filters(),
@@ -247,9 +250,25 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
     _render_export_button(state, method)
 
 multivar_methods = ["Dimension Reduction", "Classification"] #"Align Modalities"]
-# methods to visualize based on a single feature
-univar_methods = ["Feature Comparison", "Feature Histogram", "FOV Comparison"]
-bivar_methods = ["2D Feature Distribution", "Phasor Plot"]
+# Method availability for FOV Comparison and Phasor Plot is decided above the
+# uploader, from session-state keys written below it -- so each gate reads last
+# run's value. A method is hidden only when a loaded frame demonstrably lacks
+# what it needs; with no frame loaded yet, it stays shown. FOV Comparison also
+# shows pre-load when the active config names a FOV column, since the extraction
+# happy path always carries one. The resolve step below recomputes both gates
+# from this run's data and reruns once if either just changed.
+_frame_loaded = st.session_state.get("vis_df") is not None
+_fov_configured = bool(get_fov_name_col_analysis(
+    st.session_state.get("_use_data_extraction", True)))
+_show_fov_comparison = (st.session_state.get("effective_fov_name_col") is not None
+                        or (not _frame_loaded and _fov_configured))
+_show_phasor = bool(st.session_state.get("phasor_available")) or not _frame_loaded
+univar_methods = ["Feature Comparison", "Feature Histogram"]
+if _show_fov_comparison:
+    univar_methods.append("FOV Comparison")
+bivar_methods = ["2D Feature Distribution"]
+if _show_phasor:
+    bivar_methods.append("Phasor Plot")
 col1, col2 = st.columns([0.4, 1])
 with col1:
     cols = st.columns([0.6, 1])
@@ -277,7 +296,6 @@ with col1:
     use_data_extraction = st.checkbox("**Use Dataset from Data Extraction**", value=True)
     st.session_state._use_data_extraction = use_data_extraction
     unique_row_id_col = get_unique_row_id_col(use_data_extraction)
-    fov_name_col = get_fov_name_col_analysis(use_data_extraction)
     categorical_cols = get_categorical_cols_analysis(use_data_extraction)
     instruction_text = "Upload the file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "**Use the right panel to configure before loading your data ===>**"
     uploaded_file = st.file_uploader(
@@ -302,6 +320,20 @@ with col1:
     # derived columns (GMM_group, _color_group, ...). The exported script replays
     # this same prune so its derived CSVs carry the app's columns, not the raw file's.
     st.session_state.analysis_columns = list(df.columns) if df is not None else None
+    # The FOV column the loaded frame actually has, or None, and which channels
+    # (if any) carry a complete phasor G/S pair. Both gates above were built from
+    # the previous run's keys, so if either method's availability just changed,
+    # rerun once so the next run builds the method lists from the now-current values.
+    fov_name_col = resolve_effective_fov_col(
+        df, get_fov_name_col_analysis(use_data_extraction))
+    st.session_state.effective_fov_name_col = fov_name_col
+    _channel_harmonics = _compute_channel_harmonics(feature_groups_dict) if feature_groups_dict else {}
+    st.session_state.phasor_available = any(
+        harmonics for harmonics in _channel_harmonics.values())
+    _fov_now = fov_name_col is not None or (df is None and _fov_configured)
+    _phasor_now = st.session_state.phasor_available or df is None
+    if _fov_now != _show_fov_comparison or _phasor_now != _show_phasor:
+        st.rerun()
 
     if upload_complete:
         if method in univar_methods:
@@ -382,7 +414,16 @@ with col2:
 
 
                     elif method == "FOV Comparison":
-                        fig = fov_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, colormap=st.session_state.plot_colormap)
+                        if fov_name_col is None:
+                            # Unreachable under the current gate: the rerun above fires whenever the
+                            # method list disagrees with this run's data, so a selected FOV Comparison
+                            # always has a FOV column by the time it renders. Kept as a fallback — the
+                            # alternative on a gate regression is df[None].
+                            st.info("This dataset has no FOV column, so FOV Comparison "
+                                    "is unavailable.")
+                            fig = None
+                        else:
+                            fig = fov_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, colormap=st.session_state.plot_colormap)
                     elif method == "Feature Histogram":
                         # Log transform and GMM checkboxes on same row
                         col_log, col_gmm = st.columns([0.15, 0.85])
