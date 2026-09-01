@@ -236,3 +236,56 @@ def test_single_operand_formula_is_blocked(tmp_path, monkeypatch):
 
     assert any("just duplicates a column" in e.value for e in at.error), "no singleton error"
     assert _add_button(at).disabled, "Add should be disabled for a lone operand"
+
+
+def _write_fit_and_texture_seed(tmp_path, monkeypatch):
+    """Seed a channel with BOTH Lifetime fit and Intensity texture selected, so the
+    background-correction operands (intensity_sum, offset) are offered together."""
+    seed = copy.deepcopy(_SEED)
+    seed["profiles"]["default"]["ch1"]["Decay (3/4D)"]["selected_feature_extractors"] = [
+        "Lifetime fit", "Intensity texture",
+    ]
+    cfg_path = tmp_path / "config.toml"
+    cfg_path.write_text(toml.dumps(seed), encoding="utf-8")
+    monkeypatch.setattr(config, "_CONFIG_PATH", cfg_path)
+
+
+def test_operand_dropdown_offers_uncategorized_columns_last(tmp_path, monkeypatch):
+    """The fit's bookkeeping columns carry no extractor prefix, but they are real
+    per-cell numbers and must be pickable — listed after the measurements."""
+    from streamlit.testing.v1 import AppTest
+
+    _write_fit_and_texture_seed(tmp_path, monkeypatch)
+    at = AppTest.from_file(_PAGE).run(timeout=60)
+    _checkbox(at).set_value(True).run(timeout=60)
+    assert not at.exception, f"reveal raised: {[e.value for e in at.exception]}"
+
+    options = [s for s in at.selectbox if s.label == "A"][0].options
+    assert "nadh_offset" in options
+    assert "nadh_amp1" in options
+    assert options.index("Intensity texture_nadh: intensity_sum") < options.index("nadh_offset")
+
+
+def test_background_corrected_intensity_saves(tmp_path, monkeypatch):
+    """The motivating formula: intensity_sum - offset * (number of time bins), with
+    the bin count typed as a literal (the evaluator allows plain numbers)."""
+    from streamlit.testing.v1 import AppTest
+
+    _write_fit_and_texture_seed(tmp_path, monkeypatch)
+    at = AppTest.from_file(_PAGE).run(timeout=60)
+    _checkbox(at).set_value(True).run(timeout=60)
+
+    [s for s in at.selectbox if s.label == "Template"][0].set_value("Custom…").run(timeout=60)
+    [m for m in at.multiselect if m.label.startswith("Operands")][0].set_value(
+        ["Intensity texture_nadh: intensity_sum", "nadh_offset"]).run(timeout=60)
+    [t for t in at.text_input if t.label == "Name"][0].set_value("intensity_bg").run(timeout=60)
+    [t for t in at.text_input if t.label == "Formula"][0].set_value("A - B*256").run(timeout=60)
+
+    _add_button(at).click().run(timeout=60)
+    assert not at.exception, f"add raised: {[e.value for e in at.exception]}"
+
+    saved = toml.loads((tmp_path / "config.toml").read_text(encoding="utf-8"))
+    feat = saved["profiles"]["default"]["derived_features"][0]
+    assert feat["name"] == "intensity_bg"
+    assert feat["expression"] == "A - B*256"
+    assert feat["operands"] == ["Intensity texture_nadh: intensity_sum", "nadh_offset"]

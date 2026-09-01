@@ -3,7 +3,8 @@
 Revealed by a "Derived features" checkbox on the (already large) Configuration
 page (``main.py``), so it must stay self-contained and small. It reads the current
 list from the active-profile ``cfg`` for display, builds operand choices from the
-profile's *live* extractor selections (``predict_feature_columns_from_cfg``), and
+profile's *live* extractor selections — categorized features plus the
+uncategorized bookkeeping columns (``predict_feature_columns_from_cfg``) — and
 persists Add/Delete immediately via ``set_derived_features`` — mirroring the
 profile create/delete pattern — so an edit survives the Streamlit rerun without
 waiting for the page-level "Update Configuration" save.
@@ -24,9 +25,10 @@ from src.feature_schema import predict_feature_columns_from_cfg
 # parameter in Streamlit 1.54, so the checkbox carries this description instead).
 DERIVED_FEATURES_HELP = (
     "Build new features from arithmetic over already-extracted features "
-    "(e.g. a redox ratio). Each becomes a **Derived: _name_** column and, in "
-    "Data Analysis, a single **Derived Features** group. Operands may span "
-    "channels."
+    "(e.g. a redox ratio). Each becomes a "
+    "**Derived: _name_** column and, in Data Analysis, a single "
+    "**Derived Features** group. Operands may span channels, including the "
+    "uncategorized bookkeeping columns (e.g. offset)."
 )
 
 # Template label -> {expression, arity}. "Custom…" (None) unlocks the free editor.
@@ -106,8 +108,13 @@ def render_derived_features_widget(cfg, active_profile):
     else:
         st.caption("No derived features yet. Add one below.")
 
-    # --- Operand choices come from the profile's *current* extractor selections.
-    available = predict_feature_columns_from_cfg(cfg)
+    # --- Operand choices come from the profile's *current* extractor selections:
+    # the categorized measurements first, then the uncategorized bookkeeping
+    # columns ({channel}_offset, _amp1, _reduced_chi_square, _centroid_x/y, the
+    # a2/a3 remainders). Those carry no extractor prefix but are ordinary per-cell
+    # numbers — background-correcting an intensity needs the fit's offset — so
+    # they are operands too, just listed last.
+    available = predict_feature_columns_from_cfg(cfg, include_uncategorized=True)
     if not available:
         st.warning(
             "Select feature extractors for your channels first — there are no "
@@ -174,8 +181,9 @@ def render_derived_features_widget(cfg, active_profile):
 
         expression = st.text_input(
             "Formula", key=expr_key,
-            help="Use aliases (A, B, …), + − * /, and parentheses. Buttons append "
-                 "to the end; you can also edit the box directly.",
+            help="Use aliases (A, B, …), plain numbers, + − * /, and parentheses "
+                 "(e.g. 'A - B*256'). Buttons append to the end; you can also "
+                 "edit the box directly.",
         )
 
     # --- Live validation + preview.
