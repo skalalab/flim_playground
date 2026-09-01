@@ -138,11 +138,21 @@ def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask
         single_cell_morph_features_fov[cell_id][f'{channel_name}_centroid_x'] = region.centroid[1]
         single_cell_morph_features_fov[cell_id][f'{channel_name}_centroid_y'] = region.centroid[0]
         for feature in mask_morphology_features:
-            feature_name = f"{feature}"
-            if feature in region:
-                single_cell_morph_features_fov[cell_id][f"{feature_prefix}{feature_name}"] = region[feature]
-            elif feature == "circularity":
-                single_cell_morph_features_fov[cell_id][f"{feature_prefix}{feature_name}"] = 4 * np.pi * region.area / region.perimeter**2 if region.perimeter > 0 else 0
+            # Read every regionprops property through region[feature], never behind a
+            # `feature in region` guard: RegionProperties defines no __contains__, so
+            # `in` falls back to __iter__, which lists only scikit-image's *current*
+            # spellings. major_axis_length / minor_axis_length are legacy aliases that
+            # __getitem__ still resolves (via PROPS) but __iter__ omits, so the guard
+            # answered False and those two columns were silently never written — while
+            # feature_schema kept offering them as derived-feature operands. An alias
+            # that a future release really drops now raises here, which is the right
+            # failure mode for a step that writes data files.
+            if feature == "circularity":
+                # Not a regionprops property at all — derived from two that are.
+                value = 4 * np.pi * region.area / region.perimeter**2 if region.perimeter > 0 else 0
+            else:
+                value = region[feature]
+            single_cell_morph_features_fov[cell_id][f"{feature_prefix}{feature}"] = value
     single_cell_morph_features_fov = pd.DataFrame.from_dict(single_cell_morph_features_fov, orient='index')
     return "", single_cell_morph_features_fov
 
@@ -223,23 +233,26 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
         intensity_images[f"{fit_feature_prefix}t3"] = t3
         intensity_images[f"{channel_name}_a3"] = 100 - a1 - a2
 
-    if num_components == 1:
-        tm = t1
-        tm_iw = t1
-    elif num_components == 2:
-        tm = (a1 / 100 * t1) + ((100 - a1) / 100 * t2)
-        alpha1 = a1 / 100.0
-        alpha2 = (100.0 - a1) / 100.0
-        tm_iw = (alpha1 * (t1 ** 2) + alpha2 * (t2 ** 2)) / tm
-    elif num_components == 3:
-        tm = (a1 / 100 * t1) + (a2 / 100 * t2) + ((100 - a1 - a2) / 100 * t3)
-        alpha1 = a1 / 100.0
-        alpha2 = a2 / 100.0
-        alpha3 = (100.0 - a1 - a2) / 100.0
-        tm_iw = (alpha1 * (t1 ** 2) + alpha2 * (t2 ** 2) + alpha3 * (t3 ** 2)) / tm
+    # Mean lifetimes are the multi-exponential case only. A single exponential's
+    # mean lifetime IS t1, so n=1 used to emit two bit-identical copies of it —
+    # and redundant columns are not free downstream: three perfectly collinear
+    # features inflate PCA's apparent dimensionality and split one feature's
+    # importance three ways. n=1 now emits neither, matching extract_fit_results.
+    if num_components >= 2:
+        if num_components == 2:
+            tm = (a1 / 100 * t1) + ((100 - a1) / 100 * t2)
+            alpha1 = a1 / 100.0
+            alpha2 = (100.0 - a1) / 100.0
+            tm_iw = (alpha1 * (t1 ** 2) + alpha2 * (t2 ** 2)) / tm
+        else:
+            tm = (a1 / 100 * t1) + (a2 / 100 * t2) + ((100 - a1 - a2) / 100 * t3)
+            alpha1 = a1 / 100.0
+            alpha2 = a2 / 100.0
+            alpha3 = (100.0 - a1 - a2) / 100.0
+            tm_iw = (alpha1 * (t1 ** 2) + alpha2 * (t2 ** 2) + alpha3 * (t3 ** 2)) / tm
 
-    intensity_images[f"{fit_feature_prefix}tm"] = tm
-    intensity_images[f"{fit_feature_prefix}tm_iw"] = tm_iw
+        intensity_images[f"{fit_feature_prefix}tm"] = tm
+        intensity_images[f"{fit_feature_prefix}tm_iw"] = tm_iw
 
     # Get unique region labels from the mask (excluding background label 0)
     unique_labels = np.unique(mask)

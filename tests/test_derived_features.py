@@ -420,12 +420,31 @@ _FIT_RESULTS = {
 _CELLS = ["fov_1_1", "fov_1_2"]
 
 
-def _unprefixed(emitted):
-    """The columns with no ``"{Extractor}_{channel}: "`` prefix — the uncategorized ones."""
-    columns = emitted.columns if isinstance(emitted, pd.DataFrame) else {
-        col for per_cell in emitted.values() for col in per_cell
-    }
-    return sorted(c for c in columns if ": " not in c)
+def _emitted_columns(emitted):
+    """Column names out of either shape an emitter returns (frame or cell->feats dict)."""
+    if isinstance(emitted, pd.DataFrame):
+        return set(emitted.columns)
+    return {col for per_cell in emitted.values() for col in per_cell}
+
+
+def _split(emitted):
+    """(categorized, uncategorized) — the ``"{Extractor}_{ch}: "`` prefix is the divider."""
+    columns = _emitted_columns(emitted)
+    return (sorted(c for c in columns if ": " in c),
+            sorted(c for c in columns if ": " not in c))
+
+
+def _assert_schema_matches(emitted, channel_extractors, num_components, input_types=None):
+    """Both halves of the schema, against what the emitter actually produced.
+
+    Asserting them together is the point: a column in one list and not the other
+    is precisely the drift that used to go unnoticed, in either direction.
+    """
+    categorized, uncategorized = _split(emitted)
+    assert categorized == sorted(predict_feature_columns(
+        [CH], channel_extractors, num_components, input_types))
+    assert uncategorized == sorted(predict_uncategorized_columns(
+        [CH], channel_extractors, num_components, input_types))
 
 
 def _two_cell_mask():
@@ -436,19 +455,18 @@ def _two_cell_mask():
 
 
 @pytest.mark.parametrize("n", [1, 2, 3])
-def test_fit_emitter_matches_predicted_uncategorized(n):
+def test_fit_emitter_matches_schema(n):
     from src.fov_extraction import extract_fit_results
 
     _, emitted = extract_fit_results(
         channel_name=CH, decay_curves={c: _DECAY for c in _CELLS}, results=_FIT_RESULTS,
         num_components=n, shifted_irf=_IRF, time_axis=_TIME_AXIS,
         start=0, end=8, fixed_lifetimes=None)
-    assert _unprefixed(emitted) == sorted(predict_uncategorized_columns(
-        [CH], {CH: ["Lifetime fit"]}, {CH: n}, {CH: "Decay (3/4D)"}))
+    _assert_schema_matches(emitted, {CH: ["Lifetime fit"]}, {CH: n}, {CH: "Decay (3/4D)"})
 
 
 @pytest.mark.parametrize("n", [1, 2, 3])
-def test_spcimage_emitter_matches_predicted_uncategorized(n, monkeypatch):
+def test_spcimage_emitter_matches_schema(n, monkeypatch):
     from src.fov_extraction import extract_spcimage_fit_results
 
     images = {
@@ -462,21 +480,28 @@ def test_spcimage_emitter_matches_predicted_uncategorized(n, monkeypatch):
 
     err, emitted = extract_spcimage_fit_results(metadata, CH, n, "fov")
     assert err == ""
-    assert _unprefixed(emitted) == sorted(predict_uncategorized_columns(
-        [CH], {CH: ["Lifetime fit"]}, {CH: n}, {CH: "Decay (3/4D) pixel-prefitted"}))
+    # The prefitted path used to write tm/tm_iw at n=1 (both bit-identical to t1)
+    # that extract_fit_results does not. It no longer does; this pins the two paths
+    # to the same categorized names. They still differ on the UNcategorized half —
+    # a prefitted channel reports no amp/offset/chi-square of its own.
+    _assert_schema_matches(emitted, {CH: ["Lifetime fit"]}, {CH: n},
+                           {CH: "Decay (3/4D) pixel-prefitted"})
 
 
-def test_morphology_emitter_matches_predicted_uncategorized():
+def test_morphology_emitter_matches_schema():
+    """Covers the axis-length trap: ``feature in region`` asks scikit-image for its
+    *current* spelling, so the legacy ``major_axis_length``/``minor_axis_length``
+    names answered False and their columns were silently never written, while the
+    schema kept offering them as operands."""
     from src.fov_extraction import get_intensity_morphology_features
 
     err, emitted = get_intensity_morphology_features(
         {"fov": "fov_1"}, CH, "fov", _two_cell_mask())
     assert err == ""
-    assert _unprefixed(emitted) == sorted(predict_uncategorized_columns(
-        [CH], {CH: ["Intensity morphology"]}, {CH: 1}))
+    _assert_schema_matches(emitted, {CH: ["Intensity morphology"]}, {CH: 1})
 
 
-def test_texture_and_phasor_emit_nothing_uncategorized():
+def test_texture_and_phasor_match_schema_and_emit_nothing_uncategorized():
     """Both are fully prefixed — the prediction must not invent operands for them."""
     from src.fov_extraction import (
         extract_fit_free_results,
@@ -487,19 +512,19 @@ def test_texture_and_phasor_emit_nothing_uncategorized():
     image = np.random.default_rng(0).random((12, 12)) * 100
     texture = extract_texture_features_from_arrays(
         image, _two_cell_mask(), "fov_1", f"Intensity texture_{CH}: ")
-    assert _unprefixed(texture) == []
+    _assert_schema_matches(texture, {CH: ["Intensity texture"]}, {CH: 1},
+                           {CH: "Decay (3/4D)"})
 
     texture_2d = extract_intensity_sum_2d(CH, {c: _DECAY for c in _CELLS},
                                           {c: {} for c in _CELLS})
-    assert _unprefixed(texture_2d) == []
+    _assert_schema_matches(texture_2d, {CH: ["Intensity texture"]}, {CH: 1},
+                           {CH: "Decay (2D)"})
 
     err, phasor = extract_fit_free_results(
         CH, {c: _DECAY for c in _CELLS}, laser_rate=0.08, duration=8.0,
         calibration_method="IRF", shifted_irf=_IRF)
     assert err == ""
-    assert _unprefixed(phasor) == []
-    assert predict_uncategorized_columns(
-        [CH], {CH: ["Intensity texture", "Lifetime fit free"]}, {CH: 1}) == []
+    _assert_schema_matches(phasor, {CH: ["Lifetime fit free"]}, {CH: 1})
 
 
 def _extracted_frame():

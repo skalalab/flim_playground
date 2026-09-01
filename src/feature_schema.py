@@ -61,9 +61,11 @@ def _component_count(num_components):
 def _fit_suffixes(num_components):
     """Categorized suffixes emitted by the 'Lifetime fit' extractor.
 
-    Mirrors ``extract_fit_results``/``extract_spcimage_fit_results``: ``t1..tn``
-    for all n; plus ``a1..a(n-1)``, ``tm`` and ``tm_iw`` when n >= 2 (the
-    multi-exponential case). Clamped to the supported 1–3 component range.
+    Mirrors ``extract_fit_results`` *and* ``extract_spcimage_fit_results``, which
+    agree here: ``t1..tn`` for all n; plus ``a1..a(n-1)``, ``tm`` and ``tm_iw``
+    when n >= 2 (the multi-exponential case). Clamped to the supported 1–3
+    component range. The prefitted split lives in ``_fit_uncategorized_suffixes``
+    alone — the categorized names do not depend on the input type.
     """
     n = _component_count(num_components)
     suffixes = [f"t{i}" for i in range(1, n + 1)]
