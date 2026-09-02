@@ -577,8 +577,7 @@ def interpret_table(df, categorical_cols, unique_row_id_col, fov_name_col,
     # has no FOV column.
     if use_data_extraction and fov_name_col and resolve_effective_fov_col(df, fov_name_col) is None:
         warning_msg += (f"Warning: the FOV column '{fov_name_col}' was not found. "
-                        "FOV Comparison is unavailable and the FOV name is left "
-                        "out of hover text.\n")
+                        "The FOV name is left out of hover text.\n")
     _render_warning(warning_msg)
     st.write(f"Data uploaded successfully {happy_emoji}")
     return df, feature_groups_dict, True, row_id_col
@@ -854,7 +853,7 @@ def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
         df[unique_row_id_col] = df[unique_row_id_col].astype(str)
     # A present FOV column is a categorical like any other: the loop below stringifies
     # it and fills "N/A". An absent one is valid — load_table resolves it to None, the
-    # plots drop the FOV hover label and the page hides FOV Comparison. Prepended here
+    # plots simply drop the FOV hover label. Prepended here
     # rather than trusted from the caller because this function is getsource()-inlined
     # into standalone scripts, where the categorical list is a baked literal.
     if fov_name_col and fov_name_col not in categorical_cols:

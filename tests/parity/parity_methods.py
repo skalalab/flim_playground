@@ -1,10 +1,10 @@
 """App-vs-export parity for the remaining analysis methods, on the real example datasets.
 
-Covers FOV boxes, histogram bin edges, GMM subpopulation numbering, the sina jitter +
+Covers histogram bin edges, GMM subpopulation numbering, the sina jitter +
 effect-size defaults, 2D marginals for every marginal type, PCA/UMAP embeddings, and
 the ANALYSIS_COLUMNS prune.
 
-Run:  uv run python tests/parity/parity_methods.py [all|fov|hist|gmm|fc|2d|dr|prune]
+Run:  uv run python tests/parity/parity_methods.py [all|hist|gmm|fc|2d|dr|prune]
 """
 import sys
 from pathlib import Path
@@ -36,49 +36,6 @@ VAR = "Lifetime fit_nadh: tm"
 VAR2 = "Lifetime fit free_nadh: Tau_m"
 
 R = Results()
-
-
-# ---------------------------------------------------------------- FOV Comparison
-def fov_comparison():
-    print("\n=== FOV Comparison — inhibitors.csv ===")
-    patch_streamlit()
-    from src.vis.univar import fov_comparison_plot
-
-    df, _ = load_app_df(CSV, CATS, "cell_id", "image_name")
-    fig = fov_comparison_plot(df.copy(), "image_name", VAR, ["treatment"], colormap="tab10")
-
-    state = base_state("FOV Comparison", "inhibitors.csv", CATS, color_by=["treatment"],
-                       analysis_columns=list(df.columns),
-                       method_params={"selected_var": VAR})
-    ns, _ = run_export(state, CSV, WORK / "fov")
-    ax = ns["ax"]
-
-    # app: one Box trace per (color group, FOV) with data; export: one boxplot slot each
-    app_boxes = {}
-    for t in fig.data:
-        fov = t.x[0]
-        grp = t.hovertemplate.split("<b>Group:</b> ")[1].split("<br>")[0]
-        app_boxes[(fov, grp)] = np.sort(np.asarray(t.y, float))
-    exp_keys = [tuple(lbl.split("\n")) for lbl in ns["tick_labels"]]
-
-    R.check(f"same (FOV, group) box set ({len(app_boxes)})", set(app_boxes) == set(exp_keys),
-            f"app-only={set(app_boxes) - set(exp_keys)} exp-only={set(exp_keys) - set(app_boxes)}")
-
-    # The app iterates color-group-outer and the export FOV-outer, so slot ORDER
-    # legitimately differs; compare the data behind each (FOV, group) key instead.
-    exp_df = ns["df"]
-    same_data = True
-    for (fov, grp), ys in app_boxes.items():
-        sub = exp_df[(exp_df["image_name"] == fov) & (exp_df["_color_group"] == grp)][VAR].dropna()
-        if not np.allclose(np.sort(sub.values), ys):
-            same_data = False
-            break
-    R.check("per-box data identical", same_data)
-    R.check("title", ax.get_title() == f"Distribution of {mpl_label(VAR)} by Field of View",
-            ax.get_title())
-    R.check("y label", ax.get_ylabel() == mpl_label(VAR), ax.get_ylabel())
-    R.check("tick label size = AXIS_LABEL_SIZE-2",
-            ax.get_xticklabels()[0].get_fontsize() == state["axis_label_size"] - 2)
 
 
 # ---------------------------------------------------------------- Histogram
@@ -169,18 +126,33 @@ def _group_signatures(groups):
     return sorted(sigs, key=lambda s: (s[0], float(s[1][0])))
 
 
-def feature_comparison(separate_by, effect_size, statistical_test="Welch's t-test"):
+def feature_comparison(separate_by, effect_size, statistical_test="Welch's t-test",
+                       collapse_by=None):
     print(f"\n=== Feature Comparison (separate_by={separate_by}, effect={effect_size}, "
-          f"test={statistical_test}) ===")
+          f"test={statistical_test}, collapse_by={collapse_by}) ===")
     patch_streamlit()
     from src.vis.univar import feature_comparison_plot
 
     df, _ = load_app_df(CSV, CATS, "cell_id", "image_name")
+    # data_analysis.py collapses on the page, before the plot function -- so the app side
+    # of this harness has to as well, or it compares a collapsed script against an
+    # uncollapsed app.
+    plot_df = df.copy()
+    row_id_col, row_id_label, fov_col = "cell_id", "ID", "image_name"
+    if collapse_by:
+        from src.collapse import collapse_rows
+        from src.dataset_io import resolve_effective_fov_col
+
+        plot_df, row_id_col, _varied = collapse_rows(
+            plot_df, collapse_by, ["treatment", separate_by], "cell_id")
+        row_id_label = collapse_by
+        fov_col = resolve_effective_fov_col(plot_df, "image_name")
     fig = feature_comparison_plot(
-        df.copy(), unique_row_id_col="cell_id", fov_name_col="image_name", selected_var=VAR,
+        plot_df, unique_row_id_col=row_id_col, fov_name_col=fov_col, selected_var=VAR,
         color_by=["treatment"], separate_by=separate_by, colormap="tab10",
         effect_size_method=effect_size, mean_or_median="mean",
-        statistical_test=statistical_test, custom_order=None)
+        statistical_test=statistical_test, custom_order=None,
+        row_id_label=row_id_label)
 
     from src.export_script import get_effect_size_threshold_capture
 
@@ -194,9 +166,11 @@ def feature_comparison(separate_by, effect_size, statistical_test="Welch's t-tes
                                       "log_y": False, "add_boxplot": False,
                                       "connect_means": False,
                                       "effect_size_threshold": thresh,
-                                      "selected_pairs": None, "custom_order": None})
+                                      "selected_pairs": None, "custom_order": None,
+                                      "collapse_by": collapse_by})
     tag = f"fc_{separate_by}_{effect_size.replace(chr(39), '').replace(' ', '')[:6]}"
     tag += "_" + statistical_test.replace(chr(39), "").replace(" ", "")[:8]
+    tag += f"_collapse{collapse_by}" if collapse_by else ""
     ns, _ = run_export(state, CSV, WORK / tag)
     ax = ns["ax"]
 
@@ -383,8 +357,6 @@ def analysis_columns_prune():
 
 
 def main(which="all"):
-    if which in ("all", "fov"):
-        fov_comparison()
     if which in ("all", "hist"):
         histogram()
     if which in ("all", "gmm"):
@@ -395,6 +367,11 @@ def main(which="all"):
         feature_comparison("cell_line", "Absolute Cohen's d")
         feature_comparison(None, "Glass's Delta")
         feature_comparison(None, "Absolute Cohen's d", "Independent t-test")
+        # Collapse by on the full frame: 14k cells become one point per dish, so the
+        # point count, the jitter and the effect-size n all move together.
+        feature_comparison(None, "Absolute Cohen's d", "Welch's t-test", collapse_by="dish")
+        feature_comparison("cell_line", "Absolute Cohen's d", "Welch's t-test",
+                           collapse_by="dish")
     if which in ("all", "2d"):
         two_d("gaussian fit", False)
         two_d("gaussian fit", True)

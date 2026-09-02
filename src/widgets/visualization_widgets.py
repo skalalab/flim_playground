@@ -20,32 +20,58 @@ AS_COLOUR_KEY = "vis_encoding_as_colour"
 # ONE key for the shape/subcolor picker's column, shared by both of its roles. The switch chooses
 # which channel the column drives; it does not choose a different column, so flipping it
 # leaves the selection alone rather than swapping in whatever that channel held last.
+# Both roles are offered the SAME list now that every decoration excludes the grouping
+# columns, so a flip can no longer retire the column either -- which is what used to
+# happen going shape -> subcolor.
 #
 # One key also avoids any restore machinery: Streamlit purges the state of a widget that
 # stops rendering, and under a shared key one role or the other always renders on a
-# POINT-BASED method. Methods with no point channel (FOV Comparison, Feature Histogram,
-# Classification) render neither, so leaving for one of those does clear the column.
+# POINT-BASED method. Methods with no point channel (Feature Histogram, Classification)
+# render neither, so leaving for one of those does clear the column.
 #
 # The cost: a column picked as shape on Scatter arrives preselected in Feature
 # Comparison's picker, and vice versa.
 PICKER_COL_KEY = "vis_encoding_picker_col"
 
+# Opacity by's own key. It needs one because its options now move with Color by -- every
+# decoration excludes the grouping columns -- and an UNKEYED widget's identity INCLUDES its
+# options: Streamlit sees a different widget and silently remounts it empty. Measured on
+# the live page: Opacity by = day, then add dish to Color by, and the pick blanks with
+# `day` still sitting in the list. The shape/subcolor picker never showed it because it has
+# been keyed since this row took explicit keys.
+OPACITY_BY_KEY = "vis_encoding_opacity_by"
 
-def _picker_selectbox(label, options, **kwargs):
-    """The shape/subcolor picker, in whichever role the switch has put it.
+# Collapse by is NOT a visual channel -- it changes what one point IS, by averaging the
+# cells of a replicate into a single row, and must never reach get_point_visual_mappings.
+# It shares this row for layout reasons only, third, so the row reads left to right as:
+# how are dots grouped -> what is a dot -> how do they look.
+COLLAPSE_BY_KEY = "vis_encoding_collapse_by"
 
-    Two things can retire the held column: the row offers only categories with
-    ``nunique() > 1``, so a filter can disqualify it; and the subcolor role excludes
-    whatever Color by is grouping on, so a column legal as opacity can be illegal as
-    subcolor. Streamlit raises on an unoffered value under an explicit key, so it must be
-    dropped here -- the one case where a flip clears the selection.
+
+def _pruned_selectbox(label, options, key, **kwargs):
+    """A keyed single-select whose stored pick is narrowed to ``options`` first.
+
+    Every option list in this row MOVES: the row offers only categories with
+    ``nunique() > 1``, so a filter can retire one, and Separate by and Color by claim
+    columns out of the decoration list as they are picked. Two consequences, and the key
+    is what turns the second into the first. Without a key a widget is identified by its
+    arguments, options included, so a list that changes for a reason having nothing to do
+    with the held column remounts the widget and blanks it. With one the pick survives --
+    but Streamlit then RAISES on a stored value the widget no longer offers, so it has to
+    be pruned above the widget, in the same run.
     """
-    stored = st.session_state.get(PICKER_COL_KEY)
+    stored = st.session_state.get(key)
     pruned = prune_to_options(stored, options)
     if stored != pruned:
-        st.session_state[PICKER_COL_KEY] = pruned
+        st.session_state[key] = pruned
     return st.selectbox(label, options, index=None,
-                        placeholder="Choose an option...", key=PICKER_COL_KEY, **kwargs)
+                        placeholder="Choose an option...", key=key, **kwargs)
+
+
+def _picker_selectbox(label, options, **kwargs):
+    """The shape/subcolor picker, in whichever role the switch has put it. One key for both
+    roles, so the flip re-points the same column rather than swapping in another."""
+    return _pruned_selectbox(label, options, PICKER_COL_KEY, **kwargs)
 
 
 # The name handed to the shape/subcolor picker WIDGET, keyed on the switch. Its visible label is
@@ -54,8 +80,8 @@ PICKER_LABELS = {True: "Subcolor by", False: "Shape by"}
 
 # The switch reads as one phrase with the channels either side of it:
 #
-#     Opacity [o---] subcolor by     <- opacity drives the picker below
-#     Opacity [---o] subcolor by     <- subcolor does
+#     Shape [o---] subcolor by     <- shape drives the picker below
+#     Shape [---o] subcolor by     <- subcolor does
 #
 # Static, so both channels stay on screen and the knob alone says which is active. Ends
 # on "by" so it runs into the picker below: "shape/subcolor by <column>". Shape rather
@@ -63,6 +89,10 @@ PICKER_LABELS = {True: "Subcolor by", False: "Shape by"}
 # sensible encoding for the same column, so the flip is a real choice. Opacity is the one
 # ordinal channel (create_opacity_mapping ranks values on a ramp), so pairing it here
 # would have offered to put an unordered column on an ordered scale.
+#
+# Folding all three decorations into one three-way switch was built and reverted: a radio
+# renders its options at body size against this row's 14px and wrapped to three lines in a
+# column this narrow, and shrinking it with CSS only traded that for an illegible switch.
 SWITCH_LEAD = "Shape"
 SWITCH_TRAIL = "subcolor by"
 
@@ -102,32 +132,40 @@ def _picker_label(text):
     )
 
 
-def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False, subcolor_available=False):
+def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False, subcolor_available=False, collapse_available=False):
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
     color_by = []
-    opacity_by = shape_by = separate_by = subcolor_by = None
+    opacity_by = shape_by = separate_by = subcolor_by = collapse_by = None
 
     if len(available_categories) == 0:
-        return color_by, opacity_by, shape_by, separate_by, subcolor_by
+        return color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by
 
     if not color_based:
-        return color_by, opacity_by, shape_by, separate_by, subcolor_by
+        return color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by
 
-    # A plain count, so every column is equal. The channel switch is absorbed inside the
-    # LAST column -- sharing its picker's top line -- rather than given a column of its
-    # own, so this row still lays out identically on Scatter, Phasor and Dimension
-    # Reduction, which have no switch at all. If the column is too narrow to hold picker
-    # and switch side by side the switch wraps underneath, which is the old layout and
-    # still readable; widening that column instead would misalign every other method.
+    # Equal-width columns, named rather than indexed. Every slot's position shifts when
+    # another is added or gated off, and an off-by-one here swaps two pickers while the
+    # app still runs and still plots -- so the order is declared once and read by name.
+    # The channel switch is absorbed inside the LAST column -- sharing its picker's top
+    # line -- rather than given a column of its own, so this row still lays out identically
+    # on Scatter, Phasor and Dimension Reduction, which have no switch at all. If the column
+    # is too narrow to hold picker and switch side by side the switch wraps underneath,
+    # which is the old layout and still readable; widening that column instead would
+    # misalign every other method.
+    slots = []
+    if separate_by_available and point_based:
+        slots.append("separate")
+    slots.append("color")
+    if collapse_available and point_based:
+        slots.append("collapse")
     if point_based:
-        num_cols = 4 if separate_by_available else 3
-    else:
-        num_cols = 1
-    cols = st.columns(num_cols)
+        slots += ["opacity", "picker"]
+    cols = st.columns(len(slots))
+    at = {name: index for index, name in enumerate(slots)}
 
     # Separate by widget
-    if separate_by_available and point_based:
-        with cols[0]:
+    if "separate" in at:
+        with cols[at["separate"]]:
             separate_by = st.selectbox("Separate by", available_categories, index=None, placeholder="Choose an option...")
 
     available_for_color = [cat for cat in available_categories if cat != separate_by]
@@ -163,9 +201,17 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     # instead left "Group by" a run behind whenever the picker changed for a reason other
     # than a click: pruning dropping the column, the selection being cleared, or the
     # disabled branch forcing subcolor_by to None.
+
+    # A decoration only marks a point inside the slot its grouping put it in, so a column
+    # already spent on Separate by or Color by has nothing left to say through shape,
+    # opacity or subcolor -- every value in a slot would carry the same mark. ONE list for
+    # all three, which is also why flipping the switch can no longer retire the column.
+    available_for_decoration = [cat for cat in available_categories
+                                if cat != separate_by and cat not in effective_color]
+
     as_colour = False
     if point_based:
-        with cols[3 if separate_by_available else 2]:
+        with cols[at["picker"]]:
             if show_subcolor:
                 # The switch sits immediately after the phrase's first word, on the same
                 # line, with the picker at full width underneath -- see SWITCH_LEAD for
@@ -202,8 +248,8 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                             # ships to every dataset; the column names appear only behind
                             # an explicit "e.g.", which reads as an illustration rather
                             # than as an assumption about what the user's columns are.
-                            help="**Off** \u2014 the column below sets point shape."
-                                 "\n\n**On** \u2014 it sets color: each value keeps one "
+                            help="**Off** — the column below sets point shape."
+                                 "\n\n**On** — it sets color: each value keeps one "
                                  "color plot-wide, so you can spot it in every group it "
                                  "appears in and see the spread within each. Best for a "
                                  "column nested inside the grouping one (e.g. donors "
@@ -213,9 +259,8 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                     # collapsed: it is what a screen reader announces, and the switch
                     # phrase above is decoration to anything that does not render CSS.
                     if as_colour:
-                        available_for_subcolor = [cat for cat in available_for_color if cat not in effective_color]
                         subcolor_by = _picker_selectbox(
-                            PICKER_LABELS[True], available_for_subcolor,
+                            PICKER_LABELS[True], available_for_decoration,
                             disabled=not effective_color, label_visibility="collapsed",
                         )
                         # A disabled selectbox still returns what it last held, so the
@@ -223,18 +268,18 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                         if not effective_color:
                             subcolor_by = None
                     else:
-                        shape_by = _shape_selectbox(available_categories,
+                        shape_by = _shape_selectbox(available_for_decoration,
                                                     label_visibility="collapsed")
             else:
-                shape_by = _shape_selectbox(available_categories)
+                shape_by = _shape_selectbox(available_for_decoration)
 
-    with cols[1 if separate_by_available and point_based else 0]:
+    with cols[at["color"]]:
         color_by = st.multiselect(
             color_multiselect_label(show_subcolor, as_colour),
             available_for_color,
             key=COLOR_BY_KEY,
             help="Groups compared along the x axis. These groups set the color too, "
-                 "unless the Shape/subcolor switch is on \u2014 then that column sets the "
+                 "unless the Shape/subcolor switch is on — then that column sets the "
                  "color and these only set the x positions.",
         )
 
@@ -244,13 +289,39 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     if not color_by:
         subcolor_by = None
 
-    # Opacity has no switch: it is the only ordinal channel, so it shares a column with
-    # nothing. Unkeyed, as it was before this row took explicit keys.
-    if point_based:
-        with cols[2 if separate_by_available else 1]:
-            opacity_by = st.selectbox("Opacity by", available_categories, index=None, placeholder="Choose an option...")
+    # LAST of the grouping chain, and evaluated after Color by has returned -- Separate by
+    # narrows Color by, and the two of them narrow this. The direction matters: collapsing
+    # is DERIVED from the x layout, so changing the layout retires a collapse column, while
+    # changing the collapse must leave the layout alone. Reading it first and striking its
+    # column from the two above inverted that, and picking a replicate silently reset the
+    # grouping. Excluded because collapsing on a column that also sets the x position puts
+    # exactly one dot in every slot, leaving nothing for a box or a test to describe.
+    #
+    # Shape / Subcolor / Opacity are NOT excluded either way: a decoration is well defined
+    # on a collapsed dot whenever its column is constant within the collapse group, and the
+    # collapse column trivially is -- Subcolor by = Collapse by is the most useful pairing
+    # the feature has, one colour per replicate held across every x group.
+    if "collapse" in at:
+        available_for_collapse = [cat for cat in available_for_color if cat not in color_by]
+        with cols[at["collapse"]]:
+            collapse_by = _pruned_selectbox(
+                "Collapse by", available_for_collapse, COLLAPSE_BY_KEY,
+                help="One point per value of this column, inside each x group, holding "
+                     "the MEAN of the cells it covers -- so the box, the mean line and "
+                     "every statistic describe replicates (dishes, patients, images) "
+                     "rather than cells. Pair it with Subcolor by on the same column to "
+                     "trace one replicate across every group.",
+            )
 
-    return color_by, opacity_by, shape_by, separate_by, subcolor_by
+    # Opacity has no switch: it is the only ordinal channel, so it shares a column with
+    # nothing. Same option list as the other two decorations, and keyed for the reason
+    # OPACITY_BY_KEY gives.
+    if point_based:
+        with cols[at["opacity"]]:
+            opacity_by = _pruned_selectbox("Opacity by", available_for_decoration,
+                                           OPACITY_BY_KEY)
+
+    return color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by
 
 def umap_hyperParams_widget():
     col1, col2 = st.columns(2)

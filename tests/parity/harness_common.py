@@ -68,6 +68,10 @@ def base_state(method, csv_name, categorical_cols, unique_row_id_col="cell_id",
 
     Keep this in sync with that function — if it grows a key, add it here too, or the
     harness will silently stop exercising it.
+
+    Method-only controls do NOT belong here: they ride `method_params`, the way `log_y`,
+    `add_boxplot` and `collapse_by` do for Feature Comparison. Adding one in both places
+    is the mistake this note exists to prevent.
     """
     import streamlit as st
 

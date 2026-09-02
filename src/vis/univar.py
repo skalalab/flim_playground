@@ -30,57 +30,6 @@ from .helpers import (
 )
 
 
-def fov_comparison_plot(df, fov_name_col, selected_var, color_by, colormap="tab10"):
-    fig = go.Figure()
-    GROUP_COL_NAME = 'unique_color_group'
-    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
-    show_counts = st.session_state.get("plot_show_group_counts", False)
-    group_counts = df.dropna(subset=[selected_var]).groupby(GROUP_COL_NAME).size().to_dict()
-
-    fov_names = df[fov_name_col].unique()
-
-    legend_added = set()
-
-    # Group by color first, then by FOV within each color group
-    for color_group in unique_color_groups:
-        group_df = df[df[GROUP_COL_NAME] == color_group]
-        for fov_name in fov_names:
-            fov_group_df = group_df[group_df[fov_name_col] == fov_name]
-            if fov_group_df.empty:
-                continue
-
-            # Show legend only for the first occurrence of each color group
-            show_legend = color_group not in legend_added
-            if show_legend:
-                legend_added.add(color_group)
-
-            fig.add_trace(go.Box(
-                y=fov_group_df[selected_var],
-                name=format_group_label(color_group, group_counts.get(color_group), show_counts),  # color group name (optionally with count)
-                x=[fov_name] * len(fov_group_df),  # Explicitly set x values for grouping
-                boxpoints=False, # Only show the box
-                marker_color=color_map[color_group],
-                showlegend=show_legend,  # Show legend only once per color group
-                legendgroup=color_group,  # Group legend entries by color
-                hovertemplate=(
-                    hover_field(fov_name_col, fov_name)
-                    + hover_field("Group", color_group)
-                )
-            ))
-
-    fig.update_layout(
-        title=f'Distribution of {format_feature_label(selected_var)} by Field of View',
-        xaxis_title=fov_name_col,
-        yaxis_title=format_feature_label(selected_var),
-        showlegend=True,
-        hovermode='closest',
-        margin=dict(l=50, r=20, t=50, b=max(80, len(max(fov_names, key=len, default=''))*5)) # Adjust bottom margin for long names
-    )
-    # remove the column after plotting
-    df.drop(columns=[GROUP_COL_NAME], inplace=True)
-
-    return fig
-
 def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10", log_x=False):
     GROUP_COL_NAME = 'unique_color_group'
     unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
@@ -1044,7 +993,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
                                 selected_pairs=filtered_section_pairs,
                                 threshold=threshold,
                                 statistical_test=statistical_test,
-                                global_data_range=global_data_range  # Pass global range for consistent spacing
+                                global_data_range=global_data_range,  # Pass global range for consistent spacing
+                                section_label=section_info['group']
                             )
         else:
             # Standard statistical annotations when no separate_by

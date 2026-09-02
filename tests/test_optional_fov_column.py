@@ -168,7 +168,7 @@ def test_load_table_warns_when_the_configured_fov_column_is_absent(monkeypatch):
     # -escapes it -- so "image_name" is not quoted with a literal apostrophe here.
     shown = " ".join(rendered)
     assert "the FOV column" in shown and "image_name" in shown and "was not found" in shown
-    assert "FOV Comparison is unavailable" in shown
+    assert "left out of hover text" in shown
 
 
 def test_user_table_branch_stays_silent_about_a_missing_fov_column(monkeypatch):
@@ -192,7 +192,7 @@ def test_user_table_branch_stays_silent_about_a_missing_fov_column(monkeypatch):
     assert "image_name" not in df.columns
     shown = " ".join(rendered)
     assert "was not found" not in shown
-    assert "FOV Comparison is unavailable" not in shown
+    assert "left out of hover text" not in shown
 
 
 def test_a_column_the_numeric_rule_rejects_is_named_not_silently_dropped(monkeypatch):
@@ -324,60 +324,11 @@ def test_the_generated_script_bakes_a_none_fov_column():
     assert "image_name" not in script
 
 
-def test_fov_comparison_hides_when_a_loaded_frame_lacks_a_fov_column(monkeypatch):
-    """State 5 (see method-gate-fix.md verification list): once a frame is
-    loaded, a resolved FOV column of None hides the method -- unlike a fresh
-    visit, where no frame is loaded yet and the pre-load fallback would show it.
-    AppTest cannot drive a real file upload, so the loaded state is modeled by
-    monkeypatching load_table, the same technique the adjacent "appears" test
-    below already uses for the opposite (FOV-bearing) case."""
-    from streamlit.testing.v1 import AppTest
-
-    monkeypatch.setattr(acw, "get_fov_name_col_analysis",
-                        lambda use_data_extraction=True: "image_name")
-    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (
-        _no_fov_frame(), {"Uncategorized Features": ["Lifetime fit_ch1: T1"]}, True, ",", "cell_id"))
-
-    page = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
-    at = AppTest.from_file(page)
-    at.run(timeout=90)
-    assert not at.exception
-    assert "FOV Comparison" not in at.radio[1].options
-    assert at.session_state["effective_fov_name_col"] is None
-
-
-def test_fov_comparison_appears_the_same_run_a_fov_bearing_file_is_first_read(monkeypatch):
-    """The radio is built from last run's FOV-presence state, which disagrees with
-    this run's freshly-loaded file on the run a FOV-bearing upload first lands.
-    That mismatch must trigger exactly one rerun, ending with FOV Comparison
-    present -- not missing until the user causes some unrelated rerun."""
-    from streamlit.testing.v1 import AppTest
-
-    def fake_load_table(*_a, **_k):
-        df = pd.DataFrame({
-            "cell_id": ["a", "b", "c", "d"],
-            "image_name": ["f1", "f1", "f2", "f2"],
-            "treatment": ["ctrl", "drug", "ctrl", "drug"],
-            "Lifetime fit_ch1: T1": [0.4, 0.5, 0.6, 0.45],
-        })
-        return df, {"Uncategorized Features": ["Lifetime fit_ch1: T1"]}, True, ",", "cell_id"
-
-    monkeypatch.setattr(dataset_io, "load_table", fake_load_table)
-
-    page = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
-    at = AppTest.from_file(page)
-    at.run(timeout=90)
-    assert not at.exception
-    assert at.radio[1].options == ["Feature Comparison", "Feature Histogram", "FOV Comparison"]
-    assert at.session_state["effective_fov_name_col"] == "image_name"
-
-
-def test_fresh_visit_shows_fov_comparison_and_phasor_plot(monkeypatch):
-    """States 1 and 2 (method-gate-fix.md): a fresh visit, nothing uploaded,
-    extraction branch. No frame is loaded yet, so both methods are shown --
-    FOV Comparison because the active config names a FOV column (the extraction
-    happy path always carries one), Phasor Plot because there is no config-intent
-    fallback for it and pre-load it is simply shown."""
+def test_fresh_visit_shows_phasor_plot(monkeypatch):
+    """State 2 (method-gate-fix.md): a fresh visit, nothing uploaded, extraction
+    branch. No frame is loaded yet, so Phasor Plot is shown -- there is no
+    config-intent fallback for it, and pre-load it is simply shown. The
+    univariate list is pinned too, so a method cannot quietly reappear."""
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setattr(acw, "get_fov_name_col_analysis",
@@ -387,49 +338,12 @@ def test_fresh_visit_shows_fov_comparison_and_phasor_plot(monkeypatch):
     at = AppTest.from_file(page)
     at.run(timeout=90)
     assert not at.exception
-    assert "FOV Comparison" in at.radio[1].options  # state 1
+    assert at.radio[1].options == ["Feature Comparison", "Feature Histogram"]
 
     at.radio[0].set_value("### **Bivariate**")
     at.run(timeout=90)
     assert not at.exception
     assert "Phasor Plot" in at.radio[1].options  # state 2
-
-
-def test_user_table_branch_with_fov_configured_shows_fov_comparison_pre_load(monkeypatch):
-    """State 3: nothing uploaded, user-table branch, profile names a FOV column
-    -- FOV Comparison shows before any frame has loaded. The branch is selected
-    the same way the checkbox itself will set it, by writing the session key the
-    gate reads before the (keyless) checkbox renders."""
-    from streamlit.testing.v1 import AppTest
-
-    monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
-    monkeypatch.setattr(acw, "_get_profile_config",
-                        _profile(categorical_cols=["treatment"], fov_name_col="well"))
-
-    page = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
-    at = AppTest.from_file(page)
-    at.session_state["_use_data_extraction"] = False
-    at.run(timeout=90)
-    assert not at.exception
-    assert "FOV Comparison" in at.radio[1].options
-
-
-def test_user_table_branch_without_fov_configured_hides_fov_comparison_pre_load(monkeypatch):
-    """State 4: same branch, but the profile's fov_name_col is blank -- FOV
-    Comparison stays hidden even though no frame has loaded, since the pre-load
-    fallback needs a configured name and there isn't one."""
-    from streamlit.testing.v1 import AppTest
-
-    monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
-    monkeypatch.setattr(acw, "_get_profile_config",
-                        _profile(categorical_cols=["treatment"], fov_name_col=""))
-
-    page = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
-    at = AppTest.from_file(page)
-    at.session_state["_use_data_extraction"] = False
-    at.run(timeout=90)
-    assert not at.exception
-    assert "FOV Comparison" not in at.radio[1].options
 
 
 def test_phasor_hides_when_loaded_feature_groups_lack_a_complete_gs_pair(monkeypatch):
@@ -489,8 +403,8 @@ def test_phasor_shows_when_loaded_feature_groups_have_a_complete_gs_pair(monkeyp
 
 
 def test_transition_rerun_fires_once_and_then_settles(monkeypatch):
-    """State 8: from a transitioning state (a loaded, FOV-less frame on the very
-    first run, so both gates flip together), the combined check must fire
+    """State 8: from a transitioning state (a loaded frame with no complete phasor
+    G/S pair, so the gate flips on the very first run), the check must fire
     st.rerun() at most once. Running the already-settled script again must not
     call it again -- a loop here hangs the live app, so it must be measured, not
     reasoned about."""
@@ -513,7 +427,7 @@ def test_transition_rerun_fires_once_and_then_settles(monkeypatch):
     assert not at.exception
     assert len(rerun_calls) <= 1
     settled_options = at.radio[1].options
-    assert "FOV Comparison" not in settled_options
+    assert settled_options == ["Feature Comparison", "Feature Histogram"]
 
     calls_after_settling = len(rerun_calls)
     at.run(timeout=90)
@@ -523,10 +437,9 @@ def test_transition_rerun_fires_once_and_then_settles(monkeypatch):
 
 
 def test_extraction_happy_path_causes_no_rerun(monkeypatch):
-    """State 9: the extraction happy path's output always carries the configured
-    FOV column, and a complete phasor G/S pair is a normal fit-free result -- so
-    config intent and the resolved column agree from the very first run, and
-    st.rerun() must never fire."""
+    """State 9: a complete phasor G/S pair is a normal fit-free result, so the
+    gate's pre-load default and the resolved value agree from the very first run,
+    and st.rerun() must never fire. The FOV column still resolves for hover."""
     import streamlit as st
     from streamlit.testing.v1 import AppTest
 
@@ -555,5 +468,5 @@ def test_extraction_happy_path_causes_no_rerun(monkeypatch):
     at.run(timeout=90)
     assert not at.exception
     assert rerun_calls == []
-    assert "FOV Comparison" in at.radio[1].options
+    assert at.radio[1].options == ["Feature Comparison", "Feature Histogram"]
     assert at.session_state["effective_fov_name_col"] == "image_name"

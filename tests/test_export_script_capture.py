@@ -78,6 +78,7 @@ def _feature_comparison_params(**overrides):
         "effect_size_threshold": 0.0,
         "custom_order": None,
         "selected_pairs": None,
+        "collapse_by": None,
     }
     params.update(overrides)
     return params
@@ -116,7 +117,7 @@ def test_categorical_filter_matches_numeric_column(tmp_path, monkeypatch):
         }
     )
     state = _base_state(
-        "FOV Comparison",
+        "Feature Histogram",
         categorical_cols=["day"],
         categorical_filters={"day": ["1", "2"]},
         method_params={"selected_var": "feature_a"},
@@ -130,7 +131,7 @@ def test_categorical_column_keeps_its_own_spelling_for_grouping(tmp_path, monkey
     """A categorical is matched by exact name and never renamed; the script must agree."""
     df = _grouped_df({"ctrl": 1.0, "drug": 2.0}, group_col="Treatments")
     state = _base_state(
-        "FOV Comparison",
+        "Feature Histogram",
         categorical_cols=["Treatments"],
         color_by=["Treatments"],
         method_params={"selected_var": "feature_a"},
@@ -146,7 +147,7 @@ def test_duplicate_row_ids_deduplicated(tmp_path, monkeypatch):
     df = _grouped_df({"ctrl": 1.0}, n_per_group=10)
     df = pd.concat([df, df.iloc[[0]]], ignore_index=True)  # duplicate one cell_id
     state = _base_state(
-        "FOV Comparison",
+        "Feature Histogram",
         categorical_cols=["treatment"],
         method_params={"selected_var": "feature_a"},
     )
@@ -162,7 +163,7 @@ def test_majority_numeric_object_feature_coerced(tmp_path, monkeypatch, capsys):
     # survives read_csv as a string and the column loads as object dtype
     df.loc[0, "feature_a"] = "n.d."
     state = _base_state(
-        "FOV Comparison",
+        "Feature Histogram",
         categorical_cols=["treatment"],
         color_by=["treatment"],
         method_params={"selected_var": "feature_a"},
@@ -643,42 +644,6 @@ def test_feature_comparison_mixed_encoding_groups_split_points(tmp_path, monkeyp
 
 
 # ---------------------------------------------------------------------------
-# FOV Comparison ordering — appearance order, matching the app
-# ---------------------------------------------------------------------------
-
-def test_fov_comparison_uses_appearance_order_like_the_app(tmp_path, monkeypatch):
-    """The app plots FOVs in CSV appearance order (univar.py:16 plain .unique()),
-    not natural-sorted; the exported script must match."""
-    rng = np.random.default_rng(11)
-    # rows appear as img10, then img2, then img1 — natural sort would reorder these
-    appearance = ["img10", "img2", "img1"]
-    frames = []
-    for fov in appearance:
-        frames.append(
-            pd.DataFrame(
-                {
-                    "cell_id": [f"{fov}_{j}" for j in range(15)],
-                    "image_name": [fov] * 15,
-                    "treatment": ["ctrl"] * 15,
-                    "feature_a": rng.normal(1.0, 0.2, 15),
-                }
-            )
-        )
-    df = pd.concat(frames, ignore_index=True)
-    state = _base_state(
-        "FOV Comparison",
-        categorical_cols=["treatment"],
-        color_by=["treatment"],
-        method_params={"selected_var": "feature_a"},
-    )
-    ns = _run_script(tmp_path, state, df, monkeypatch)
-    assert ns["fovs"] == appearance  # appearance order, like the app
-    assert ns["fovs"] != ["img1", "img2", "img10"]  # natural sort would reorder
-    # the app's exact expression: df[fov_col].unique() in row order
-    assert ns["fovs"] == ns["df"][ns["fov_col"]].unique().tolist()
-
-
-# ---------------------------------------------------------------------------
 # Phasor K-Means — app and export must run the identical clustering
 # ---------------------------------------------------------------------------
 
@@ -1109,7 +1074,6 @@ def test_missing_analysed_column_warns_instead_of_raising(tmp_path, monkeypatch,
 
 def test_all_methods_generate_compilable_scripts():
     method_params = {
-        "FOV Comparison": {"selected_var": "feature_a"},
         "Feature Histogram": {
             "selected_var": "feature_a",
             "log_x": False,
@@ -1388,28 +1352,11 @@ def test_2d_log_axis_labels_match_app(tmp_path, monkeypatch):
     assert ns["ax_main"].get_ylabel() == "feature_b"
 
 
-def test_fov_skips_empty_color_fov_combinations(tmp_path, monkeypatch):
-    """App omits (color, FOV) combos with no data; export must not reserve a blank slot/label."""
-    rows = []
-    for i in range(10):
-        rows.append({"cell_id": f"a{i}", "image_name": "img1", "treatment": "A", "feature_a": float(i)})
-    for i in range(10):
-        rows.append({"cell_id": f"b{i}", "image_name": "img2", "treatment": "A", "feature_a": float(i)})
-    for i in range(10):
-        rows.append({"cell_id": f"c{i}", "image_name": "img2", "treatment": "B", "feature_a": float(i)})
-    df = pd.DataFrame(rows)
-    state = _base_state("FOV Comparison", categorical_cols=["treatment"], color_by=["treatment"],
-                        method_params={"selected_var": "feature_a"})
-    ns = _run_script(tmp_path, state, df, monkeypatch)
-    labels = [t.get_text() for t in ns["ax"].get_xticklabels()]
-    assert "img1\nB" not in labels  # B absent from img1 → no phantom slot
-    assert "img1\nA" in labels
-    assert "img2\nA" in labels and "img2\nB" in labels
-
-
-def test_fov_comparison_labels_a_blank_fov_na_and_prints_no_warning(tmp_path, monkeypatch):
-    """A blank FOV cell is an ordinary N/A level: the export labels it "N/A" and
-    prints no warning."""
+def test_a_blank_fov_cell_becomes_an_na_level_on_the_axis(tmp_path, monkeypatch):
+    """A blank FOV cell is an ordinary N/A level -- check_and_fix_df fills it, and
+    grouping by that column puts "N/A" on the axis. The export labels it and prints
+    no warning. Carried by Feature Comparison; the subject is the fill, not the
+    method."""
     rows = []
     for i in range(10):
         rows.append({"cell_id": f"a{i}", "image_name": "img1", "treatment": "A", "feature_a": float(i)})
@@ -1418,8 +1365,9 @@ def test_fov_comparison_labels_a_blank_fov_na_and_prints_no_warning(tmp_path, mo
     for i in range(10):
         rows.append({"cell_id": f"c{i}", "image_name": None, "treatment": "A", "feature_a": float(i)})
     df = pd.DataFrame(rows)
-    state = _base_state("FOV Comparison", categorical_cols=["treatment"], color_by=["treatment"],
-                        method_params={"selected_var": "feature_a"})
+    state = _base_state("Feature Comparison", categorical_cols=["treatment"],
+                        color_by=["image_name"],
+                        method_params=_feature_comparison_params())
     script = generate_script(state)
     assert "Could not find the FOV column" not in script
     assert "missing fov name" not in script
@@ -1520,8 +1468,8 @@ def _flim_df(seed=0, n_per_group=20):
 def test_export_inlines_a_single_feature_label_helper():
     """The export must reuse the app's helper (inlined once), never re-implement it."""
     state = _base_state(
-        "FOV Comparison", categorical_cols=["treatment"], color_by=["treatment"],
-        method_params={"selected_var": "Lifetime fit_nadh: t1"})
+        "Feature Comparison", categorical_cols=["treatment"], color_by=["treatment"],
+        method_params=_feature_comparison_params(selected_var="Lifetime fit_nadh: t1"))
     script = generate_script(state)
     assert script.count("def format_feature_label") == 1
     assert "format_feature_label(SELECTED_VAR" in script  # called with engine='mpl'
@@ -1533,18 +1481,18 @@ def test_export_modulation_label_matches_app_mpl(tmp_path, monkeypatch):
     df = _flim_df()
     df[col] = 1.8  # ns-scale modulation lifetime
     state = _base_state(
-        "FOV Comparison", categorical_cols=["treatment"], color_by=["treatment"],
-        method_params={"selected_var": col})
+        "Feature Comparison", categorical_cols=["treatment"], color_by=["treatment"],
+        method_params=_feature_comparison_params(selected_var=col))
     ns = _run_script(tmp_path, state, df, monkeypatch)
     assert ns["ax"].get_ylabel() == format_feature_label(col, engine="mpl")
     assert ns["ax"].get_ylabel() == r"nadh $τ_{\mathrm{mod}}$ (ns)"
 
 
-def test_export_fov_axis_label_matches_app(tmp_path, monkeypatch):
+def test_export_axis_label_matches_app(tmp_path, monkeypatch):
     col = "Lifetime fit_nadh: t1"
     state = _base_state(
-        "FOV Comparison", categorical_cols=["treatment"], color_by=["treatment"],
-        method_params={"selected_var": col})
+        "Feature Comparison", categorical_cols=["treatment"], color_by=["treatment"],
+        method_params=_feature_comparison_params(selected_var=col))
     ns = _run_script(tmp_path, state, _flim_df(), monkeypatch)
     assert format_feature_label(col) == "nadh τ₁ (ps)"        # app notation
     assert ns["ax"].get_ylabel() == format_feature_label(col)  # export == app
@@ -1646,7 +1594,6 @@ def test_feature_comparison_constant_group_keeps_uniform_jitter(tmp_path, monkey
 @pytest.mark.parametrize(
     "method, params, expected_title_fragment",
     [
-        ("FOV Comparison", {"selected_var": "feature_a"}, "by Field of View"),
         ("Feature Histogram",
          {"selected_var": "feature_a", "log_x": False, "apply_gmm": False,
           "intersection_threshold": False, "bin_width": None},
@@ -2267,21 +2214,6 @@ def test_separate_by_legend_counts_are_group_totals_not_section_subtotals(
 
 
 @pytest.mark.parametrize("show_counts", [True, False])
-def test_fov_comparison_legend_counts_match_the_app(tmp_path, monkeypatch, show_counts):
-    from src.vis import univar
-
-    df = _counts_df(_COUNTS)
-    _stub_streamlit_for_plots(monkeypatch, show_counts)
-    app_fig = univar.fov_comparison_plot(
-        df.copy(), "image_name", "feature_a", color_by=["treatment"])
-    state = _base_state("FOV Comparison", categorical_cols=["treatment"],
-                        color_by=["treatment"], show_group_counts=show_counts,
-                        method_params={"selected_var": "feature_a"})
-    ns = _run_script(tmp_path, state, df, monkeypatch)
-    assert _export_legend_labels(ns["ax"]) == _app_legend_labels(app_fig)
-
-
-@pytest.mark.parametrize("show_counts", [True, False])
 def test_histogram_legend_counts_match_the_app(tmp_path, monkeypatch, show_counts):
     from src.vis import univar
 
@@ -2418,7 +2350,6 @@ def test_export_inlines_the_apps_group_label_helper_rather_than_copying_it():
 
 @pytest.mark.parametrize("method,method_params", [
     ("Feature Comparison", None),
-    ("FOV Comparison", {"selected_var": "feature_a"}),
     ("Feature Histogram", {"selected_var": "feature_a", "log_x": False,
                            "apply_gmm": False, "bin_width": None}),
     ("2D Feature Distribution", {"selected_x": "feature_a", "selected_y": "feature_b",
@@ -2450,3 +2381,214 @@ def test_show_group_counts_defaults_off_when_not_captured():
         "Feature Comparison", categorical_cols=["treatment"], color_by=["treatment"],
         method_params=_feature_comparison_params()))
     assert "SHOW_GROUP_COUNTS = False" in script
+
+
+# ---------------------------------------------------------------------------
+# Collapse by — one point per replicate, in the app and in the script
+# ---------------------------------------------------------------------------
+
+def _replicate_df(n_per_dish=8, seed=17):
+    """Three dishes per treatment, two FOVs per dish, one day per dish.
+
+    `day` is constant within a dish (coarser, so a decoration survives the collapse);
+    `image_name` takes two values inside every dish (finer, so it cannot).
+    """
+    rng = np.random.default_rng(seed)
+    rows = []
+    for i, (dish, treatment, day) in enumerate([
+        ("D1", "ctrl", "Day 1"), ("D2", "drug", "Day 1"),
+        ("D3", "ctrl", "Day 2"), ("D4", "drug", "Day 2"),
+        ("D5", "ctrl", "Day 3"), ("D6", "drug", "Day 3"),
+    ]):
+        for j in range(n_per_dish):
+            rows.append({
+                "cell_id": f"{dish}_c{j}",
+                "dish": dish,
+                "treatment": treatment,
+                "day": day,
+                "image_name": f"{dish}_f{j % 2}",
+                "feature_a": float(rng.normal(1.0 + 0.3 * (treatment == "drug"), 0.2)),
+            })
+    return pd.DataFrame(rows)
+
+
+def _collapse_state(**mp):
+    return _base_state(
+        "Feature Comparison",
+        categorical_cols=["treatment", "dish", "day"],
+        color_by=["treatment"],
+        method_params=_feature_comparison_params(collapse_by="dish", **mp),
+    )
+
+
+def test_collapse_by_reaches_the_generated_script():
+    script = generate_script(_collapse_state())
+    assert "COLLAPSE_BY = 'dish'" in script
+    assert "def collapse_rows" in script
+
+
+def test_no_collapse_emits_no_constant_and_no_inlined_source():
+    """Off must stay byte-for-byte the old path, so no existing parity check moves."""
+    script = generate_script(_base_state(
+        "Feature Comparison", categorical_cols=["treatment"], color_by=["treatment"],
+        method_params=_feature_comparison_params()))
+    # On the emitted CODE, not the bare tokens: the shared bracket template carries a
+    # comment naming COLLAPSE_BY to explain its own nan guard, and a comment is not a
+    # constant. What must not appear is a definition or a call.
+    assert "COLLAPSE_BY =" not in script
+    assert "def collapse_rows" not in script
+    assert "collapse_rows(" not in script
+
+
+def test_the_script_inlines_the_apps_collapse_verbatim():
+    """Not a re-implementation: the same source, so the two cannot drift."""
+    import inspect
+    import textwrap
+
+    from src.collapse import collapse_rows
+
+    script = generate_script(_collapse_state())
+    assert textwrap.dedent(inspect.getsource(collapse_rows)).strip() in script
+
+
+def test_the_collapsed_points_match_the_app(tmp_path, monkeypatch):
+    """The headline check: same dots, same values, app and script."""
+    from src.collapse import collapse_rows
+
+    df = _replicate_df()
+    _stub_streamlit_for_plots(monkeypatch, show_counts=False)
+    collapsed, label_col, _varied = collapse_rows(
+        df.copy(), "dish", ["treatment"], "cell_id")
+    app_fig = _app_feature_comparison_fig_collapsed(collapsed, label_col, monkeypatch)
+
+    ns = _run_script(tmp_path, _collapse_state(), df, monkeypatch)
+
+    app_y = sorted(round(float(y), 9)
+                   for trace in app_fig.data if getattr(trace, "mode", None)
+                   for y in (trace.y if trace.y is not None else []))
+    exported = sorted(round(float(y), 9)
+                      for coll in _nonempty_collections(ns["ax"])
+                      for y in coll.get_offsets()[:, 1])
+    assert len(exported) == 6                     # six dishes, not 48 cells
+    assert exported == app_y
+
+
+def _app_feature_comparison_fig_collapsed(collapsed, label_col, monkeypatch):
+    import contextlib
+
+    import streamlit as st
+
+    from src.vis import univar
+
+    monkeypatch.setattr(st, "columns", lambda spec, **kw: tuple(
+        contextlib.nullcontext() for _ in (spec if isinstance(spec, list) else range(spec))))
+    monkeypatch.setattr(st, "checkbox", lambda label, value=False, **kw: value)
+    monkeypatch.setattr(univar, "get_context_theme_color", lambda: "black")
+    return univar.feature_comparison_plot(
+        collapsed, label_col, None, "feature_a", color_by=["treatment"],
+        row_id_label="dish")
+
+
+def test_the_collapse_runs_after_the_nan_drop(tmp_path, monkeypatch):
+    """`n` must count the cells that actually contributed to the mean, and the mean
+    must be over those cells only. Collapse first and both are wrong -- silently, on
+    a plot that still looks entirely reasonable."""
+    df = _replicate_df()
+    df.loc[df["cell_id"] == "D1_c0", "feature_a"] = np.nan
+    survivors = df[(df["dish"] == "D1") & df["feature_a"].notna()]["feature_a"]
+
+    ns = _run_script(tmp_path, _collapse_state(), df, monkeypatch)
+
+    row = ns["df"][ns["df"]["dish"] == "D1"].iloc[0]
+    assert row["feature_a"] == pytest.approx(survivors.mean())
+    assert "(n=7)" in row[[c for c in ns["df"].columns if c.startswith("dish (n")][0]]
+
+
+def test_the_collapse_runs_before_the_log(tmp_path, monkeypatch):
+    """The app logs inside feature_comparison_plot, i.e. after the page collapsed:
+    log10(mean), never mean(log10). The two differ by Jensen's inequality."""
+    df = _replicate_df()
+    plain = _run_script(tmp_path, _collapse_state(), df, monkeypatch)
+    logged = _run_script(tmp_path, _collapse_state(log_y=True), df, monkeypatch)
+
+    got = logged["df"].set_index("dish")["feature_a"]
+    expected = np.log10(plain["df"].set_index("dish")["feature_a"] + 1e-6)
+    pd.testing.assert_series_equal(got, expected)
+
+
+def test_the_encoding_maps_are_built_on_the_collapsed_frame(tmp_path, monkeypatch):
+    """_build_visual_encoding must run AFTER the collapse -- otherwise the colour and
+    count maps describe cells while the points are replicates."""
+    ns = _run_script(tmp_path, _collapse_state(), _replicate_df(), monkeypatch)
+    counts = ns["df"].groupby("_color_group").size().to_dict()
+    assert counts == {"ctrl": 3, "drug": 3}
+
+
+def test_a_hand_edited_collapse_explains_a_channel_it_has_to_switch_off(tmp_path, monkeypatch, capsys):
+    """The app resolves the decoration channels before capture, so this guard is a
+    no-op on generated state. It is here for the "standalone, EDITABLE script"
+    promise: someone who sets COLLAPSE_BY by hand gets a printed reason rather than a
+    KeyError out of df[SHAPE_BY].unique()."""
+    state = _base_state(
+        "Feature Comparison", categorical_cols=["treatment", "dish", "day"],
+        color_by=["treatment"], shape_by="image_name",
+        method_params=_feature_comparison_params(collapse_by="dish"))
+    ns = _run_script(tmp_path, state, _replicate_df(), monkeypatch)
+
+    out = capsys.readouterr().out
+    assert "SHAPE_BY is off" in out
+    assert "covers several image_name values" in out
+    assert "cannot be further divided" in out
+    assert ns["SHAPE_BY"] is None
+
+
+def test_a_decoration_coarser_than_the_replicate_still_applies(tmp_path, monkeypatch):
+    """`day` is one value per dish, so a collapsed dot can carry it -- the case that
+    makes Shape by worth keeping on offer at all."""
+    state = _base_state(
+        "Feature Comparison", categorical_cols=["treatment", "dish", "day"],
+        color_by=["treatment"], shape_by="day",
+        method_params=_feature_comparison_params(collapse_by="dish"))
+    ns = _run_script(tmp_path, state, _replicate_df(), monkeypatch)
+
+    assert ns["SHAPE_BY"] == "day"
+    assert sorted(ns["df"]["day"].unique()) == ["Day 1", "Day 2", "Day 3"]
+
+
+def test_a_collapsed_script_compiles_and_runs(tmp_path, monkeypatch):
+    ns = _run_script(tmp_path, _collapse_state(add_boxplot=True), _replicate_df(), monkeypatch)
+    assert len(ns["df"]) == 6
+
+
+def _thin_group_df(seed=23):
+    """`ctrl` has one dish, `drug` has three -- so collapsing by dish leaves the CONTROL
+    group with a single point. Control rather than treatment on purpose: Glass's delta
+    divides by the control group's spread alone, so only this way is it undefined for
+    both statistics rather than just Cohen's d."""
+    rng = np.random.default_rng(seed)
+    rows = []
+    for dish, treatment in [("D1", "ctrl"), ("D2", "drug"), ("D3", "drug"), ("D4", "drug")]:
+        for j in range(8):
+            rows.append({"cell_id": f"{dish}_c{j}", "dish": dish, "treatment": treatment,
+                         "image_name": f"{dish}_f{j % 2}",
+                         "feature_a": float(rng.normal(1.0, 0.2))})
+    return pd.DataFrame(rows)
+
+
+@pytest.mark.parametrize("method", ["Glass's Delta", "Absolute Cohen's d"])
+def test_an_undefined_effect_size_draws_nothing_in_the_script_either(tmp_path, monkeypatch, method):
+    """The app's guard is POSITIVE (`draw if abs(es) >= threshold`) so a nan falls
+    through it; the script's was NEGATIVE (`skip if abs(es) < threshold`), and
+    `abs(nan) < t` is *also* False -- so the two are opposites everywhere except nan,
+    where both are False and the script drew a bracket reading "Δ=nan" that the app
+    never showed. Collapse by makes this routine: one dish in a treatment is one point."""
+    state = _base_state(
+        "Feature Comparison", categorical_cols=["treatment", "dish"],
+        color_by=["treatment"],
+        method_params=_feature_comparison_params(
+            collapse_by="dish", effect_size_method=method, mean_or_median="Mean",
+            effect_size_threshold=0.0))
+    ns = _run_script(tmp_path, state, _thin_group_df(), monkeypatch)
+
+    drawn = [t.get_text() for t in ns["ax"].texts]
+    assert not any("nan" in text.lower() for text in drawn), drawn

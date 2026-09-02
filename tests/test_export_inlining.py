@@ -24,15 +24,17 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src import dataset_io
+from src import collapse, dataset_io
 from src.export_script import generate_script
 
-# The helpers src/export_script.py::_build_data_loading inlines verbatim.
+# The helpers src/export_script.py inlines verbatim: _build_data_loading's four, and
+# _build_collapse's one.
 INLINED_HELPERS = (
     dataset_io.drop_unnamed_columns,
     dataset_io.check_and_fix_df,
     dataset_io.resolve_row_id_col,
     dataset_io.coerce_majority_numeric_cols,
+    collapse.collapse_rows,
 )
 
 
@@ -40,9 +42,11 @@ def _module_constants_read_by(func):
     """Module-level constants `func` closes over — not imports, not other helpers.
 
     Modules and functions are excluded because the generated script gets those
-    from its own import block and from the other inlined helpers.
+    from its own import block and from the other inlined helpers. The owning module
+    is resolved from the function itself, so a helper inlined from anywhere else is
+    checked against its own namespace rather than dataset_io's.
     """
-    namespace = vars(dataset_io)
+    namespace = vars(sys.modules[func.__module__])
     return {
         name for name in func.__code__.co_names
         if name in namespace

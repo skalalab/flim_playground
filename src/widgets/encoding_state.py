@@ -49,3 +49,28 @@ def color_multiselect_label(show_subcolor, as_colour):
     ``check_encoding_row`` asserts.
     """
     return "Group by" if (show_subcolor and as_colour) else "Color by"
+
+
+def drop_varying_channels(channels, varied):
+    """Resolve the decoration channels against the columns a collapse dropped.
+
+    A collapsed dot is a mean over several cells, so a decoration only means anything
+    when its column holds ONE value in every collapse group. ``varied`` is what
+    ``collapse.collapse_rows`` reports it dropped for failing that test, and a channel
+    pointing at such a column has nothing to look up -- not a missing value, but
+    several crushed into one row.
+
+    Resolving it here rather than inside the plot is what keeps the export honest:
+    ``_export_script_button`` captures whatever the page holds, so the generated script
+    receives ``shape_by=None`` already decided and needs no collapse logic of its own.
+
+    Returns ``(kept, dropped)`` -- the same ``{role: column}`` mapping with offenders
+    set to ``None``, and just the offenders, so the caller can say which channel it
+    switched off and why.
+    """
+    varied = set(varied)
+    kept = {role: (None if column in varied else column)
+            for role, column in channels.items()}
+    dropped = {role: column for role, column in channels.items()
+               if column and column in varied}
+    return kept, dropped

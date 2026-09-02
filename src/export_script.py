@@ -207,7 +207,6 @@ def generate_script(state: dict) -> str:
     builders = {
         "Feature Comparison": _build_feature_comparison,
         "Feature Histogram": _build_feature_histogram,
-        "FOV Comparison": _build_fov_comparison,
         "2D Feature Distribution": _build_2d_distribution,
         "Phasor Plot": _build_phasor_plot,
         "Dimension Reduction": _build_dimension_reduction,
@@ -343,11 +342,13 @@ def _build_config_section(state: dict) -> str:
     else:
         lines.append("ANALYSIS_COLUMNS = None  # not captured — keep every column")
 
-    if method in ("Feature Comparison", "Feature Histogram", "FOV Comparison"):
+    if method in ("Feature Comparison", "Feature Histogram"):
         lines.append(f"SELECTED_VAR = {mp.get('selected_var')!r}")
     if method == "Feature Comparison":
         lines.append(f"SEPARATE_BY = {state.get('separate_by')!r}")
         lines.append(f"SUBCOLOR_BY = {state.get('subcolor_by')!r}")
+        if mp.get("collapse_by"):
+            lines.append(f"COLLAPSE_BY = {mp['collapse_by']!r}  # one point per value, per x group, holding the MEAN of its cells")
         lines.append(f"EFFECT_SIZE_METHOD = {mp.get('effect_size_method', 'None')!r}")
         lines.append(f"MEAN_OR_MEDIAN = {mp.get('mean_or_median')!r}")
         lines.append(f"STATISTICAL_TEST = {mp.get('statistical_test', 'None')!r}")
@@ -578,63 +579,6 @@ print("Figure saved to {fname}.svg")
 # only for Matplotlib-specific rendering that has no codebase equivalent.
 # ---------------------------------------------------------------------------
 
-def _build_fov_comparison(state: dict) -> str:
-    fov_col = state["fov_name_col"]
-    return _build_visual_encoding(state, overlap_point=False) + f"\nfov_col = {fov_col!r}\n" + """
-# ============================================================
-# FOV Comparison — Box Plots per FOV
-# ============================================================
-
-df = df[df[SELECTED_VAR].notna()]
-
-fig, ax = plt.subplots(figsize=(12, 6))
-
-# FOVs in CSV appearance order, matching the app (univar.py: df[fov_name_col].unique())
-fovs = df[fov_col].unique().tolist()
-positions = []
-tick_labels = []
-
-offset = 0
-for fov_i, fov in enumerate(fovs):
-    fov_df = df[df[fov_col] == fov]
-    # Only (color, FOV) combos that actually have data get a box + slot, matching the app.
-    present = [(g, fov_df[fov_df["_color_group"] == g][SELECTED_VAR].dropna().values)
-               for g in color_groups]
-    present = [(g, d) for g, d in present if len(d) > 0]
-    if not present:
-        continue
-
-    pos = list(range(offset, offset + len(present)))
-    bp = ax.boxplot([d for _, d in present], positions=pos,
-                    widths=0.6, patch_artist=True, manage_ticks=False)
-    for patch, (g, _) in zip(bp['boxes'], present):
-        c = color_map[g][:3]
-        patch.set_facecolor((*c, 0.5))
-        patch.set_edgecolor(c)
-    for element in ('whiskers', 'caps', 'medians'):
-        for line in bp[element]:
-            line.set_color('black')
-
-    tick_labels.extend([f"{fov}\\n{g}" for g, _ in present])
-    positions.extend(pos)
-    offset += len(present) + 1
-
-ax.set_xticks(positions)
-ax.set_xticklabels(tick_labels, fontsize=AXIS_LABEL_SIZE - 2, rotation=45, ha='right')
-ax.set_ylabel(format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
-ax.set_title(f"Distribution of {format_feature_label(SELECTED_VAR, engine='mpl')} by Field of View", fontsize=AXIS_LABEL_SIZE)
-ax.tick_params(axis='y', labelsize=AXIS_LABEL_SIZE - 2)
-
-# Counted on the NaN-filtered frame above, matching the app's
-# df.dropna(subset=[selected_var]).groupby(...).size() (univar.py fov_comparison_plot).
-group_counts = df.groupby("_color_group").size().to_dict()
-for g in color_groups:
-    ax.scatter([], [], c=[color_map[g][:3]], s=50,
-               label=format_group_label(g, group_counts.get(g), SHOW_GROUP_COUNTS, engine='mpl'))
-ax.legend(fontsize=LEGEND_SIZE)
-"""
-
-
 def _build_feature_histogram(state: dict) -> str:
     from src.vis.helpers import _find_best_gmm, find_intersection
     from src.vis.univar import _assign_subpopulation_labels
@@ -824,6 +768,68 @@ ax.legend(fontsize=LEGEND_SIZE)
 """
 
 
+def _build_collapse(state: dict) -> str:
+    """The NaN drop, the optional collapse, and the log transform -- emitted BEFORE
+    _build_visual_encoding.
+
+    Order is the whole point. The collapse must run *after* the SELECTED_VAR NaN drop,
+    so `n` counts the cells that actually contributed to the mean, and *before* the
+    encoding block, which builds `_color_group`, `color_groups` and the colour/shape/
+    opacity maps -- those must describe replicates, not cells. Log last, because the app
+    logs inside feature_comparison_plot, i.e. after the page has collapsed: log10(mean),
+    never mean(log10).
+
+    Hoisting the NaN drop out of the FC template also closes a latent divergence: the
+    export used to build color_groups from the pre-drop frame while the app builds it
+    from the post-drop one, so a colour group that is all-NaN in the feature got an x
+    slot in the script and none in the app.
+
+    Plain concatenation rather than an f-string: the emitted guards below interpolate
+    into their own f-strings, and doubling every brace through two layers is exactly
+    where these templates break.
+    """
+    from src.collapse import collapse_rows
+
+    header = """
+df = df[df[SELECTED_VAR].notna()]
+"""
+    if not state.get("method_params", {}).get("collapse_by"):
+        return header + _LOG_Y_BLOCK
+
+    # The three guards are no-ops on captured state -- the app resolved each channel to
+    # None before the export ran. They are here for the "standalone, EDITABLE script"
+    # promise: someone who hand-edits COLLAPSE_BY gets a printed reason instead of a
+    # KeyError out of df[SHAPE_BY].unique() in the encoding block below.
+    return header + """
+# Collapse to one point per replicate (extracted from FLIM Playground source)
+""" + _extract_source(collapse_rows) + """
+
+df, _label_col, _varied = collapse_rows(
+    df, COLLAPSE_BY, [*COLOR_BY, SEPARATE_BY], ROW_ID_COL)
+for _channel, _name in (("SHAPE_BY", SHAPE_BY), ("OPACITY_BY", OPACITY_BY),
+                        ("SUBCOLOR_BY", SUBCOLOR_BY)):
+    if _name in _varied:
+        print("NOTE: " + _channel + " is off -- one " + str(COLLAPSE_BY)
+              + " point covers several " + str(_name)
+              + " values, so it cannot be further divided.")
+SHAPE_BY = None if SHAPE_BY in _varied else SHAPE_BY
+OPACITY_BY = None if OPACITY_BY in _varied else OPACITY_BY
+SUBCOLOR_BY = None if SUBCOLOR_BY in _varied else SUBCOLOR_BY
+""" + _LOG_Y_BLOCK
+
+
+# Shared by both branches of _build_collapse, and moved here out of the Feature
+# Comparison template so the collapse can sit between the NaN drop and the log.
+_LOG_Y_BLOCK = """
+if LOG_Y:
+    if (df[SELECTED_VAR] < 0).any():
+        print("WARNING: Cannot apply log to " + str(SELECTED_VAR) + ": contains negative values.")
+    else:
+        df = df.copy()
+        df[SELECTED_VAR] = np.log10(df[SELECTED_VAR] + 1e-6)
+"""
+
+
 def _build_feature_comparison(state: dict) -> str:
     from src.vis import subcolor_palette
     from src.vis.helpers import (
@@ -856,7 +862,7 @@ def _build_feature_comparison(state: dict) -> str:
         _density_at_points,
     )
 
-    return _build_visual_encoding(state, overlap_point=False) + f"""
+    return _build_collapse(state) + _build_visual_encoding(state, overlap_point=False) + f"""
 # ============================================================
 # Feature Comparison — Sina Plot
 # ============================================================
@@ -867,14 +873,6 @@ from scipy.stats import gaussian_kde, ttest_ind, median_abs_deviation
 
 # Effect size + bracket positioning functions (extracted from FLIM Playground source)
 {effect_size_src}
-
-df = df[df[SELECTED_VAR].notna()]
-if LOG_Y:
-    if (df[SELECTED_VAR] < 0).any():
-        print(f"WARNING: Cannot apply log to {{SELECTED_VAR}}: contains negative values.")
-    else:
-        df = df.copy()
-        df[SELECTED_VAR] = np.log10(df[SELECTED_VAR] + 1e-6)
 
 # --- Separate_by logic ---
 separate_groups = [None]
@@ -1122,7 +1120,15 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
                     es = glass_delta(g1_data, g2_data, MEAN_OR_MEDIAN)
                 else:
                     es = cohens_d(g1_data, g2_data, MEAN_OR_MEDIAN)
-                if abs(es) < EFFECT_SIZE_THRESHOLD:
+                # `pd.isna` first, and not merely `abs(es) < THRESHOLD` inverted: the
+                # app's guard is POSITIVE (src/vis/helpers.py, "draw if abs(es) >=
+                # threshold"), so an undefined effect size falls through it and nothing is
+                # drawn. Inverting it to a skip makes the two agree on every ordered value
+                # and DISAGREE on nan, where both comparisons are False -- so this branch
+                # used to fall through and draw a bracket reading "\u0394=nan" that the app
+                # never showed. glass_delta and cohens_d return nan below two points, which
+                # COLLAPSE_BY makes routine.
+                if pd.isna(es) or abs(es) < EFFECT_SIZE_THRESHOLD:
                     continue
                 txt = f"{{es:.2f}}{{star}}" if star else f"\\u0394={{es:.2f}}"
             else:

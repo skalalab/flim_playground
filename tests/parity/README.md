@@ -18,10 +18,10 @@ These sources are tracked; everything they write under `_work/` is gitignored.
 uv run python tests/parity/run_all.py           # everything, one verdict
 uv run python tests/parity/parity_phasor.py     # phasor only
 uv run python tests/parity/parity_methods.py    # all other plot methods
-uv run python tests/parity/parity_methods.py 2d # one method: fov|hist|gmm|fc|2d|dr|prune
+uv run python tests/parity/parity_methods.py 2d # one method: hist|gmm|fc|2d|dr|prune
 uv run python tests/parity/parity_classify.py   # classification pipeline
 uv run python tests/parity/parity_controls.py   # every control, each option
-uv run python tests/parity/parity_controls.py 2d  # one section: shared|filters|enc|fov|hist|fc|subcolor|2d|phasor|dr|clf
+uv run python tests/parity/parity_controls.py 2d  # one section: shared|filters|enc|hist|fc|subcolor|2d|phasor|dr|clf
 ```
 
 Generated scripts and their outputs land in `tests/parity/_work/` — safe to delete.
@@ -64,7 +64,7 @@ Two things make this work headlessly:
 | Harness | Checks |
 |---|---|
 | `parity_phasor` | k-means label per cell, hull polygons, centroids, harmonic-scaled lifetime markers, frequency annotation, title — for harmonics 1 and 2, with and without clustering |
-| `parity_methods` | FOV boxes/title/tick sizing; histogram bin edges + per-group counts; `GMM_group` per cell on both the intersection and hard-assignment paths; feature-comparison group counts/y-values/jitter, x positions, tick labels, `separate_by` section headers and dividers, effect-size defaults and title; 2D scatter and marginals for all three marginal types; PCA and UMAP embeddings; the `ANALYSIS_COLUMNS` prune |
+| `parity_methods` | histogram bin edges + per-group counts; `GMM_group` per cell on both the intersection and hard-assignment paths; feature-comparison group counts/y-values/jitter (uncollapsed and collapsed), x positions, tick labels, `separate_by` section headers and dividers, effect-size defaults and title; 2D scatter and marginals for all three marginal types; PCA and UMAP embeddings; the `ANALYSIS_COLUMNS` prune |
 | `parity_classify` | identical splits, predictions and metrics for Random Forest and threshold-tuned Logistic Regression |
 | `parity_controls` | every control on the page, each option in turn — see below |
 
@@ -99,11 +99,22 @@ stays quick:
   `.unique().astype(str)`, so if either side stopped normalising, a numeric column would
   order differently and a missing one would split into `"nan"` on one side and `"N/A"` on
   the other. Checked on shape, on opacity, and on both at once
-- **FOV Comparison** — feature choice, multi-column colour
 - **Feature Histogram** — `log_x`, bin width, GMM on/off, intersection threshold, GMM max
   components, GMM min weight
 - **Feature Comparison** — `log_y`, boxplot, connect means, both effect sizes ×
   mean/median, both t-tests, selected pairs, custom order, shape/opacity, all at once
+- **Collapse by** — one point per replicate, per x group, holding the MEAN of its
+  cells. The frame the plot sees is a different SHAPE from the filtered one, so every
+  downstream number moves at once: point count, box quartiles, effect-size n. Cases:
+  `dish` alone, with `separate_by`, with `subcolor_by` on the same column (the
+  SuperPlot — one colour per replicate held across every x group), with `log_y`, with
+  boxplot + effect size, and with a decoration FINER than the replicate
+  (`shape_by=image_name`), which the collapse drops on both sides. **Set it on both
+  halves of `run_fc`** — the plot-function call AND `method_params` — or the harness
+  compares a collapsed export against an uncollapsed app and reports a point-count
+  mismatch that reads like a jitter bug. The collapse runs after the `notna` drop and
+  before the encoding block; that order is what makes `n` count the contributing
+  cells and the colour map describe replicates
 - **Subcolor** (own section, `parity_controls.py subcolor`) — the channel that takes
   colour away from the x-axis group and gives it to a nested value, Feature Comparison
   only. What needs pinning is what is global rather than per-group: one colour and one

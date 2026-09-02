@@ -5,7 +5,7 @@ walks the CONTROL surface instead: every widget on the page, each option in turn
 per-method baseline. Runs on a filtered subset (see SUBSET) so the matrix stays quick —
 the full-size runs live in parity_methods.py.
 
-Run:  uv run python tests/parity/parity_controls.py [all|shared|filters|enc|fc|hist|fov|2d|phasor|dr|clf]
+Run:  uv run python tests/parity/parity_controls.py [all|shared|filters|enc|fc|hist|2d|phasor|dr|clf]
 """
 import sys
 from pathlib import Path
@@ -207,19 +207,6 @@ def _load(ctrl):
                               "numerical_filters": ctrl.get("numerical_filters", [])})
 
 
-def run_fov(ctrl, tag):
-    patch_streamlit()
-    from src.vis.univar import fov_comparison_plot
-
-    df = _load(ctrl)
-    fig = fov_comparison_plot(df.copy(), "image_name", ctrl.get("selected_var", VAR),
-                              ctrl.get("color_by", ["treatment"]),
-                              colormap=ctrl.get("colormap", "tab10"))
-    state = _state("FOV Comparison", ctrl, {"selected_var": ctrl.get("selected_var", VAR)})
-    ns, _ = run_export(state, ctrl.get("csv_path", CSV), _wd(tag))
-    return fig, ns["ax"], ns, state
-
-
 def run_hist(ctrl, tag):
     widgets = {"Use intersection as threshold": ctrl.get("intersection_threshold", False),
                "Max Components": ctrl.get("gmm_max_components", 3),
@@ -262,19 +249,41 @@ def run_fc(ctrl, tag):
 
     df = _load(ctrl)
     plot_df = df.copy()
+    # data_analysis.py collapses BEFORE the plot and BEFORE the log, and resolves the
+    # decoration channels against what the collapse dropped. Both halves of that have to
+    # happen here, or this harness compares a collapsed export against an uncollapsed app
+    # and reports a point-count mismatch that reads like a jitter bug.
+    collapse_by = ctrl.get("collapse_by")
+    row_id_col, row_id_label, fov_col = "cell_id", "ID", "image_name"
+    shape_by, opacity_by = ctrl.get("shape_by"), ctrl.get("opacity_by")
+    subcolor_by = ctrl.get("subcolor_by")
+    if collapse_by:
+        from src.collapse import collapse_rows
+        from src.dataset_io import resolve_effective_fov_col
+        from src.widgets.encoding_state import drop_varying_channels
+
+        plot_df, row_id_col, varied = collapse_rows(
+            plot_df, collapse_by,
+            [*ctrl.get("color_by", ["treatment"]), ctrl.get("separate_by")], "cell_id")
+        row_id_label = collapse_by
+        fov_col = resolve_effective_fov_col(plot_df, "image_name")
+        channels, _dropped = drop_varying_channels(
+            {"shape": shape_by, "opacity": opacity_by, "subcolor": subcolor_by}, varied)
+        shape_by, opacity_by, subcolor_by = (
+            channels["shape"], channels["opacity"], channels["subcolor"])
     log_y = ctrl.get("log_y", False)
     if log_y:
         plot_df[VAR] = np.log10(plot_df[VAR] + 1e-6)
     fig = feature_comparison_plot(
-        plot_df, unique_row_id_col="cell_id", fov_name_col="image_name", selected_var=VAR,
+        plot_df, unique_row_id_col=row_id_col, fov_name_col=fov_col, selected_var=VAR,
         color_by=ctrl.get("color_by", ["treatment"]),
-        opacity_by=ctrl.get("opacity_by"), shape_by=ctrl.get("shape_by"),
+        opacity_by=opacity_by, shape_by=shape_by,
         separate_by=ctrl.get("separate_by"), colormap=ctrl.get("colormap", "tab10"),
         effect_size_method=ctrl.get("effect_size_method", "None"),
         mean_or_median=ctrl.get("mean_or_median"),
         statistical_test=ctrl.get("statistical_test", "None"),
         custom_order=ctrl.get("custom_order"),
-        subcolor_by=ctrl.get("subcolor_by"))
+        subcolor_by=subcolor_by, row_id_label=row_id_label)
     from src.export_script import get_effect_size_threshold_capture
 
     state = _state("Feature Comparison", ctrl, {
@@ -288,7 +297,10 @@ def run_fc(ctrl, tag):
         "effect_size_threshold": get_effect_size_threshold_capture(
             {}, ctrl.get("effect_size_method", "None"), VAR, ctrl.get("separate_by")),
         "selected_pairs": ctrl.get("selected_pairs"),
-        "custom_order": ctrl.get("custom_order")})
+        "custom_order": ctrl.get("custom_order"),
+        "collapse_by": collapse_by})
+    state["shape_by"], state["opacity_by"], state["subcolor_by"] = (
+        shape_by, opacity_by, subcolor_by)
     ns, _ = run_export(state, ctrl.get("csv_path", CSV), _wd(tag))
     return fig, ns["ax"], ns, state
 
@@ -547,14 +559,6 @@ def encoding_controls():
             f"app={_alphas_app(fig).min()} exp={_alphas_exp(ax).min()}")
 
 
-def fov_controls():
-    print("\n=== FOV Comparison controls ===")
-    case(run_fov, "fov: default", {}, points=False)
-    case(run_fov, "fov: other feature",
-         {"selected_var": "Intensity morphology_nadh: area"}, points=False)
-    case(run_fov, "fov: color_by=2", {"color_by": ["treatment", "dish"]}, points=False)
-
-
 def hist_controls():
     print("\n=== Feature Histogram controls ===")
     for tag, ctrl in [
@@ -609,6 +613,21 @@ def fc_controls():
                             "mean_or_median": "mean",
                             "statistical_test": "Welch's t-test",
                             "separate_by": "cell_line", "shape_by": "dish"}),
+        # Collapse by: one point per replicate, per x group, holding the MEAN of its
+        # cells. The frame the plot sees is a different SHAPE from the filtered one, so
+        # every downstream number moves -- point count, box quartiles, effect size n.
+        ("fc: collapse=dish", {"collapse_by": "dish"}),
+        ("fc: collapse+separate_by", {"collapse_by": "dish", "separate_by": "cell_line"}),
+        # The SuperPlot: one colour per replicate, held across every x group.
+        ("fc: collapse+subcolor same column", {"collapse_by": "dish", "subcolor_by": "dish"}),
+        ("fc: collapse+log_y", {"collapse_by": "dish", "log_y": True}),
+        ("fc: collapse+boxplot+effect", {"collapse_by": "dish", "add_boxplot": True,
+                                         "effect_size_method": "Absolute Cohen's d",
+                                         "mean_or_median": "mean"}),
+        # A decoration FINER than the replicate: the collapse drops it, and both sides
+        # must agree that the channel is off rather than one drawing symbols.
+        ("fc: collapse drops a finer decoration", {"collapse_by": "dish",
+                                                   "shape_by": "image_name"}),
     ]:
         case(run_fc, tag, ctrl)
 
@@ -932,7 +951,6 @@ SECTIONS = {
     "shared": shared_controls,
     "filters": filter_controls,
     "enc": encoding_controls,
-    "fov": fov_controls,
     "hist": hist_controls,
     "fc": fc_controls,
     "subcolor": subcolor_controls,

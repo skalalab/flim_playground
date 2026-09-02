@@ -61,6 +61,13 @@ def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
 
 def glass_delta(group1, group2, mean_or_median):
     # group1 should be the control
+    # Glass's delta divides by the CONTROL group's spread alone, so only group1 needs a
+    # degree of freedom. Below two, np.std(ddof=1) is itself nan and the arithmetic
+    # already returns nan -- but silently in the app and through a bare numpy
+    # RuntimeWarning in the exported script. Collapse by makes this reachable with
+    # ordinary data (two replicates in a slot), so say it once, here.
+    if len(group1) < 2:
+        return np.nan
     if mean_or_median == "Mean": 
         diff = np.mean(group2) - np.mean(group1)
         group1_sd = np.std(group1, ddof=1)  # Using Bessel's correction with ddof=1
@@ -78,6 +85,14 @@ def cohens_d(group1, group2, mean_or_median):
     """Compute absolute Cohen's d (|d|) for two independent samples."""
     # sample sizes
     n1, n2 = len(group1), len(group2)
+
+    # BOTH groups need a degree of freedom: the pooled variance weights each group's own
+    # np.var(..., ddof=1), which is undefined at one point. Guarding the SUM would leave
+    # n1=1, n2=3 to survive on pandas returning NaN from Series.var of one element -- the
+    # same call on a numpy array emits a bare RuntimeWarning instead, and the exported
+    # script is where that would print. See glass_delta, which needs only group1.
+    if n1 < 2 or n2 < 2:
+        return np.nan
 
     if mean_or_median == "Mean": 
         # mean difference
@@ -323,7 +338,7 @@ def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_g
         align="center"
     )
 
-def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, annotation_color, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None, statistical_test: str = "None", global_data_range=None):
+def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, annotation_color, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None, statistical_test: str = "None", global_data_range=None, section_label=None):
     """
     Adds effect size annotations to the figure.
     Manages selection of pairs, calculation of effect sizes, and calls annotation plotting.
@@ -333,6 +348,8 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
         selected_pairs: Optional pre-selected pairs to avoid showing the widget again
         threshold: Optional pre-set threshold to avoid showing the widget again
         global_data_range: Optional tuple (global_min, global_max) for consistent spacing across sections
+        section_label: Optional separate_by section name, so the thin-group notice below
+            can say which section it is talking about (this runs once per section)
     """
     if not all_possible_pairs:
         return
@@ -340,6 +357,34 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
     # Only show widget if pairs aren't pre-selected
     if selected_pairs is None:
         selected_pairs = comparison_pair_widget(all_possible_pairs)
+
+    # A group with fewer than two points has no spread, so glass_delta and cohens_d
+    # return nan, ttest_ind returns a nan p-value, and NOTHING is drawn -- leaving no way
+    # to tell "no difference" from "not computable". Say it, and only about the pairs the
+    # user actually asked for. Collapse by makes this ordinary rather than exotic: one
+    # dish in a treatment is one point.
+    if selected_pairs and (effect_size_method != "None" or statistical_test != "None"):
+        counts = {}
+        for pair in selected_pairs:
+            for group in pair:
+                if group not in counts:
+                    counts[group] = int(
+                        df[df[group_col_name] == group][selected_var].notna().sum())
+        thin = [group for group in compare_groups if counts.get(group, 2) < 2]
+        thin += [group for group in counts if counts[group] < 2 and group not in thin]
+        if thin:
+            named = ", ".join(
+                f"`{group}` ({counts[group]} point{'' if counts[group] == 1 else 's'})"
+                for group in thin)
+            where = f" in {section_label}" if section_label else ""
+            asked = []
+            if effect_size_method != "None":
+                asked.append("effect size")
+            if statistical_test != "None":
+                asked.append("p-value")
+            st.warning(
+                f"No {' or '.join(asked)} for pairs involving {named}{where} — a spread "
+                f"needs at least two points, so nothing is drawn for them.")
 
     # Precompute star texts if a statistical test is requested
     pair_to_star = {}

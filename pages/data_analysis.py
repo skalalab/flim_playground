@@ -7,6 +7,7 @@ import streamlit as st
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.classify import run_classification
+from src.collapse import collapse_rows
 from src.dataset_io import SUPPORTED_SUFFIXES, load_table, resolve_effective_fov_col
 from src.emojis import sad_emoji
 from src.export_script import generate_script, get_effect_size_threshold_capture
@@ -24,7 +25,6 @@ from src.vis.univar import (
     feature_comparison_plot,
     feature_gmm_plot,
     feature_histogram_plot,
-    fov_comparison_plot,
 )
 from src.widgets.analysis_config_widgets import (
     dataset_config_widget,
@@ -38,6 +38,7 @@ from src.widgets.classification_widgets import (
     classifier_hyperparams_widget,
     classifier_options_widget,
 )
+from src.widgets.encoding_state import drop_varying_channels
 from src.widgets.filter_widgets import filters_widget, selection_key
 from src.widgets.multiselect_modes import ALL_LABEL, chosen_items
 from src.widgets.selection_widgets import (
@@ -176,6 +177,9 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
             # "A vs B" labels from comparison_pair_widget; None → all pairs
             "selected_pairs": list(st.session_state["compare_pairs"]) if "compare_pairs" in st.session_state else None,
             "custom_order": custom_order if custom_order else None,
+            # Feature-Comparison-only, so it rides method_params rather than a top-level
+            # state key -- the same path log_y/add_boxplot/connect_means take.
+            "collapse_by": extra_params.get("collapse_by"),
         }
     elif method == "Feature Histogram":
         sv = extra_params.get("selected_var") or st.session_state.get("_fh_selected_var")
@@ -189,8 +193,6 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
             "gmm_max_components": int(st.session_state.get("fit_gmm_max_components", 3)),
             "gmm_min_weight_threshold": float(st.session_state.get("fit_gmm_min_weight_threshold", 0.1)),
         }
-    elif method == "FOV Comparison":
-        mp = {"selected_var": extra_params.get("selected_var")}
     elif method == "2D Feature Distribution":
         sx = extra_params.get("selected_x")
         sy = extra_params.get("selected_y")
@@ -253,22 +255,14 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
     _render_export_button(state, method)
 
 multivar_methods = ["Dimension Reduction", "Classification"] #"Align Modalities"]
-# Method availability for FOV Comparison and Phasor Plot is decided above the
-# uploader, from session-state keys written below it -- so each gate reads last
-# run's value. A method is hidden only when a loaded frame demonstrably lacks
-# what it needs; with no frame loaded yet, it stays shown. FOV Comparison also
-# shows pre-load when the active config names a FOV column, since the extraction
-# happy path always carries one. The resolve step below recomputes both gates
-# from this run's data and reruns once if either just changed.
+# Phasor Plot's availability is decided above the uploader, from a session-state
+# key written below it -- so the gate reads last run's value. It is hidden only
+# when a loaded frame demonstrably lacks what it needs; with no frame loaded yet,
+# it stays shown. The resolve step below recomputes the gate from this run's data
+# and reruns once if it just changed.
 _frame_loaded = st.session_state.get("vis_df") is not None
-_fov_configured = bool(get_fov_name_col_analysis(
-    st.session_state.get("_use_data_extraction", True)))
-_show_fov_comparison = (st.session_state.get("effective_fov_name_col") is not None
-                        or (not _frame_loaded and _fov_configured))
 _show_phasor = bool(st.session_state.get("phasor_available")) or not _frame_loaded
 univar_methods = ["Feature Comparison", "Feature Histogram"]
-if _show_fov_comparison:
-    univar_methods.append("FOV Comparison")
 bivar_methods = ["2D Feature Distribution"]
 if _show_phasor:
     bivar_methods.append("Phasor Plot")
@@ -331,19 +325,18 @@ with col1:
     # derived columns (GMM_group, _color_group, ...). The exported script replays
     # this same prune so its derived CSVs carry the app's columns, not the raw file's.
     st.session_state.analysis_columns = list(df.columns) if df is not None else None
-    # The FOV column the loaded frame actually has, or None, and which channels
-    # (if any) carry a complete phasor G/S pair. Both gates above were built from
-    # the previous run's keys, so if either method's availability just changed,
-    # rerun once so the next run builds the method lists from the now-current values.
+    # The FOV column the loaded frame actually has, or None (hover text only), and
+    # which channels (if any) carry a complete phasor G/S pair. The Phasor gate above
+    # was built from the previous run's key, so if its availability just changed,
+    # rerun once so the next run builds the method lists from the now-current value.
     fov_name_col = resolve_effective_fov_col(
         df, get_fov_name_col_analysis(use_data_extraction))
     st.session_state.effective_fov_name_col = fov_name_col
     _channel_harmonics = _compute_channel_harmonics(feature_groups_dict) if feature_groups_dict else {}
     st.session_state.phasor_available = any(
         harmonics for harmonics in _channel_harmonics.values())
-    _fov_now = fov_name_col is not None or (df is None and _fov_configured)
     _phasor_now = st.session_state.phasor_available or df is None
-    if _fov_now != _show_fov_comparison or _phasor_now != _show_phasor:
+    if _phasor_now != _show_phasor:
         st.rerun()
 
     if upload_complete:
@@ -393,27 +386,70 @@ with col2:
         data_export_ready = False
         filtered_df = filters_widget(st.session_state.vis_df, categorical_cols)
         # for visualization that are point-based, provides the options for other visual encoding channels: opacity, shape, and separate by
-        point_based = method not in ["FOV Comparison", "Feature Histogram", "Classification"]
+        point_based = method not in ["Feature Histogram", "Classification"]
         color_based = method not in [ "Classification"]
         separate_by_available = method in ["Feature Comparison"]
         # Subcolor reads the colour group off the x axis, which only the sina
         # plot lays out that way; elsewhere the group has nowhere else to be shown.
         subcolor_available = method in ["Feature Comparison"]
+        # Collapse by changes what a point IS, not how it looks, and only the sina plot
+        # has an x slot for the replicates to sit in.
+        collapse_available = method in ["Feature Comparison"]
         fig = None
         # check if the df is empty after filtering
         if not filtered_df.empty:
-            color_by, opacity_by, shape_by, separate_by, subcolor_by = visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=color_based, point_based=point_based, separate_by_available=separate_by_available, subcolor_available=subcolor_available)
+            color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by = visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=color_based, point_based=point_based, separate_by_available=separate_by_available, subcolor_available=subcolor_available, collapse_available=collapse_available)
+            # Reserved now, written after the collapse runs: it explains a channel the
+            # collapse had to switch off, so it belongs beside the controls that caused
+            # it rather than under the plot. Empty -- and therefore invisible -- whenever
+            # every chosen decoration survived.
+            collapse_note = st.container()
             if method in univar_methods and selected_var != "Select":
                 # drop rows with NaN values in the selected_var column
                 filtered_df = filtered_df[filtered_df[selected_var].notna()]
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
+                        # Collapse AFTER the x-axis groups are fixed: the key is the
+                        # replicate column plus whatever sets a point's x slot, so a
+                        # replicate measured in two slots stays one dot in each. Applied
+                        # after the NaN drop above, so the mean covers only the cells that
+                        # actually carry the feature.
+                        plot_df = filtered_df
+                        plot_row_id_col, plot_row_id_label = unique_row_id_col, row_id_label
+                        plot_fov_name_col = fov_name_col
+                        if collapse_by:
+                            plot_df, plot_row_id_col, _varied = collapse_rows(
+                                filtered_df, collapse_by, [*color_by, separate_by],
+                                unique_row_id_col)
+                            plot_row_id_label = collapse_by
+                            # Same survival rule, no second branch: the collapse dropped
+                            # the FOV column iff it varied, and this resolves a configured
+                            # name against what the frame now has.
+                            plot_fov_name_col = resolve_effective_fov_col(plot_df, fov_name_col)
+                            _channels, _dropped = drop_varying_channels(
+                                {"shape": shape_by, "opacity": opacity_by,
+                                 "subcolor": subcolor_by}, _varied)
+                            shape_by = _channels["shape"]
+                            opacity_by = _channels["opacity"]
+                            subcolor_by = _channels["subcolor"]
+                            # Named for the control the user has to go and change, and
+                            # stated as what the point cannot do: "`dish` varies within
+                            # `cell_line`" is accurate and tells nobody anything -- of
+                            # course it does, that is the data.
+                            _labels = {"shape": "Shape by", "opacity": "Opacity by",
+                                       "subcolor": "Subcolor by"}
+                            with collapse_note:
+                                for _role, _col in _dropped.items():
+                                    st.caption(
+                                        f"**{_labels[_role]}** is off — one `{collapse_by}` "
+                                        f"point covers several `{_col}` values, so it "
+                                        f"cannot be further divided.")
                         # Group order for the reorder controls, which render below the plot
                         # (reorder_x_axis_widget). The keys are derived from the frame here
                         # because feature_comparison_plot builds its groups internally and
                         # cannot be asked for them without being called.
-                        session_key_sep, session_key_cmp = get_visual_group_keys(filtered_df, selected_var, color_by, separate_by)
+                        session_key_sep, session_key_cmp = get_visual_group_keys(plot_df, selected_var, color_by, separate_by)
 
                         current_custom_order = {}
                         if session_key_sep in st.session_state:
@@ -421,20 +457,8 @@ with col2:
                         if session_key_cmp in st.session_state:
                             current_custom_order['compare_groups'] = st.session_state[session_key_cmp]
 
-                        fig = feature_comparison_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, colormap=st.session_state.plot_colormap, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test, custom_order=current_custom_order, subcolor_by=subcolor_by, row_id_label=row_id_label)
+                        fig = feature_comparison_plot(plot_df, unique_row_id_col=plot_row_id_col, fov_name_col=plot_fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, colormap=st.session_state.plot_colormap, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test, custom_order=current_custom_order, subcolor_by=subcolor_by, row_id_label=plot_row_id_label)
 
-
-                    elif method == "FOV Comparison":
-                        if fov_name_col is None:
-                            # Unreachable under the current gate: the rerun above fires whenever the
-                            # method list disagrees with this run's data, so a selected FOV Comparison
-                            # always has a FOV column by the time it renders. Kept as a fallback — the
-                            # alternative on a gate regression is df[None].
-                            st.info("This dataset has no FOV column, so FOV Comparison "
-                                    "is unavailable.")
-                            fig = None
-                        else:
-                            fig = fov_comparison_plot(filtered_df, fov_name_col=fov_name_col, selected_var=selected_var, color_by=color_by, colormap=st.session_state.plot_colormap)
                     elif method == "Feature Histogram":
                         # Log transform and GMM checkboxes on same row
                         col_log, col_gmm = st.columns([0.15, 0.85])
@@ -592,6 +616,7 @@ with col2:
                             _extra["effect_size_method"] = selected_effect_size_method
                             _extra["mean_or_median"] = mean_or_median
                             _extra["statistical_test"] = statistical_test
+                            _extra["collapse_by"] = collapse_by
                         elif method == "Feature Histogram":
                             try:
                                 _extra["apply_gmm"] = apply_gmm
