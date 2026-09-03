@@ -4,6 +4,14 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        # A dispatch build's version is now VISIBLE in the app's nav bar, and a
+        # dispatch artifact has been release-uploaded before (the 1.10.3 Intel
+        # mac backfill). Name the version here when doing that, or the app will
+        # display 0.0.0-dev on what users see as a real release.
+        description: 'Version to stamp (blank = 0.0.0-dev)'
+        required: false
 
 permissions:
   contents: write
@@ -18,7 +26,7 @@ jobs:
     # staging step read the same value. Release builds get the tag (e.g.
     # 1.11.0); manual workflow_dispatch builds fall back to the dev placeholder.
     env:
-      APP_VERSION: ${{ github.event.release.tag_name || '0.0.0-dev' }}
+      APP_VERSION: ${{ github.event.release.tag_name || inputs.version || '0.0.0-dev' }}
     strategy:
       fail-fast: false
       matrix:
@@ -42,6 +50,25 @@ jobs:
         with:
           enable-cache: true
           python-version: "3.11"
+
+      # CITATION.cff feeds GitHub's "Cite this repository" box and is the only
+      # version-bearing citation metadata (.zenodo.json has no version key, so
+      # Zenodo infers from the tag). No code reads it, which is exactly why it
+      # sat at 1.6.0 for ~14 releases while telling every citer to cite a
+      # version they were not using -- only a release-time check keeps it
+      # honest. pyproject.toml is deliberately NOT checked: with no
+      # [build-system] it is never built, installed or imported, so its version
+      # has no consumer and guarding it would add an obligation for nothing.
+      - name: Check CITATION.cff version matches the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        run: |
+          tag='${{ github.event.release.tag_name }}'
+          cff=$(sed -n 's/^version: "\(.*\)"$/\1/p' CITATION.cff | head -1)
+          if [ "$cff" != "$tag" ]; then
+            echo "::error file=CITATION.cff::version is '$cff' but the release tag is '$tag'"
+            exit 1
+          fi
 
       - name: Install dependencies
         run: uv sync

@@ -24,8 +24,8 @@ authors:
 repository-code: "https://github.com/skalalab/flim_playground"
 url: "https://skalalab.github.io/flim_playground_doc/"
 license: MIT
-version: "1.6.0"
-date-released: "2026-04-24"
+version: "1.11.2"
+date-released: "2026-09-01"
 keywords:
   - FLIM
   - fluorescence lifetime imaging

@@ -1,8 +1,10 @@
+import html
 import sys
 
 import streamlit as st
 
 from src.emojis import sad_emoji
+from src.version import get_version_label
 
 """
 This module contains the navigation bar for the FLIM Playground app.
@@ -46,13 +48,29 @@ def render_top_menu():
     )
 
     menu_html = """
-    <div style='background-color:#f0f0f0; padding:10px; border-bottom:1px solid #ccc;'>
+    <div style='background-color:#f0f0f0; padding:10px; border-bottom:1px solid #ccc; display:flex; align-items:baseline;'>
     <a href='/' style='margin-right:20px; text-decoration:none; font-weight:bold;'>Home</a>"""
 
     for page in pages:
         menu_html += f"""
         <a href='/{page}' style='margin-right:20px; text-decoration:none; font-weight:bold;'>{link_2_name(page)}</a>"""
 
-    menu_html += "</div>"
+    # Version label, right-aligned in the same grey bar -- the only chrome that
+    # renders on all three pages, so a screenshot from any of them is taggable.
+    # Three deliberate details:
+    #  - `margin-left:auto` in a flex row pushes it to the right edge, and
+    #    `align-items:baseline` sits it on the links' own baseline; `float`
+    #    would align to the top of the line box and ride high above them.
+    #  - Concatenated onto the closing </div> with NO new source line: markdown
+    #    bodies are run through textwrap.dedent (streamlit/string_util.py:38),
+    #    so a line at a different indent changes the common prefix for every
+    #    other line in the bar.
+    #  - Escaped at the interpolation point, per house rule: the string comes
+    #    from a git tag or a bundled file and the browser reads this as markup.
+    menu_html += (
+        "<span title='FLIM Playground version' "
+        "style='margin-left:auto; color:#666; font-size:0.8em;'>"
+        f"{html.escape(get_version_label())}</span></div>"
+    )
 
     st.markdown(menu_html, unsafe_allow_html=True)
