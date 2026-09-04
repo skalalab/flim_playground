@@ -20,8 +20,14 @@ import toml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src import dataset_io
+from src.column_roles import NO_GROUP
 from src.widgets import analysis_config_widgets as acw
-from src.widgets.review_table_widget import AUTO_DETECT
+from src.widgets.review_table_widget import (
+    AUTO_DETECT,
+    GROUP_HELP,
+    GROUP_SECTION,
+    _group_key,
+)
 
 _PAGE = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
 
@@ -184,7 +190,7 @@ def test_the_reopened_table_can_only_write_back_to_the_profile_it_came_from(page
     labels = [b.label for b in at.button]
     assert any("Save to pdl1" in label for label in labels), labels
     assert any(label == "Cancel" for label in labels), labels
-    assert not any("Save as" in label for label in labels), labels
+    assert not any("Save profile as" in label for label in labels), labels
     assert not any("Use this" in label for label in labels), labels
 
 
@@ -256,6 +262,191 @@ def test_a_group_can_only_be_given_to_a_measurement(page, tmp_path):
 
     _by_key(at, "selectbox", f"review_role_{gen}_Area").set_value("Categorical").run(timeout=90)
     assert "Area" not in at.session_state._review_groups
+
+
+# ------------------------------------------------------- bulk group assignment
+
+def _shape_frame():
+    """Two measurements whose names share no prefix, so auto-grouping leaves them alone.
+
+    `detect_column_groups` would file `nadh_t1`/`nadh_t2` under `nadh` on sight, and a
+    test of *assignment* must not start from a grouping something else made.
+    """
+    return pd.DataFrame({
+        "cell_id": [1, 2, 3],
+        "treatment": ["DMSO", "PD-L1", "DMSO"],
+        "area": [10.0, 11.0, 12.0],
+        "perimeter": [4.0, 4.4, 4.8],
+    })
+
+
+def _fresh_gate(page, tmp_path, frame=None):
+    """An open table over `frame`, on a config holding no profiles at all."""
+    page["frame"] = frame if frame is not None else _shape_frame()
+    return _pick(_run({}, current="", path=tmp_path / "analysis_config.toml"), AUTO_DETECT)
+
+
+def _tick(at, col):
+    return _by_key(at, "checkbox", f"review_tick_{at.session_state['_review_file_gen']}_{col}")
+
+
+def test_create_then_assign_puts_two_ticked_rows_in_one_group(page, tmp_path):
+    """The flow the bar is laid out for, left to right, through the real widgets.
+
+    ➕ Add makes the group and lands the destination on it, so Apply needs no second
+    lookup -- and the row dropdown showing "shape" afterwards is what proves the name
+    reached `_review_group_names`, rather than resolving to the ungrouped slot.
+    """
+    at = _fresh_gate(page, tmp_path)
+    gen = at.session_state["_review_editor_gen"]
+    _by_key(at, "text_input", f"review_group_name_{gen}").set_value("shape").run(timeout=90)
+    _by_key(at, "button", "review_add_group").click().run(timeout=90)
+
+    assert at.session_state._review_group_names == ["shape"]
+    assert at.session_state._review_groups == {}, "Add fills nothing on its own"
+    gen = at.session_state["_review_editor_gen"]
+    assert _by_key(at, "selectbox", f"review_group_target_{gen}").value == "shape"
+
+    _tick(at, "area").check().run(timeout=90)
+    _tick(at, "perimeter").check().run(timeout=90)
+    _by_key(at, "button", "review_apply_group").click().run(timeout=90)
+
+    assert at.session_state._review_groups == {"area": "shape", "perimeter": "shape"}
+    gen = at.session_state["_review_editor_gen"]
+    assert _by_key(at, "selectbox", _group_key(gen, "area", True)).value == "shape"
+    # Finished, so the ticks are gone: the box scrolls, and five more ticks on top of a
+    # forgotten twenty would quietly put all twenty-five in the next group.
+    assert _tick(at, "area").value is False
+
+
+def test_only_a_measurement_row_offers_a_tick(page, tmp_path):
+    """A group is a measurement's to hold, so a tick anywhere else could not be acted on."""
+    at = _fresh_gate(page, tmp_path)
+    file_gen = at.session_state["_review_file_gen"]
+    keys = {widget.key for widget in at.checkbox}
+
+    assert f"review_tick_{file_gen}_area" in keys
+    assert f"review_tick_{file_gen}_perimeter" in keys
+    assert f"review_tick_{file_gen}_treatment" not in keys
+    assert f"review_tick_{file_gen}_cell_id" not in keys
+
+
+def test_a_tick_survives_a_correction_elsewhere_in_the_table(page, tmp_path):
+    """Why the ticks are keyed to the file and not to the editor.
+
+    Naming a second Row ID makes `enforce_role_invariants` take the first one back, which
+    re-keys every dropdown in the table. A selection made across twelve rows must not go
+    with them -- that is the loss `_FILE_GEN` was split out to prevent for the name boxes,
+    and a half-made selection is the same kind of work in progress.
+    """
+    at = _fresh_gate(page, tmp_path)
+    _tick(at, "area").check().run(timeout=90)
+    before = at.session_state["_review_editor_gen"]
+
+    _by_key(at, "selectbox", f"review_role_{before}_treatment").set_value("Row ID").run(timeout=90)
+
+    assert at.session_state["_review_editor_gen"] > before, "no correction fired"
+    assert _tick(at, "area").value is True
+
+
+def test_a_measurements_ungrouped_slot_is_named_after_where_it_goes(page, tmp_path):
+    """`—` says nothing to a column that has somewhere to fall to.
+
+    Both rows still *hold* `NO_GROUP`: the two spellings are presentation and the value
+    is not, which is why this is a `format_func` and not a second option -- one option
+    list, one stored value, and nothing downstream has to learn a second way to say "no
+    group". (`_group_key` is what makes the `format_func` reach the screen at all.)
+    """
+    at = _fresh_gate(page, tmp_path)
+    gen = at.session_state["_review_editor_gen"]
+    measurement = _by_key(at, "selectbox", _group_key(gen, "area", True))
+    categorical = _by_key(at, "selectbox", _group_key(gen, "treatment", False))
+
+    assert measurement.options == ["Uncategorized"]
+    # A group does not apply here, so there is nothing to be un-grouped from.
+    assert categorical.options == [NO_GROUP]
+    assert measurement.value == NO_GROUP == categorical.value
+
+
+def test_the_group_cell_is_rekeyed_when_the_role_flips(page, tmp_path):
+    """The label has to change with the role, and only a new key can change it.
+
+    A rendered selectbox's option labels are fixed at its key: flipping `format_func` on
+    the next run repaints nothing, so the box that read `Uncategorized` as a measurement
+    went on reading it after the row was demoted to Categorical, and `—` went on showing
+    after a promotion. Measured live on Streamlit 1.54 -- `format_func` alone, then
+    `format_func` with `disabled`, then the key: only the key repainted.
+
+    `AppTest` reports the fresh label either way, which is exactly why this asserts the
+    **key** rather than the text. A test on the text passes on the broken code.
+    """
+    at = _fresh_gate(page, tmp_path)
+    gen = at.session_state["_review_editor_gen"]
+    role = _by_key(at, "selectbox", f"review_role_{gen}_area")
+    assert at.session_state._review_roles["area"] == "numerical"
+    assert _group_key(gen, "area", True) != _group_key(gen, "area", False)
+
+    role.set_value("Categorical").run(timeout=90)
+
+    gen = at.session_state["_review_editor_gen"]
+    assert at.session_state._review_roles["area"] == "categorical"
+    demoted = _by_key(at, "selectbox", _group_key(gen, "area", False))
+    assert demoted.options == [NO_GROUP], "a group cannot apply, so it must not read Uncategorized"
+    assert demoted.proto.disabled
+
+    _by_key(at, "selectbox", f"review_role_{gen}_area").set_value("Numerical").run(timeout=90)
+
+    gen = at.session_state["_review_editor_gen"]
+    promoted = _by_key(at, "selectbox", _group_key(gen, "area", True))
+    assert promoted.options == ["Uncategorized"], "it has somewhere to fall to again"
+    assert not promoted.proto.disabled
+
+
+def test_the_group_section_explains_itself_on_hover_not_on_a_line(page, tmp_path):
+    """Why a feature group exists is worth saying once, and a caption said it on every
+    render of every file. It rides on the heading's tooltip instead: the same words, no
+    line of the page spent on them."""
+    at = _fresh_gate(page, tmp_path, _shape_frame().assign(nadh_t1=[1.0, 2.0, 3.0],
+                                                           nadh_t2=[4.0, 5.0, 6.0]))
+    assert at.session_state._review_group_names, "expected auto-grouping to make one"
+    heading = next((m for m in at.markdown if GROUP_SECTION in str(m.value)), None)
+    assert heading is not None, [str(m.value) for m in at.markdown]
+    assert heading.proto.help == GROUP_HELP
+    assert "feature pickers" in GROUP_HELP
+    assert not any("organise the pickers" in str(c.value) for c in at.caption), \
+        [str(c.value) for c in at.caption]
+
+
+def test_with_no_groups_the_section_stays_and_only_add_is_live(page, tmp_path):
+    """A file whose columns share no prefix gets no groups from auto-grouping -- the
+    flat-name case this section exists for.
+
+    Every control stays on screen; the two that need a group to act on are disabled.
+    Hiding them instead made the whole section vanish on exactly this file, which reads
+    as broken rather than as empty.
+    """
+    at = _fresh_gate(page, tmp_path)   # area/perimeter: no shared prefix, so no groups
+
+    assert at.session_state._review_group_names == []
+    assert any("Feature group management" in str(m.value) for m in at.markdown), \
+        [str(m.value) for m in at.markdown]
+    assert _by_key(at, "button", "review_add_group").disabled is False
+    assert _by_key(at, "button", "review_group_rename").disabled is True
+    assert _by_key(at, "button", "review_group_delete").disabled is True
+
+
+def test_select_all_ticks_every_measurement_and_then_clears(page, tmp_path):
+    """One button, because the pair it replaces would both sit idle most of the time."""
+    at = _fresh_gate(page, tmp_path)
+
+    _by_key(at, "button", "review_select_all").click().run(timeout=90)
+    assert _tick(at, "area").value is True
+    assert _tick(at, "perimeter").value is True
+    assert _by_key(at, "button", "review_select_all").label == "Clear"
+
+    _by_key(at, "button", "review_select_all").click().run(timeout=90)
+    assert _tick(at, "area").value is False
+    assert _by_key(at, "button", "review_select_all").label == "Select all"
 
 
 # ------------------------------ picking lives in the chooser, maintenance below the table
@@ -349,7 +540,7 @@ def test_a_new_profile_is_named_in_the_row_rather_than_behind_a_popover(page, tm
     gen = at.session_state["_review_file_gen"]
 
     _by_key(at, "text_input", f"review_save_as_name_{gen}").set_value("pdl1").run(timeout=90)
-    next(b for b in at.button if "Save as" in str(b.label)).click().run(timeout=90)
+    next(b for b in at.button if "Save profile as" in str(b.label)).click().run(timeout=90)
 
     assert "pdl1" in acw.list_profiles(), acw.list_profiles()
     assert at.session_state._review_confirmed is True
@@ -425,14 +616,20 @@ def test_deleting_the_applied_profile_on_the_reopen_path_reopens_the_chooser(pag
     # without a save -- the one thing the gate exists to prevent.
     assert "_review_reopened" not in at.session_state
 
-    # One clean pass before reading the widgets: the click that deleted rendered the old
-    # screen up to the delete button and then `st.rerun()`, so `at.button` after it holds
-    # both passes -- a stale "Cancel" and the fresh chooser in one list.
-    at.run(timeout=90)
-    labels = [str(b.label) for b in at.button]
+    # Read off the tree as it stands, without a clean pass first. The click that deleted
+    # rendered the old screen up to the delete button and then `st.rerun()`, so the tree
+    # mixes two passes -- and `at.run()` replays *every* widget in it, including editor
+    # rows the delete has just discarded, whose state Streamlit has dropped. That is an
+    # `AppTest` limitation, not the app: `at.exception` below is empty, so the run the
+    # delete triggered completed. It appeared when the table grew a tick column, and any
+    # extra stateful widget in `_editor` reproduces it -- nothing to do with the delete.
+    #
+    # Nothing is given up by reading the mixed tree here. Cancel's absence is asserted
+    # above as the fact that causes it (`_review_reopened`, mapped to buttons by
+    # `exit_actions`, which has its own tests), and the pdl1 row is gone from both passes.
     assert not [e.value for e in at.exception], [e.value for e in at.exception]
+    labels = [str(b.label) for b in at.button]
     assert AUTO_DETECT in labels, labels
-    assert "Cancel" not in labels, labels
     assert not any(label.startswith("pdl1") for label in labels), labels
 
 
@@ -542,7 +739,7 @@ def test_what_the_reader_says_about_the_file_is_shown_while_the_gate_is_open(pag
     # thing pointing at the file.
     page["frame"] = pd.DataFrame({"cell_id": [1, 2], "note": ["a", "b"]})
     at = _pick(_run(profiles={}, current="", path=tmp_path / "analysis_config.toml"), AUTO_DETECT)
-    save = [b for b in at.button if "Save" in str(b.label)]   # labelled "💾 Save as"
+    save = [b for b in at.button if "Save" in str(b.label)]   # labelled "💾 Save profile as"
     assert save and all(b.disabled for b in save), \
         f"expected Save blocked with no numerical column: {[(b.label, b.disabled) for b in at.button]}"
     assert [m for m in at.markdown if "ReadMe" in str(m.value)], "warning lost once the gate blocked"

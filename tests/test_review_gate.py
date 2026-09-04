@@ -53,6 +53,25 @@ def _frame():
 ROLES = {"cell_id": ROLE_ROW_ID, "treatment": ROLE_CATEGORICAL, "Area": ROLE_NUMERICAL}
 
 
+def _wide_frame():
+    """Two measurements, so a bulk assignment has something to be bulk about.
+
+    Named off the extraction convention's shared prefix on purpose: `detect_groups` would
+    group these two on its own, which is what makes "the profile already knows them, so
+    nothing is guessed" the state every test below starts from.
+    """
+    return pd.DataFrame({
+        "cell_id": [1, 2, 3],
+        "treatment": ["DMSO", "PD-L1", "DMSO"],
+        "nadh_t1": [0.4, 0.5, 0.6],
+        "nadh_t2": [2.1, 2.2, 2.3],
+    })
+
+
+_WIDE_ROLES = {"cell_id": ROLE_ROW_ID, "treatment": ROLE_CATEGORICAL,
+               "nadh_t1": ROLE_NUMERICAL, "nadh_t2": ROLE_NUMERICAL}
+
+
 def test_a_file_no_profile_describes_opens_the_gate(acw):
     assert gate.review_gate(_Upload("pdl1_rep1.csv"), _frame()) is None
 
@@ -438,6 +457,156 @@ def test_a_group_cannot_be_renamed_to_the_ungrouped_marker(acw, monkeypatch):
 
     assert gate.st.session_state._review_group_names == ["morphology"]
     assert gate.st.session_state._review_groups == {"Area": "morphology"}
+
+
+def test_a_group_takes_every_column_the_bar_hands_it(acw, monkeypatch):
+    """The bulk half of the Group column: one destination for N columns.
+
+    Per-row, this is N dropdowns; here it is one call, and the point of the whole change.
+    """
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    acw.save_working_copy("pdl1", _WIDE_ROLES, {})
+    gate._load_working_copy(_wide_frame(), "pdl1")
+
+    gate._apply_group(["nadh_t1", "nadh_t2"], "morphology")
+
+    assert gate.st.session_state._review_groups == {
+        "nadh_t1": "morphology", "nadh_t2": "morphology"}
+    # The destination stays put, so filling a group in two passes does not mean picking it
+    # twice. The ticks do not -- see the browser flow, and `_clear_picks` above.
+    gen = gate.st.session_state[gate._GEN]
+    assert gate.st.session_state[f"review_group_target_{gen}"] == "morphology"
+
+
+def test_adding_a_group_makes_it_and_points_the_destination_at_it(acw, monkeypatch):
+    """Create then assign, chained.
+
+    An empty group is a name and nothing else, so it has to reach `_review_group_names`:
+    `_editor` renders every row against `[NO_GROUP] + _review_group_names` and resolves a
+    held value it cannot find to index 0 -- the ungrouped slot. Seeding the destination is
+    what saves the second lookup, and is legal because the bump has just given that
+    selectbox a key it has never had.
+    """
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    acw.save_working_copy("pdl1", _WIDE_ROLES, {})
+    gate._load_working_copy(_wide_frame(), "pdl1")
+
+    gate._add_group("  lifetime  ")
+
+    assert gate.st.session_state._review_group_names == ["lifetime"]
+    assert gate.st.session_state._review_groups == {}, "Add fills nothing"
+    gen = gate.st.session_state[gate._GEN]
+    assert gate.st.session_state[f"review_group_target_{gen}"] == "lifetime"
+
+
+def test_a_blank_name_makes_no_group(acw, monkeypatch):
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    warned = []
+    monkeypatch.setattr(gate.st, "warning", lambda msg, *a, **k: warned.append(msg))
+    acw.save_working_copy("pdl1", _WIDE_ROLES, {})
+    gate._load_working_copy(_wide_frame(), "pdl1")
+
+    gate._add_group("   ")
+
+    assert warned
+    assert gate.st.session_state._review_group_names == []
+
+
+def test_the_bar_can_take_columns_out_of_their_group(acw, monkeypatch):
+    """NO_GROUP as the destination is the bulk un-assign -- delete's verb, without
+    destroying the group the other members still sit in."""
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    acw.save_working_copy("pdl1", _WIDE_ROLES,
+                          {"nadh_t1": "lifetime", "nadh_t2": "lifetime"})
+    gate._load_working_copy(_wide_frame(), "pdl1")
+
+    gate._apply_group(["nadh_t1"], NO_GROUP)
+
+    assert gate.st.session_state._review_groups == {"nadh_t2": "lifetime"}
+    assert "lifetime" in gate.st.session_state._review_group_names
+
+
+def test_a_name_that_is_already_a_group_is_refused(acw, monkeypatch):
+    """A second group under a live name would duplicate the row dropdown's option, and
+    `index()` resolves a duplicate to the first slot. Merging is Rename's job, where it is
+    asked for; here it is a typo."""
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    warned = []
+    monkeypatch.setattr(gate.st, "warning", lambda msg, *a, **k: warned.append(msg))
+    acw.save_working_copy("pdl1", _WIDE_ROLES, {"nadh_t2": "lifetime"})
+    gate._load_working_copy(_wide_frame(), "pdl1")
+
+    gate._add_group("lifetime")
+
+    assert warned
+    assert gate.st.session_state._review_group_names == ["lifetime"]
+
+
+def test_renaming_a_group_onto_another_merges_them(acw, monkeypatch):
+    """The one-action form of "move a whole group", and the reason Rename stopped
+    refusing a name already in use.
+
+    The name list is de-duplicated, because a repeated entry is the `index()` trap
+    `_group_name_error` was extracted to close: every row of the merged group would
+    resolve to the ungrouped slot and silently leave it.
+    """
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    acw.save_working_copy("pdl1", _WIDE_ROLES,
+                          {"nadh_t1": "lifetime", "nadh_t2": "morphology"})
+    gate._load_working_copy(_wide_frame(), "pdl1")
+
+    gate._rename_group("lifetime", "morphology")
+
+    assert gate.st.session_state._review_groups == {
+        "nadh_t1": "morphology", "nadh_t2": "morphology"}
+    assert gate.st.session_state._review_group_names == ["morphology"]
+    # The selection follows the group, so Delete and Rename stay live on it.
+    gen = gate.st.session_state[gate._GEN]
+    assert gate.st.session_state[f"review_group_target_{gen}"] == "morphology"
+
+
+def test_a_group_cannot_be_called_uncategorized_either(acw, monkeypatch):
+    """The other spelling of the ungrouped slot.
+
+    A real group by that name would sit in a measurement's dropdown reading exactly like
+    the slot above it -- distinct values, indistinguishable options, silent mis-pick.
+    """
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    warned = []
+    monkeypatch.setattr(gate.st, "warning", lambda msg, *a, **k: warned.append(msg))
+    acw.save_working_copy("pdl1", _WIDE_ROLES, {})
+    gate._load_working_copy(_wide_frame(), "pdl1")
+
+    gate._add_group(gate.UNGROUPED_LABEL)
+
+    assert warned
+    assert gate.st.session_state._review_group_names == []
+
+
+def test_deleting_a_group_drops_its_members_to_uncategorized(acw, monkeypatch):
+    """The bulk verb that already worked, pinned so the merge rewrite cannot break it."""
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    acw.save_working_copy("pdl1", _WIDE_ROLES,
+                          {"nadh_t1": "lifetime", "nadh_t2": "lifetime"})
+    gate._load_working_copy(_wide_frame(), "pdl1")
+
+    gate._delete_group("lifetime")
+
+    assert gate.st.session_state._review_groups == {}
+    assert gate.st.session_state._review_group_names == []
+
+
+def test_only_a_measurement_can_be_picked(acw):
+    """`_picked_columns` reads the ticks, and the ticks only ever appear on a Numerical
+    row -- but a role changed *this* run leaves a tick behind for one rerun, so the
+    filter is stated here too and not left to the absent widget."""
+    acw.save_working_copy("pdl1", _WIDE_ROLES, {})
+    frame = _wide_frame()
+    gate._load_working_copy(frame, "pdl1")
+    for col in frame.columns:
+        gate.st.session_state[gate._pick_key(col)] = True
+
+    assert gate._picked_columns(frame) == ["nadh_t1", "nadh_t2"]
 
 
 # ------------------------------------------------- one read of the config per rerun

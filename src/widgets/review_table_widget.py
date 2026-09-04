@@ -50,6 +50,20 @@ from src.widgets.analysis_config_widgets import (
     save_working_copy,
 )
 
+# What the ungrouped slot reads on a row that *could* hold a group -- the picker the column
+# will actually turn up under on the next screen. `NO_GROUP` stays the stored value; this is
+# a label, not a second option. Shortened from the real group name, "Uncategorized
+# Features", which does not fit the cell; the Group box's own tooltip carries that in full.
+UNGROUPED_LABEL = "Uncategorized"
+# The heading over the group controls. A heading rather than the sentence that used to sit
+# there: the controls say what they do, and a caption explaining what a feature group *is*
+# re-explained it on every render of every file. The explanation is worth having once, so it
+# rides on the heading's own tooltip -- hover, not a line, which is the whole difference.
+GROUP_SECTION = "Feature group management"
+GROUP_HELP = ("Each group becomes one dropdown in the feature pickers, so features are "
+              "chosen from a few short lists instead of one long one. Measurements left "
+              "ungrouped are collected under Uncategorized Features.")
+
 # Cleared together whenever a different file arrives, so no edit can outlive the table it
 # was made against.
 _STATE_KEYS = (
@@ -57,7 +71,7 @@ _STATE_KEYS = (
     "_review_source", "_review_confirmed", "_review_previous_roles", "_review_known_cols",
     "_review_notices", "_review_opened", "_review_saved_as", "_review_numeric_cols",
     "_review_reopened", "_review_chooser", "_review_delete_armed", "_review_manage_open",
-    "_review_configured_row_id",
+    "_review_configured_row_id", "_review_picks_stale",
 )
 # The name the table gave the Row ID role, blank included -- read by the export button,
 # which needs the *configured* answer so the generated script re-invents the same
@@ -71,8 +85,13 @@ _CONFIGURED_ROW_ID = "_review_configured_row_id"
 _DELETE_ARMED = "_review_delete_armed"
 # Whether the manage section is open. Set by every control inside it -- see _manage_profiles.
 _MANAGE_OPEN = "_review_manage_open"
-# One row of the table: the new badge, the column's name, its two dropdowns, a preview.
-_ROW_WEIGHTS = (1, 5, 3, 3, 6)
+# One row of the table: the tick, the new badge, the column's name, its two dropdowns, a
+# preview. The tick's slot is carved out of the preview rather than added to the total, so
+# the badge keeps the width it was measured at inside the page's own narrow-ish column.
+# Group is a slot wider than Role even though its options are shorter: the *ungrouped*
+# slot reads UNGROUPED_LABEL, which is longer than any role, and at Role's width it
+# truncated to "Uncateg..." -- less informative than the dash it was meant to replace.
+_ROW_WEIGHTS = (1, 1, 5, 3, 4, 4)
 # Measured off the rendered table: a row is 56px of selectbox and gap, and the header
 # plus the box's own padding is 78. Under-guess either and a four-column file scrolls a
 # box it fits in. Past ~7 columns the list scrolls rather than pushing Save down the page.
@@ -113,6 +132,84 @@ def _bump_editor():
     st.session_state[_GEN] = st.session_state.get(_GEN, 0) + 1
 
 
+def _group_label(name):
+    """The ungrouped slot, named after where the column really goes.
+
+    A `format_func` rather than a second option, because the options list has to stay the
+    same on every row: vary it by role and a column promoted to Numerical hands its
+    selectbox a value the new list no longer offers, which Streamlit refuses outright.
+
+    Only measurements get it. On a Categorical, Row ID or Ignore row the dash is the honest
+    answer -- a group does not apply there, so the column is not *un*-grouped so much as
+    out of scope, and naming a destination it can never reach would only invite the click
+    the box is disabled to prevent.
+    """
+    return UNGROUPED_LABEL if name == NO_GROUP else name
+
+
+def _group_key(gen, col, measurement):
+    """The key of one row's Group box, which carries the *label mode* it is showing.
+
+    **A rendered selectbox's option labels are fixed at its key.** Flipping `format_func`
+    on the next run repaints nothing: the box that said `Uncategorized` as a measurement
+    went on saying it after the row was demoted to Categorical, and `—` went on showing
+    after a promotion. Measured on Streamlit 1.54 with three boxes side by side -- only
+    `format_func` changing, `format_func` and `disabled` changing, and the key changing --
+    and only the third repainted. So the mode joins the identity, and the re-key is what
+    makes `_group_label` visible at all.
+
+    `AppTest` reports the fresh label either way, which is why the test for this asserts
+    the key rather than the text -- the same shape as the delete-key rule in the root
+    `CLAUDE.md`, where the harness also disagrees with the browser.
+
+    The stale value under the old key is deliberate: demote a grouped column and promote it
+    back and its group returns, because `enforce_role_invariants` strips the group on the
+    way out and the box remembers it on the way in. Nothing lies -- the row's label and
+    `_review_groups` agree either way.
+    """
+    return f"review_group_{gen}_{'num' if measurement else 'other'}_{col}"
+
+
+def _pick_key(col):
+    """The key of one row's tick.
+
+    Keyed to the *file*, not the editor: `_GEN` moves on every corrected edit, and the
+    whole point of ticking twelve rows is to act on them afterwards, so dropping the
+    selection because an unrelated Row ID was demoted is exactly the loss `_FILE_GEN` was
+    split out to prevent for the name boxes. A new file is the one thing that must forget
+    them -- two files can share a column name, and its tick would ride across.
+    """
+    # `review_tick_`, not `review_pick_`: the chooser's rows are `review_pick_{profile}`,
+    # so a profile named after a column -- or after `all` -- would collide with a key here.
+    return f"review_tick_{_file_gen()}_{col}"
+
+
+def _picked_columns(df):
+    """The ticked measurements, in the file's own column order.
+
+    Read out of session state above the rows that hold the boxes: Streamlit applies widget
+    state before the script body, so the bar sees the tick the user just made rather than
+    last run's count. Filtered by role because a row demoted this run keeps its tick for
+    one rerun -- the widget is gone, its key is not.
+    """
+    roles = st.session_state._review_roles
+    return [col for col in df.columns
+            if roles.get(col) == ROLE_NUMERICAL
+            and st.session_state.get(_pick_key(col), False)]
+
+
+def _clear_picks(columns):
+    """Untick, by assignment rather than by deleting the key.
+
+    Every caller runs above the rows, so the boxes have not instantiated yet and a plain
+    write lands -- which is what makes the ticks the one widget in this file needing no
+    generation counter of their own. Deleting instead would pass `AppTest` and fail in a
+    browser: the frontend re-sends a value the server no longer holds.
+    """
+    for col in columns:
+        st.session_state[_pick_key(col)] = False
+
+
 def _load_working_copy(df, picked):
     """Build the table's contents from a chooser pick, discarding any edits in flight."""
     source = None if picked == AUTO_DETECT else picked
@@ -149,6 +246,9 @@ def _load_working_copy(df, picked):
     # the roles -- asking for it separately walks the frame a second time for the same
     # answer, and did: ~150 ms for the pair against ~90 ms for the one call.
     st.session_state._review_numeric_cols = numeric_cols
+    # Not cleared here: `Cancel` reaches this from *below* the rows, where writing a
+    # rendered widget's key raises. `_group_section` does it on the next run, above them.
+    st.session_state._review_picks_stale = True
     _bump_editor()
 
 
@@ -373,6 +473,7 @@ def _render_gate(uploaded_file, df, profiles=None):
 
     for notice in st.session_state.pop("_review_notices", []):
         st.info(notice)
+    _group_section(df)
     _editor(df)
     # Directly under the rows, because the Role column is what decides it. Read from
     # session state so it describes the *corrected* roles, and said at all because the
@@ -380,7 +481,6 @@ def _render_gate(uploaded_file, df, profiles=None):
     numbering = row_id_notice(st.session_state._review_roles)
     if numbering:
         st.info(numbering)
-    _group_controls()
     _buttons(df, saved_names)
     _manage_profiles(saved_names)
 
@@ -643,28 +743,47 @@ def _editor(df):
     edited_roles, edited_groups = {}, {}
     with st.container(height=_table_height(len(df.columns)), border=True):
         header = st.columns(_ROW_WEIGHTS, vertical_alignment="center")
-        for slot, title in zip(header[1:], ("Column", "Role", "Group", "Preview")):
+        for slot, title in zip(header[2:], ("Column", "Role", "Group", "Preview")):
             slot.caption(f"**{title}**")
         for col in df.columns:
             cells = st.columns(_ROW_WEIGHTS, vertical_alignment="center")
-            # Why a row's role is a guess rather than something the profile stored.
-            if known and col not in known:
-                cells[0].markdown(":orange-badge[new]")
-            cells[1].text(col)
-            role = cells[2].selectbox(
+            role = cells[3].selectbox(
                 f"Role of {col}", role_options, key=f"review_role_{gen}_{col}",
                 index=role_options.index(ROLE_LABELS[roles[col]]),
                 label_visibility="collapsed")
             held = groups.get(col, NO_GROUP)
-            group = cells[3].selectbox(
-                f"Group of {col}", group_options, key=f"review_group_{gen}_{col}",
+            measurement = LABEL_ROLES[role] == ROLE_NUMERICAL
+            group = cells[4].selectbox(
+                f"Group of {col}", group_options,
+                # Keyed to the label mode, not just the row -- see `_group_key`.
+                key=_group_key(gen, col, measurement),
                 index=group_options.index(held) if held in group_options else 0,
                 label_visibility="collapsed",
+                # Reads "Uncategorized" here and "—" on every other role -- see
+                # `_group_label`. The value behind both spellings is `NO_GROUP`.
+                format_func=_group_label if measurement else str,
                 # Said by the control rather than by a rule that fires afterwards. The
                 # rule still runs -- a role changed *this* run leaves the box behind.
-                disabled=LABEL_ROLES[role] != ROLE_NUMERICAL,
-                help="Only a Numerical column can sit in a group")
-            cells[4].text(column_preview(df[col]))
+                disabled=not measurement,
+                # The full group name lives here, since it is too long for the cell and
+                # there is no caption under the table saying it any more.
+                help="Only a Numerical column can sit in a group. Ungrouped measurements "
+                     "fall to Uncategorized Features.")
+            # Placed first, read last: a group is a measurement's to hold, so the tick has
+            # to follow the role the row is *showing*, not the one last run enforced. Slots
+            # are containers, so screen order and code order are free to disagree -- the
+            # same trick `_save_as_new` uses on its name box. Absent rather than disabled
+            # on the other roles: a tick that cannot be acted on is noise, and the Group
+            # box one cell over already says why.
+            if measurement:
+                cells[0].checkbox(f"Select {col}", key=_pick_key(col),
+                                  label_visibility="collapsed",
+                                  help="Tick to include in a bulk group assignment")
+            # Why a row's role is a guess rather than something the profile stored.
+            if known and col not in known:
+                cells[1].markdown(":orange-badge[new]")
+            cells[2].text(col)
+            cells[5].text(column_preview(df[col]))
             edited_roles[col] = LABEL_ROLES[role]
             if group != NO_GROUP:
                 edited_groups[col] = group
@@ -685,48 +804,179 @@ def _editor(df):
         st.rerun()
 
 
-def _group_controls():
-    names = st.session_state._review_group_names
-    st.caption("Feature groups organise the pickers on the next screen. "
-               "Anything ungrouped falls to Uncategorized Features.")
-    cols = st.columns([2, 1, 2, 1, 1])
-    with cols[0]:
-        new_name = st.text_input(
-            "New group", key=f"review_new_group_{st.session_state[_GEN]}",
-            label_visibility="collapsed", placeholder="new group name")
-    with cols[1]:
-        if st.button("➕ Add", width="stretch"):
-            _add_group(new_name)
-    if not names:
+def _group_section(df):
+    """Everything about feature groups, in one headed section above the table.
+
+    Two rows, in the order the work happens. Row one **makes** a group -- a name box and
+    Add, and nothing else, because creating one inside the Apply button read backwards:
+    there is nowhere to assign to until the group exists. Row two **works on** one: the
+    selectbox, then every verb that takes it as their subject -- Delete, Rename, and Apply
+    filling it from the ticked rows.
+
+    Delete and Rename sat in row one until it was pointed out that they act on row two's
+    selection. That is the same objection that moved the whole section above the table:
+    a control a scroll -- or a row -- away from the thing it acts on reads as unrelated to
+    it. The name box is the one thing that stays put, directly above the selectbox, and
+    serves Add and Rename both, because both want the same thing: a name for a group.
+
+    So the selectbox is read where it renders, and only the *prune* above it has to run
+    early.
+
+    What the bulk half buys, stated plainly: it does not beat N *actions* -- N ticks plus
+    a destination plus Apply ties with N per-row dropdowns -- but a tick is one click
+    where a dropdown is two, the destination is chosen once instead of N times, and the
+    choice is visible before it is committed. Misfiling the fifth of eight rows inside a
+    scroll box stays invisible until the feature pickers come up wrong.
+
+    Above the rows, and not for looks. Everything here writes the ticks' keys, which is
+    only legal before they instantiate -- the same reason the ticks need no generation
+    counter of their own.
+    """
+    # Deferred from `_load_working_copy`, which a Cancel reaches from below the rows.
+    if st.session_state.pop("_review_picks_stale", False):
+        _clear_picks(df.columns)
+    roles = st.session_state._review_roles
+    numeric = [col for col in df.columns if roles.get(col) == ROLE_NUMERICAL]
+    if not numeric:
+        # Nothing can hold a group, and `review_blocking_reason` is already saying so.
         return
-    with cols[2]:
-        target = st.selectbox("Group", names, label_visibility="collapsed",
-                              key=f"review_group_target_{st.session_state[_GEN]}")
-    with cols[3]:
-        if st.button("✏️ Rename", width="stretch", help="Rename to the name typed on the left"):
-            _rename_group(target, new_name)
-    with cols[4]:
-        if st.button("🗑️ Delete", width="stretch", help="Its columns fall to Uncategorized"):
-            _delete_group(target)
+    picked = _picked_columns(df)
+    names = st.session_state._review_group_names
+    gen = st.session_state[_GEN]
+
+    # Pruned before the widget renders, which is the whole reason the selection is read
+    # out of session state at all: a group can be deleted or renamed out from under this
+    # key, and a keyed widget handed a value it no longer offers raises. Streamlit applies
+    # widget state before the script body, so the current pick is already here to check.
+    # Same idiom as `encoding_state.prune_to_options` and `filter_widgets.resolve_selections`.
+    options = [NO_GROUP] + names
+    target_key = f"review_group_target_{gen}"
+    if st.session_state.get(target_key, NO_GROUP) not in options:
+        st.session_state[target_key] = NO_GROUP
+
+    st.markdown(f"**{GROUP_SECTION}**", help=GROUP_HELP)
+    # Two narrow slots for the emoji verbs, and the same slot count and total on both
+    # rows, so the name box stays exactly above the group it renames -- Streamlit sizes a
+    # column against the width left after the gaps, so a row of five and a row of four
+    # would not line up even on equal weights.
+    create = st.columns([3, 2, 1, 1, 2], vertical_alignment="center")
+    act = st.columns([3, 1, 1, 2, 2], vertical_alignment="center")
+
+    new_name = create[0].text_input(
+        "Group name", key=f"review_group_name_{gen}", label_visibility="collapsed",
+        placeholder="group name")
+    if create[1].button("➕ Add", key="review_add_group", width="stretch",
+                        help="Make an empty group with the name on the left"):
+        _add_group(new_name)
+
+    # No `index=`: the key carries the selection, and passing both makes Streamlit warn
+    # that the widget "was created with a default value but also had its value set via the
+    # Session State API" -- on screen, in a yellow box, every time Add seeds it. Absent a
+    # stored value the default is slot 0, which is NO_GROUP, which is what it should be.
+    target = act[0].selectbox(
+        "Group", options, key=target_key, label_visibility="collapsed",
+        # Always a measurement's destination, so always the informative label.
+        format_func=_group_label,
+        help=f"The group Delete, Rename and Apply act on. {UNGROUPED_LABEL} is not a "
+             "group: applying it takes the ticked rows out of theirs.")
+    # Disabled until there is a group to act on, rather than hidden: a section whose
+    # controls come and go reads as one that broke. `target` is NO_GROUP until then, and
+    # neither verb has any business touching the ungrouped slot.
+    real = target != NO_GROUP
+    if act[1].button("🗑️", key="review_group_delete", width="stretch",
+                     disabled=not real,
+                     help="Delete the selected group. Its columns fall back to "
+                          "Uncategorized Features; no column is lost."):
+        _delete_group(target)
+    if act[2].button("✏️", key="review_group_rename", width="stretch",
+                     disabled=not real,
+                     help="Rename the selected group to the name in the box above, "
+                          "carrying its columns over. A name already in use merges the "
+                          "two, which is how a whole group moves in one action."):
+        _rename_group(target, new_name)
+    if act[3].button(f"Apply to {len(picked)}", key="review_apply_group",
+                     type="primary", width="stretch", disabled=not picked,
+                     help="Put the ticked rows in the selected group"):
+        _apply_group(picked, target)
+    # One button rather than an All/Clear pair, and not the select-all the table header
+    # would conventionally carry: that header renders *inside* the scroll box, so it
+    # leaves the screen on exactly the wide files a select-all is for.
+    everything = len(picked) == len(numeric)
+    if act[4].button("Clear" if everything else "Select all", key="review_select_all",
+                     width="stretch", help="Tick every measurement row, or none"):
+        if everything:
+            _clear_picks(numeric)
+        else:
+            for col in numeric:
+                st.session_state[_pick_key(col)] = True
+        st.rerun()
 
 
-def _group_name_error(name):
+def _apply_group(columns, group):
+    """Put every ticked column in one existing group, or take them out of theirs.
+
+    Assignment only -- `_add_group` is what makes a group. Folding the two together made
+    Apply create the thing it assigned to, which is the wrong way round: the group has to
+    exist before there is anywhere to assign.
+
+    The one rule here that spans rows and fires *before* the edit comes back, against the
+    grain of everything else in this file: it reads the roles and groups the last run
+    enforced, writes, and reruns. Safe because that rerun re-renders the rows and
+    `enforce_role_invariants` runs over them as usual -- a column ticked and then demoted
+    keeps its tick for one run, and the strip is what catches it.
+    """
+    if not columns:
+        return
+    groups = dict(st.session_state._review_groups)
+    for col in columns:
+        if group == NO_GROUP:
+            groups.pop(col, None)
+        else:
+            groups[col] = group
+    st.session_state._review_groups = groups
+    # Unticked because the action is finished. Leaving them is the worse hazard: the box
+    # scrolls, so ticking five more rows on top of a forgotten twenty would quietly put
+    # all twenty-five in the next group.
+    _clear_picks(columns)
+    _bump_editor()
+    # The *destination* does stay, unlike the ticks: filling a group in two passes is
+    # ordinary, and the bump would otherwise send it back to Uncategorized every time. Same
+    # seeding as `_add_group`, and legal for the same reason -- the key is new after the
+    # bump. Nothing is hidden by it: the dropdown sits next to the button that reads it.
+    st.session_state[f"review_group_target_{st.session_state[_GEN]}"] = group
+    st.rerun()
+
+
+def _group_name_error(name, allow_existing=False):
     """Why this cannot name a group, or "".
 
-    One rule for Add and Rename, because the two are one button apart and had drifted:
-    Rename accepted NO_GROUP, which put a second "—" in every row's Group dropdown. A
-    duplicated option resolves through `index()` to the first slot -- the ungrouped one --
-    so every column in the renamed group silently left it, and the phantom option
-    outlived the working copy.
+    One rule for both writers, because they are one screen apart and had drifted: Rename
+    accepted NO_GROUP, which put a second "—" in every row's Group dropdown. A duplicated
+    option resolves through `index()` to the first slot -- the ungrouped one -- so every
+    column in the renamed group silently left it, and the phantom option outlived the
+    working copy.
+
+    `allow_existing` is Rename's alone. A name already in use means *merge* there, which
+    is a whole group moved in one action; at the bar it can only be a typo, since the
+    dropdown beside the box already offers every live group.
     """
-    if name == NO_GROUP:
-        return f"{code_span(NO_GROUP)} is how the table shows a column with no group."
-    if name in st.session_state._review_group_names:
+    # Both spellings of the ungrouped slot. A real group called "Uncategorized" would sit
+    # in a measurement's dropdown reading exactly like the slot above it -- distinct
+    # values, indistinguishable options, and a silent mis-pick.
+    if name in (NO_GROUP, UNGROUPED_LABEL):
+        return f"{code_span(name)} is how the table shows a column with no group."
+    if not allow_existing and name in st.session_state._review_group_names:
         return f"There is already a group called {code_span(name)}."
     return ""
 
 
 def _add_group(name):
+    """Make an empty group and point the destination at it.
+
+    The seeding is what makes "create, then assign" one flow instead of two lookups: the
+    bump gives the destination selectbox a key it has never had, so writing that key is a
+    plain default and not a forbidden write to a rendered widget.
+    """
     name = (name or "").strip()
     if not name:
         st.warning("Type a name for the group first.")
@@ -737,25 +987,39 @@ def _add_group(name):
         return
     st.session_state._review_group_names.append(name)
     _bump_editor()
+    st.session_state[f"review_group_target_{st.session_state[_GEN]}"] = name
     st.rerun()
 
 
 def _rename_group(old, new):
-    """The usual correction: the grouping is right and the name is wrong."""
+    """Rename a group -- or, if that name is already in use, merge into it.
+
+    The usual correction is that the grouping is right and the name is wrong. Merging is
+    the other half: renaming `lifetime` onto `morphology` moves every one of its columns
+    there in a single action, where the bar would cost a tick per column.
+
+    De-duplicated rather than rewritten in place, because a repeated entry in the name
+    list is exactly the `index()` trap `_group_name_error` exists to close.
+    """
     new = (new or "").strip()
     if not new:
-        st.warning("Type the new name on the left first.")
+        st.warning("Type the new name beside the group first.")
         return
-    error = _group_name_error(new)
+    error = _group_name_error(new, allow_existing=True)
     if error:
         st.warning(error)
         return
-    st.session_state._review_group_names = [
-        new if name == old else name for name in st.session_state._review_group_names]
+    st.session_state._review_group_names = list(dict.fromkeys(
+        new if name == old else name for name in st.session_state._review_group_names))
     st.session_state._review_groups = {
         col: (new if group == old else group)
         for col, group in st.session_state._review_groups.items()}
     _bump_editor()
+    # Follow the group to its new name, as Add and Apply do. Without this the bump sent
+    # the selection back to Uncategorized, greying out Delete and Rename on the group the
+    # user had just been working on. Nothing to seed after a *delete*: that name is gone,
+    # and the prune in `_group_section` puts the selection back on Uncategorized itself.
+    st.session_state[f"review_group_target_{st.session_state[_GEN]}"] = new
     st.rerun()
 
 
@@ -860,7 +1124,8 @@ def _save_as_new(button_slot, name_slot, roles, groups, names, blocked, saved_na
             help=f"{len(saved_names)} of {MAX_PROFILES} profiles saved. "
                  "An existing name overwrites that profile.")
     with button_slot:
-        if st.button("💾 Save as", type="primary", width="stretch", disabled=bool(blocked)):
+        if st.button("💾 Save profile as", type="primary", width="stretch",
+                     disabled=bool(blocked)):
             _save_and_close(new_name, roles, groups, names)
 
 
