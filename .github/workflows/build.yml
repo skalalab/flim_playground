@@ -51,25 +51,6 @@ jobs:
           enable-cache: true
           python-version: "3.11"
 
-      # CITATION.cff feeds GitHub's "Cite this repository" box and is the only
-      # version-bearing citation metadata (.zenodo.json has no version key, so
-      # Zenodo infers from the tag). No code reads it, which is exactly why it
-      # sat at 1.6.0 for ~14 releases while telling every citer to cite a
-      # version they were not using -- only a release-time check keeps it
-      # honest. pyproject.toml is deliberately NOT checked: with no
-      # [build-system] it is never built, installed or imported, so its version
-      # has no consumer and guarding it would add an obligation for nothing.
-      - name: Check CITATION.cff version matches the release tag
-        if: github.event_name == 'release'
-        shell: bash
-        run: |
-          tag='${{ github.event.release.tag_name }}'
-          cff=$(sed -n 's/^version: "\(.*\)"$/\1/p' CITATION.cff | head -1)
-          if [ "$cff" != "$tag" ]; then
-            echo "::error file=CITATION.cff::version is '$cff' but the release tag is '$tag'"
-            exit 1
-          fi
-
       - name: Install dependencies
         run: uv sync
 
@@ -137,3 +118,86 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload '${{ github.event.release.tag_name }}' release/* --clobber
+
+  # CITATION.cff feeds GitHub's "Cite this repository" box and is the only
+  # version-bearing citation metadata in the repo: .zenodo.json has no version
+  # key (Zenodo infers it from the tag) and the exported script's citation uses
+  # the concept DOI, which is version-independent. No code reads the file, which
+  # is exactly why it sat at 1.6.0 for ~14 releases while telling every citer to
+  # cite a version they were not using.
+  #
+  # This job makes the file FOLLOW the tag rather than be checked against it.
+  # The tag is already this project's authoritative version -- src/version.py
+  # resolves it with `git describe` and the spec stamps APP_VERSION into every
+  # bundle -- so a check could only ever report that the file disagreed with
+  # something that was already true. The predecessor WAS such a check, and it
+  # lived as a step inside the build matrix: 1.12.0 was tagged with the file
+  # still reading 1.11.2, all four builds died in 22s before PyInstaller ran,
+  # and the release published with zero assets while its notes and tag looked
+  # entirely normal (the binaries had to be rebuilt by workflow_dispatch and
+  # uploaded by hand). Three things are load-bearing:
+  #
+  #   * Its OWN job, never a step in the matrix -- four runners would race to
+  #     commit the same line.
+  #   * It targets the DEFAULT BRANCH, because that is where the "Cite this
+  #     repository" box reads from. A tag's snapshot keeps whatever the file
+  #     said when it was cut and can never be corrected, which is also why no
+  #     guard against the tag may be kept alongside this: it would fail on the
+  #     very release this job just fixed. The Zenodo archive inherits that
+  #     staleness -- its webhook fires on `published` independently of this
+  #     workflow -- which is cosmetic and unfixable without a new version.
+  #   * No `needs`, in either direction. CITATION.cff is not bundled, so the
+  #     builds neither wait for this job nor are gated by it: citation metadata
+  #     can never again cost a release its binaries.
+  #
+  # pyproject.toml is deliberately NOT synced: with no [build-system] it is
+  # never built, installed or imported, so its version has no consumer and
+  # syncing it would add an obligation for nothing.
+  sync-citation:
+    name: Sync CITATION.cff to the release tag
+    if: github.event_name == 'release'
+    runs-on: ubuntu-24.04
+    env:
+      BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The branch, not the tag: this job commits, and a tag checkout is
+          # detached. Full history because pushing from a shallow clone can be
+          # refused with "shallow update not allowed".
+          ref: ${{ env.BRANCH }}
+          fetch-depth: 0
+
+      - name: Rewrite version and date-released, then push
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          PUBLISHED: ${{ github.event.release.published_at }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"           # tags here are bare 1.12.0; be safe anyway
+          released="${PUBLISHED%%T*}"  # 2026-09-04T20:15:53Z -> 2026-09-04, UTC
+          # Anchored at column 0, so the indented preferred-citation block is
+          # untouchable and `^version:` can never match `cff-version:`.
+          # Deliberately NOT `sed -i`: that flag is the one place GNU and BSD
+          # sed disagree (BSD demands a backup suffix), and it is the only
+          # thing that stopped this script from being runnable on the author's
+          # mac. A POSIX temp-file rewrite runs identically on both, so what
+          # CI executes is exactly what can be tested locally.
+          sed -e "s|^version: \".*\"\$|version: \"${version}\"|" \
+              -e "s|^date-released: \".*\"\$|date-released: \"${released}\"|" \
+              CITATION.cff > CITATION.cff.tmp
+          mv CITATION.cff.tmp CITATION.cff
+          if git diff --quiet -- CITATION.cff; then
+            echo "CITATION.cff already reads ${version} -- nothing to sync."
+            exit 0
+          fi
+          git diff -- CITATION.cff
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "sync CITATION.cff to ${version}" -- CITATION.cff
+          # Rebase first: releases are published from the web UI, so the branch
+          # may have moved since. A GITHUB_TOKEN push starts no workflow run,
+          # and this workflow has no push trigger either, so there is no loop.
+          git pull --rebase --autostash origin "$BRANCH"
+          git push origin "HEAD:${BRANCH}"
