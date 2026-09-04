@@ -8,8 +8,16 @@ import streamlit as st
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.classify import run_classification
 from src.collapse import collapse_rows
-from src.dataset_io import SUPPORTED_SUFFIXES, load_table, resolve_effective_fov_col
-from src.emojis import sad_emoji
+from src.dataset_io import (
+    SUPPORTED_SUFFIXES,
+    _render_reject,
+    _render_warning,
+    interpret_table,
+    load_table,
+    read_table,
+    resolve_effective_fov_col,
+)
+from src.emojis import happy_emoji, sad_emoji
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import render_top_menu
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
@@ -27,10 +35,10 @@ from src.vis.univar import (
     feature_histogram_plot,
 )
 from src.widgets.analysis_config_widgets import (
-    dataset_config_widget,
     get_categorical_cols_analysis,
     get_fov_name_col_analysis,
     get_unique_row_id_col,
+    working_copy_arguments,
 )
 from src.widgets.classification_widgets import (
     CLASSIFIER_OPTIONS,
@@ -41,6 +49,12 @@ from src.widgets.classification_widgets import (
 from src.widgets.encoding_state import drop_varying_channels
 from src.widgets.filter_widgets import filters_widget, selection_key
 from src.widgets.multiselect_modes import ALL_LABEL, chosen_items
+from src.widgets.review_table_widget import (
+    applied_summary,
+    configured_row_id,
+    ignored_columns,
+    review_gate,
+)
 from src.widgets.selection_widgets import (
     multi_feature_select_widget,
     single_feature_select_widget,
@@ -124,7 +138,13 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
         # The *configured* name, blank included: the script re-runs resolve_row_id_col
         # and must invent the same column. Baking in the invented name would have
         # check_and_fix_df demand a column the data file never had.
-        "unique_row_id_col": get_unique_row_id_col(st.session_state.get("_use_data_extraction", True)),
+        # ... and on the user-table branch that name lives in the review table's working
+        # copy, which may not be any saved profile's: the file picks the profile, and an
+        # edit takes effect without a Save. Hence the gate's own accessor rather than a
+        # session key read from here -- the gate clears it when a different file arrives.
+        "unique_row_id_col": configured_row_id()
+        if not st.session_state.get("_use_data_extraction", True)
+        else get_unique_row_id_col(True),
         # The effective column, not the configured name: a script for a FOV-less
         # dataset must not name a column its data file does not have.
         "fov_name_col": st.session_state.get("effective_fov_name_col"),
@@ -137,6 +157,16 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
         "separate_by": separate_by,
         "subcolor_by": subcolor_by,
         "categorical_cols": list(categorical_cols) if categorical_cols else [],
+        # The columns the review table marked Ignore. They reach the script for one
+        # reason: coerce_majority_numeric_cols takes a *skip* set, and the app puts them
+        # in it so a column the user dismissed is not converted on its way to being
+        # discarded. Left out here, the script converts it, prints a warning about it
+        # that the app suppressed, and -- where ANALYSIS_COLUMNS is not captured -- keeps
+        # it as a numeric column the app's frame never held. Extraction emits nothing to
+        # dismiss, so that branch has none.
+        "ignored_cols": ignored_columns()
+        if not st.session_state.get("_use_data_extraction", True)
+        else [],
         "analysis_columns": st.session_state.get("analysis_columns"),
         "point_size": st.session_state.plot_point_size,
         "axis_label_size": st.session_state.plot_axis_label_size,
@@ -302,9 +332,13 @@ with col1:
     # invented row number is just "ID".
     row_id_label = "Cell ID" if use_data_extraction else (configured_row_id_col or "ID")
     categorical_cols = get_categorical_cols_analysis(use_data_extraction)
-    instruction_text = "Upload the file obtained from [Data Extraction](/data_extraction) directly." if use_data_extraction else "**Use the right panel to configure before loading your data ===>**"
+    # Nothing to say on the user-table branch: the columns come from the file, so there is
+    # no panel to visit first and no order to explain. The help tooltip carries the formats.
+    instruction_text = ("Upload the file obtained from [Data Extraction](/data_extraction) directly."
+                        if use_data_extraction else "Upload your table")
     uploaded_file = st.file_uploader(
         instruction_text,
+        label_visibility="visible" if use_data_extraction else "collapsed",
         # Kept in sync with SUPPORTED_SUFFIXES and dataset_io._diagnose_table.
         help="CSV, tab-, semicolon- or pipe-separated text (.tsv, .txt), Excel (.xlsx, .xlsm) "
              "or OpenDocument (.ods). The table must be a plain grid: column names on the first "
@@ -315,8 +349,60 @@ with col1:
         # remount it and silently drop the user's file.
         key="analysis_file_upload",
     )
+    decision = None
+    # What the FOV resolution below is measured against. Only the extraction branch has
+    # a designated FOV column; on the user-table branch this is "" and stays "", so
+    # resolve_effective_fov_col returns None and the FOV name is simply left out of
+    # the hover text there.
+    configured_fov_col = get_fov_name_col_analysis(use_data_extraction)
     try:
-        df, feature_groups_dict, upload_complete, delimiter, unique_row_id_col = load_table(uploaded_file, categorical_cols, use_data_extraction=use_data_extraction)
+        if use_data_extraction:
+            df, feature_groups_dict, upload_complete, delimiter, unique_row_id_col = load_table(
+                uploaded_file, categorical_cols)
+        else:
+            # Read, then stop: the gate needs the file's own headers in hand *before* any
+            # profile has been applied, which is the whole reason read_table exists apart
+            # from interpret_table.
+            df, feature_groups_dict, upload_complete, delimiter = None, None, False, ","
+            if uploaded_file is not None:
+                raw, _read_meta, delimiter, scope_warning, error_msg = read_table(uploaded_file)
+                if error_msg != "":
+                    _render_reject(error_msg, scope_warning)
+                else:
+                    # Rendered *here*, at read time, and not left to interpret_table as
+                    # the extraction branch leaves it. The gate now sits between the two
+                    # halves, and interpret_table runs only once the gate has been saved
+                    # -- so a workbook whose table is on sheet 2 opened the gate showing
+                    # the cover sheet's one junk column and "mark at least one
+                    # measurement", while the message that explains it ("only 'ReadMe'
+                    # was read") waited behind a Save that block makes impossible. A
+                    # warning about what was *read* belongs beside the uploader with the
+                    # rejection that shares its column, not after the decision.
+                    _render_warning(scope_warning)
+                    # Rendered into the wide column, where the config panel used to sit;
+                    # interpret_table's own messages stay here beside the uploader.
+                    with col2:
+                        decision = review_gate(uploaded_file, raw)
+                    if decision is not None:
+                        args = working_copy_arguments(
+                            decision["roles"], decision["groups"], decision["group_names"])
+                        categorical_cols = args["categorical_cols"]
+                        row_id_label = args["unique_row_id_col"] or "ID"
+                        df, feature_groups_dict, upload_complete, unique_row_id_col = interpret_table(
+                            # configured_fov_col is "" on this branch: a field-of-view
+                            # column here is an ordinary categorical, named by no role.
+                            raw, categorical_cols, args["unique_row_id_col"], configured_fov_col,
+                            ignored_cols=args["ignored_cols"], feature_groups=args["feature_groups"],
+                            # Already on screen from the read above; passing it here too
+                            # would print it a second time under the gate's own result.
+                            use_data_extraction=False)
+                        # Under interpret_table's own messages rather than in the gate's
+                        # column, because it belongs to the upload: an exact match renders
+                        # no gate at all, so this line is the only thing saying which
+                        # profile the plots below are drawn under -- and, after a reject,
+                        # the only way back to the table that can fix it. Re-uploading is
+                        # no escape: same name, same columns, same fingerprint.
+                        applied_summary(decision)
     except Exception as e:
         st.error(f"Failed to process the uploaded file: {e} {sad_emoji}")
         df, feature_groups_dict, upload_complete, delimiter = None, None, False, ","
@@ -329,8 +415,7 @@ with col1:
     # which channels (if any) carry a complete phasor G/S pair. The Phasor gate above
     # was built from the previous run's key, so if its availability just changed,
     # rerun once so the next run builds the method lists from the now-current value.
-    fov_name_col = resolve_effective_fov_col(
-        df, get_fov_name_col_analysis(use_data_extraction))
+    fov_name_col = resolve_effective_fov_col(df, configured_fov_col)
     st.session_state.effective_fov_name_col = fov_name_col
     _channel_harmonics = _compute_channel_harmonics(feature_groups_dict) if feature_groups_dict else {}
     st.session_state.phasor_available = any(
@@ -649,5 +734,6 @@ with col2:
         else:
             st.markdown(f"<h5 style='text-align: center; color: red'>No data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)
 
-    else:
-        dataset_config_widget(use_data_extraction=use_data_extraction)
+    elif uploaded_file is None and not use_data_extraction:
+        st.caption("Upload a dataset to get started. Its columns will be "
+                   f"automatically parsed {happy_emoji}")

@@ -142,8 +142,14 @@ def test_categorical_column_keeps_its_own_spelling_for_grouping(tmp_path, monkey
     assert sorted(ns["color_groups"]) == ["ctrl", "drug"]
 
 
-def test_duplicate_row_ids_deduplicated(tmp_path, monkeypatch):
-    """The app keeps only the first row per unique id; the script must match."""
+def test_duplicate_row_ids_stop_the_script(tmp_path, monkeypatch):
+    """The app refuses the file; the script must refuse it too, and say the same thing.
+
+    Both used to keep the first row per id -- consistent, and consistently wrong: the
+    script would plot 10 of 11 cells and print a warning nobody reads. The generated
+    loader already raises SystemExit on check_and_fix_df's error, so making it an error
+    is the whole change on this side.
+    """
     df = _grouped_df({"ctrl": 1.0}, n_per_group=10)
     df = pd.concat([df, df.iloc[[0]]], ignore_index=True)  # duplicate one cell_id
     state = _base_state(
@@ -151,8 +157,9 @@ def test_duplicate_row_ids_deduplicated(tmp_path, monkeypatch):
         categorical_cols=["treatment"],
         method_params={"selected_var": "feature_a"},
     )
-    ns = _run_script(tmp_path, state, df, monkeypatch)
-    assert len(ns["df"]) == 10
+    with pytest.raises(SystemExit) as stop:
+        _run_script(tmp_path, state, df, monkeypatch)
+    assert "cell_id" in str(stop.value) and "identify a row" in str(stop.value)
 
 
 def test_majority_numeric_object_feature_coerced(tmp_path, monkeypatch, capsys):
@@ -172,6 +179,30 @@ def test_majority_numeric_object_feature_coerced(tmp_path, monkeypatch, capsys):
     assert pd.api.types.is_numeric_dtype(ns["df"]["feature_a"])
     # the app's coercion warning must surface in the script output too
     assert "converted to NaN" in capsys.readouterr().out
+
+
+def test_an_ignored_column_is_left_alone_by_the_script_too(tmp_path, monkeypatch, capsys):
+    """The other half of the app's skip set: the columns the review table marked Ignore.
+
+    `plate_number` is the case the role exists for -- a label that reads as a number, with
+    a stray value in it. The app skips coercing it because the user dismissed it, so the
+    script must skip it as well: converted here it would report a conversion the app
+    suppressed, and with no ANALYSIS_COLUMNS captured (as here) the script's frame would
+    carry a numeric column the app's never held.
+    """
+    df = _grouped_df({"ctrl": 1.0, "drug": 2.0}, n_per_group=60)
+    df["plate_number"] = [str(1 + i % 3) for i in range(len(df))]
+    df.loc[0, "plate_number"] = "n.d."          # 1/120, under the 1% rule
+    state = _base_state(
+        "Feature Histogram",
+        categorical_cols=["treatment"],
+        color_by=["treatment"],
+        ignored_cols=["plate_number"],
+        method_params={"selected_var": "feature_a"},
+    )
+    ns = _run_script(tmp_path, state, df, monkeypatch)
+    assert not pd.api.types.is_numeric_dtype(ns["df"]["plate_number"])
+    assert "plate_number" not in capsys.readouterr().out
 
 
 def test_missing_unique_id_column_errors_like_the_app(tmp_path, monkeypatch):

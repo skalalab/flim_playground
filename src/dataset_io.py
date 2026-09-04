@@ -7,10 +7,18 @@ import pandas as pd
 import streamlit as st
 from pandas.errors import EmptyDataError, ParserError
 
+from src.column_roles import (
+    ROLE_NUMERICAL,
+    ROLE_ROW_ID,
+    code_span,
+    detect_column_groups,
+    detect_column_roles,
+    sibling_groups,
+    validate_roles,
+)
 from src.config import get_all_feature_extractors
 from src.emojis import happy_emoji, sad_emoji
 from src.widgets.analysis_config_widgets import (
-    get_all_feature_groups,
     get_fov_name_col_analysis,
     get_unique_row_id_col,
 )
@@ -403,7 +411,12 @@ _COMMA_DECIMAL = re.compile(r"-?\d+,\d+")
 _HINT_SAMPLE_ROWS = 200
 
 
-def _comma_decimal_hint(df):
+def _plain_quoted(text):
+    """A name or value set apart the way the reader's plain-text messages do it."""
+    return f"'{text}'"
+
+
+def _comma_decimal_hint(df, mark=_plain_quoted):
     """Advice for a table whose numbers use comma decimal points, else "".
 
     Added to an error the file is already getting, never a rejection on its own:
@@ -413,6 +426,12 @@ def _comma_decimal_hint(df):
 
     Runs on the parsed frame, so it covers spreadsheets too. A column counts only
     if every sampled value matches; as advice, a false positive is harmless.
+
+    `mark` is how the column name is set apart, because this one sentence is appended
+    to messages with two different renderers: quotes for the reader's rejections, which
+    are plain text escaped once by `_as_html`, and `code_span` for the review gate's,
+    which Streamlit renders as Markdown. The sampled value needs no such care -- it
+    matched `_COMMA_DECIMAL`, so it is digits and a comma.
     """
     for col in df.columns:
         if pd.api.types.is_numeric_dtype(df[col]):
@@ -422,7 +441,7 @@ def _comma_decimal_hint(df):
             continue
         if values.astype(str).str.strip().str.fullmatch(_COMMA_DECIMAL.pattern).all():
             example = str(values.iloc[0]).strip()
-            return (f"\nNote: values like '{example}' in '{col}' "
+            return (f"\nNote: values like '{example}' in {mark(col)} "
                     "write the decimal point as a comma, so they are "
                     "read as text rather than numbers. Re-export the table with a full stop as "
                     "the decimal point.")
@@ -532,7 +551,8 @@ def read_table(uploaded_file):
 
 
 def interpret_table(df, categorical_cols, unique_row_id_col, fov_name_col,
-                    scope_warning="", use_data_extraction=True):
+                    ignored_cols=None, feature_groups=None, scope_warning="",
+                    use_data_extraction=True):
     """Turn a structurally-sound frame into an analysis frame, given what columns mean.
 
     Returns `(df, feature_groups_dict, upload_complete, row_id_col)`. `row_id_col` goes
@@ -541,7 +561,11 @@ def interpret_table(df, categorical_cols, unique_row_id_col, fov_name_col,
     the file had.
 
     Takes the column roles as arguments rather than reading them, so the same code
-    serves a name that came from the saved profile and one the user just picked.
+    serves a name that came from the saved profile and one the user just picked. The
+    same goes for `feature_groups`, which is not a role but the review table's other
+    column: it is the only way the grouping reaches get_feature_groups_user_defined,
+    which reads no config, because under "the file picks the profile" the *active*
+    profile need not be the matched one.
 
     Renders its own messages, unlike read_table: this half only runs once the page is
     ready to show results. The two _render_warning calls are separated by get_features
@@ -565,7 +589,8 @@ def interpret_table(df, categorical_cols, unique_row_id_col, fov_name_col,
     df, row_id_col = resolve_row_id_col(df, unique_row_id_col)
     df, feature_groups_dict, warning_msg, error_msg = get_features(
         df, categorical_cols, use_data_extraction=use_data_extraction,
-        unique_row_id_col=row_id_col)
+        unique_row_id_col=row_id_col, ignored_cols=ignored_cols,
+        feature_groups=feature_groups)
     if error_msg != "":
         _render_reject(error_msg + _comma_decimal_hint(table))
         return None, None, False, row_id_col
@@ -583,19 +608,26 @@ def interpret_table(df, categorical_cols, unique_row_id_col, fov_name_col,
     return df, feature_groups_dict, True, row_id_col
 
 
-def load_table(uploaded_file, categorical_cols, use_data_extraction=True):
-    """Load an uploaded table (CSV, delimited text or spreadsheet) and validate it.
+def load_table(uploaded_file, categorical_cols):
+    """Load an extraction table (CSV, delimited text or spreadsheet) and validate it.
 
     Returns `(df, feature_groups_dict, upload_complete, delimiter, row_id_col)`. The
     separator goes back so the exported script reuses this answer rather than detecting
     one of its own that might differ.
 
-    Read then interpret, back to back, taking every column role from the active
-    profile. A caller that needs to do something between the two halves -- show the
-    file's own headers before any profile has been chosen -- calls read_table and
-    interpret_table itself instead.
+    Read then interpret, back to back, taking every column role from the extraction
+    config. **The Data Extraction branch only.** A user's own table cannot come through
+    here: the review gate has to show the file's own headers *before* any profile has
+    been applied, so that branch calls read_table and interpret_table itself and passes
+    the working copy's roles in. Hence no `use_data_extraction` flag -- passing False
+    here would compose a config read the page never makes, and the accessors are read
+    with True spelled out rather than left to a default so the branch is stated, not
+    inherited.
+
+    Extraction emits no column to dismiss, so `ignored_cols` is left unset: get_features
+    reads `None` and `[]` alike as "nothing ignored".
     """
-    unique_row_id_col = get_unique_row_id_col(use_data_extraction)
+    unique_row_id_col = get_unique_row_id_col(use_data_extraction=True)
     # What the caller gets back until resolve_row_id_col has run -- which is also what
     # the rejection paths below return, where no frame was loaded to invent one for.
     row_id_col = unique_row_id_col
@@ -607,10 +639,10 @@ def load_table(uploaded_file, categorical_cols, use_data_extraction=True):
         _render_reject(error_msg, scope_warning)
         return None, None, False, delimiter, row_id_col
 
-    fov_name_col = get_fov_name_col_analysis(use_data_extraction)
+    fov_name_col = get_fov_name_col_analysis(use_data_extraction=True)
     df, feature_groups_dict, upload_complete, row_id_col = interpret_table(
         df, categorical_cols, unique_row_id_col, fov_name_col,
-        scope_warning=scope_warning, use_data_extraction=use_data_extraction)
+        scope_warning=scope_warning)
     return df, feature_groups_dict, upload_complete, delimiter, row_id_col
 
 def get_feature_groups_data_extraction(cols):
@@ -654,8 +686,21 @@ def get_feature_groups_data_extraction(cols):
 
     return feature_groups_dict
 
-def get_feature_groups_user_defined(cols):
-    all_feature_groups = get_all_feature_groups()
+def get_feature_groups_user_defined(cols, all_feature_groups):
+    """Bucket `cols` into the user's own feature groups.
+
+    Groups are not a role -- they are the review table's *other* editable column, a
+    user-named bucket that only a Numerical column can sit in. But like the roles they
+    are **required to arrive as an argument**, with no fall-back to the active profile:
+    under a session-local working copy the groups being applied are not necessarily
+    the ones on disk, and the profile an upload matched is not necessarily the active
+    one. Reaching for the config here would also be a third reason for this module to
+    import `analysis_config_widgets` -- the `dataset_io` -> widgets edge that
+    `column_roles.py` and `emojis.py` are kept import-free to stay clear of.
+
+    An empty mapping is an answer, not a missing one: everything belongs in
+    Uncategorized Features.
+    """
     feature_groups_dict = {}
     feature_groups_dict["Uncategorized Features"] = []
 
@@ -680,6 +725,253 @@ def get_feature_groups_user_defined(cols):
         if uncategorized:
             feature_groups_dict["Uncategorized Features"] = uncategorized
     return feature_groups_dict
+
+def _as_the_analysis_reads_it(df):
+    """The frame with the analysis' own 1% coercion applied, on a copy.
+
+    The single pass every review-table rule that asks about dtypes shares. It walks and
+    re-coerces every text column, so on a wide table of free text it is the dominant cost
+    of opening the gate: ~62 ms of `build_working_copy`'s ~90 ms on 50k x 20. Hence one
+    pass per file load, shared -- two callers each making their own copy is that walk
+    twice for the same answer.
+    """
+    coerced, _warning = coerce_majority_numeric_cols(df.copy(), set())
+    return coerced
+
+
+def _numeric_names(coerced):
+    """The numeric column names of an already-coerced frame."""
+    return {col for col in coerced.columns
+            if pd.api.types.is_numeric_dtype(coerced[col])}
+
+
+def detect_roles(df, guess_row_id=True):
+    """Guess `{column: role}` the way the analysis will actually read the frame.
+
+    detect_column_roles reads dtypes; this runs the analysis' own 1% coercion first,
+    on a copy, so a feature column carrying a stray "n/a" is guessed as the
+    measurement get_features will make of it rather than as a category.
+    """
+    return detect_column_roles(_as_the_analysis_reads_it(df),
+                               guess_row_id=guess_row_id)
+
+
+def _convention_groups(columns):
+    """`{column: group}` for the columns written in the extraction naming convention.
+
+    The convention's group name doubles as the column's key: two columns are siblings
+    exactly when they share an `{extractor}_{channel}`.
+    """
+    return {col: group
+            for group, cols in get_feature_groups_data_extraction(columns).items()
+            if group != "Uncategorized Features"
+            for col in cols}
+
+
+def detect_groups(columns, existing_groups=None, known_groups=None):
+    """Guess `{column: group}` the way the analysis would name the groups itself.
+
+    detect_column_groups reads column names alone; this tries the **extraction naming
+    convention first**, because when it applies it is not a guess at all. A table of
+    `{extractor}_{channel}: {feature}` columns already carries its own grouping, and
+    get_feature_groups_data_extraction reads it exactly -- while the prefix rule would
+    butcher it, cutting "Lifetime fit_ch1: T1" at the underscore into "Lifetime fit".
+
+    The fall-through is **per column, not per file**: that butchering risk exists only
+    for the names the convention could read, so everything it declined goes on to the
+    prefix rule. This is what groups the hand-added columns in an otherwise conventional
+    extraction CSV. It is also why only the leftovers are counted -- the convention's own
+    columns share the prefix "Lifetime", and counting them in would form a group holding
+    a column already filed under "Lifetime fit_ch1".
+
+    `known_groups`, the profile's `{column: group}`, outranks even the convention's own
+    naming: a column whose `{extractor}_{channel}` a known column already carries joins
+    *that* group. Otherwise renaming a group -- the correction the review table invites
+    -- is undone by the next sibling column to arrive, which resurrects the generated
+    name beside the chosen one.
+    """
+    known_groups = known_groups or {}
+    siblings = sibling_groups((key, known_groups[col]) for col, key
+                              in _convention_groups(list(known_groups)).items())
+    by_convention = {col: siblings.get(key, key)
+                     for col, key in _convention_groups(columns).items()}
+    leftovers = [col for col in columns if col not in by_convention]
+    return {**by_convention,
+            **detect_column_groups(leftovers, existing_groups, known_groups)}
+
+
+def numeric_column_names(df):
+    """The columns the analysis will read as measurements, under its own 1% rule.
+
+    What the review table demotes a contested identifier back to. Reading raw dtypes
+    instead would send a column carrying one stray "n/a" back to Categorical, which is
+    the reading get_features then contradicts.
+
+    `build_working_copy` returns this set from the pass it already makes, so the gate's
+    file load does not call this. What still does is `_unusable_measurements_reason`,
+    which is asked of an arbitrary frame and role map.
+    """
+    return _numeric_names(_as_the_analysis_reads_it(df))
+
+
+def _row_id_reason(df, roles):
+    """Why the column marked Row ID cannot be one, or "".
+
+    An identifier is a *bijection* with the rows: every row named, no name shared. The
+    three ways that fails are asked in the order that says the most about the column --
+    empty everywhere, blank in some rows, or repeated.
+
+    All three end the same way downstream, but not as legibly. check_and_fix_df drops
+    all-empty columns *before* it looks for the identifier, so a blank one is reported as
+    missing -- a confusing thing to be told about a column whose header is right there.
+    The other two it refuses outright rather than *repairing* by dropping the rows that
+    share a value (missing ones collapse the same way, since `duplicated` treats them as
+    equal): a repair changes `n` behind a warning two screens later, and every count, box
+    and p-value after it describes the survivors. Per-image cell numbering is the ordinary
+    way in -- `cell_id` 1..25 repeated in every field of view is unique within an image and
+    nowhere else, so a repair would silently keep 25 rows of a 1204-cell plate.
+
+    Which is the reason to ask here as well: a profile stores which column is the
+    identifier and never whether it still is one, so the next file matches it exactly and
+    auto-applies with no table on screen. The loader can only stop the run; this runs
+    beside the dropdown that fixes it. The two say the same rule in different words and
+    must not drift -- tests/test_optional_row_id_column.py pins them to each other over
+    the same cases, since check_and_fix_df is getsource-inlined into exported scripts and
+    so cannot call this.
+    """
+    # Both ways out, in the order the user is likelier to want them. The second is the
+    # one nothing else says: the role is optional, and a table with no Row ID is numbered
+    # rather than refused.
+    exits = ("Give the role to another column, or to none "
+             "(rows will be identified by row number).")
+    for col, role in roles.items():
+        if role != ROLE_ROW_ID or col not in df.columns:
+            continue
+        series = df[col]
+        if series.isna().all():
+            return (f"{code_span(col)} is marked Row ID but is empty in every row, so the "
+                    f"table would be left with no identifier. {exits}")
+        blank = int(series.isna().sum())
+        if blank:
+            return (f"{code_span(col)} is marked Row ID but is blank in {blank} of "
+                    f"{len(series)} rows, so those rows have nothing identifying them. "
+                    f"{exits}")
+        repeats = series[series.duplicated()]
+        if len(repeats):
+            first = repeats.iloc[0]
+            return (f"{code_span(col)} is marked Row ID but does not identify a row on "
+                    f"its own: {code_span(first)} appears "
+                    f"{int((series == first).sum())} times, and {len(repeats)} of "
+                    f"{len(series)} rows would be dropped as duplicates. {exits}")
+    return ""
+
+
+def _unusable_measurements_reason(df, roles):
+    """Columns are marked Numerical and not one of them holds numbers.
+
+    validate_roles asks about the label; this asks about the data behind it. One usable
+    column is enough, because get_features needs one feature -- the rest are allowed to
+    be mistakes.
+
+    All-empty columns are excluded rather than trusted: pandas types a blank CSV column
+    float64, so a dtype test alone calls it a measurement, and check_and_fix_df then
+    drops it before get_features ever looks.
+    """
+    marked = [col for col, role in roles.items()
+              if role == ROLE_NUMERICAL and col in df.columns]
+    if not marked:
+        return ""
+    numeric = numeric_column_names(df)
+    if any(col in numeric and not df[col].isna().all() for col in marked):
+        return ""
+    return ("No column marked Numerical holds numbers, so there would be nothing to "
+            "plot. Check the Preview column for what those columns actually contain.")
+
+
+def review_blocking_reason(df, roles):
+    """Why the review table cannot be used yet, or "".
+
+    **Everything `interpret_table` would reject is asked here**, beside the dropdown that
+    fixes it -- and asked of the *frame*, not just the role map. The two used to disagree
+    by construction: the gate asked whether any column was labelled Numerical while
+    check_and_fix_df and get_features asked whether the data behind the labels was usable,
+    so the gate passed files the loader then refused, two screens later and (on an exact
+    match) with no table ever shown. Each reason below names the loader error it retires.
+
+    The reader's hint rides along on the measurement reasons only. A European-format
+    export has thirteen measurement columns every one of which reads as text, so "nothing
+    is Numerical" is true and useless without it; it says nothing about an empty
+    identifier.
+    """
+    bad_id = _row_id_reason(df, roles)                  # "<id> column is missing"
+    if bad_id:
+        return bad_id
+    reason = validate_roles(roles) or _unusable_measurements_reason(df, roles)
+    return reason + _comma_decimal_hint(df, mark=code_span) if reason else ""
+    # "No feature found", plus the comma-decimal note when that is why
+
+
+def build_working_copy(df, profile_roles=None, profile_groups=None,
+                       profile_group_names=None):
+    """The review table's contents for this file, as `(roles, groups, numeric columns)`.
+
+    The numeric set rides along because it comes free: the role guess already coerces a
+    copy of the frame under the analysis' own 1% rule, and `enforce_role_invariants`
+    wants exactly that reading of it -- which is why `numeric_column_names` is not
+    called after this. The two together were the load's two full coercion passes.
+
+    One row per column *of the file*, which is what decides the three cases. A column the
+    profile knows keeps the role and group it stored; a column the file has and the
+    profile has never seen is guessed; a column the profile knows and this file lacks is
+    simply absent -- there is no role to assign to something that is not there.
+
+    The split matters more than it looks. detect_roles and detect_groups group whatever
+    list they are handed, so passing every column would re-guess a grouping the user set
+    by hand three uploads ago. Only the new columns are ever guessed, and that rule lives
+    here because nothing downstream checks it. The stored groups go *in* as well, as
+    detect_groups' `known_groups`, so a guess follows where the user filed the siblings
+    rather than re-deriving a name the user may have renamed.
+
+    `profile_group_names` is the profile's full group list, which the `{column: group}`
+    mapping cannot express: a group the user made and this file cannot fill has no
+    column to be read off it. Passing it is what makes detect_groups' "join an existing
+    group by name" rule reachable for an empty group -- the case that rule was written
+    for, since a group whose columns are all elsewhere is precisely one waiting to be
+    filled.
+
+    Reads no config: both profile arguments come from the caller, so the same code serves
+    the matched profile, a rebuilt working copy, and the no-profile auto-detect path.
+    """
+    profile_roles = profile_roles or {}
+    profile_groups = profile_groups or {}
+    # A profile whose identifier this file still has is not asking for another. Without
+    # this the guess and the stored answer both hold ROLE_ROW_ID, enforce_role_invariants
+    # sees no newcomer to prefer and keeps the leftmost -- so a new `uuid` column silently
+    # demotes the `cell_id` the user chose three uploads ago, with a notice on entry.
+    #
+    # Asked of *this file's* columns, not of the profile: the stored role only reaches a
+    # column the file actually has, so a profile whose `cell_id` arrives as `roi_id`
+    # would suppress the guess and place no Row ID either way -- leaving the real
+    # identifier guessed Categorical, one level per row in every picker, and the rows
+    # renumbered 1..N under an invented name.
+    keeps_row_id = any(profile_roles.get(col) == ROLE_ROW_ID for col in df.columns)
+    # The one coercion pass, kept in hand: detect_roles would make its own copy and the
+    # numeric set below would make a second, which is the same walk twice per file load.
+    coerced = _as_the_analysis_reads_it(df)
+    detected = detect_column_roles(coerced, guess_row_id=not keeps_row_id)
+    roles = {col: profile_roles.get(col, detected[col]) for col in df.columns}
+    groups = {col: profile_groups[col] for col in df.columns
+              if col in profile_roles and col in profile_groups}
+    fresh = [col for col in df.columns
+             if col not in profile_roles and roles[col] == ROLE_NUMERICAL]
+    existing = set(profile_groups.values()) | set(profile_group_names or ())
+    groups.update(detect_groups(fresh, existing_groups=existing,
+                                known_groups=profile_groups))
+    return (roles,
+            {col: group for col, group in groups.items()
+             if roles.get(col) == ROLE_NUMERICAL},
+            _numeric_names(coerced))
+
 
 def coerce_majority_numeric_cols(df, skip_cols):
     """
@@ -714,7 +1006,8 @@ def coerce_majority_numeric_cols(df, skip_cols):
                 df[col] = converted
     return df, warning_msg
 
-def get_features(df, categorical_cols, use_data_extraction=True, unique_row_id_col=None):
+def get_features(df, categorical_cols, use_data_extraction=True, unique_row_id_col=None,
+                 ignored_cols=None, feature_groups=None):
     """
     Extract all numeric features from the dataframe. Group them (by channel) based on the feature extractors:
     - morphology (mask morphology)
@@ -734,14 +1027,28 @@ def get_features(df, categorical_cols, use_data_extraction=True, unique_row_id_c
             df, get_unique_row_id_col(use_data_extraction))
     error_msg = ""
 
-    skip_cols = set([unique_row_id_col] + list(categorical_cols))
+    # An ignored column is one the user looked at and dismissed. Skipping coercion
+    # keeps it from being converted on its way to being discarded.
+    ignored = set(ignored_cols or ())
+    skip_cols = set([unique_row_id_col] + list(categorical_cols)) | ignored
     df, warning_msg = coerce_majority_numeric_cols(df, skip_cols)
 
-    numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+    # Excluded by name, not left to the dtype test below. Ignoring a *text* column is
+    # free -- the prune drops anything that is not the row id, a categorical or
+    # numeric -- but a numeric one passes that test and would be offered as a
+    # measurement whatever role the user gave it, making Ignore silently inert on
+    # exactly the ambiguous columns (plate_number, well, day) it exists for.
+    numeric_cols = [col for col in df.columns
+                    if pd.api.types.is_numeric_dtype(df[col]) and col not in ignored]
     if use_data_extraction:
         feature_groups_dict = get_feature_groups_data_extraction(numeric_cols)
     else:
-        feature_groups_dict = get_feature_groups_user_defined(numeric_cols)
+        # User-table branch only -- the extraction branch derives its groups from the
+        # column naming convention and has nothing to override. `or {}` because the
+        # grouping is optional here and there is nowhere else to read one from: only
+        # the caller knows which profile the file matched.
+        feature_groups_dict = get_feature_groups_user_defined(
+            numeric_cols, feature_groups or {})
     all_numerical_features_cols = []
     for feature_group, cols in feature_groups_dict.items():
         all_numerical_features_cols.extend(cols)
@@ -761,8 +1068,12 @@ def get_features(df, categorical_cols, use_data_extraction=True, unique_row_id_c
     # Name what the prune drops: a column that is neither the row id, nor a matched
     # categorical, nor numeric enough for the 1% rule. Up to 5 names, then a count —
     # same shape as the empty-column and NaN-column warnings.
+    # Ignored columns are left out: this warning exists to surprise the user with a
+    # column they did not expect to lose, and one they marked Ignore is the opposite
+    # of a surprise.
     columns_to_keep_set = set(columns_to_keep)
-    dropped = [col for col in df.columns if col not in columns_to_keep_set]
+    dropped = [col for col in df.columns
+               if col not in columns_to_keep_set and col not in ignored]
     if dropped:
         listed = ", ".join(dropped[:5])
         more = f" and {len(dropped) - 5} more" if len(dropped) > 5 else ""
@@ -834,20 +1145,31 @@ def check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col):
             error_msg += f"Error: {unique_row_id_col} column is missing in the uploaded file. It is required. \n"
             return None, warning_msg, error_msg
 
+        # An identifier is a bijection with the rows: every row named, no name shared.
+        # Both halves are errors rather than repairs. Dropping the rows that share a name
+        # silently changes n, and every count, box and p-value after it describes the
+        # survivors. Per-image cell numbering is the ordinary way in: cell_id 1..25
+        # repeated in every field of view would keep 25 rows of a 1204-cell plate.
+        # Missing values are checked first because astype(str) below turns them into the
+        # string "nan", which then collides.
+        # Named columns only: row numbers can neither go missing nor repeat.
+        blank_ids = int(df[unique_row_id_col].isna().sum())
+        if blank_ids:
+            error_msg += (f"Error: '{unique_row_id_col}' is the unique identifier and is "
+                          f"blank in {blank_ids} of {len(df)} rows, which leaves those rows "
+                          "with nothing identifying them. Name a different column as the "
+                          "identifier.\n")
+            return None, warning_msg, error_msg
+
         if df[unique_row_id_col].duplicated().any():
-            original_row_count = len(df)
-            first_duplicate = df[unique_row_id_col].duplicated()
-            first_duplicate_value = df[unique_row_id_col][first_duplicate].iloc[0]
-            first_duplicate_index = df.loc[first_duplicate].index[0]
-            warning_msg += (f"Warning: duplicate values found in '{unique_row_id_col}'. The first is "
-                            f"'{first_duplicate_value}' at row {first_duplicate_index}. Duplicate rows "
-                            "were dropped, only the first was kept. ")
-            # drop the duplicate rows, only keep the first one
-            df = df.drop_duplicates(subset=[unique_row_id_col], keep="first")
-            # after fixing the df, print out the number of rows removed
-            rows_removed = original_row_count - len(df)
-            if rows_removed > 0:
-                warning_msg += f"{rows_removed} rows were removed.\n"
+            shared = df[unique_row_id_col].duplicated()
+            first_value = df[unique_row_id_col][shared].iloc[0]
+            repeats = int((df[unique_row_id_col] == first_value).sum())
+            error_msg += (f"Error: '{unique_row_id_col}' is the unique identifier and does "
+                          f"not identify a row on its own: '{first_value}' appears {repeats} "
+                          f"times, and {int(shared.sum())} of {len(df)} rows share an "
+                          "identifier. Name a different column as the identifier.\n")
+            return None, warning_msg, error_msg
 
         # make sure unique_row_id_col is of type str
         df[unique_row_id_col] = df[unique_row_id_col].astype(str)

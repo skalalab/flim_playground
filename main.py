@@ -159,10 +159,23 @@ def main():
         if flim_decay_input_type not in cfg:
             cfg[flim_decay_input_type] = {}
         # later add input_type selection for other imaging modalities
+    # Both are required, and stripped rather than trusted: extraction is FOV-based and
+    # id-based, and these name columns it *reads* -- metadata_df[fov_name_col] in file_io,
+    # the identifier fov_extraction composes per cell. Blank does not fail loudly, which
+    # is why it is refused here: an empty string is a *name*, so index.name = "" gives a
+    # column literally called "", every in-session lookup succeeds, and the run writes a
+    # CSV whose first header cell is empty -- which Data Analysis reads back as
+    # "Unnamed: 0" and drops, taking the identifier with it.
     with cols[2]:
-        cfg["unique_cell_id_col"] = st.text_input("Unique cell identifier column name", value=cfg.get("unique_cell_id_col", "cell_id"), help="Unique cell identifier column name", key=f"unique_cell_id_{active}")
+        cfg["unique_cell_id_col"] = st.text_input("Unique cell identifier column name", value=cfg.get("unique_cell_id_col", "cell_id"), help="Unique cell identifier column name", key=f"unique_cell_id_{active}").strip()
+        if not cfg["unique_cell_id_col"]:
+            error_msg = "Name the column holding cells."
+            st.error(f"{error_msg} {sad_emoji}")
     with cols[3]:
-        cfg["fov_name_col"] = st.text_input("FOV column name", value=cfg.get("fov_name_col", "image_name"), key=f"fov_name_{active}")
+        cfg["fov_name_col"] = st.text_input("FOV column name", value=cfg.get("fov_name_col", "image_name"), key=f"fov_name_{active}").strip()
+        if not cfg["fov_name_col"]:
+            error_msg = "Name the column holding fields of view."
+            st.error(f"{error_msg} {sad_emoji}")
 
     cols = st.columns(4)
     with cols[0]:

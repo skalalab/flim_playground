@@ -332,6 +332,12 @@ def _build_config_section(state: dict) -> str:
         f"UNIQUE_ROW_ID_COL = {state.get('unique_row_id_col', '')!r}",
         f"FOV_NAME_COL = {state.get('fov_name_col')!r}",
         f"CATEGORICAL_COLS = {state.get('categorical_cols', [])!r}",
+        # Not a column the script analyses -- the prune below drops them, and on the
+        # user-table branch they are the columns the review table marked Ignore. They
+        # are here to complete the coercion skip set: the app skips them so a dismissed
+        # column is not converted on its way out, and a script that omitted them would
+        # print a conversion warning the app suppressed.
+        f"IGNORED_COLS = {state.get('ignored_cols', [])!r}",
     ]
 
     # The column universe the app analyses. get_features() (src/dataset_io.py) keeps
@@ -481,8 +487,11 @@ if _error_msg:
 df, ROW_ID_COL = resolve_row_id_col(df, UNIQUE_ROW_ID_COL)
 # ROW_ID_COL, not UNIQUE_ROW_ID_COL: an invented identifier is a column of digit
 # strings, and left out of this skip set it would coerce to numbers and stop being one.
+# Same set the app builds in get_features(), IGNORED_COLS included: a column the user
+# dismissed is not converted on its way to being discarded, so nothing is reported
+# about it here that the app did not report there.
 df, _coerce_warning = coerce_majority_numeric_cols(
-    df, set([ROW_ID_COL] + list(CATEGORICAL_COLS)))
+    df, set([ROW_ID_COL] + list(CATEGORICAL_COLS) + list(IGNORED_COLS)))
 _warning_msg += _coerce_warning
 if ANALYSIS_COLUMNS is not None:
     # Same prune the app applies in get_features() — see ANALYSIS_COLUMNS above.

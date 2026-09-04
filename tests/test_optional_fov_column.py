@@ -33,11 +33,36 @@ def test_a_blank_fov_name_is_not_added_as_a_categorical(monkeypatch):
     assert "" not in cats
 
 
+def test_a_repeat_in_the_stored_list_is_returned_once(monkeypatch):
+    """get_features keeps every categorical that matches by name, so a repeat puts the
+    column into columns_to_keep twice and every later df[col] hands back a DataFrame
+    instead of a Series. The extraction branch dedups against two free-text fields; this
+    one dedups the stored list itself, which an older profile can hold a repeat in.
+    """
+    monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
+    monkeypatch.setattr(acw, "_get_profile_config",
+                        _profile(categorical_cols=["treatment", "well", "treatment"],
+                                 fov_name_col="well"))
+    cats = acw.get_categorical_cols_analysis(use_data_extraction=False)
+    assert cats == ["treatment", "well", *acw._PLATFORM_CATEGORICALS]
+
+
+def test_reading_the_categoricals_does_not_write_to_the_profile(monkeypatch):
+    """The platform columns are added to the *frame* at plot time, never to the profile.
+    Appending them to the stored list is invisible only while every call re-parses the
+    config; a memoised read would carry them into the next Save.
+    """
+    stored = {"categorical_cols": ["treatment"], "fov_name_col": ""}
+    monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
+    monkeypatch.setattr(acw, "_get_profile_config", lambda *a, **k: stored)
+    acw.get_categorical_cols_analysis(use_data_extraction=False)
+    assert stored == {"categorical_cols": ["treatment"], "fov_name_col": ""}
+
+
 def test_a_numeric_fov_column_is_a_label_not_a_duplicated_feature(monkeypatch):
     """A numeric FOV column must be a label, and must appear exactly once."""
     monkeypatch.setattr(dataset_io, "get_unique_row_id_col", lambda *a, **k: "row")
     monkeypatch.setattr(dataset_io, "get_fov_name_col_analysis", lambda *a, **k: "well")
-    monkeypatch.setattr(dataset_io, "get_all_feature_groups", dict)
 
     # Derive cats from the accessor under test, not by hand, so this test actually
     # exercises the line added to get_categorical_cols_analysis.
@@ -160,7 +185,7 @@ def test_load_table_warns_when_the_configured_fov_column_is_absent(monkeypatch):
     raw = b"cell_id,treatment,Lifetime fit_ch1: T1\na,ctrl,0.40\nb,drug,0.55\n"
     upload = _uploaded_file(raw, "no_fov.csv")
     df, _groups, complete, _delimiter, _row_id = dataset_io.load_table(
-        upload, ["treatment", "image_name"], use_data_extraction=True)
+        upload, ["treatment", "image_name"])
 
     assert complete is True
     assert "image_name" not in df.columns
@@ -174,19 +199,25 @@ def test_load_table_warns_when_the_configured_fov_column_is_absent(monkeypatch):
 def test_user_table_branch_stays_silent_about_a_missing_fov_column(monkeypatch):
     """A user-table profile's fov_name_col can be a stale extraction default the
     table never had -- resolve_effective_fov_col already turns that into a silent
-    None, and the branch must not warn about it on every load."""
+    None, and the branch must not warn about it on every load.
+
+    Through read_table + interpret_table, which is the branch: load_table composes the
+    extraction branch and nothing else, so `use_data_extraction=False` no longer reaches
+    this warning through it.
+    """
     from tests.test_table_formats import _uploaded_file
 
     rendered = []
-    monkeypatch.setattr(dataset_io, "get_unique_row_id_col", lambda *a, **k: "wine_id")
-    monkeypatch.setattr(dataset_io, "get_fov_name_col_analysis", lambda *a, **k: "image_name")
     monkeypatch.setattr(dataset_io.st, "markdown", lambda msg, **k: rendered.append(msg))
     monkeypatch.setattr(dataset_io.st, "write", lambda msg, **k: rendered.append(msg))
 
     raw = b"wine_id,treatment,Lifetime fit_ch1: T1\na,ctrl,0.40\nb,drug,0.55\n"
     upload = _uploaded_file(raw, "no_fov.csv")
-    df, _groups, complete, _delimiter, _row_id = dataset_io.load_table(
-        upload, ["treatment"], use_data_extraction=False)
+    table, _meta, _delimiter, scope_warning, error = dataset_io.read_table(upload)
+    assert error == ""
+    df, _groups, complete, _row_id = dataset_io.interpret_table(
+        table, ["treatment"], "wine_id", "image_name", feature_groups={},
+        scope_warning=scope_warning, use_data_extraction=False)
 
     assert complete is True
     assert "image_name" not in df.columns

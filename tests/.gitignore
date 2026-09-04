@@ -17,3 +17,6 @@ parity/_work/
 # One-off diagnostic drivers: standalone scripts written to answer a single question
 # (e.g. why an MLE warm start moved), not collected by pytest and not imported by it.
 _diag_*.py
+
+# Synthetic tables for the review-table gate, written by make_review_datasets.py
+review_data/

@@ -922,7 +922,7 @@ def test_the_decimal_hint_survives_a_missing_row_id_column(monkeypatch):
     # A real UploadedFile: st.cache_data's hasher rejects a BytesIO carrying a
     # .name, and load_table goes through the cache rather than around it.
     upload = _uploaded_file(b"a;b\n1,5;2,3\n2,5;3,3\n", "euro.csv")
-    df, groups, complete, delimiter, _row_id = dataset_io.load_table(upload, [], use_data_extraction=False)
+    df, groups, complete, delimiter, _row_id = dataset_io.load_table(upload, [])
 
     assert (df, groups, complete, delimiter) == (None, None, False, ";")
     shown = " ".join(rendered)
@@ -941,7 +941,7 @@ def test_load_table_hands_back_the_separator_it_actually_read(monkeypatch):
     for suffix, expected in ((".tsv", "\t"), (".csv", ","), (".xlsx", ",")):
         raw = _upload(frame, suffix).getvalue()
         _df, _g, complete, delimiter, _row_id = dataset_io.load_table(
-            _uploaded_file(raw, f"table{suffix}"), ["treatment"], use_data_extraction=True)
+            _uploaded_file(raw, f"table{suffix}"), ["treatment"])
         assert complete is True, suffix
         assert delimiter == expected, suffix
 

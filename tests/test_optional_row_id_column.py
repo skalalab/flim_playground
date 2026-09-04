@@ -63,13 +63,53 @@ def test_a_named_but_missing_row_id_is_still_an_error():
     assert fixed is None
 
 
-def test_duplicates_are_still_dropped_when_a_row_id_is_named():
+def test_a_repeated_row_id_is_refused_rather_than_repaired():
+    """This used to drop the rows that shared an id, behind a warning.
+
+    The repair changes n silently, and every count, box and p-value after it describes
+    the survivors -- so it is the file that is refused now, not the rows.
+    """
     df = _frame()
     df["flower_id"] = ["a", "a", "c", "d"]
-    fixed, warning, error = dataset_io.check_and_fix_df(df, ["species"], "flower_id", None)
-    assert error == ""
-    assert len(fixed) == 3
-    assert "duplicate values found" in warning
+    fixed, _warning, error = dataset_io.check_and_fix_df(df, ["species"], "flower_id", None)
+    assert fixed is None
+    assert "flower_id" in error and "'a' appears 2 times" in error, error
+
+
+def test_a_row_id_blank_in_some_rows_is_refused():
+    """Checked before the astype(str) below it, which would turn the blanks into the
+    string "nan" and hand them to the duplicate rule as if they were a real name."""
+    df = _frame()
+    df["flower_id"] = ["a", None, "c", None]
+    fixed, _warning, error = dataset_io.check_and_fix_df(df, ["species"], "flower_id", None)
+    assert fixed is None
+    assert "blank in 2 of 4 rows" in error, error
+
+
+def test_the_loader_and_the_review_gate_agree_on_what_an_identifier_is():
+    """One rule, stated twice, so the two statements are pinned to each other.
+
+    `check_and_fix_df` is getsource-inlined into exported scripts and must stay
+    import-free, so it cannot call the gate's `_row_id_reason`. That is exactly the shape
+    that drifts: the gate would open a table for a file the loader accepts, or refuse one
+    it would have loaded.
+    """
+    from src.column_roles import ROLE_NUMERICAL, ROLE_ROW_ID
+    from src.dataset_io import review_blocking_reason
+
+    cases = {
+        "unique": ["a", "b", "c", "d"],
+        "repeated": ["a", "a", "c", "d"],
+        "blank": ["a", None, "c", "d"],
+        "all blank": [None, None, None, None],
+    }
+    for name, ids in cases.items():
+        df = _frame()
+        df["flower_id"] = ids
+        roles = {"flower_id": ROLE_ROW_ID, "Sepal length": ROLE_NUMERICAL}
+        loader_refused = dataset_io.check_and_fix_df(df, [], "flower_id", None)[2] != ""
+        gate_refused = review_blocking_reason(df, roles) != ""
+        assert loader_refused == gate_refused, f"{name}: loader {loader_refused}, gate {gate_refused}"
 
 
 def test_a_blank_row_id_skips_deduplication_entirely():
@@ -151,11 +191,18 @@ IRIS = (b"Sepal length,Sepal width,species\n"
 
 
 def test_load_table_accepts_an_iris_table_with_no_identifier(monkeypatch):
+    """load_table's 5th value is the *resolved* identifier, invented one included.
+
+    A composition property, driven by stubbing the accessor blank: load_table is the
+    extraction branch now, and an extraction config's identifier is never blank. The
+    production route to a nameless table is the review gate, which hands a blank name
+    straight to interpret_table -- covered in test_read_interpret_split.
+    """
     from tests.test_table_formats import _uploaded_file
 
     _silent(monkeypatch, row_id="")
     df, groups, complete, _delimiter, row_id_col = dataset_io.load_table(
-        _uploaded_file(IRIS, "iris.csv"), ["species"], use_data_extraction=False)
+        _uploaded_file(IRIS, "iris.csv"), ["species"])
 
     assert complete is True
     assert row_id_col == "Row number"
@@ -169,7 +216,7 @@ def test_load_table_hands_back_the_configured_name_when_there_is_one(monkeypatch
     _silent(monkeypatch, row_id="flower_id")
     raw = b"flower_id,Sepal length,species\n1,5.1,setosa\n2,4.9,setosa\n"
     df, _groups, complete, _delimiter, row_id_col = dataset_io.load_table(
-        _uploaded_file(raw, "iris.csv"), ["species"], use_data_extraction=False)
+        _uploaded_file(raw, "iris.csv"), ["species"])
 
     assert complete is True
     assert row_id_col == "flower_id"
@@ -186,7 +233,7 @@ def test_load_table_returns_the_configured_name_when_the_upload_is_rejected(monk
     # early return in load_table.
     upload = _uploaded_file(b"PK\x03\x04rest of a workbook", "iris.csv")
     df, _groups, complete, _delimiter, row_id_col = dataset_io.load_table(
-        upload, ["species"], use_data_extraction=False)
+        upload, ["species"])
 
     assert complete is False and df is None
     assert row_id_col == "flower_id"
@@ -398,28 +445,34 @@ def test_an_exported_script_reinvents_the_row_id_and_runs(tmp_path):
 
 # ------------------------------------------------------------------- profile defaults
 
-def test_a_fresh_analysis_profile_seeds_blank_column_names(monkeypatch, tmp_path):
-    """This panel configures a *user* table, which need not have any of these columns.
-    Seeding a name from the extraction config would reject every table lacking the
-    identifier, would be the analysis layer calling its rows cells, and would describe
-    someone else's FOV column and categoricals as if they were this table's."""
+def test_a_fresh_install_creates_no_analysis_profile_at_all(monkeypatch, tmp_path):
+    """Reading the config must not write one. Saving is the only way a profile is made.
+
+    A profile minted by a read spends one of MAX_PROFILES and needs a clause in
+    `ProfileFit.is_exact` to stop it matching every file, since it knows no columns and
+    two empty sets are equal.
+
+    So no profile is a reachable state, and the accessors have to answer from it: a user
+    table has no designated FOV column and no categoricals of its own -- only the three
+    cluster columns the plots add themselves. Every read below is followed by the
+    file-existence check, because any one of them writing is the bug.
+    """
     from src.widgets import analysis_config_widgets as acw
 
     monkeypatch.setattr(acw, "_ANALYSIS_CONFIG_PATH", tmp_path / "analysis_config.toml")
     acw.st.session_state.pop("current_profile", None)
-    # A configured extraction setup that must not leak into the new profile.
+    # A configured extraction setup that must not leak on to this branch.
     monkeypatch.setattr(acw, "get_unique_cell_id_col", lambda: "cell_id")
     monkeypatch.setattr(acw, "get_fov_name_col", lambda: "image_name")
     monkeypatch.setattr(acw, "get_categorical_cols", lambda: ["treatment"])
 
-    acw.dataset_config_widget(use_data_extraction=True)   # the early-return seeding path
+    assert acw._get_current_profile() == ""
+    assert acw.list_profiles() == []
+    assert not (tmp_path / "analysis_config.toml").exists(), "reading the config wrote it"
 
-    seeded = acw._get_profile_config()
-    assert seeded["unique_row_id_col"] == ""
-    assert seeded["fov_name_col"] == ""
-    assert seeded["categorical_cols"] == []
-    # And the accessors read that seed back as "no FOV column, no categoricals of the
-    # user's own" -- only the three cluster columns the plots add themselves.
+    assert acw._get_profile_config() == {}
+    assert acw.get_unique_row_id_col(use_data_extraction=False) == ""
     assert acw.get_fov_name_col_analysis(use_data_extraction=False) == ""
     assert acw.get_categorical_cols_analysis(use_data_extraction=False) == [
         "GMM_group", "2D_GMM_group", "k_means_cluster"]
+    assert not (tmp_path / "analysis_config.toml").exists(), "reading the config wrote it"

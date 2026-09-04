@@ -128,9 +128,8 @@ def test_dropped_columns_point_at_the_home_page_for_extraction_data():
     assert "Home page" in warning
 
 
-def test_the_user_table_branch_does_not_point_at_the_home_page(monkeypatch):
+def test_the_user_table_branch_does_not_point_at_the_home_page():
     """A user table's names come off its own headers, so that advice would misdirect."""
-    monkeypatch.setattr(dataset_io, "get_all_feature_groups", dict)
     df = pd.DataFrame({"row": ["a", "b"], "notes": ["x", "y"], "feat": [1.0, 2.0]})
     _out, _groups, warning, error = dataset_io.get_features(
         df, [], use_data_extraction=False, unique_row_id_col="row")

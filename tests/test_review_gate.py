@@ -1,0 +1,488 @@
+"""Which screen the gate shows, and when it closes.
+
+The page has no file_uploader accessor, so these call `review_gate` directly. What is
+checkable here is the decision it returns -- open or confirmed, and with which profile --
+which is what the page branches on; the editing itself is driven through the page, in
+`test_review_page.py`.
+
+Run in bare mode: widgets return their defaults, so an unpicked chooser reads as None and
+no button is ever pressed. That is exactly the state a first render is in.
+"""
+import re
+import sys
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from src.column_roles import (
+    NO_GROUP,
+    ROLE_CATEGORICAL,
+    ROLE_NUMERICAL,
+    ROLE_ROW_ID,
+)
+from src.widgets import review_table_widget as gate
+
+
+class _Upload:
+    """Only what the gate touches: a name. The frame is passed separately."""
+
+    def __init__(self, name):
+        self.name = name
+
+
+@pytest.fixture
+def acw(tmp_path, monkeypatch):
+    from src.widgets import analysis_config_widgets as module
+
+    monkeypatch.setattr(module, "_ANALYSIS_CONFIG_PATH", tmp_path / "analysis_config.toml")
+    module.st.session_state.clear()
+    return module
+
+
+def _frame():
+    return pd.DataFrame({
+        "cell_id": [1, 2, 3],
+        "treatment": ["DMSO", "PD-L1", "DMSO"],
+        "Area": [100.0, 120.0, 140.0],
+    })
+
+
+ROLES = {"cell_id": ROLE_ROW_ID, "treatment": ROLE_CATEGORICAL, "Area": ROLE_NUMERICAL}
+
+
+def test_a_file_no_profile_describes_opens_the_gate(acw):
+    assert gate.review_gate(_Upload("pdl1_rep1.csv"), _frame()) is None
+
+
+def test_an_exact_match_skips_the_gate_entirely(acw):
+    acw.save_working_copy("pdl1", ROLES, {"Area": "morphology"})
+    decision = gate.review_gate(_Upload("pdl1_rep2.csv"), _frame())
+    assert decision is not None
+    assert decision["profile"] == "pdl1"
+
+
+def test_an_auto_applied_profile_brings_its_groups(acw):
+    acw.save_working_copy("pdl1", ROLES, {"Area": "morphology"})
+    decision = gate.review_gate(_Upload("pdl1_rep2.csv"), _frame())
+    assert decision["groups"] == {"Area": "morphology"}
+
+
+def test_a_file_with_one_extra_column_is_not_an_exact_match(acw):
+    """Containment is deliberately not enough: auto-applying would drop a measurement."""
+    acw.save_working_copy("pdl1", ROLES, {})
+    wider = _frame().assign(Perimeter=[10.0, 11.0, 12.0])
+    assert gate.review_gate(_Upload("pdl1_rep3.csv"), wider) is None
+
+
+def test_an_empty_profile_never_claims_a_file(acw):
+    acw._get_profile_config("blank")
+    acw._save_profile_config("blank", {})
+    assert gate.review_gate(_Upload("anything.csv"), _frame()) is None
+
+
+def test_two_profiles_with_the_same_columns_send_the_user_to_the_chooser(acw):
+    acw.save_working_copy("pdl1", ROLES, {})
+    acw.save_working_copy("pdl1-again", ROLES, {})
+    assert gate.review_gate(_Upload("pdl1_rep2.csv"), _frame()) is None
+
+
+def test_the_decision_survives_a_rerun_of_the_same_file(acw):
+    acw.save_working_copy("pdl1", ROLES, {})
+    first = gate.review_gate(_Upload("pdl1_rep2.csv"), _frame())
+    assert gate.review_gate(_Upload("pdl1_rep2.csv"), _frame()) == first
+
+
+def test_a_different_file_reopens_the_gate(acw):
+    acw.save_working_copy("pdl1", ROLES, {})
+    assert gate.review_gate(_Upload("pdl1_rep2.csv"), _frame()) is not None
+    other = pd.DataFrame({"sepal": [1.0, 2.0], "species": ["a", "b"]})
+    assert gate.review_gate(_Upload("iris.csv"), other) is None
+
+
+def test_a_confirmed_decision_records_the_configured_row_id(acw):
+    """The **configured** name, which is what the exported script has to re-invent from.
+
+    A blank one means "number the rows", and baking in the resolved name instead would
+    have check_and_fix_df demand a column the data file never had.
+    """
+    acw.save_working_copy("pdl1", ROLES, {})
+    assert gate.review_gate(_Upload("pdl1_rep2.csv"), _frame()) is not None
+    assert gate.configured_row_id() == "cell_id"
+
+
+def test_a_new_upload_cannot_inherit_the_last_files_configured_row_id(acw):
+    """It is one of `_STATE_KEYS`, so its lifetime is the uploaded file's.
+
+    Written from the page instead, it was the one `_review_*` key a different file did
+    not clear -- and an export for a table with no identifier would then have named the
+    previous file's column, which this one does not have.
+    """
+    acw.save_working_copy("pdl1", ROLES, {})
+    gate.review_gate(_Upload("pdl1_rep2.csv"), _frame())
+    assert gate.configured_row_id() == "cell_id"
+
+    other = pd.DataFrame({"sepal": [1.0, 2.0], "species": ["a", "b"]})
+    assert gate.review_gate(_Upload("iris.csv"), other) is None      # the gate opens
+    assert gate.configured_row_id() == ""
+
+
+def test_a_table_with_no_row_id_records_a_blank_not_the_invented_name(acw):
+    """Blank is the answer the script re-invents "Row number" from."""
+    frame = pd.DataFrame({"treatment": ["DMSO", "PD-L1"], "Area": [1.0, 2.0]})
+    roles = {"treatment": ROLE_CATEGORICAL, "Area": ROLE_NUMERICAL}
+    acw.save_working_copy("no_id", roles, {})
+    assert gate.review_gate(_Upload("no_id.csv"), frame) is not None
+    assert gate.configured_row_id() == ""
+
+
+def test_the_same_columns_under_a_different_filename_reopen_the_gate(acw):
+    """The fingerprint is name plus columns: a second replicate is a different file, and
+    only an exact profile match may skip its gate -- which it then does."""
+    acw.save_working_copy("pdl1", ROLES, {})
+    gate.review_gate(_Upload("rep2.csv"), _frame())
+    decision = gate.review_gate(_Upload("rep3.csv"), _frame())
+    assert decision["profile"] == "pdl1"
+
+
+def test_saving_inside_the_gate_does_not_slam_it_shut(acw):
+    """Save makes the profile match the file exactly. Auto-apply is an entry decision
+    taken once per file, or that Save would close the table mid-edit."""
+    gate.review_gate(_Upload("pdl1_rep1.csv"), _frame())      # opens the gate
+    acw.save_working_copy("pdl1", ROLES, {})                  # the Save button's work
+    assert gate.review_gate(_Upload("pdl1_rep1.csv"), _frame()) is None
+
+
+def test_a_confirmed_decision_reports_auto_detect_as_no_profile(acw):
+    gate.review_gate(_Upload("pdl1_rep1.csv"), _frame())
+    gate.st.session_state._review_confirmed = True
+    gate.st.session_state._review_source = gate.AUTO_DETECT
+    gate.st.session_state._review_roles = ROLES
+    assert gate.review_gate(_Upload("pdl1_rep1.csv"), _frame())["profile"] is None
+
+
+def test_a_profile_just_saved_is_the_one_the_summary_names(acw):
+    """Auto-detect then Save as: the roles now belong to a profile with a name, and
+    the plot page's summary bar is the only place that name is ever shown."""
+    gate.review_gate(_Upload("pdl1_rep1.csv"), _frame())
+    gate.st.session_state._review_roles = ROLES
+    gate.st.session_state._review_source = gate.AUTO_DETECT
+    gate.st.session_state._review_saved_as = "step6-check"
+    gate.st.session_state._review_confirmed = True
+    assert gate.review_gate(_Upload("pdl1_rep1.csv"), _frame())["profile"] == "step6-check"
+
+
+# ------------------------------------------------------ the applied-profile summary
+
+
+def _summary(monkeypatch, decision):
+    """What applied_summary writes, captured.
+
+    Hand-drawn markup rather than st.caption: the <style> keeping the row one line tall
+    has to ride in the same markdown call, so this reads the markdown instead -- and
+    strips it back to what is on screen. Left whole, a padding of `0 0.4rem` answers for
+    the tally when a test asks whether a zero count leaked into it.
+    """
+    shown = []
+    monkeypatch.setattr(gate.st, "markdown", lambda msg, **k: shown.append(msg))
+    gate.applied_summary(decision)
+    without_css = re.sub(r"<style>.*?</style>", "", " ".join(shown), flags=re.DOTALL)
+    return re.sub(r"<[^>]+>", "", without_css).replace("&nbsp;", " ")
+
+
+def test_the_summary_names_the_profile_and_tallies_the_roles(acw, monkeypatch):
+    """An exact match renders no gate, so this line is the only thing that says which
+    profile the plots are being drawn under.
+
+    The identifier is not counted: it is one column or none, and a count of it says
+    nothing the two that follow do not. What the line is for is the shape of the data
+    the pickers below are about to be handed.
+    """
+    acw.save_working_copy("pdl1", ROLES, {"Area": "morphology"})
+    shown = _summary(monkeypatch, gate.review_gate(_Upload("pdl1_rep2.csv"), _frame()))
+
+    assert "pdl1" in shown
+    assert "1 Categorical" in shown and "1 Numerical" in shown
+    assert "Row ID" not in shown, shown
+
+
+def test_the_summary_leaves_out_the_roles_no_column_holds(acw, monkeypatch):
+    """A tally of five roles, three of them zero, buries the two that matter."""
+    acw.save_working_copy("pdl1", ROLES, {})
+    shown = _summary(monkeypatch, gate.review_gate(_Upload("pdl1_rep2.csv"), _frame()))
+    assert "0 " not in shown and "FOV" not in shown and "Ignore" not in shown
+
+
+def test_the_summary_calls_an_unsaved_working_copy_auto_detected(acw, monkeypatch):
+    """"Auto-detected" is a real answer, not a missing one: it is what tells the user
+    nothing on disk describes this file yet."""
+    gate.review_gate(_Upload("iris.csv"), _frame())
+    gate.st.session_state._review_source = gate.AUTO_DETECT
+    gate.st.session_state._review_roles = ROLES
+    gate.st.session_state._review_confirmed = True
+    shown = _summary(monkeypatch, gate.review_gate(_Upload("iris.csv"), _frame()))
+    assert "Auto-detected" in shown
+
+
+def test_the_summary_reports_the_name_a_save_just_gave(acw, monkeypatch):
+    gate.review_gate(_Upload("pdl1_rep1.csv"), _frame())
+    gate.st.session_state._review_roles = ROLES
+    gate.st.session_state._review_source = gate.AUTO_DETECT
+    gate.st.session_state._review_saved_as = "step6-check"
+    gate.st.session_state._review_confirmed = True
+    shown = _summary(monkeypatch, gate.review_gate(_Upload("pdl1_rep1.csv"), _frame()))
+    assert "step6-check" in shown and "Auto-detected" not in shown
+
+
+def test_the_profile_in_use_is_the_matched_one_not_the_last_saved(acw):
+    """`current_profile` follows the last *write*, so on an exact match it can name a
+    profile this file never matched -- which is why every "in use" surface reads
+    _applied_profile instead, and why an auto-apply leaves current_profile alone."""
+    acw.save_working_copy("pdl1", ROLES, {})
+    acw.save_working_copy("iris", {"Sepal length": ROLE_NUMERICAL}, {})
+    assert gate.st.session_state.current_profile == "iris"
+
+    decision = gate.review_gate(_Upload("pdl1_rep2.csv"), _frame())
+
+    assert decision["profile"] == "pdl1"
+    assert gate._applied_profile() == "pdl1"
+    assert gate.st.session_state.current_profile == "iris"
+
+
+# ------------------------------------------------------- the way out of the gate
+
+
+def test_an_applied_profile_is_written_back_to_itself():
+    """The one save target. Offering "save as new" here is what used to let two
+    profiles end up holding the same column set."""
+    assert gate.exit_actions("pdl1", reopened=False) == [("save", "pdl1")]
+
+
+def test_auto_detect_can_only_leave_by_naming_a_new_profile():
+    assert gate.exit_actions(None, reopened=False) == [("save_as_new", None)]
+
+
+def test_reopening_adds_a_way_out_that_changes_nothing():
+    """✏️ has to be safe to press out of curiosity, so there is a way back that does
+    not write. Without it the only exit from a look is a write to the profile."""
+    assert gate.exit_actions("pdl1", reopened=True) == [("save", "pdl1"), ("cancel", None)]
+
+
+def test_no_state_can_leave_the_gate_without_saving():
+    """`Use this ->` is gone: every file that reaches a plot is described by a profile
+    on disk, which is what makes the file able to pick it next time."""
+    for applied in ("pdl1", None):
+        for reopened in (True, False):
+            kinds = [kind for kind, _ in gate.exit_actions(applied, reopened=reopened)]
+            assert kinds.count("save") + kinds.count("save_as_new") == 1
+            assert "use" not in kinds
+
+
+# ------------------------------------------------------------ reopening with the pencil
+
+
+def test_reopening_an_exact_match_asks_no_question(acw):
+    """Only one profile can hold a given column set, so there is nothing to choose --
+    and a chooser here would offer to write this file's columns onto a second one."""
+    acw.save_working_copy("pdl1", ROLES, {})
+    gate.review_gate(_Upload("rep2.csv"), _frame())            # auto-applied, no gate
+    gate.reopen_gate()
+
+    assert gate.review_gate(_Upload("rep2.csv"), _frame()) is None       # gate is open
+    assert gate.st.session_state._review_reopened is True
+    assert gate.st.session_state._review_chooser is False
+
+
+def test_a_file_no_profile_fits_is_always_asked_which_profile(acw):
+    acw.save_working_copy("pdl1", ROLES, {})
+    wider = _frame().assign(Perimeter=[10.0, 11.0, 12.0])
+    assert gate.review_gate(_Upload("rep3.csv"), wider) is None
+    assert gate.st.session_state._review_chooser is True
+    assert gate.st.session_state.get("_review_reopened") is not True
+
+
+def test_a_new_file_forgets_that_the_last_one_was_reopened(acw):
+    """Otherwise the second file's gate offers a Cancel that has nothing to cancel to."""
+    acw.save_working_copy("pdl1", ROLES, {})
+    gate.review_gate(_Upload("rep2.csv"), _frame())
+    gate.reopen_gate()
+    gate.review_gate(_Upload("rep2.csv"), _frame())
+
+    other = pd.DataFrame({"sepal": [1.0, 2.0], "species": ["a", "b"]})
+    gate.review_gate(_Upload("iris.csv"), other)
+    assert gate.st.session_state.get("_review_reopened") is not True
+
+
+def test_the_unpicked_chooser_names_no_button_that_is_not_on_screen(acw, monkeypatch):
+    """`_render_gate` returns before the table and the button row while nothing is
+    picked, so a caption telling the user to press one of them points at empty space."""
+    shown = []
+    monkeypatch.setattr(gate.st, "caption", lambda msg, **k: shown.append(msg))
+    gate._chooser(_frame(), acw.all_profile_columns())
+    text = " ".join(shown)
+    assert text, "the chooser says nothing at all while unpicked"
+    assert "Use this" not in text and "Save" not in text
+
+
+def test_a_profile_whose_roles_no_longer_work_opens_the_table_instead_of_applying(acw):
+    """Auto-apply is not unconditional: it applies *roles*, and roles can stop fitting.
+
+    The profile remembers that cell_id is the identifier and never whether it holds
+    anything, so this export -- same headers, blank identifier -- is still an exact
+    match. Applying it silently sent the file to interpret_table to fail there, with no
+    table ever shown and nothing on screen but an error. The gate now asks the same
+    question before it steps aside, so the file lands in the table that can fix it.
+    """
+    acw.save_working_copy("pdl1", ROLES, {})
+    blank = _frame().assign(cell_id=[None, None, None])
+
+    assert gate.review_gate(_Upload("rep2.csv"), blank) is None          # opened, not applied
+    assert gate.st.session_state._review_roles["cell_id"] == ROLE_ROW_ID  # on pdl1's roles
+    assert gate.st.session_state._review_source == "pdl1"                 # ... and bound to it
+    assert gate.st.session_state._review_chooser is False                 # nothing to choose
+
+
+def test_a_profile_that_still_works_applies_without_a_word(acw):
+    """The guard above must not cost the ordinary case its silence."""
+    acw.save_working_copy("pdl1", ROLES, {})
+    assert gate.review_gate(_Upload("rep2.csv"), _frame())["profile"] == "pdl1"
+
+
+# ------------------------------------- deleting the profile the working copy is using
+
+def _delete(name):
+    """Press Delete on that row's confirm. Bare mode, so the widgets are stepped over."""
+    gate._delete_and_refresh(name)
+
+
+def test_deleting_the_profile_in_force_orphans_the_working_copy(acw, monkeypatch):
+    """`Save as` from Auto-detect leaves the two source keys disagreeing, and the *applied*
+    one is the profile. Testing only `_review_source` matched nothing here, so the row left
+    the list while the table stayed open offering `Save to foo & use` over a profile that
+    no longer existed -- and its Cancel reloaded that name as an empty config, auto-detected
+    the roles and confirmed them to the plots without a save.
+    """
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    gate.review_gate(_Upload("flowers.csv"), _frame())          # opens, nothing picked
+    gate._load_working_copy(_frame(), gate.AUTO_DETECT)
+    acw.save_working_copy("foo", ROLES, {})
+    gate.st.session_state._review_saved_as = "foo"
+    gate.st.session_state._review_reopened = True
+    gate.st.session_state._review_chooser = False
+    # The state the bug lived in: the pick and the save name disagree.
+    assert gate.st.session_state._review_source == gate.AUTO_DETECT
+    assert gate._applied_profile() == "foo"
+
+    _delete("foo")
+
+    assert acw.list_profiles() == []
+    assert "_review_saved_as" not in gate.st.session_state
+    assert "_review_roles" not in gate.st.session_state
+    assert gate._applied_profile() is None
+    # Both of these are what the screen reads: no write target, and no Cancel to confirm
+    # an unsaved frame with.
+    assert gate.exit_actions(gate._applied_profile(),
+                             gate.st.session_state.get("_review_reopened", False)) == [
+        ("save_as_new", None)]
+    assert gate.st.session_state._review_chooser is True
+
+
+def test_deleting_a_different_profile_leaves_the_working_copy_alone(acw, monkeypatch):
+    """The other half of the same predicate: pruning an unrelated profile mid-review must
+    not throw away the roles the user is part-way through setting."""
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    acw.save_working_copy("foo", ROLES, {})
+    acw.save_working_copy("bystander", {"petal": ROLE_NUMERICAL}, {})
+    gate.review_gate(_Upload("flowers.csv"), _frame())
+    gate._load_working_copy(_frame(), "foo")
+
+    _delete("bystander")
+
+    assert acw.list_profiles() == ["foo"]
+    assert gate._applied_profile() == "foo"
+    assert gate.st.session_state._review_roles           # the edit in flight survives
+
+
+# --------------------------------------------------------------------- feature groups
+
+def test_a_group_the_file_cannot_fill_comes_back_with_the_working_copy(acw):
+    """An empty group is a name the user chose, and it only survives a save if it also
+    survives the load. Read off the `{column: group}` mapping -- which has no column to
+    read it from -- and the group is written to disk and then gone on the next upload."""
+    acw.save_working_copy("pdl1", ROLES, {"Area": "morphology"},
+                          group_names=["morphology", "lifetime"])
+    gate._load_working_copy(_frame(), "pdl1")
+    assert gate.st.session_state._review_group_names == ["morphology", "lifetime"]
+    assert gate.st.session_state._review_groups == {"Area": "morphology"}
+
+
+def test_a_new_column_joins_an_empty_group_that_shares_its_name(acw):
+    """detect_column_groups' second rule, which the empty group is the whole case for:
+    a group whose columns are all elsewhere is precisely one waiting to be filled."""
+    acw.save_working_copy("pdl1", ROLES, {}, group_names=["nadh"])
+    wider = _frame().assign(nadh_t1_mean=[0.4, 0.5, 0.6])
+    gate._load_working_copy(wider, "pdl1")
+    assert gate.st.session_state._review_groups == {"nadh_t1_mean": "nadh"}
+
+
+def test_a_group_cannot_be_renamed_to_the_ungrouped_marker(acw, monkeypatch):
+    """Add refused NO_GROUP and Rename did not, and a duplicated option resolves through
+    `index()` to the first slot -- so every column in the group silently left it."""
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    acw.save_working_copy("pdl1", ROLES, {"Area": "morphology"})
+    gate._load_working_copy(_frame(), "pdl1")
+
+    gate._rename_group("morphology", NO_GROUP)
+
+    assert gate.st.session_state._review_group_names == ["morphology"]
+    assert gate.st.session_state._review_groups == {"Area": "morphology"}
+
+
+# ------------------------------------------------- one read of the config per rerun
+
+@pytest.fixture
+def count_config_reads(monkeypatch):
+    """Count `analysis_config.toml` parses, the way the gate actually reaches them."""
+    from src import config as config_module
+
+    calls = []
+    real = config_module.toml.load
+    monkeypatch.setattr(config_module.toml, "load",
+                        lambda *a, **k: (calls.append(a[0]), real(*a, **k))[1])
+    return calls
+
+
+def test_the_gate_reads_the_config_once_per_rerun(acw, count_config_reads):
+    """Threaded down the call chain, not memoised.
+
+    `review_gate`, `_chooser`, `_buttons` and `_manage_profiles` each used to reach for
+    the saved profiles on their own -- three uncached parses of every profile, at ~0.14 ms
+    per 60-column profile, on a page Streamlit reruns on every slider drag. A memo is the
+    wrong fix: the gate writes this file from inside a rerun, so a stale list would be a
+    worse bug than a slow one.
+    """
+    # A near-match, so the gate opens rather than auto-applying: the confirmed path
+    # returns above every config read and would score zero without proving anything.
+    near = dict(ROLES)
+    near.pop("Area")
+    acw.save_working_copy("pdl1", near, {})
+    assert gate.review_gate(_Upload("rep1.csv"), _frame()) is None
+    gate._load_working_copy(_frame(), gate.AUTO_DETECT)      # a pick, so all of it draws
+
+    count_config_reads.clear()
+    assert gate.review_gate(_Upload("rep1.csv"), _frame()) is None
+
+    assert len(count_config_reads) == 1, count_config_reads
+
+
+def test_a_profile_saved_inside_a_run_is_visible_to_the_next_read(acw, count_config_reads):
+    """What a memo over the config would break. The gate writes from inside a rerun."""
+    acw.save_working_copy("pdl1", ROLES, {})
+    assert gate.review_gate(_Upload("rep1.csv"), _frame()) is not None
+
+    acw.save_working_copy("second", {"petal": ROLE_NUMERICAL}, {})
+
+    assert acw.list_profiles() == ["pdl1", "second"]
+    assert set(acw.all_profile_columns()) == {"pdl1", "second"}
