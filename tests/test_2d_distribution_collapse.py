@@ -88,7 +88,13 @@ def page(monkeypatch):
     monkeypatch.setattr(bivar, "pearsonr", capture_pearson)
     monkeypatch.setattr(bivar, "_find_best_gmm", capture_gmm)
 
-    def run(*, collapse="dish", color_by=None, logged=False, marginal="gaussian fit"):
+    def run(*, collapse="dish", color_by=None, logged=False, marginal="gaussian fit",
+            separate=None, point_mode="shape", point_column="day", repeat_days=False):
+        nonlocal frame
+        if repeat_days:
+            frame = pd.concat([frame, frame.assign(
+                cell_id=frame.cell_id + "_repeat", day="Day 10",
+                **{X: frame[X] + 20, Y: frame[Y] * 2 + 15})], ignore_index=True)
         at = AppTest.from_file(PAGE).run(timeout=90)
         assert not at.exception
         at.radio[0].set_value("### **Bivariate**")
@@ -97,7 +103,9 @@ def page(monkeypatch):
             "2d_y_menu_Uncategorized Features": Y,
             vw.COLOR_BY_KEY: ["treatment"] if color_by is None else color_by,
             vw.COLLAPSE_BY_KEY: collapse,
-            vw.PICKER_COL_KEY: "day", vw.OPACITY_BY_KEY: "image_name",
+            vw.PICKER_COL_KEY: point_column, vw.OPACITY_BY_KEY: "image_name",
+            "vis_encoding_fd_point_mode": point_mode,
+            "vis_encoding_fd_separate_by": separate,
             f"fit_regression_2d_{X}_{Y}": True,
             f"fit_gmm_2d_{X}_{Y}": True,
             f"log_x_2d_{X}_{Y}": logged, f"log_y_2d_{X}_{Y}": logged,
@@ -125,7 +133,7 @@ def test_every_2d_statistic_uses_the_colored_replicate_means(page, marginal, log
     assert seen["kwargs"]["fov_name_col"] is None
     assert seen["kwargs"]["shape_by"] == "day"
     assert seen["kwargs"]["opacity_by"] is None
-    assert "**Opacity by** is off" in " ".join(c.value for c in at.caption)
+    assert "**Opacity by** is off" not in " ".join(c.value for c in at.caption)
     assert seen["state"]["method_params"]["collapse_by"] == "dish"
     assert seen["state"]["opacity_by"] is None
     assert len(seen["pearson"]) == len(seen["gmm"]) == 2
@@ -187,7 +195,7 @@ def test_clearing_2d_collapse_restores_cell_level_analysis(page):
     next(w for w in at.selectbox if w.label == "Collapse by").set_value(None).run(timeout=90)
     assert not at.exception
     assert len(seen["data"]) == len(frame.dropna(subset=[X, Y]))
-    assert seen["kwargs"]["opacity_by"] == "image_name"
+    assert seen["kwargs"]["opacity_by"] is None
     assert seen["kwargs"]["fov_name_col"] == "image_name"
     assert seen["state"]["method_params"]["collapse_by"] is None
 
@@ -200,14 +208,46 @@ def test_2d_collapse_control_follows_color_by_and_survives_method_changes(page):
     row = next(block for block in at.main
                if isinstance(block, Block) and len(block.children) == 4
                and any(w.label == "Collapse by" for w in block.selectbox))
-    assert row.children[0].multiselect[0].label == "Color by"
-    assert row.children[1].selectbox[0].label == "Collapse by"
+    assert row.children[0].selectbox[0].label == "Separate by"
+    assert row.children[1].multiselect[0].label == "Color by"
+    assert row.children[2].selectbox[0].label == "Collapse by"
     at.radio[0].set_value("### **Univariate**").run(timeout=90)
     assert not at.exception
     assert at.selectbox(vw.COLLAPSE_BY_KEY).value == "dish"
     at.radio[0].set_value("### **Bivariate**").run(timeout=90)
     assert not at.exception
     assert at.selectbox(vw.COLLAPSE_BY_KEY).value == "dish"
+
+
+@pytest.mark.parametrize("logged", [False, True])
+def test_separated_page_collapses_reused_dishes_inside_each_category_and_color(page, logged):
+    at, seen, frame = page(separate="day", repeat_days=True, logged=logged)
+    expected = (frame.dropna(subset=[X, Y]).groupby(["dish", "treatment", "day"], sort=False)
+                [[X, Y]].mean().reset_index())
+    if logged:
+        expected[[X, Y]] = np.log10(expected[[X, Y]] + 1e-6)
+    assert seen["kwargs"]["separate_by"] == "day"
+    pd.testing.assert_frame_equal(seen["data"][expected.columns], expected)
+    assert len(seen["data"]) == 16
+    assert seen["state"]["separate_by"] == "day"
+    assert seen["state"]["method_params"]["distribution_category"] == "Day 0"
+    for _, group in expected.groupby(["day", "treatment"]):
+        values = group[[X, Y]].to_numpy()
+        assert any(np.array_equal(call, values) for call in seen["pearson"])
+        assert any(np.array_equal(call, values) for call in seen["gmm"])
+    selector = next(w for w in at.button_group if w.key == "vis_encoding_fd_category")
+    selector.set_value("Day 10").run(timeout=90)
+    assert not at.exception
+    assert seen["state"]["method_params"]["distribution_category"] == "Day 10"
+
+
+def test_only_active_merged_decoration_is_disabled_when_collapse_drops_it(page):
+    at, seen, _ = page(separate="day", point_mode="opacity", point_column="image_name")
+    assert seen["kwargs"]["opacity_by"] is None
+    assert seen["kwargs"]["shape_by"] is None
+    assert "**Opacity by** is off" in " ".join(c.value for c in at.caption)
+    assert seen["state"]["opacity_by"] is None
+    assert seen["state"]["shape_by"] is None
 
 
 def _export_state(**params):

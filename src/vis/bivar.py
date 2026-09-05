@@ -5,7 +5,6 @@ from scipy.spatial import ConvexHull
 from scipy.stats import chi2, gaussian_kde, pearsonr
 from sklearn.cluster import KMeans
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score
 from sklearn.preprocessing import StandardScaler
 
 from src.feature_labels import format_feature_label
@@ -253,16 +252,8 @@ def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i, scatter_c
         hoverinfo='skip'   # Don't show hover for ellipse lines
     ))
 
-def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x, selected_y, color_by=[], shape_by=None, opacity_by=None, marginal_plot_type='gaussian fit', colormap="tab10", row_id_label="ID"):
-    GROUP_COL_NAME = 'unique_color_group'
-    # Create valid copy to allow modification
-    df = df.copy()
-
-    # Pretty FLIM labels (Greek notation) reused for hover tooltips and axis titles
-    pretty_x = format_feature_label(selected_x)
-    pretty_y = format_feature_label(selected_y)
-
-    # Squeezed columns for log checks: smaller ratio for the first two
+def distribution_controls(selected_x, selected_y, marginal_plot_type='gaussian fit'):
+    """Render analysis settings separately so changing category never refits."""
     col_log_x, col_log_y, col1, col2, col3 = st.columns([0.8, 0.8, 2, 2, 2])
     with col_log_x:
         st.write("")
@@ -273,208 +264,313 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         st.write("")
         log_y = st.checkbox("Log Y", value=False, key=f"log_y_2d_{selected_x}_{selected_y}")
     with col1:
-        selected_marginal_plot_type = st.selectbox(
-            'Marginal Plot Type',
-            ['gaussian fit', 'boxplot', 'violin'],
+        marginal = st.selectbox(
+            'Marginal Plot Type', ['gaussian fit', 'boxplot', 'violin'],
             index=['gaussian fit', 'boxplot', 'violin'].index(marginal_plot_type),
-            key=f'marginal_plot_type_selector_{selected_x}_{selected_y}'
-        )
+            key=f'marginal_plot_type_selector_{selected_x}_{selected_y}')
     with col2:
         st.write("")
         st.write("")
-        fit_gmm = st.checkbox("2D Gaussian Mixture Model", value=False, key=f"fit_gmm_2d_{selected_x}_{selected_y}")
+        fit_gmm = st.checkbox("2D Gaussian Mixture Model", value=False,
+                              key=f"fit_gmm_2d_{selected_x}_{selected_y}")
     with col3:
         st.write("")
         st.write("")
-        fit_regression = st.checkbox("Regression line", value=False, key=f"fit_regression_2d_{selected_x}_{selected_y}")
-
-    if log_x:
-        if (df[selected_x] < 0).any():
-            st.error(log_negative_error(selected_x))
-        else:
-            df[selected_x] = np.log10(df[selected_x] + 1e-6)
-    if log_y:
-        if (df[selected_y] < 0).any():
-            st.error(log_negative_error(selected_y))
-        else:
-            df[selected_y] = np.log10(df[selected_y] + 1e-6)
-
-    grouped, color_map, shape_map, opacity_map, group_keys = get_point_visual_mappings(
-        df,
-        color_by=color_by,
-        shape_by=shape_by,
-        opacity_by=opacity_by,
-        group_col_name=GROUP_COL_NAME,
-        overlap_point=False,
-        colormap=colormap
-    )
-    fig = go.Figure()
+        regression = st.checkbox("Regression line", value=False,
+                                 key=f"fit_regression_2d_{selected_x}_{selected_y}")
+    max_components, min_weight = gmm_hyperParams_widget() if fit_gmm else (3, .1)
+    return dict(log_x=log_x, log_y=log_y, marginal_plot_type=marginal,
+                fit_gmm=fit_gmm, fit_regression=regression,
+                max_components=max_components, min_weight_threshold=min_weight)
 
 
+def distribution_fit_groups(df, x_col, y_col, group_col, color_groups, panels,
+                            separate_by=None, fit_regression=False, fit_gmm=False,
+                            max_components=3, min_weight_threshold=.1):
+    """Analyze category × color populations once; shared verbatim with export.
 
-    if fit_gmm:
-        fit_gmm_max_components, fit_gmm_min_weight_threshold = gmm_hyperParams_widget()
-
-    # Convert grouped iterator to list so we can iterate multiple times
-    grouped_list = list(grouped)
-
-    # Use original column names and escape them with hover_field for Plotly markup.
-    hover_lines = [hover_field(row_id_label, "%{text}")]
-    if fov_name_col is not None:
-        hover_lines.append(hover_field(fov_name_col, "%{customdata}"))
-    hover_lines.append(hover_field(pretty_x, "%{x}"))
-    hover_lines.append(hover_field(pretty_y, "%{y}"))
-    hover_lines.append("<extra></extra>")   # hide the default trace info box
-    point_cls = add_interleaved_points_trace(
-        fig=fig,
-        grouped=grouped_list,
-        color_map=color_map,
-        shape_map=shape_map,
-        opacity_map=opacity_map,
-        axis_labels=[selected_x, selected_y],
-        text_col=unique_row_id_col,
-        customdata_col=fov_name_col,
-        hovertemplate="".join(hover_lines),
-        show_counts=st.session_state.get("plot_show_group_counts", False)
-    )
-
-    table_md = []
-    gmm_tables = []
-    # Per-group analysis keys on colour groups only, never per shape/opacity subgroup:
-    # those two channels affect point styling and nothing else.
-    for color_group in color_map.keys():
-        group_df = df[df[GROUP_COL_NAME] == color_group]
-        if group_df.empty or group_df[selected_x].nunique() < 2 or group_df[selected_y].nunique() < 2:
-            continue
-
-        # annotate the correlation coefficient and p-value of the current group
-        corr_coef, p_value = pearsonr(group_df[selected_x], group_df[selected_y])
-        table_md.append(f"\n**{color_group}:** Pearson r = **{corr_coef:.2f}** (p = {p_value:.3g})")
-        x_data = group_df[selected_x].dropna()
-        y_data = group_df[selected_y].dropna()
-
-        if len(x_data) >= 2 and len(y_data) >= 2:
-            # Ensure x_data and y_data have the same indices (both drop NaN)
-            valid_indices = x_data.index.intersection(y_data.index)
-            x_clean = x_data.loc[valid_indices].values.reshape(-1, 1)
-            y_clean = y_data.loc[valid_indices].values
-
-        if fit_regression:
-            if len(x_clean) >= 2:  # Need at least 2 points for regression
-                # Fit linear regression
-                reg_model = LinearRegression()
-                reg_model.fit(x_clean, y_clean)
-
-                # Calculate R²
-                y_pred = reg_model.predict(x_clean)
-                r2 = r2_score(y_clean, y_pred)
-
-                # Create regression line points for plotting
-                x_range = np.linspace(x_clean.min(), x_clean.max(), 100)
-                y_range = reg_model.predict(x_range.reshape(-1, 1))
-
-                # Use the points' renderer so the regression line can layer above them.
-                fig.add_trace(point_cls(
-                    x=x_range,
-                    y=y_range,
-                    mode='lines',
-                    line=dict(color=color_map.get(color_group, 'black'), width=2),
-                    showlegend=False,
-                    hovertemplate=f'<b>Regression Line</b><br>R² = {r2:.3f}<br>Slope = {reg_model.coef_[0]:.3f}<br>Intercept = {reg_model.intercept_:.3f}<extra></extra>'
-                ))
-
-                # Keep correlation and regression together in one line per group.
-                table_md[-1] += f" · Regression R² = **{r2:.3f}** (slope = {reg_model.coef_[0]:.3f}, intercept = {reg_model.intercept_:.3f})"
-
-        _plot_marginal_density(fig, x_data, 'x', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'yaxis': 'y2'})
-
-        _plot_marginal_density(fig, y_data, 'y', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'xaxis': 'x2', 'yaxis': 'y3'})
-
-    # --- GMM fitting per color group (not per shape/opacity) ---
-    if fit_gmm:
-        for color_group in color_map.keys():
-            # Filter data for this color group using the helper column
-            group_df = df[df[GROUP_COL_NAME] == color_group]
-
-            if group_df.empty or group_df[selected_x].nunique() < 2 or group_df[selected_y].nunique() < 2:
+    Shape/opacity never enter the memberships. Position-based assignments preserve
+    rows even when dataframe indices or collapsed hover labels are duplicated.
+    """
+    results = []
+    assignments = np.full(len(df), None, dtype=object)
+    for level, panel_rows in panels:
+        for color_group in color_groups:
+            positions = panel_rows[df.iloc[panel_rows][group_col].to_numpy() == color_group]
+            if not len(positions):
                 continue
-
-            # Fit GMM for the current COLOR group (aggregating all shapes/opacities)
-            group_data_2d = group_df[[selected_x, selected_y]]
-            if len(group_data_2d) > 1: # Need at least 2 points for GMM
-                best_gmm = _find_best_gmm(group_data_2d, max_components=fit_gmm_max_components, min_weight_threshold=fit_gmm_min_weight_threshold)
-                if best_gmm and best_gmm.n_components > 1:
-                    component_rows = []
-                    for i in range(best_gmm.n_components):
-                        mean = best_gmm.means_[i]
-                        cov = best_gmm.covariances_[i]
-                        mean_x, mean_y = mean
-                        std_x = np.sqrt(cov[0][0])
-                        std_y = np.sqrt(cov[1][1])
-                        weight = best_gmm.weights_[i]
-
-                        component_rows.append((
-                            i + 1, f"{mean_x:.2f} ± {std_x:.2f}",
-                            f"{mean_y:.2f} ± {std_y:.2f}", f"{weight:.2f}",
-                        ))
-                        # plot the gmm component using Ellipse
-                        _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color_map[color_group], color_group, i+1, scatter_cls=point_cls)
-                    gmm_tables.append(gmm_component_table(
-                        color_group, component_rows, [selected_x, selected_y]))
-                    # use the best gmm model to predict the component membership of the current group
-                    data_indices = group_data_2d.index
-                    subpopulation_labels = best_gmm.predict(group_data_2d)
-                    assigned_labels = [f"{color_group}_group{label + 1}" for label in subpopulation_labels]
-                    df.loc[data_indices, "2D_GMM_group"] = assigned_labels
-                elif best_gmm and best_gmm.n_components == 1:
-                    table_md.append(f"\nOnly one GMM component found for {color_group} with current constraints.")
-                else:
-                    table_md.append(f"\nNo suitable GMM found for {color_group} with current constraints.")
+            group = df.iloc[positions]
+            x, y = group[x_col].to_numpy(), group[y_col].to_numpy()
+            result = dict(category=level, color_group=color_group, positions=positions,
+                          pearson=None, regression=None, components=[], notices=[])
+            valid = len(x) >= 2 and len(np.unique(x)) >= 2 and len(np.unique(y)) >= 2
+            if valid:
+                coefficient, p_value = pearsonr(x, y)
+                result['pearson'] = (float(coefficient), float(p_value))
+                if fit_regression:
+                    model = LinearRegression().fit(x.reshape(-1, 1), y)
+                    x_line = np.linspace(x.min(), x.max(), 100)
+                    result['regression'] = dict(
+                        x=x_line, y=model.predict(x_line.reshape(-1, 1)),
+                        r2=float(model.score(x.reshape(-1, 1), y)),
+                        slope=float(model.coef_[0]), intercept=float(model.intercept_))
             else:
-                table_md.append(f"\nSkipping GMM for group: {color_group} due to insufficient data (points: {len(group_data_2d)})")
+                reason = 'fewer than two observations' if len(x) < 2 else 'constant X or Y'
+                result['notices'].append(f"Pearson r and regression unavailable: {reason}.")
+            if fit_gmm:
+                if not valid:
+                    result['notices'].append('Skipping GMM: insufficient data or constant X or Y.')
+                else:
+                    try:
+                        model = _find_best_gmm(
+                            group[[x_col, y_col]], max_components=max_components,
+                            min_weight_threshold=min_weight_threshold)
+                    except (ValueError, np.linalg.LinAlgError):
+                        model = None
+                    if model is None:
+                        result['notices'].append('No suitable GMM found with current constraints.')
+                    elif model.n_components == 1:
+                        result['notices'].append('Only one GMM component found with current constraints.')
+                    else:
+                        result['components'] = [
+                            dict(mean=mean, covariance=cov, weight=float(weight))
+                            for mean, cov, weight in zip(model.means_, model.covariances_, model.weights_)]
+                        prefix = f"{separate_by}={level} | " if separate_by else ''
+                        labels = model.predict(group[[x_col, y_col]])
+                        assignments[positions] = [f"{prefix}{color_group}_group{label + 1}"
+                                                  for label in labels]
+            results.append(result)
+    return results, assignments
 
-    # Note: Legend traces and hovermode are already added by add_interleaved_points_trace
-    # Just update layout with additional settings
-    theme_color = get_context_theme_color()
 
-    # Set axis labels based on log transform (pretty_x/pretty_y defined above)
-    x_axis_label = f"log₁₀({pretty_x})" if log_x else pretty_x
-    y_axis_label = f"log₁₀({pretty_y})" if log_y else pretty_y
+def distribution_ranges(df, x_col, y_col, results):
+    """Common independent X/Y bounds include all data and fitted overlays."""
+    values = [list(df[x_col]), list(df[y_col])]
+    radius = np.sqrt(chi2.ppf(.95, df=2))
+    for result in results:
+        regression = result['regression']
+        if regression:
+            values[0].extend(regression['x'])
+            values[1].extend(regression['y'])
+        for component in result['components']:
+            for axis in (0, 1):
+                center = component['mean'][axis]
+                span = radius * np.sqrt(component['covariance'][axis][axis])
+                values[axis].extend([center - span, center + span])
+    bounds = []
+    for axis_values in values:
+        low, high = float(np.min(axis_values)), float(np.max(axis_values))
+        padding = (high - low) * .05 or max(abs(low) * .05, .5)
+        bounds.append([low - padding, high + padding])
+    return bounds
 
+
+def select_distribution_category(fig, category=None):
+    """Select prepared points, marginals, fits, and summary without computation."""
+    meta = fig.layout.meta
+    if not isinstance(meta, dict) or not meta.get('distribution_categories'):
+        return fig
+    categories = meta['distribution_categories']
+    category = category if category in categories else categories[0]
+    for trace in fig.data:
+        info = trace.meta
+        if not isinstance(info, dict) or 'distribution_role' not in info:
+            continue
+        active = info['category'] == category
+        role = info['distribution_role']
+        trace.visible = not active if role == 'context' else active
+        trace.showlegend = active and role == 'points' and info.get('legend', False)
     fig.update_layout(
-        title=dict(
-            text=f'2D Distribution of {pretty_x} and {pretty_y} by {", ".join(color_by)}',
-            font=dict(color=theme_color)
-        ),
-        xaxis=dict(
-            title=dict(text=x_axis_label, font=dict(color=theme_color)),
-            tickfont=dict(color=theme_color),
-            domain=[0, 0.9],
-            showgrid=False,
-            zeroline=False
-        ),
-        yaxis=dict(
-            title=dict(text=y_axis_label, font=dict(color=theme_color)),
-            tickfont=dict(color=theme_color),
-            domain=[0, 0.9],
-            showgrid=True,
-            zeroline=False
-        ),
-        # Configure axes for marginal plots
-        xaxis2=dict(domain=[0.9, 1], anchor='y3', showgrid=False, zeroline=False, showticklabels=False), # Marginal y-density's x-axis
-        yaxis2=dict(domain=[0.9, 1], showgrid=False, zeroline=False, showticklabels=False), # Marginal x-density's y-axis
-        # Match the main Y range without extending its grid through the marginal.
-        yaxis3=dict(domain=[0, 0.9], anchor='x2', matches='y', showgrid=False,
+        meta={**meta, 'distribution_category': category,
+              'distribution_summary': meta['distribution_summaries'][category]},
+        legend_uirevision=f"{meta['distribution_separate_by']}:{category}")
+    return fig
+
+
+def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x,
+                                 selected_y, color_by=None, shape_by=None, opacity_by=None,
+                                 marginal_plot_type='gaussian fit', colormap="tab10",
+                                 row_id_label="ID", separate_by=None, analysis_options=None):
+    """One joint distribution per category, with shared coordinates and encodings."""
+    import html
+
+    color_by = [color_by] if isinstance(color_by, str) else list(color_by or [])
+    df = df.dropna(subset=[selected_x, selected_y]).copy()
+    panels = category_panel_rows(df, separate_by, color_by)
+    if df.empty:
+        raise ValueError('No complete X/Y observations remain for 2D Feature Distribution.')
+    options = (distribution_controls(selected_x, selected_y, marginal_plot_type)
+               if analysis_options is None else analysis_options)
+    marginal = options.get('marginal_plot_type', marginal_plot_type)
+    pretty_x, pretty_y = format_feature_label(selected_x), format_feature_label(selected_y)
+    for column, enabled in [(selected_x, options.get('log_x')), (selected_y, options.get('log_y'))]:
+        if enabled:
+            if (df[column] < 0).any():
+                st.error(log_negative_error(column))
+            else:
+                df[column] = np.log10(df[column] + 1e-6)
+    # Keep the returned metadata unchanged; normalize only the rendering copy.
+    result_df = df.copy()
+    if separate_by:
+        for column in dict.fromkeys([*color_by, shape_by, opacity_by]):
+            if column:
+                df[column] = df[column].astype(str).where(df[column].notna(), 'N/A')
+    group_column = 'unique_color_group'
+    while group_column in df.columns:
+        group_column += '_'
+    point_id = unique_row_id_col
+    if separate_by:
+        point_id = '__distribution_position__'
+        while point_id in df.columns:
+            point_id += '_'
+        df[point_id] = np.arange(len(df))
+    grouped, color_map, shape_map, opacity_map, _ = get_point_visual_mappings(
+        df, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by,
+        group_col_name=group_column, overlap_point=False, colormap=colormap)
+    results, assignments = distribution_fit_groups(
+        df, selected_x, selected_y, group_column, list(color_map), panels,
+        separate_by=separate_by, fit_regression=options.get('fit_regression', False),
+        fit_gmm=options.get('fit_gmm', False), max_components=options.get('max_components', 3),
+        min_weight_threshold=options.get('min_weight_threshold', .1))
+    if options.get('fit_gmm') and (separate_by or any(value is not None for value in assignments)):
+        result_df['2D_GMM_group'] = assignments
+
+    hover = [hover_field(row_id_label, '%{text}')]
+    if fov_name_col is not None:
+        hover.append(hover_field(fov_name_col, '%{customdata}'))
+    hover.extend([hover_field(pretty_x, '%{x}'), hover_field(pretty_y, '%{y}'), '<extra></extra>'])
+    base = go.Figure()
+    show_counts = st.session_state.get('plot_show_group_counts', False)
+    point_cls = add_interleaved_points_trace(
+        base, grouped, color_map, shape_map, opacity_map, [selected_x, selected_y],
+        point_id, fov_name_col, hovertemplate=''.join(hover), show_counts=show_counts)
+    fig = go.Figure() if separate_by else base
+    if separate_by:
+        # A single copy per category makes context linear in the number of rows.
+        for level, positions in panels:
+            fig.add_trace(point_cls(
+                x=df.iloc[positions][selected_x], y=df.iloc[positions][selected_y],
+                mode='markers', marker=dict(color='#b8b8b8', opacity=.18, symbol='circle', size=3),
+                hoverinfo='skip', showlegend=False,
+                meta=dict(distribution_role='context', category=level)))
+        for level, positions in panels:
+            counts = {result['color_group']: len(result['positions']) for result in results
+                      if result['category'] == level}
+            seen = set()
+            for trace in base.data:
+                if trace.text is None:
+                    continue
+                row_positions = np.asarray(trace.text, dtype=int)
+                keep = np.isin(row_positions, positions)
+                if not keep.any():
+                    continue
+                spec = trace.to_plotly_json()
+                spec.pop('type')
+                for field in ('x', 'y', 'customdata'):
+                    value = getattr(trace, field)
+                    if value is not None:
+                        spec[field] = np.asarray(value)[keep]
+                spec['text'] = result_df.iloc[row_positions[keep]][unique_row_id_col].to_numpy()
+                for field in ('symbol', 'opacity'):
+                    spec['marker'][field] = np.asarray(getattr(trace.marker, field))[keep]
+                group = trace.legendgroup
+                spec.update(name=format_group_label(group, counts[group], show_counts),
+                            showlegend=False, meta=dict(distribution_role='points', category=level,
+                                                        legend=group not in seen))
+                seen.add(group)
+                fig.add_trace(type(trace)(**spec))
+        for trace in base.data:
+            if trace.text is None and trace.showlegend:
+                fig.add_trace(trace)
+
+    summaries = {}
+    for level, _positions in panels:
+        lines, tables = [], []
+        for result in results:
+            if result['category'] != level:
+                continue
+            group = result['color_group']
+            label = html.escape(str(group))
+            group_df = df.iloc[result['positions']]
+            if result['pearson'] is not None:
+                coefficient, p_value = result['pearson']
+                lines.append(f"\n**{label}:** Pearson r = **{coefficient:.2f}** (p = {p_value:.3g})")
+            regression = result['regression']
+            if regression:
+                lines[-1] += (f" · Regression R² = **{regression['r2']:.3f}** "
+                              f"(slope = {regression['slope']:.3f}, intercept = {regression['intercept']:.3f})")
+                fig.add_trace(point_cls(
+                    x=regression['x'], y=regression['y'], mode='lines',
+                    line=dict(color=color_map[group], width=2), showlegend=False, legendgroup=str(group),
+                    hovertemplate=(f"<b>Regression Line</b><br>R² = {regression['r2']:.3f}"
+                                   f"<br>Slope = {regression['slope']:.3f}"
+                                   f"<br>Intercept = {regression['intercept']:.3f}<extra></extra>"),
+                    meta=dict(distribution_role='regression', category=level) if separate_by else None))
+            start = len(fig.data)
+            _plot_marginal_density(fig, group_df[selected_x], 'x', color_map[group], group,
+                                   marginal, {'yaxis': 'y2'})
+            _plot_marginal_density(fig, group_df[selected_y], 'y', color_map[group], group,
+                                   marginal, {'xaxis': 'x2', 'yaxis': 'y3'})
+            for trace in fig.data[start:]:
+                trace.legendgroup = str(group)
+                if separate_by:
+                    trace.meta = dict(distribution_role='marginal', category=level)
+            component_rows = []
+            for index, component in enumerate(result['components'], 1):
+                mean_x, mean_y = component['mean']
+                covariance, weight = component['covariance'], component['weight']
+                component_rows.append((index, f"{mean_x:.2f} ± {np.sqrt(covariance[0][0]):.2f}",
+                                       f"{mean_y:.2f} ± {np.sqrt(covariance[1][1]):.2f}", f"{weight:.2f}"))
+                start = len(fig.data)
+                _plot_gmm_ellipse(fig, mean_x, mean_y, covariance, color_map[group], group, index,
+                                  scatter_cls=point_cls)
+                for trace in fig.data[start:]:
+                    trace.legendgroup = str(group)
+                    if separate_by:
+                        trace.meta = dict(distribution_role='fit', category=level)
+            if component_rows:
+                tables.append(gmm_component_table(group, component_rows, [selected_x, selected_y]))
+            for notice in result['notices']:
+                lines.append(f"\n**{label}:** {notice}")
+        if tables:
+            lines.append(gmm_tables_html(tables))
+        summaries[level] = '\n'.join(lines)
+
+    theme_color = get_context_theme_color()
+    x_label = f"log₁₀({pretty_x})" if options.get('log_x') else pretty_x
+    y_label = f"log₁₀({pretty_y})" if options.get('log_y') else pretty_y
+    fig.update_layout(
+        title=dict(text=f'2D Distribution of {pretty_x} and {pretty_y} by {", ".join(color_by)}',
+                   font=dict(color=theme_color)),
+        xaxis=dict(title=dict(text=x_label, font=dict(color=theme_color)),
+                   tickfont=dict(color=theme_color), domain=[0, .9], showgrid=False, zeroline=False),
+        yaxis=dict(title=dict(text=y_label, font=dict(color=theme_color)),
+                   tickfont=dict(color=theme_color), domain=[0, .9], showgrid=True, zeroline=False),
+        xaxis2=dict(domain=[.9, 1], anchor='y3', showgrid=False, zeroline=False, showticklabels=False),
+        yaxis2=dict(domain=[.9, 1], showgrid=False, zeroline=False, showticklabels=False),
+        yaxis3=dict(domain=[0, .9], anchor='x2', matches='y', showgrid=False,
                     zeroline=False, showline=False, showticklabels=False),
-    )
-
-    # remove the column after plotting
-    df.drop(columns=[GROUP_COL_NAME], inplace=True)
-
-    if gmm_tables:
-        table_md.append(gmm_tables_html(gmm_tables))
-    table_md = "\n".join(table_md)
-    return fig, table_md, df
+        hovermode='closest', legend=dict(groupclick='togglegroup'))
+    if separate_by:
+        x_range, y_range = distribution_ranges(df, selected_x, selected_y, results)
+        fig.update_layout(
+            xaxis=dict(range=x_range), yaxis=dict(range=y_range),
+            uirevision=f'distribution:{separate_by}:{selected_x}:{selected_y}:{bool(options.get("log_x"))}:{bool(options.get("log_y"))}',
+            meta=dict(distribution_categories=[level for level, _ in panels],
+                      distribution_separate_by=separate_by, distribution_summaries=summaries))
+        # Keep density amplitudes comparable as well as measurement coordinates.
+        if marginal == 'gaussian fit':
+            for marginal_axis, coordinate in [('yaxis2', 'y'), ('xaxis2', 'x')]:
+                peaks = [max(getattr(trace, coordinate)) for trace in fig.data
+                         if isinstance(trace.meta, dict) and trace.meta.get('distribution_role') == 'marginal'
+                         and getattr(trace, coordinate + 'axis') == marginal_axis.replace('axis', '')]
+                if peaks:
+                    fig.update_layout(**{marginal_axis: dict(range=[0, max(peaks) * 1.05])})
+        select_distribution_category(fig)
+        table_md = fig.layout.meta['distribution_summary']
+    else:
+        table_md = summaries[None]
+    return fig, table_md, result_df
 
 def _cluster_hull_polygon(pts):
     """Return one cluster's boundary polygon (unclosed) for its (x, y) points.
@@ -588,7 +684,7 @@ def phasor_kmeans(X_raw, n_clusters, random_state=42):
     return kmeans.labels_, centers_raw
 
 
-def _phasor_panel_rows(df, separate_by=None, color_by=None):
+def category_panel_rows(df, separate_by=None, color_by=None):
     """Ordered positional memberships, shared verbatim with script export."""
     if separate_by is None:
         return [(None, np.arange(len(df)))]
@@ -600,6 +696,11 @@ def _phasor_panel_rows(df, separate_by=None, color_by=None):
     values = df[separate_by].astype(str).where(df[separate_by].notna(), "N/A")
     return [(level, np.flatnonzero(values.to_numpy() == level))
             for level in natural_tuple_sort(values.unique())]
+
+
+def _phasor_panel_rows(df, separate_by=None, color_by=None):
+    """Compatibility entry point for Phasor's shared category memberships."""
+    return category_panel_rows(df, separate_by, color_by)
 
 
 def _phasor_fit_groups(df, g_col, s_col, group_col, color_groups, panels,

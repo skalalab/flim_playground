@@ -14,9 +14,10 @@ FLIM Playground allows you to extract single-cell features from <span title="can
 
 ## 🎡 Playground Construction News
 
+- 🔬 **2D Feature Distribution category views** — Use **Separate by** to switch between full-size joint distributions with consistent axes and colors. Marginals, correlations, regression, GMM results, and counts follow the selected category. The four encoding controls are **Separate by**, **Color by**, **Collapse by**, and one **Opacity | Shape** picker. Collapse averages complete X/Y observations within each category, color group, and replicate; exports reproduce the same analysis.
 - 🧭 **Phasor category views** — Choose one **Separate by** category, then switch its values directly below the encoding controls in one full-size plot. Other categories remain visible as faint gray context points. Colors stay consistent, while counts and optional K-Means overlays follow the selected category. Python and CSV exports retain the separation.
 - 🗺️ **Dimension Reduction separation grid** — Keep a combined UMAP, PCA, or t-SNE overview beside smaller maps highlighting individual groups. **Separate by** accepts two categorical columns: the first defines rows and the second defines columns. Color, shape, and opacity remain independent, and the Python export reproduces the whole composition in one SVG.
-- 🎨 **Point encoding in one row** — In *Feature Comparison*, use **Opacity | Subcolor | Shape** to choose how one categorical column decorates the points. Switching modes takes one click and keeps the selected column; clearing the column turns that encoding off. Subcolor assigns consistent colours across groups and changes *Color by* to *Group by*. The four controls are *Separate by*, *Color/Group by*, *Collapse by*, and the shared point encoding. Other point plots keep separate shape and opacity controls. Missing data (`N/A`) stays outside the opacity ramp so it can never outrank a real level.
+- 🎨 **Point encoding in one row** — In *Feature Comparison*, use **Opacity | Subcolor | Shape** to choose how one categorical column decorates the points. Switching modes takes one click and keeps the selected column; clearing the column turns that encoding off. Subcolor assigns consistent colours across groups and changes *Color by* to *Group by*. The four controls are *Separate by*, *Color/Group by*, *Collapse by*, and the shared point encoding. *2D Feature Distribution* offers the same layout with **Opacity | Shape**; Phasor Plot and Dimension Reduction keep separate shape and opacity controls. Missing data (`N/A`) stays outside the opacity ramp so it can never outrank a real level.
 - ⚡ **Speed & scale** — Point plots switch to WebGL rendering above 5,000 drawn points, so large figures no longer freeze the page on scroll; styling tweaks restyle the existing figure instead of rebuilding it, and the KDE overlay is no longer quadratic in point count. In *Data Extraction*, lifetime curve fitting runs across CPU cores via multiprocessing, and raw-data checks are keyed on the files they actually read, so reassigning one channel no longer re-decodes every later channel's files.
 - 🎯 **"Except:" selections** — Every categorical filter and feature picker takes an *Except:* mode, so keeping all-but-a-few is one click instead of many. Filters also narrow symmetrically against each other, so the order of columns in your config no longer decides which filter combinations are reachable.
 - 🧪 **Derived feature extraction & analysis** — Build custom mathematical features (e.g., redox ratios like `A / (A + B)`, or ratio / difference formulas) using arithmetic expressions over existing features. These are appended as `Derived: <name>` columns and automatically consolidated into a unified **Derived Features** group in the Data Analysis layer.
@@ -98,6 +99,36 @@ and their independently fitted cluster labels.
 This differs from Dimension Reduction, where separation highlights subsets of
 one globally fitted embedding, and Feature Comparison, where separation creates
 sections and comparisons within each section.
+
+## Compare groups in 2D Feature Distribution
+
+Choose one categorical column in **Separate by**, then switch its values using the
+buttons below the encoding row (a dropdown appears above six values). Each view
+retains the full-size square scatter and both marginal distributions. X and Y keep
+their own units and share consistent ranges across categories. Colors, shapes, and
+opacity mappings also stay consistent. Other categories appear as faint gray
+scatter context and contribute nothing to the current view's fits or counts.
+
+Pearson r, regression, marginal distributions, and optional 2D GMM are calculated
+within each **separation value × Color by group**. Shape and opacity only style the
+points. The shared **Opacity | Shape** picker applies one decoration at a time;
+switching modes retains its column and clearing it turns the decoration off.
+
+**Collapse by** produces one mean point per **replicate × separation value × color
+group**. Only cells with both X and Y contribute to the means and hover counts.
+Log transforms apply after averaging. All models and marginals then describe those
+replicate points. Decorations that vary within a collapsed point are disabled with
+a notice. Groups that are too small or constant keep their points and explain
+which analyses are unavailable. Filtering to one replicate retains an active
+Collapse by selection.
+
+Categories follow natural order, including `N/A` for missing values. Separation
+and category settings survive method changes and column review. Category switches
+reuse prepared results; clearing Separate by restores the combined analysis.
+The Python export reproduces the selected category and gray context in one SVG.
+The GMM CSV retains all analyzed categories, including collapsed rows when enabled,
+and qualifies component labels by category because component numbers belong to
+their own fit.
 
 ## Use Your Own Data in Data Analysis
 - Demo uses the [iris dataset](example_data/Data_Analysis/iris.csv) and the [wine quality dataset](example_data/Data_Analysis/wine_quality.csv):

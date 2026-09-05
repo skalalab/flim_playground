@@ -149,8 +149,11 @@ def test_feature_comparison_has_one_direct_three_way_selector(page):
     at.radio[0].set_value("### **Bivariate**")
     at.run(timeout=90)
     assert not at.exception
-    assert "Opacity by" in _labels(at) and "Shape by" in _labels(at)
-    assert not at.get("button_group")
+    group = at.get("button_group")[0]
+    assert [option.content for option in group.options] == ["Opacity", "Shape"]
+    assert group.value == "shape"
+    assert set(_labels(at)).intersection({"Shape by", "Subcolor by", "Opacity by"}) == {
+        "Shape by"}
 
 
 @pytest.mark.parametrize("mode", ["shape", "subcolor", "opacity"])
@@ -164,9 +167,10 @@ def test_a_color_grouping_column_can_also_encode_points(page, mode):
     at.radio[0].set_value("### **Bivariate**")
     at.run(timeout=90)
     assert not at.exception
-    assert "treatment" in _options(at, "Shape by")
-    assert "treatment" in _options(at, "Opacity by")
-    assert at.selectbox(vw.PICKER_COL_KEY).value == "treatment"
+    for fd_mode in ("shape", "opacity"):
+        picker = _point_mode(at, fd_mode)
+        assert "treatment" in picker.options
+        assert picker.value == "treatment"
 
 
 def _opacity(at):
@@ -224,7 +228,9 @@ def test_subcolor_without_groups_is_disabled_but_remembers_the_column(page):
 
 
 def test_other_methods_keep_independent_opacity_across_feature_comparison(page):
-    at = _bivariate(page)
+    at = page()
+    at.radio[0].set_value("### **Multivariate**").run(timeout=90)
+    assert not at.exception
     _opacity(at).select("day").run(timeout=90)
     next(box for box in at.selectbox if box.label == "Shape by").select("dish").run(timeout=90)
 
@@ -235,7 +241,7 @@ def test_other_methods_keep_independent_opacity_across_feature_comparison(page):
     at.run(timeout=90)
     assert not at.exception
 
-    at.radio[0].set_value("### **Bivariate**").run(timeout=90)
+    at.radio[0].set_value("### **Multivariate**").run(timeout=90)
     assert not at.exception
     assert _opacity(at).value == "day"
     assert next(box for box in at.selectbox if box.label == "Shape by").value == "image_name"
@@ -265,7 +271,7 @@ def test_legacy_encoding_migrates_once(page, legacy, expected_mode, expected_col
 
 
 def _bivariate(page):
-    """Methods with separate shape and opacity controls keep opacity in its own column."""
+    """Open 2D Feature Distribution with its merged point-encoding control."""
     at = page()
     at.radio[0].set_value("### **Bivariate**")
     at.run(timeout=90)
@@ -276,7 +282,7 @@ def _bivariate(page):
 def test_opacity_survives_an_unrelated_change_to_color_by(page):
     """Changing grouping options preserves an opacity selection that is still valid."""
     at = _bivariate(page)
-    at = _opacity(at).select("day").run(timeout=90)
+    at = _point_mode(at, "opacity").select("day").run(timeout=90)
     assert not at.exception
     assert _opacity(at).value == "day"
 
@@ -290,7 +296,8 @@ def test_opacity_survives_an_unrelated_change_to_color_by(page):
 def test_grouping_on_the_held_point_encoding_column_preserves_it(page, mode):
     """Adding a point-encoding column to Color by keeps both selections active."""
     at = _bivariate(page)
-    key = vw.PICKER_COL_KEY if mode == "shape" else vw.OPACITY_BY_KEY
+    _point_mode(at, mode)
+    key = vw.PICKER_COL_KEY
     at = at.selectbox(key).select("day").run(timeout=90)
     at = _colour(at).select("day").run(timeout=90)
 

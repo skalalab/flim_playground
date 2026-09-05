@@ -246,6 +246,8 @@ def _build_preamble(state: dict) -> str:
                       "from scipy.stats import norm", "from scipy.optimize import brentq"]
     elif method == "2D Feature Distribution":
         extra.append("from scipy.stats import gaussian_kde")
+        if state.get("separate_by") is not None:
+            extra.append("from scipy.stats import chi2")
         # Pearson r + p is reported for every color group (like the app), so import
         # it unconditionally; only the regression line itself is gated.
         extra.append("from scipy.stats import pearsonr")
@@ -365,6 +367,8 @@ def _build_config_section(state: dict) -> str:
         if mp.get("apply_gmm"):
             lines.append("SAVE_DERIVED_DATA = False  # True → also write gmm_grouped_data.csv (the app's download button)")
     elif method == "2D Feature Distribution":
+        lines.append(f"SEPARATE_BY = {state.get('separate_by')!r}")
+        lines.append(f"DISTRIBUTION_CATEGORY = {mp.get('distribution_category')!r}")
         lines.append(f"SELECTED_X = {mp.get('selected_x')!r}")
         lines.append(f"SELECTED_Y = {mp.get('selected_y')!r}")
         lines.append(f"LOG_X = {mp.get('log_x', False)!r}")
@@ -550,8 +554,9 @@ def _build_footer(state: dict) -> str:
     if method == "Classification":
         return ""
     fname = method.lower().replace(" ", "_")
-    separated_phasor = method == "Phasor Plot" and state.get("separate_by") is not None
-    layout = "" if method == "Dimension Reduction" or separated_phasor else "plt.tight_layout()"
+    category_view = (method in ("Phasor Plot", "2D Feature Distribution")
+                     and state.get("separate_by") is not None)
+    layout = "" if method == "Dimension Reduction" or category_view else "plt.tight_layout()"
     return f"""
 # ============================================================
 # Save & Show
@@ -768,9 +773,15 @@ def _build_collapse(state: dict) -> str:
 
     if state["method"] == "2D Feature Distribution":
         header = """
-df = df[df[SELECTED_X].notna() & df[SELECTED_Y].notna()]
+# Validate the editable layout before collapse can remove any metadata columns.
+if SEPARATE_BY is not None:
+    if not isinstance(SEPARATE_BY, str) or SEPARATE_BY not in df.columns:
+        raise ValueError("Separate by must be one categorical column present in the data.")
+    if SEPARATE_BY in COLOR_BY:
+        raise ValueError("Separate by cannot also be used for Color by.")
+df = df[df[SELECTED_X].notna() & df[SELECTED_Y].notna()].copy()
 """
-        slot_cols = "COLOR_BY"
+        slot_cols = "[*COLOR_BY, SEPARATE_BY]"
         channels = ("SHAPE_BY", "OPACITY_BY")
         log_block = _LOG_2D_BLOCK
     else:
@@ -1158,10 +1169,13 @@ if section_headers:
 
 
 def _build_2d_distribution(state: dict) -> str:
+    if state.get("separate_by") is not None:
+        return _build_separated_2d_distribution(state)
+
     from src.vis.helpers import _find_best_gmm
     gmm_src = _extract_source(_find_best_gmm) if state.get("method_params", {}).get("fit_gmm_2d") else ""
 
-    return _build_collapse(state) + _build_visual_encoding(state) + f"""
+    return _build_collapse(state) + _build_visual_encoding(state, overlap_point=False) + f"""
 # ============================================================
 # 2D Feature Distribution
 # ============================================================
@@ -1303,6 +1317,197 @@ ax_main.legend(fontsize=LEGEND_SIZE)
 """
 
 
+def _build_separated_2d_distribution(state: dict) -> str:
+    """Export the active FD category using globally prepared fits and encodings."""
+    from src.vis.bivar import (
+        category_panel_rows,
+        distribution_fit_groups,
+        distribution_ranges,
+    )
+
+    helper_functions = [category_panel_rows, distribution_fit_groups, distribution_ranges]
+    if state.get("method_params", {}).get("fit_gmm_2d"):
+        from src.vis.helpers import _find_best_gmm
+
+        helper_functions.append(_find_best_gmm)
+    helper_src = _extract_source(*helper_functions)
+    preparation = """
+if df.empty:
+    raise ValueError("No complete X/Y observations remain for 2D Feature Distribution.")
+# Preserve retained metadata for CSV; normalize only the rendering copy.
+distribution_data = df.copy()
+for column in dict.fromkeys([*COLOR_BY, SHAPE_BY, OPACITY_BY]):
+    if column:
+        df[column] = df[column].astype(str).where(df[column].notna(), "N/A")
+FD_GROUP_COLUMN = "_color_group"
+while FD_GROUP_COLUMN in df.columns:
+    FD_GROUP_COLUMN += "_"
+"""
+    return (_build_collapse(state) + preparation
+            + _build_visual_encoding(state, overlap_point=False,
+                                     group_column_expr="FD_GROUP_COLUMN")
+            + "\n# Shared FD category and fit helpers\n" + helper_src + """
+# ============================================================
+# 2D Feature Distribution — selected category with context
+# ============================================================
+distribution_panels = category_panel_rows(df, SEPARATE_BY, COLOR_BY)
+panel_levels = [level for level, _positions in distribution_panels]
+distribution_category = DISTRIBUTION_CATEGORY
+if distribution_category not in panel_levels:
+    distribution_category = panel_levels[0]
+active_positions = distribution_panels[panel_levels.index(distribution_category)][1]
+
+# Every category/color fit is computed once, before selecting rendered overlays.
+# Shape and opacity describe points; they never partition a statistical fit.
+distribution_results, distribution_assignments = distribution_fit_groups(
+    df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups,
+    distribution_panels, separate_by=SEPARATE_BY, fit_regression=FIT_REGRESSION,
+    fit_gmm=FIT_GMM_2D, max_components=GMM_MAX_COMPONENTS,
+    min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD,
+)
+x_range, y_range = distribution_ranges(
+    df, SELECTED_X, SELECTED_Y, distribution_results,
+)
+
+# Prepare each available marginal independently. Its measurement range and the
+# density amplitude limits remain unchanged when DISTRIBUTION_CATEGORY changes.
+density_peaks = {"x": [], "y": []}
+for result in distribution_results:
+    group_df = df.iloc[result["positions"]]
+    result["marginals"] = {}
+    for axis, column in [("x", SELECTED_X), ("y", SELECTED_Y)]:
+        values = group_df[column].to_numpy()
+        if MARGINAL_PLOT_TYPE == 'none' or len(np.unique(values)) < 2:
+            continue
+        marginal = {"values": values}
+        if MARGINAL_PLOT_TYPE == 'gaussian fit':
+            try:
+                coordinates = np.linspace(values.min(), values.max(), 200)
+                density = gaussian_kde(values)(coordinates)
+            except (ValueError, np.linalg.LinAlgError):
+                result["notices"].append(f"{axis.upper()} marginal unavailable: insufficient variation.")
+                continue
+            marginal.update(coordinates=coordinates, density=density)
+            density_peaks[axis].append(float(density.max()))
+        result["marginals"][axis] = marginal
+
+if FIT_GMM_2D:
+    df["2D_GMM_group"] = distribution_assignments
+    distribution_data["2D_GMM_group"] = distribution_assignments
+    if SAVE_DERIVED_DATA:
+        distribution_data.to_csv("2D_gmm_data.csv", index=False)
+        print("2D GMM data saved to 2D_gmm_data.csv")
+
+fig = plt.figure(figsize=(10, 10))
+if MARGINAL_PLOT_TYPE != 'none':
+    from matplotlib.gridspec import GridSpec
+
+    gs = GridSpec(2, 2, figure=fig, height_ratios=[1, 9], width_ratios=[9, 1],
+                  hspace=0.05, wspace=0.05)
+    ax_main = fig.add_subplot(gs[1, 0], box_aspect=1, anchor='NE')
+    ax_top = fig.add_subplot(gs[0, 0], sharex=ax_main, box_aspect=1/9, anchor='SE')
+    ax_right = fig.add_subplot(gs[1, 1], sharey=ax_main, box_aspect=9, anchor='NW')
+    ax_top.tick_params(labelbottom=False, labelleft=False)
+    ax_right.tick_params(labelleft=False, labelbottom=False)
+else:
+    ax_main = fig.add_subplot(111, box_aspect=1)
+    ax_top = ax_right = None
+fig.subplots_adjust(left=0.10, right=0.80, bottom=0.14, top=0.94)
+
+other_positions = np.setdiff1d(np.arange(len(df)), active_positions, assume_unique=True)
+if len(other_positions):
+    other_df = df.iloc[other_positions]
+    ax_main.scatter(
+        other_df[SELECTED_X], other_df[SELECTED_Y], color='#b8b8b8', alpha=0.18,
+        s=max(1, POINT_SIZE - 2) ** 2, edgecolors='none', linewidths=0,
+        label='_nolegend_', zorder=0,
+    )
+
+for result in distribution_results:
+    if result["category"] != distribution_category:
+        continue
+    group = result["color_group"]
+    group_df = df.iloc[result["positions"]]
+    color = color_map[group][:3]
+    scatter_with_encodings(
+        ax_main, group_df[SELECTED_X], group_df[SELECTED_Y], color,
+        format_group_label(group, len(group_df), SHOW_GROUP_COUNTS, engine='mpl'),
+        POINT_SIZE ** 2,
+        shape_vals=group_df[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
+        opacity_vals=group_df[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
+        base_alpha=BASE_ALPHA,
+    )
+    label = f"{SEPARATE_BY}={distribution_category} | {group}"
+    if result["pearson"] is not None:
+        coefficient, p_value = result["pearson"]
+        print(f"  {label}: Pearson r={coefficient:.4f}, p={p_value:.2e}")
+    regression = result["regression"]
+    if regression is not None:
+        ax_main.plot(regression["x"], regression["y"], '--', color=color, linewidth=2)
+        print(f"    R²={regression['r2']:.4f}, slope={regression['slope']:.4f}, "
+              f"intercept={regression['intercept']:.4f}")
+
+    for axis, marginal_ax in [("x", ax_top), ("y", ax_right)]:
+        marginal = result["marginals"].get(axis)
+        if marginal_ax is None or marginal is None:
+            continue
+        horizontal = axis == "x"
+        orientation = 'horizontal' if horizontal else 'vertical'
+        if MARGINAL_PLOT_TYPE == 'gaussian fit':
+            coordinates, density = marginal["coordinates"], marginal["density"]
+            marginal_ax.plot(coordinates if horizontal else density,
+                             density if horizontal else coordinates,
+                             color=color, linewidth=1.5, alpha=0.7)
+        elif MARGINAL_PLOT_TYPE == 'boxplot':
+            marginal_ax.boxplot(
+                marginal["values"], orientation=orientation, positions=[0], widths=0.5,
+                patch_artist=True, boxprops=dict(facecolor=(*color, 0.3)),
+            )
+        elif MARGINAL_PLOT_TYPE == 'violin':
+            violin = marginal_ax.violinplot(
+                marginal["values"], orientation=orientation, positions=[0], showmedians=True,
+            )
+            for body in violin.get('bodies', []):
+                body.set_facecolor((*color, 0.3))
+
+    if result["components"]:
+        print(f"  {label}: GMM components")
+        print("    | Component | Mean X | Std. Dev. X | Mean Y | Std. Dev. Y | Weight |")
+    for index, component in enumerate(result["components"], 1):
+        mean, covariance, weight = component["mean"], component["covariance"], component["weight"]
+        eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+        angle = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
+        width, height = 2 * np.sqrt(eigenvalues * chi2.ppf(0.95, 2))
+        ax_main.add_patch(Ellipse(
+            xy=mean, width=width, height=height, angle=angle, fill=False,
+            edgecolor=color, linewidth=2, linestyle='--',
+        ))
+        ax_main.plot(*mean, '+', color=color, markersize=15, markeredgewidth=2)
+        std_x, std_y = np.sqrt(np.diag(covariance))
+        print(f"    | {index} | {mean[0]:.4f} | {std_x:.4f} | "
+              f"{mean[1]:.4f} | {std_y:.4f} | {weight:.3f} |")
+    for notice in result["notices"]:
+        print(f"  {label}: {notice}")
+
+ax_main.set_xlim(x_range)
+ax_main.set_ylim(y_range)
+if MARGINAL_PLOT_TYPE == 'gaussian fit':
+    ax_top.set_ylim(0, max(density_peaks["x"], default=1.0) * 1.05)
+    ax_right.set_xlim(0, max(density_peaks["y"], default=1.0) * 1.05)
+ax_main.set_xlabel(f"log₁₀({format_feature_label(SELECTED_X, engine='mpl')})" if LOG_X else format_feature_label(SELECTED_X, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
+ax_main.set_ylabel(f"log₁₀({format_feature_label(SELECTED_Y, engine='mpl')})" if LOG_Y else format_feature_label(SELECTED_Y, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
+fig.suptitle(f"2D Distribution of {format_feature_label(SELECTED_X, engine='mpl')} and {format_feature_label(SELECTED_Y, engine='mpl')} by {', '.join(COLOR_BY)}", fontsize=AXIS_LABEL_SIZE)
+ax_main.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
+ax_main.text(
+    0.5, -0.15, f"{SEPARATE_BY}: {distribution_category}", transform=ax_main.transAxes,
+    ha='center', va='top', fontsize=AXIS_LABEL_SIZE, fontweight='bold', clip_on=False,
+)
+add_encoding_legend_entries(ax_main, shape_map, opacity_map, POINT_SIZE ** 2)
+ax_main.legend(fontsize=LEGEND_SIZE, loc='upper left', bbox_to_anchor=(1.18, 1),
+               borderaxespad=0, frameon=False)
+""")
+
+
 def _build_phasor_plot(state: dict) -> str:
     if state.get("separate_by") is not None:
         return _build_separated_phasor_plot(state)
@@ -1311,9 +1516,9 @@ def _build_phasor_plot(state: dict) -> str:
 
 def _build_separated_phasor_plot(state: dict) -> str:
     """Build one full-size Phasor category view with gray context points."""
-    from src.vis.bivar import _phasor_panel_rows
+    from src.vis.bivar import category_panel_rows, _phasor_panel_rows
 
-    helper_functions = [_phasor_panel_rows]
+    helper_functions = [category_panel_rows, _phasor_panel_rows]
     if state.get("method_params", {}).get("k_means"):
         from src.vis.bivar import (
             _cluster_hull_polygon,

@@ -27,6 +27,9 @@ COLOR_BY_KEY = "vis_encoding_color_by"
 AS_COLOUR_KEY = "vis_encoding_as_colour"
 POINT_MODE_KEY = "vis_encoding_point_mode"
 _LAST_POINT_MODE_KEY = "vis_encoding_last_point_mode"
+FD_POINT_MODE_KEY = "vis_encoding_fd_point_mode"
+_FD_LAST_POINT_MODE_KEY = "vis_encoding_fd_last_point_mode"
+FD_POINT_MODES = ("opacity", "shape")
 
 # Point encodings share a selection across point-based methods. Methods without
 # this picker allow Streamlit to clear it through normal widget cleanup.
@@ -44,37 +47,56 @@ PHASOR_SEPARATE_BY_KEY = "vis_encoding_phasor_separate_by"
 PHASOR_CATEGORY_KEY = "vis_encoding_phasor_category"
 _PHASOR_CATEGORY_COLUMN_KEY = "vis_encoding_phasor_category_column"
 _PHASOR_LAST_CATEGORY_KEY = "vis_encoding_phasor_last_category"
+FD_SEPARATE_BY_KEY = "vis_encoding_fd_separate_by"
+FD_CATEGORY_KEY = "vis_encoding_fd_category"
+_FD_CATEGORY_COLUMN_KEY = "vis_encoding_fd_category_column"
+_FD_LAST_CATEGORY_KEY = "vis_encoding_fd_last_category"
 SEPARATION_KEYS = (*DR_FACET_KEYS, PHASOR_SEPARATE_BY_KEY, PHASOR_CATEGORY_KEY,
-                   _PHASOR_CATEGORY_COLUMN_KEY, _PHASOR_LAST_CATEGORY_KEY)
+                   _PHASOR_CATEGORY_COLUMN_KEY, _PHASOR_LAST_CATEGORY_KEY,
+                   FD_SEPARATE_BY_KEY, FD_CATEGORY_KEY, _FD_CATEGORY_COLUMN_KEY,
+                   _FD_LAST_CATEGORY_KEY, FD_POINT_MODE_KEY, _FD_LAST_POINT_MODE_KEY)
 
 
-def _retain_phasor_category():
+def _retain_category(category_key, last_category_key):
     """A single-category view always keeps one category selected."""
-    category = st.session_state.get(PHASOR_CATEGORY_KEY)
+    category = st.session_state.get(category_key)
     if category is None:
-        st.session_state[PHASOR_CATEGORY_KEY] = st.session_state.get(_PHASOR_LAST_CATEGORY_KEY)
+        st.session_state[category_key] = st.session_state.get(last_category_key)
     else:
-        st.session_state[_PHASOR_LAST_CATEGORY_KEY] = category
+        st.session_state[last_category_key] = category
+
+
+def _category_widget(categories, separate_by, category_key, column_key, last_category_key):
+    """Select from plot-provided category order with state scoped to one method."""
+    if not categories:
+        return None
+    previous_column = st.session_state.get(column_key)
+    category = st.session_state.get(category_key)
+    if previous_column != separate_by or category not in categories:
+        category = categories[0]
+    st.session_state[category_key] = category
+    st.session_state[last_category_key] = category
+    st.session_state[column_key] = separate_by
+    label = f"{separate_by} category"
+    if len(categories) <= 6:
+        return st.segmented_control(
+            label, categories, selection_mode="single", key=category_key,
+            on_change=_retain_category, args=(category_key, last_category_key),
+            width="stretch")
+    return st.selectbox(label, categories, key=category_key,
+                        on_change=_retain_category, args=(category_key, last_category_key))
 
 
 def phasor_category_widget(categories, separate_by):
     """Switch the full-size Phasor view directly below the encoding controls."""
-    if not categories:
-        return None
-    previous_column = st.session_state.get(_PHASOR_CATEGORY_COLUMN_KEY)
-    category = st.session_state.get(PHASOR_CATEGORY_KEY)
-    if previous_column != separate_by or category not in categories:
-        category = categories[0]
-    st.session_state[PHASOR_CATEGORY_KEY] = category
-    st.session_state[_PHASOR_LAST_CATEGORY_KEY] = category
-    st.session_state[_PHASOR_CATEGORY_COLUMN_KEY] = separate_by
-    label = f"{separate_by} category"
-    if len(categories) <= 6:
-        return st.segmented_control(
-            label, categories, selection_mode="single", key=PHASOR_CATEGORY_KEY,
-            on_change=_retain_phasor_category, width="stretch")
-    return st.selectbox(label, categories, key=PHASOR_CATEGORY_KEY,
-                        on_change=_retain_phasor_category)
+    return _category_widget(categories, separate_by, PHASOR_CATEGORY_KEY,
+                            _PHASOR_CATEGORY_COLUMN_KEY, _PHASOR_LAST_CATEGORY_KEY)
+
+
+def distribution_category_widget(categories, separate_by):
+    """Switch the full-size 2D Feature Distribution view independently of Phasor."""
+    return _category_widget(categories, separate_by, FD_CATEGORY_KEY,
+                            _FD_CATEGORY_COLUMN_KEY, _FD_LAST_CATEGORY_KEY)
 
 
 def phasor_clustering_widget(selected_channel):
@@ -116,30 +138,40 @@ def _picker_selectbox(label, options, **kwargs):
 PICKER_LABELS = {mode: f"{mode.title()} by" for mode in POINT_MODES}
 
 
-def _retain_point_mode():
+def _retain_point_mode(mode_key=POINT_MODE_KEY, last_mode_key=_LAST_POINT_MODE_KEY,
+                       modes=POINT_MODES):
     """Restore the active segment before rendering if it was deselected."""
-    mode = resolve_point_mode(st.session_state.get(POINT_MODE_KEY),
-                              st.session_state.get(_LAST_POINT_MODE_KEY))
-    st.session_state[POINT_MODE_KEY] = mode
-    st.session_state[_LAST_POINT_MODE_KEY] = mode
+    selected = st.session_state.get(mode_key)
+    last_mode = st.session_state.get(last_mode_key)
+    mode = resolve_point_mode(selected if selected in modes else None,
+                              last_mode if last_mode in modes else "shape")
+    st.session_state[mode_key] = mode
+    st.session_state[last_mode_key] = mode
 
 
-def _initialize_point_mode():
+def _initialize_point_mode(mode_key=POINT_MODE_KEY, last_mode_key=_LAST_POINT_MODE_KEY,
+                           modes=POINT_MODES):
     """Migrate once so clearing the picker cannot revive legacy opacity."""
-    if (POINT_MODE_KEY not in st.session_state
-            and _LAST_POINT_MODE_KEY not in st.session_state):
+    if mode_key not in st.session_state and last_mode_key not in st.session_state:
+        # A present shared picker owns its value, including an explicit None.
+        # Retained modes record earlier initialization even after widget cleanup.
+        merged_initialized = any(key in st.session_state for key in (
+            POINT_MODE_KEY, _LAST_POINT_MODE_KEY, FD_POINT_MODE_KEY, _FD_LAST_POINT_MODE_KEY))
+        legacy_opacity = (st.session_state.get(OPACITY_BY_KEY)
+                          if not merged_initialized and PICKER_COL_KEY not in st.session_state
+                          else None)
         mode, column = initial_point_encoding(
             st.session_state.get(PICKER_COL_KEY),
-            st.session_state.get(AS_COLOUR_KEY, False),
-            st.session_state.get(OPACITY_BY_KEY),
+            "subcolor" in modes and st.session_state.get(AS_COLOUR_KEY, False),
+            legacy_opacity,
         )
-        st.session_state[POINT_MODE_KEY] = mode
+        st.session_state[mode_key] = mode
         st.session_state[PICKER_COL_KEY] = column
-    _retain_point_mode()
+    _retain_point_mode(mode_key, last_mode_key, modes)
 
 
 def _encoding_columns(slots, merged_point_encoding):
-    """Keep Feature Comparison's controls aligned, with scrolling inside its row."""
+    """Align merged point controls, with narrow-screen scrolling inside their row."""
     if not merged_point_encoding:
         return st.columns(len(slots))
 
@@ -185,7 +217,8 @@ def _encoding_columns(slots, merged_point_encoding):
 def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False, subcolor_available=False, collapse_available=False, separate_by_mode="sections"):
     """Choose visual mappings; separation is a scalar section or ordered facet list."""
     preserve_analysis_controls(st.session_state, SEPARATION_KEYS)
-    merged_point_encoding = subcolor_available and point_based
+    distribution = separate_by_mode == "distribution"
+    merged_point_encoding = point_based and (subcolor_available or distribution)
     # Public self-assignment interrupts cleanup while a widget is hidden. Mode
     # survives method changes; standalone opacity remains owned by other methods.
     if POINT_MODE_KEY in st.session_state:
@@ -201,9 +234,10 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     opacity_by = shape_by = separate_by = subcolor_by = collapse_by = None
     facets = separate_by_mode == "facets"
     subplots = separate_by_mode == "subplots"
-    if subplots:
-        st.session_state[PHASOR_SEPARATE_BY_KEY] = prune_to_options(
-            st.session_state.get(PHASOR_SEPARATE_BY_KEY), present_categories)
+    if subplots or distribution:
+        separator_key = FD_SEPARATE_BY_KEY if distribution else PHASOR_SEPARATE_BY_KEY
+        st.session_state[separator_key] = prune_to_options(
+            st.session_state.get(separator_key), present_categories)
     if facets:
         # Filtering to a single level must not erase a valid layout choice.
         separate_by = []
@@ -215,13 +249,13 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
         pruned = list(dict.fromkeys(prune_to_options(stored, present_categories)))[:2]
         st.session_state[DR_SEPARATE_BY_KEY] = pruned
 
-    if not available_categories and not ((facets or subplots) and present_categories):
+    if not available_categories and not ((facets or subplots or distribution) and present_categories):
         return color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by
 
     if not color_based:
         return color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by
 
-    # Feature Comparison has one wider picker slot; other point-based methods
+    # Feature Comparison and FD have one wider picker slot; other point methods
     # retain independent opacity and shape controls.
     slots = []
     if separate_by_available and point_based:
@@ -248,12 +282,17 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                          "and the second sets columns. "
                          "All panels share one embedding.",
                 )
-            elif subplots:
+            elif subplots or distribution:
                 separate_by = _pruned_selectbox(
-                    "Separate by", present_categories, key=PHASOR_SEPARATE_BY_KEY,
-                    help="View one category at a time in a full-size plot. K-Means fits "
+                    "Separate by", present_categories, key=separator_key,
+                    help=("View one category at a time in a full-size plot. Statistical "
+                         "models are calculated within each category and color group "
+                         "after any Collapse by aggregation. The separation column "
+                         "cannot also be used for Color by or Collapse by."
+                         if distribution else
+                         "View one category at a time in a full-size plot. K-Means fits "
                          "each category's color groups independently. The separation "
-                         "column cannot also be used for Color by.")
+                         "column cannot also be used for Color by."))
             else:
                 separate_by = _pruned_selectbox(
                     "Separate by", available_categories, key="analysis_control_separate_by")
@@ -275,26 +314,35 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
 
     # Color-grouping columns can also encode shape, subcolor, or opacity.
     # Only FC's section column is excluded from this shared option list.
-    available_for_decoration = available_categories if subplots else available_for_color
+    available_for_decoration = (available_categories if subplots or distribution
+                                else available_for_color)
 
     point_mode = "shape"
     if point_based:
         with cols[at["picker"]]:
             if merged_point_encoding:
-                _initialize_point_mode()
+                mode_key = FD_POINT_MODE_KEY if distribution else POINT_MODE_KEY
+                last_mode_key = _FD_LAST_POINT_MODE_KEY if distribution else _LAST_POINT_MODE_KEY
+                modes = FD_POINT_MODES if distribution else POINT_MODES
+                _initialize_point_mode(mode_key, last_mode_key, modes)
                 # Read the mode before Color by so its label changes in this run.
                 with st.container(key="vis_encoding_point_selector", gap="xxsmall"):
                     point_mode = st.segmented_control(
-                        "Point encoding", POINT_MODES, selection_mode="single",
-                        format_func=str.title, key=POINT_MODE_KEY,
-                        on_change=_retain_point_mode, label_visibility="collapsed",
-                        help="**Opacity** varies point transparency across ordered "
+                        "Point encoding", modes, selection_mode="single",
+                        format_func=str.title, key=mode_key,
+                        on_change=_retain_point_mode, args=(mode_key, last_mode_key, modes),
+                        label_visibility="collapsed",
+                        help=("**Opacity** varies point transparency across ordered "
+                             "categories. **Shape** changes the marker for each category. "
+                             "The selected column follows the active mode; clear it to "
+                             "turn point encoding off." if distribution else
+                             "**Opacity** varies point transparency across ordered "
                              "categories. "
                              "**Subcolor** gives each value one color across all "
                              "x-axis groups, useful for tracking donors within "
                              "treatments. **Shape** changes the marker for each "
                              "category. The selected column follows "
-                             "the active mode; clear it to turn point encoding off.",
+                             "the active mode; clear it to turn point encoding off."),
                     )
                     column = _picker_selectbox(
                         PICKER_LABELS[point_mode], available_for_decoration,
@@ -313,7 +361,10 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
             color_multiselect_label(merged_point_encoding, point_mode == "subcolor"),
             available_for_color,
             key=COLOR_BY_KEY,
-            help=("Groups compared along the x axis. These groups set the color too, "
+            help=("Groups that share a color. Statistical models are calculated within "
+                 "each category and color group after any Collapse by aggregation."
+                 if distribution else
+                 "Groups compared along the x axis. These groups set the color too, "
                  "unless Point encoding is set to Subcolor — then that column sets the "
                  "color and these only set the x positions."
                  if merged_point_encoding else
@@ -330,10 +381,22 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     # eligible: each survives collapse when constant within the replicate group.
     if "collapse" in at:
         available_for_collapse = [cat for cat in available_for_color if cat not in color_by]
+        if distribution:
+            # Filtering to one replicate must not silently revert the view to cells.
+            selected_collapse = st.session_state.get(COLLAPSE_BY_KEY)
+            if (selected_collapse in present_categories and selected_collapse != separate_by
+                    and selected_collapse not in color_by
+                    and selected_collapse not in available_for_collapse):
+                available_for_collapse.append(selected_collapse)
         with cols[at["collapse"]]:
             collapse_by = _pruned_selectbox(
                 "Collapse by", available_for_collapse, COLLAPSE_BY_KEY,
-                help=("One point per value of this column, inside each x group, holding "
+                help=("One point per value of this column within each category and color "
+                     "group, holding the MEAN X and Y of cells with both measurements. "
+                     "Marginal distributions, 2D GMM, Pearson r, and regression use "
+                     "these replicate points. Log transforms apply after averaging."
+                     if distribution else
+                     "One point per value of this column, inside each x group, holding "
                      "the MEAN of the cells it covers -- so the box, the mean line and "
                      "every statistic describe replicates (dishes, patients, images) "
                      "rather than cells. Pair it with Subcolor by on the same column to "

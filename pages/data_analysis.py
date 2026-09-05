@@ -20,7 +20,10 @@ from src.dataset_io import (
 from src.emojis import happy_emoji, sad_emoji
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import render_top_menu
-from src.vis.bivar import feature_2d_distribution_plot, phasor_plot, select_phasor_category
+from src.vis.bivar import (
+    distribution_controls, feature_2d_distribution_plot, phasor_plot,
+    select_distribution_category, select_phasor_category,
+)
 from src.widgets.plot_layout import dimension_reduction_chart, phasor_chart, square_2d_plot
 from src.vis.helpers import apply_plot_styling, log_negative_error
 from src.vis.multivar import dimension_reduction_plot
@@ -68,6 +71,7 @@ from src.widgets.selection_widgets import (
 from src.widgets.visualization_widgets import (
     SEPARATION_KEYS,
     _compute_channel_harmonics,
+    distribution_category_widget,
     get_visual_group_keys,
     phasor_category_widget,
     phasor_clustering_widget,
@@ -126,6 +130,20 @@ def _collect_numerical_filters():
             break
         i += 1
     return num_filters
+
+def _distribution_options(selected_x, selected_y):
+    """Snapshot settings that change FD computations, excluding display category."""
+    suffix = f"{selected_x}_{selected_y}"
+    return dict(
+        log_x=st.session_state.get(f"log_x_2d_{suffix}", False),
+        log_y=st.session_state.get(f"log_y_2d_{suffix}", False),
+        marginal_plot_type=st.session_state.get(f"marginal_plot_type_selector_{suffix}", "gaussian fit"),
+        fit_regression=st.session_state.get(f"fit_regression_2d_{suffix}", False),
+        fit_gmm=st.session_state.get(f"fit_gmm_2d_{suffix}", False),
+        max_components=int(st.session_state.get("fit_gmm_max_components", 3)),
+        min_weight_threshold=float(st.session_state.get("fit_gmm_min_weight_threshold", .1)),
+    )
+
 
 def _export_script_button(method, uploaded_file, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by, delimiter=",", **extra_params):
     """Render the export-as-script download button with full state collection."""
@@ -215,6 +233,7 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
             "selected_x": sx,
             "selected_y": sy,
             "collapse_by": extra_params.get("collapse_by"),
+            "distribution_category": extra_params.get("distribution_category"),
             "log_x": st.session_state.get(f"log_x_2d_{sx}_{sy}", False) if sx and sy else False,
             "log_y": st.session_state.get(f"log_y_2d_{sx}_{sy}", False) if sx and sy else False,
             "marginal_plot_type": st.session_state.get(f"marginal_plot_type_selector_{sx}_{sy}", "gaussian fit") if sx and sy else "gaussian fit",
@@ -429,7 +448,7 @@ with col2:
         # Offer encoding controls supported by the selected plot.
         point_based = method not in ["Feature Histogram", "Classification"]
         color_based = method not in [ "Classification"]
-        separate_by_available = method in ["Feature Comparison", "Dimension Reduction", "Phasor Plot"]
+        separate_by_available = method in ["Feature Comparison", "Dimension Reduction", "Phasor Plot", "2D Feature Distribution"]
         # Feature Comparison preserves group identity on the x axis when subcolor is used.
         subcolor_available = method in ["Feature Comparison"]
         # Collapse averages replicate measurements within each color group.
@@ -441,13 +460,13 @@ with col2:
                 filtered_df, categorical_cols, color_based=color_based,
                 point_based=point_based, separate_by_available=separate_by_available,
                 subcolor_available=subcolor_available, collapse_available=collapse_available,
-                separate_by_mode={"Dimension Reduction": "facets", "Phasor Plot": "subplots"}.get(method, "sections"),
+                separate_by_mode={"Dimension Reduction": "facets", "Phasor Plot": "subplots",
+                                  "2D Feature Distribution": "distribution"}.get(method, "sections"),
             )
-            # Place the Phasor view fragment directly under Separate by/encodings.
-            # Its selector and clustering controls render before the large plot.
-            phasor_display_area = st.container() if method == "Phasor Plot" else None
             # Keep any notices about channels dropped by collapse beside their controls.
             collapse_note = st.container()
+            # Category selector and analysis controls precede the full-size plot.
+            bivar_display_area = st.container() if method in bivar_methods else None
 
             # Use complete observations for means, counts, and every downstream model.
             selected_columns = []
@@ -522,7 +541,12 @@ with col2:
             elif method in bivar_methods:
                 if "2D" in method and selected_x != "Select" and selected_y != "Select":
                     if len(filtered_df) > 0:
-                        fig, table_md, gmm_df = feature_2d_distribution_plot(plot_df, unique_row_id_col=plot_row_id_col, fov_name_col=plot_fov_name_col, selected_x=selected_x, selected_y=selected_y, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap, row_id_label=plot_row_id_label)
+                        fig, table_md, gmm_df = feature_2d_distribution_plot(
+                            plot_df, unique_row_id_col=plot_row_id_col, fov_name_col=plot_fov_name_col,
+                            selected_x=selected_x, selected_y=selected_y, color_by=color_by,
+                            shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap,
+                            row_id_label=plot_row_id_label, separate_by=separate_by,
+                            analysis_options=_distribution_options(selected_x, selected_y))
                         data_export_ready = True
                     else:
                         st.write(f"No data available after removing rows with missing values {sad_emoji}")
@@ -623,6 +647,8 @@ with col2:
                         (st.session_state.get(f"k_means_phasor_{selected_channel}", False),
                          st.session_state.get(f"k_means_clusters_phasor_{selected_channel}", 2))
                         if method == "Phasor Plot" else None,
+                        _distribution_options(selected_x, selected_y)
+                        if method == "2D Feature Distribution" else None,
                     )
 
                 _build_params = _plot_build_params()
@@ -633,6 +659,15 @@ with col2:
                     # so fragment reruns do not accumulate those changes.
                     fig = go.Figure(base_fig)
                     phasor_category = None
+                    distribution_category = None
+                    display_table = table_md if method == "2D Feature Distribution" else None
+                    if method == "2D Feature Distribution":
+                        if separate_by:
+                            distribution_category = distribution_category_widget(
+                                fig.layout.meta["distribution_categories"], separate_by)
+                            select_distribution_category(fig, distribution_category)
+                            display_table = fig.layout.meta["distribution_summary"]
+                        distribution_controls(selected_x, selected_y)
                     if method == "Phasor Plot" and separate_by:
                         phasor_category = phasor_category_widget(
                             fig.layout.meta["phasor_categories"], separate_by)
@@ -642,8 +677,8 @@ with col2:
                     fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
                     if method == "2D Feature Distribution":
                         square_2d_plot(fig, key=f"plot_chart_2d_{method}")
-                        if table_md:
-                            st.markdown(table_md, unsafe_allow_html=True)
+                        if display_table:
+                            st.markdown(display_table, unsafe_allow_html=True)
                     elif method == "Dimension Reduction":
                         dimension_reduction_chart(fig, key=f"plot_chart_{method}")
                     elif method == "Phasor Plot":
@@ -669,7 +704,7 @@ with col2:
                     show_colormap = len(color_by) > 0
                     plot_config_widget(point_based=point_based, show_colormap=show_colormap,
                                        show_count_toggle=show_colormap or (
-                                           method in ("Dimension Reduction", "Phasor Plot") and bool(separate_by)))
+                                           method in ("Dimension Reduction", "Phasor Plot", "2D Feature Distribution") and bool(separate_by)))
 
                     # 3. Export as Python Script
                     _extra = {}
@@ -690,6 +725,7 @@ with col2:
                             _extra["selected_x"] = selected_x
                             _extra["selected_y"] = selected_y
                             _extra["collapse_by"] = collapse_by
+                            _extra["distribution_category"] = distribution_category
                         elif method == "Phasor Plot":
                             _extra["selected_channel"] = selected_channel
                             _extra["phasor_harmonic"] = selected_harmonic
@@ -706,8 +742,8 @@ with col2:
                     if st.session_state.pop("_plot_needs_rebuild", False) or _plot_build_params() != build_params:
                         st.rerun(scope="app")
 
-                if phasor_display_area is not None:
-                    with phasor_display_area:
+                if bivar_display_area is not None:
+                    with bivar_display_area:
                         _render_plot_and_controls(fig, _build_params)
                 else:
                     _render_plot_and_controls(fig, _build_params)

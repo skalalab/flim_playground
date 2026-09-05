@@ -797,7 +797,9 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
             # Style both SVG and WebGL point traces.
             if trace.type in ('scatter', 'scattergl') or trace.type == 'box' and trace.marker:
                 is_facet = dimension_reduction and getattr(trace, 'xaxis', None) not in (None, 'x')
-                is_context = isinstance(trace.meta, dict) and trace.meta.get('phasor_role') == 'context'
+                is_context = isinstance(trace.meta, dict) and (
+                    trace.meta.get('phasor_role') == 'context'
+                    or trace.meta.get('distribution_role') == 'context')
                 trace.marker.size = max(1, point_size - 2) if is_facet or is_context else point_size
 
     # DR row/column labels share the legend's font control.
