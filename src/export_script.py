@@ -148,6 +148,26 @@ def add_encoding_legend_entries(ax, shape_map, opacity_map, point_size):
         ax.scatter([], [], c='gray', alpha=0.8, marker=marker, s=point_size, label=str(group))
 
 
+def scatter_dimension_batch(ax, x, y, color, label, point_size,
+                            shape_vals=None, shape_map=None,
+                            opacity_vals=None, opacity_map=None, base_alpha=0.7):
+    """One collection with per-point paths preserves a mixed batch's draw order."""
+    from matplotlib.markers import MarkerStyle
+
+    alphas = ([opacity_map[str(value)] for value in opacity_vals]
+              if opacity_vals is not None and opacity_map else base_alpha)
+    collection = ax.scatter(x, y, c=[color], alpha=alphas, s=point_size,
+                            edgecolors='DarkSlateGrey', linewidths=0.3,
+                            label=label, zorder=2)
+    if shape_vals is not None and shape_map:
+        paths = {}
+        for value, marker in shape_map.items():
+            style = MarkerStyle(marker)
+            paths[value] = style.get_path().transformed(style.get_transform())
+        collection.set_paths([paths[str(value)] for value in shape_vals])
+    return collection
+
+
 # ---------------------------------------------------------------------------
 # State-capture helpers (used by pages/data_analysis.py)
 # ---------------------------------------------------------------------------
@@ -368,6 +388,7 @@ def _build_config_section(state: dict) -> str:
         lines.append(f"SELECTED_FEATURES = {mp.get('selected_features', [])!r}")
         lines.append(f"DR_METHOD = {mp.get('dr_method', 'PCA')!r}")
         lines.append(f"HYPER_PARAMS = {mp.get('hyperParam_dict', {})!r}")
+        lines.append(f"SEPARATE_BY = {state.get('separate_by') or []!r}  # ordered row and column categories")
     elif method == "Classification":
         lines.append(f"SELECTED_FEATURES = {mp.get('selected_features', [])!r}")
         lines.append(f"CLASSIFICATION_METHOD = {mp.get('classification_method')!r}")
@@ -469,7 +490,8 @@ def _build_filters(state: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _build_visual_encoding(state: dict, overlap_point: bool = True) -> str:
+def _build_visual_encoding(state: dict, overlap_point: bool = True,
+                           group_column_expr: str = '"_color_group"') -> str:
     """Build visual encoding section by extracting real functions."""
     from src.vis.helpers import (
         create_opacity_mapping,
@@ -500,11 +522,11 @@ def _build_visual_encoding(state: dict, overlap_point: bool = True) -> str:
 
 # --- Build groups ---
 if COLOR_BY:
-    df["_color_group"] = df[COLOR_BY].astype(str).agg("::".join, axis=1)
+    df[{group_column_expr}] = df[COLOR_BY].astype(str).agg("::".join, axis=1)
 else:
-    df["_color_group"] = "all_data"
+    df[{group_column_expr}] = "all_data"
 
-color_groups = natural_tuple_sort(df["_color_group"].unique().tolist())
+color_groups = natural_tuple_sort(df[{group_column_expr}].unique().tolist())
 color_map = create_color_map(color_groups, COLORMAP, alpha={alpha_expr})
 BASE_ALPHA = {base_alpha_expr}
 
@@ -526,11 +548,12 @@ def _build_footer(state: dict) -> str:
     if method == "Classification":
         return ""
     fname = method.lower().replace(" ", "_")
+    layout = "" if method == "Dimension Reduction" else "plt.tight_layout()"
     return f"""
 # ============================================================
 # Save & Show
 # ============================================================
-plt.tight_layout()
+{layout}
 plt.savefig("{fname}.svg", format="svg", bbox_inches="tight")
 plt.show()
 print("Figure saved to {fname}.svg")
@@ -1395,13 +1418,33 @@ ax.legend(fontsize=LEGEND_SIZE)
 
 
 def _build_dimension_reduction(state: dict) -> str:
-    return _build_visual_encoding(state) + """
+    from src.vis.dimension_facets import (
+        dimension_facet_groups,
+        dimension_facet_layout,
+        dimension_interleaved_indices,
+        dimension_ranges,
+        normalize_dimension_categories,
+    )
+
+    facet_src = _extract_source(normalize_dimension_categories,
+                                dimension_facet_groups, dimension_ranges,
+                                dimension_facet_layout, dimension_interleaved_indices,
+                                scatter_dimension_batch)
+    # Encoding maps and facet levels describe the observations that are actually
+    # reduced. No facet changes the scaler, fit, color, shape, or opacity maps.
+    retained = """
+df = df.dropna(subset=SELECTED_FEATURES).copy()
+df = normalize_dimension_categories(df, [*COLOR_BY, SHAPE_BY, OPACITY_BY, *SEPARATE_BY])
+DR_GROUP_COLUMN = "_color_group"
+while DR_GROUP_COLUMN in df.columns:
+    DR_GROUP_COLUMN += "_"
+"""
+    return facet_src + retained + _build_visual_encoding(state, group_column_expr="DR_GROUP_COLUMN") + """
 # ============================================================
 # Dimension Reduction
 # ============================================================
 from sklearn.preprocessing import StandardScaler
 
-df = df[df[SELECTED_FEATURES].notna().all(axis=1)]
 X = df[SELECTED_FEATURES].values
 
 scaler = StandardScaler()
@@ -1431,27 +1474,137 @@ elif DR_METHOD == "t-SNE":
     xlabel, ylabel = "t-SNE1", "t-SNE2"
 
 df = df.copy()
-df["_dr_x"] = X_reduced[:, 0]
-df["_dr_y"] = X_reduced[:, 1]
+DR_X_COLUMN, DR_Y_COLUMN = "_dr_x", "_dr_y"
+while DR_X_COLUMN in df.columns:
+    DR_X_COLUMN += "_"
+while DR_Y_COLUMN in df.columns:
+    DR_Y_COLUMN += "_"
+df[DR_X_COLUMN] = X_reduced[:, 0]
+df[DR_Y_COLUMN] = X_reduced[:, 1]
 
-fig, ax = plt.subplots(figsize=(10, 8))
+x_range, y_range = dimension_ranges(df[DR_X_COLUMN], df[DR_Y_COLUMN])
+facet_groups = dimension_facet_groups(df, SEPARATE_BY)
+facet_layout = dimension_facet_layout(facet_groups, x_range, y_range)
+facet_axes = []
 
-for g in color_groups:
-    gdf = df[df["_color_group"] == g]
-    # Counted after the feature-NaN filter above, which is the same frame the app
-    # reduces and then counts (helpers.py: len(points_by_color[g])).
-    scatter_with_encodings(ax, gdf["_dr_x"], gdf["_dr_y"], color_map[g][:3],
-                           format_group_label(g, len(gdf), SHOW_GROUP_COUNTS, engine='mpl'),
-                           POINT_SIZE,
-                           shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
-                           opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
-                           base_alpha=BASE_ALPHA)
+if SEPARATE_BY:
+    # Keep the helper's physical geometry while reserving room for labels and
+    # one shared legend below the complete composition.
+    plot_width = 10.0
+    plot_height = plot_width * facet_layout["plot_height"]
+    legend_rows = max(1, int(np.ceil((len(color_groups) + len(shape_map) + len(opacity_map)) / 5)))
+    left_margin, right_margin = 0.85, 0.8
+    bottom_margin, top_margin = 0.85 + 0.35 * legend_rows, 0.55
+    figure_width = left_margin + plot_width + right_margin
+    figure_height = bottom_margin + plot_height + top_margin
+    fig = plt.figure(figsize=(figure_width, figure_height))
+    for panel in [facet_layout["overview"], *facet_layout["panels"]]:
+        x0, x1 = panel["x_domain"]
+        y0, y1 = panel["y_domain"]
+        panel_ax = fig.add_axes([
+            (left_margin + x0 * plot_width) / figure_width,
+            (bottom_margin + y0 * plot_height) / figure_height,
+            (x1 - x0) * plot_width / figure_width,
+            (y1 - y0) * plot_height / figure_height,
+        ])
+        facet_axes.append(panel_ax)
+    ax, *facet_axes = facet_axes
+else:
+    fig, ax = plt.subplots(figsize=(10, 8))
+    # Fixed margins keep the frame independent of each method's tick labels.
+    fig.subplots_adjust(left=0.12, right=0.96, bottom=0.12, top=0.96)
+
+all_rows = np.ones(len(df), dtype=bool)
+# The global overview fixes batch order; each small map only selects membership.
+point_batches = (dimension_interleaved_indices(
+    df, DR_GROUP_COLUMN, color_groups, SHAPE_BY, shape_map, OPACITY_BY, opacity_map)
+    if SEPARATE_BY else [(group, np.flatnonzero(df[DR_GROUP_COLUMN].eq(group)))
+                        for group in color_groups])
+group_counts = df[DR_GROUP_COLUMN].value_counts().to_dict()
+for panel_ax, membership, is_overview in [
+        (ax, all_rows, True),
+        *[(facet_ax, panel["mask"], False)
+          for facet_ax, panel in zip(facet_axes, facet_layout["panels"])]]:
+    panel_point_size = POINT_SIZE if is_overview else max(1, POINT_SIZE - 2)
+    if not is_overview and (~membership).any():
+        background = df.loc[~membership]
+        panel_ax.scatter(background[DR_X_COLUMN], background[DR_Y_COLUMN],
+                         color='#b8b8b8', alpha=0.25, s=panel_point_size,
+                         edgecolors='none', linewidths=0, zorder=1)
+    labeled_groups = set()
+    for g, global_indices in point_batches:
+        gdf = df.iloc[global_indices[membership[global_indices]]]
+        if gdf.empty:
+            continue
+        label = (format_group_label(g, group_counts[g], SHOW_GROUP_COUNTS, engine='mpl')
+                 if is_overview and g not in labeled_groups else None)
+        labeled_groups.add(g)
+        # Plotly multiplies color alpha by marker opacity. Preserve that same
+        # effective per-point alpha while keeping the legend's opacity map raw.
+        point_opacity_map = {key: alpha * color_map[g][3]
+                             for key, alpha in opacity_map.items()}
+        scatter = scatter_dimension_batch if SEPARATE_BY else scatter_with_encodings
+        scatter(
+            panel_ax, gdf[DR_X_COLUMN], gdf[DR_Y_COLUMN], color_map[g][:3], label, panel_point_size,
+            shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
+            opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None,
+            opacity_map=point_opacity_map, base_alpha=BASE_ALPHA)
+    panel_ax.set_xlim(x_range)
+    panel_ax.set_ylim(y_range)
+    panel_ax.set_aspect('equal', adjustable='box')
+    panel_ax.grid(False, which='both')
+    for side in ('left', 'bottom'):
+        panel_ax.spines[side].set_visible(True)
+        panel_ax.spines[side].set_color('black')
+        panel_ax.spines[side].set_linewidth(1)
+    for side in ('top', 'right'):
+        panel_ax.spines[side].set_visible(False)
+    if not is_overview:
+        panel_ax.tick_params(axis='both', which='both', bottom=False, left=False,
+                             labelbottom=False, labelleft=False)
+
+for facet_ax, panel in zip(facet_axes, facet_layout["panels"]):
+    if len(SEPARATE_BY) == 1:
+        facet_ax.text(1.04, 0.5, panel["values"][0], transform=facet_ax.transAxes,
+                      ha='left', va='center', fontsize=LEGEND_SIZE)
+    else:
+        if panel["row"] == 0:
+            facet_ax.text(0.5, 1.03, panel["values"][1], transform=facet_ax.transAxes,
+                          ha='center', va='bottom', fontsize=LEGEND_SIZE)
+        if panel["col"] == facet_groups["ncols"] - 1:
+            facet_ax.text(1.04, 0.5, panel["values"][0], transform=facet_ax.transAxes,
+                          ha='left', va='center', fontsize=LEGEND_SIZE)
 
 ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel(ylabel, fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
 add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
-ax.legend(fontsize=LEGEND_SIZE)
+if SEPARATE_BY:
+    legend_y = 0.015
+    legend = ax.legend(fontsize=LEGEND_SIZE, loc='lower left', ncol=5, frameon=False,
+                       bbox_to_anchor=(left_margin / figure_width, legend_y),
+                       bbox_transform=fig.transFigure)
+    # Measure real text before reserving space: large fonts and short grids can
+    # make the legend taller than the initial margin estimate. Grow only the
+    # bottom margin, retaining every map's physical size and shared geometry.
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    legend_top = legend.get_window_extent(renderer).y1
+    title_bottom = ax.xaxis.label.get_window_extent(renderer).y0
+    extra_bottom = max(0., (legend_top + 0.15 * fig.dpi - title_bottom)
+                       / (fig.dpi * (1 - legend_y)))
+    if extra_bottom:
+        positions = [panel_ax.get_position().frozen() for panel_ax in fig.axes]
+        old_height = figure_height
+        figure_height += extra_bottom
+        fig.set_size_inches(figure_width, figure_height)
+        for panel_ax, position in zip(fig.axes, positions):
+            panel_ax.set_position([
+                position.x0, (position.y0 * old_height + extra_bottom) / figure_height,
+                position.width, position.height * old_height / figure_height,
+            ])
+else:
+    ax.legend(fontsize=LEGEND_SIZE)
 """
 
 

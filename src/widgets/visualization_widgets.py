@@ -17,7 +17,9 @@ from src.widgets.encoding_state import (
     prune_to_options,
     resolve_point_mode,
 )
-from src.widgets.analysis_widget_state import control_default, number_input_default
+from src.widgets.analysis_widget_state import (
+    control_default, number_input_default, preserve_analysis_controls,
+)
 
 # Explicit keys preserve selections when labels or option lists change.
 COLOR_BY_KEY = "vis_encoding_color_by"
@@ -34,6 +36,10 @@ OPACITY_BY_KEY = "vis_encoding_opacity_by"
 
 # Collapse controls row aggregation and is not passed to get_point_visual_mappings.
 COLLAPSE_BY_KEY = "vis_encoding_collapse_by"
+
+# Dimension Reduction owns its facet layout independently of FC's sections.
+DR_SEPARATE_BY_KEY = "vis_encoding_dr_separate_by"
+DR_FACET_KEYS = (DR_SEPARATE_BY_KEY,)
 
 
 def _pruned_selectbox(label, options, key, **kwargs):
@@ -125,7 +131,9 @@ def _encoding_columns(slots, merged_point_encoding):
                           vertical_alignment="bottom")
 
 
-def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False, subcolor_available=False, collapse_available=False):
+def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False, subcolor_available=False, collapse_available=False, separate_by_mode="sections"):
+    """Choose visual mappings; separation is a scalar section or ordered facet list."""
+    preserve_analysis_controls(st.session_state, DR_FACET_KEYS)
     merged_point_encoding = subcolor_available and point_based
     # Public self-assignment interrupts cleanup while a widget is hidden. Mode
     # survives method changes; standalone opacity remains owned by other methods.
@@ -134,11 +142,25 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     if merged_point_encoding and OPACITY_BY_KEY in st.session_state:
         st.session_state[OPACITY_BY_KEY] = st.session_state[OPACITY_BY_KEY]
 
-    available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
+    present_categories = list(dict.fromkeys(
+        category for category in categorical_cols if category in filtered_df.columns))
+    available_categories = [category for category in present_categories
+                            if filtered_df[category].nunique() > 1]
     color_by = []
     opacity_by = shape_by = separate_by = subcolor_by = collapse_by = None
+    facets = separate_by_mode == "facets"
+    if facets:
+        # Filtering to a single level must not erase a valid layout choice.
+        separate_by = []
+        stored = st.session_state.get(DR_SEPARATE_BY_KEY, [])
+        if isinstance(stored, str):
+            stored = [stored]
+        elif not isinstance(stored, list):
+            stored = []
+        pruned = list(dict.fromkeys(prune_to_options(stored, present_categories)))[:2]
+        st.session_state[DR_SEPARATE_BY_KEY] = pruned
 
-    if len(available_categories) == 0:
+    if not available_categories and not (facets and present_categories):
         return color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by
 
     if not color_based:
@@ -162,10 +184,21 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     # Separate by widget
     if "separate" in at:
         with cols[at["separate"]]:
-            separate_by = _pruned_selectbox(
-                "Separate by", available_categories, key="analysis_control_separate_by")
+            if facets:
+                separate_by = st.multiselect(
+                    "Separate by", present_categories, key=DR_SEPARATE_BY_KEY,
+                    max_selections=2,
+                    help="Choose up to two categorical columns. One selected feature "
+                         "creates one column of maps. With two, the first sets rows "
+                         "and the second sets columns. "
+                         "All panels share one embedding.",
+                )
+            else:
+                separate_by = _pruned_selectbox(
+                    "Separate by", available_categories, key="analysis_control_separate_by")
 
-    available_for_color = [cat for cat in available_categories if cat != separate_by]
+    available_for_color = [cat for cat in available_categories
+                           if facets or cat != separate_by]
 
     # Resolve grouping before the point-encoding control. Seed and prune through
     # session state only, avoiding duplicate-default warnings from the multiselect.
@@ -180,7 +213,7 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     effective_color = pruned_color
 
     # Color-grouping columns can also encode shape, subcolor, or opacity.
-    # Only Separate by is excluded from this shared option list.
+    # Only FC's section column is excluded from this shared option list.
     available_for_decoration = available_for_color
 
     point_mode = "shape"
@@ -257,6 +290,7 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                                            OPACITY_BY_KEY)
 
     return color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by
+
 
 def umap_hyperParams_widget():
     col1, col2 = st.columns(2)

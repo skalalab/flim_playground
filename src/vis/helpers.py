@@ -781,6 +781,12 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     """
     # Names of traces that should keep their original marker sizes
     skip_trace_names = {'Lifetime Markers'}
+    meta = fig.layout.meta
+    dimension_reduction = isinstance(meta, dict) and 'dimension_reduction_layout' in meta
+    if dimension_reduction:
+        # Keep method-specific numeric tick widths from changing the frame.
+        # The shared font setting determines room for the vertical axis/title.
+        fig.update_layout(margin=dict(l=max(80, 4 * axis_label_size + 8)))
 
     # Update marker sizes for all scatter and box traces
     for trace in fig.data:
@@ -790,15 +796,17 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
         if hasattr(trace, 'marker') and trace.marker:
             # Style both SVG and WebGL point traces.
             if trace.type in ('scatter', 'scattergl') or trace.type == 'box' and trace.marker:
-                trace.marker.size = point_size
+                is_facet = dimension_reduction and getattr(trace, 'xaxis', None) not in (None, 'x')
+                trace.marker.size = max(1, point_size - 2) if is_facet else point_size
 
-    # Update annotation font sizes to match axis label size
+    # DR row/column labels share the legend's font control.
+    annotation_size = legend_size if dimension_reduction else axis_label_size
     if fig.layout.annotations:
         for annotation in fig.layout.annotations:
             if annotation.font:
-                annotation.font.size = axis_label_size
+                annotation.font.size = annotation_size
             else:
-                annotation.font = dict(size=axis_label_size)
+                annotation.font = dict(size=annotation_size)
 
     # Theme-aware hover tooltips: black-on-white in light mode, white-on-dark in dark.
     theme_color = get_context_theme_color()

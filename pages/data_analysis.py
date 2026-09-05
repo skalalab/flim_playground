@@ -21,7 +21,7 @@ from src.emojis import happy_emoji, sad_emoji
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import render_top_menu
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
-from src.widgets.plot_layout import square_2d_plot
+from src.widgets.plot_layout import dimension_reduction_chart, square_2d_plot
 from src.vis.helpers import apply_plot_styling, log_negative_error
 from src.vis.multivar import dimension_reduction_plot
 from src.vis.plot_defaults import (
@@ -52,7 +52,7 @@ from src.widgets.encoding_state import (
     dropped_channel_note,
 )
 from src.widgets.filter_widgets import filters_widget, selection_key
-from src.widgets.analysis_widget_state import control_default
+from src.widgets.analysis_widget_state import control_default, preserve_analysis_controls
 from src.widgets.multiselect_modes import ALL_LABEL, chosen_items
 from src.widgets.review_table_widget import (
     applied_summary,
@@ -66,6 +66,7 @@ from src.widgets.selection_widgets import (
     twod_single_feature_select_widget,
 )
 from src.widgets.visualization_widgets import (
+    DR_FACET_KEYS,
     _compute_channel_harmonics,
     get_visual_group_keys,
     phasor_params_widget,
@@ -78,6 +79,9 @@ from src.widgets.visualization_widgets import (
 
 st.set_page_config(layout="wide", page_icon="📊")
 render_top_menu()
+
+# Facet layout remains available through method changes, review and empty filters.
+preserve_analysis_controls(st.session_state, DR_FACET_KEYS)
 
 # Keep shared styling even when a module has no plot or styling widgets yet.
 if "vis_df" not in st.session_state:
@@ -422,7 +426,7 @@ with col2:
         # Offer encoding controls supported by the selected plot.
         point_based = method not in ["Feature Histogram", "Classification"]
         color_based = method not in [ "Classification"]
-        separate_by_available = method in ["Feature Comparison"]
+        separate_by_available = method in ["Feature Comparison", "Dimension Reduction"]
         # Feature Comparison preserves group identity on the x axis when subcolor is used.
         subcolor_available = method in ["Feature Comparison"]
         # Collapse averages replicate measurements within each color group.
@@ -430,7 +434,12 @@ with col2:
         fig = None
         # check if the df is empty after filtering
         if not filtered_df.empty:
-            color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by = visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=color_based, point_based=point_based, separate_by_available=separate_by_available, subcolor_available=subcolor_available, collapse_available=collapse_available)
+            color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by = visual_encoding_channels_widget(
+                filtered_df, categorical_cols, color_based=color_based,
+                point_based=point_based, separate_by_available=separate_by_available,
+                subcolor_available=subcolor_available, collapse_available=collapse_available,
+                separate_by_mode="facets" if method == "Dimension Reduction" else "sections",
+            )
             # Keep any notices about channels dropped by collapse beside their controls.
             collapse_note = st.container()
 
@@ -534,7 +543,14 @@ with col2:
 
                         if len(filtered_df) > 0:
                             try:
-                                fig = dimension_reduction_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_features=selected_features, colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by, colormap=st.session_state.plot_colormap, method=dr_method, hyperParam_dict=hyperParam_dict, row_id_label=row_id_label)
+                                fig = dimension_reduction_plot(
+                                    filtered_df, unique_row_id_col=unique_row_id_col,
+                                    fov_name_col=fov_name_col, selected_features=selected_features,
+                                    colored_by=color_by, opacity_by=opacity_by, shape_by=shape_by,
+                                    colormap=st.session_state.plot_colormap, method=dr_method,
+                                    hyperParam_dict=hyperParam_dict, row_id_label=row_id_label,
+                                    separate_by=separate_by,
+                                )
                             except Exception as e:
                                 st.error(f"Dimension reduction failed: {e}. Check that selected features don't contain constant or all-NaN columns. {sad_emoji}")
                                 fig = None
@@ -565,14 +581,20 @@ with col2:
                         if error_msg:
                             st.error(f"{error_msg} {sad_emoji}")
                         else:
-                            classification_plot_widget(results, classification_method, threshold_method)
-                            _export_script_button(method, uploaded_file, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by,
-                                                  delimiter=delimiter,
-                                                  classification_method=classification_method, splits=splits,
-                                                  sampling_method=sampling_method, class_weight=apply_class_weight,
-                                                  threshold_method=threshold_method, classifier_params=classifier_params,
-                                                  selected_features=selected_features,
-                                                  classify_classes=df_classify['classes'].unique().tolist())
+                            @st.fragment
+                            def _render_classification_results(results):
+                                # Reuse the fitted model for styling changes and
+                                # keep the exported script's styling in sync.
+                                classification_plot_widget(results, classification_method, threshold_method)
+                                _export_script_button(method, uploaded_file, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by,
+                                                      delimiter=delimiter,
+                                                      classification_method=classification_method, splits=splits,
+                                                      sampling_method=sampling_method, class_weight=apply_class_weight,
+                                                      threshold_method=threshold_method, classifier_params=classifier_params,
+                                                      selected_features=selected_features,
+                                                      classify_classes=df_classify['classes'].unique().tolist())
+
+                            _render_classification_results(results)
 
             if fig is not None:
                 # Colormap, group counts and section-header sizes require rebuilding the
@@ -595,6 +617,8 @@ with col2:
                         square_2d_plot(fig, key=f"plot_chart_2d_{method}")
                         if table_md:
                             st.markdown(table_md, unsafe_allow_html=True)
+                    elif method == "Dimension Reduction":
+                        dimension_reduction_chart(fig, key=f"plot_chart_{method}")
                     else:
                         st.plotly_chart(fig, width='stretch', key=f"plot_chart_{method}")
                     # 1. Data export (if applicable)
@@ -615,7 +639,8 @@ with col2:
                     st.subheader("📊 Plot Styling")
                     show_colormap = len(color_by) > 0
                     plot_config_widget(point_based=point_based, show_colormap=show_colormap,
-                                       show_count_toggle=show_colormap)
+                                       show_count_toggle=show_colormap or (
+                                           method == "Dimension Reduction" and bool(separate_by)))
 
                     # 3. Export as Python Script
                     _extra = {}

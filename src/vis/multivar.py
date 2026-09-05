@@ -1,4 +1,7 @@
 import warnings
+import html
+
+import numpy as np
 
 from sklearn.preprocessing import StandardScaler
 
@@ -17,6 +20,12 @@ from .helpers import (
     get_context_theme_color,
     get_point_visual_mappings,
     hover_field,
+    point_trace_class,
+)
+
+from .dimension_facets import (
+    dimension_facet_groups, dimension_facet_layout, dimension_ranges,
+    normalize_dimension_categories,
 )
 
 
@@ -48,88 +57,149 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, ra
             df = pd.DataFrame(tsne.fit_transform(X_std), columns=["t-SNE1", "t-SNE2"])
     return df, exp_var
 
-def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_features, colored_by=[], opacity_by=None, shape_by=None, colormap="tab10", method="UMAP", hyperParam_dict={}, row_id_label="ID"):
-    """create a plotly plot to visualize the dimension-reduced data"""
-    X = df[selected_features]
-    df_reduced, exp_var = dimension_reduction(X, n_components=2, method=method, hyperParam_dict=hyperParam_dict)
-    # augment df_reduced with required columns and categorical columns used for coloring
-    df_reduced[unique_row_id_col] = df[unique_row_id_col].values
-    if fov_name_col is not None:
-        df_reduced[fov_name_col] = df[fov_name_col].values
-    # Add all color columns at once if there are any
-    if len(colored_by) > 0:
-        df_reduced[colored_by] = df[colored_by].values
-    if shape_by:
-        df_reduced[shape_by] = df[shape_by].values
-    if opacity_by:
-        df_reduced[opacity_by] = df[opacity_by].values
-    # plot the reduced data
-    fig = go.Figure()
-    if method == "PCA":
-        axis_labels = ["PC1", "PC2"]
-    elif method == "UMAP":
-        axis_labels = ["UMAP1", "UMAP2"]
-    elif method == "t-SNE":
-        axis_labels = ["t-SNE1", "t-SNE2"]
-    else:
-        axis_labels = ["dim1", "dim2"]
+def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_features, colored_by=None, opacity_by=None, shape_by=None, colormap="tab10", method="UMAP", hyperParam_dict=None, row_id_label="ID", separate_by=None):
+    """Show one global embedding beside optional categorical highlight maps."""
+    # Only measurements determine the cache key. Display controls and metadata do
+    # not move coordinates, and category levels come from complete observations.
+    df = df.dropna(subset=selected_features)
+    if df.empty:
+        raise ValueError("No complete observations remain for dimension reduction.")
+    groups = dimension_facet_groups(df, separate_by)
+    colored_by = [colored_by] if isinstance(colored_by, str) else list(colored_by or [])
+    coordinates, exp_var = dimension_reduction(
+        df[selected_features], n_components=2, method=method,
+        hyperParam_dict=hyperParam_dict or {},
+    )
+    df_reduced = normalize_dimension_categories(
+        df.reset_index(drop=True), [*colored_by, shape_by, opacity_by, *groups["separate_by"]],
+    )
+    # Internal axis columns must not overwrite an uploaded identifier or category.
+    axis_columns = []
+    for label in ("_dr_x", "_dr_y"):
+        while label in df_reduced.columns:
+            label += "_"
+        axis_columns.append(label)
+    df_reduced[axis_columns] = coordinates.iloc[:, :2].to_numpy()
+    axis_labels = list(coordinates.columns[:2])
+    x_range, y_range = dimension_ranges(*coordinates.iloc[:, :2].to_numpy().T)
+    composition = dimension_facet_layout(groups, x_range, y_range)
 
-    GROUP_COL_NAME = 'unique_color_group'
+    group_column = "unique_color_group"
+    while group_column in df_reduced.columns:
+        group_column += "_"
     grouped, color_map, shape_map, opacity_map, _ = get_point_visual_mappings(
-        df_reduced,
-        color_by=colored_by,
-        shape_by=shape_by,
-        opacity_by=opacity_by,
-        group_col_name=GROUP_COL_NAME,
-        overlap_point=True,
-        colormap=colormap
+        df_reduced, color_by=colored_by, shape_by=shape_by, opacity_by=opacity_by,
+        group_col_name=group_column, overlap_point=True, colormap=colormap,
     )
-
-    # Use the reusable function to add interleaved points and legend
+    show_counts = st.session_state.get("plot_show_group_counts", False)
+    # Build the global interleave once, then subset its traces for every panel.
+    # This retains per-point encodings and draw order, with one shared legend.
+    overview = go.Figure()
+    hover = hover_field(row_id_label, "%{text}")
+    if fov_name_col is not None:
+        hover += hover_field(fov_name_col, "%{customdata}")
     add_interleaved_points_trace(
-        fig=fig,
-        grouped=grouped,
-        color_map=color_map,
-        shape_map=shape_map,
-        opacity_map=opacity_map,
-        axis_labels=axis_labels,
-        text_col=unique_row_id_col,
-        customdata_col=fov_name_col,
-        # Label identifiers because they may be generated row numbers.
-        hovertemplate=hover_field(row_id_label, "%{text}"),
-        show_counts=st.session_state.get("plot_show_group_counts", False)
+        fig=overview, grouped=grouped, color_map=color_map, shape_map=shape_map,
+        opacity_map=opacity_map, axis_labels=axis_columns, text_col=unique_row_id_col,
+        customdata_col=fov_name_col, hovertemplate=hover, show_counts=show_counts,
     )
+    displayed_points = len(df) * (1 + len(groups["panels"]))
+    scatter_cls = point_trace_class(displayed_points)
+    fig = go.Figure()
+    for trace in overview.data:
+        if trace.text is None:  # Shape/opacity legend swatches contain no points.
+            fig.add_trace(trace)
+        else:
+            spec = trace.to_plotly_json()
+            spec.pop("type")
+            fig.add_trace(scatter_cls(**spec, xaxis="x", yaxis="y"))
 
     theme_color = get_context_theme_color()
+    for index, panel in enumerate([composition["overview"], *composition["panels"]], 1):
+        suffix = "" if index == 1 else str(index)
+        xaxis, yaxis = f"x{suffix}", f"y{suffix}"
+        small = index > 1
+        for dimension, bounds, domain, anchor, title in (
+                ("x", x_range, panel["x_domain"], yaxis, axis_labels[0]),
+                ("y", y_range, panel["y_domain"], xaxis, axis_labels[1])):
+            if exp_var is not None:
+                title += f"({exp_var[0 if dimension == 'x' else 1]:.2f}%)"
+            fig.update_layout(**{f"{dimension}axis{suffix}": dict(
+                domain=domain, anchor=anchor, range=bounds, matches=dimension if small else None,
+                title=dict(text=None if small else title, font=dict(color=theme_color)),
+                tickfont=dict(color=theme_color), showticklabels=not small,
+                showgrid=False, zeroline=False,
+                showline=True, linecolor="black", linewidth=1, mirror=False,
+                ticks="" if small else None,
+            )})
+        if not small:
+            continue
+        mask = panel["mask"]
+        if (~mask).any():
+            context = df_reduced.loc[~mask]
+            fig.add_trace(scatter_cls(
+                x=context[axis_columns[0]], y=context[axis_columns[1]],
+                xaxis=xaxis, yaxis=yaxis, mode="markers", name="Other groups",
+                marker=dict(color="#b8b8b8", opacity=0.25),
+                hoverinfo="skip", showlegend=False,
+            ))
+        identifiers = df_reduced.loc[mask, unique_row_id_col].to_numpy()
+        for trace in overview.data:
+            if trace.text is None:
+                continue
+            keep = np.isin(trace.text, identifiers)
+            if not keep.any():
+                continue
+            spec = trace.to_plotly_json()
+            spec.pop("type")
+            # Read original arrays: to_plotly_json may serialize numeric arrays.
+            for field in ("x", "y", "text", "customdata"):
+                value = getattr(trace, field)
+                if value is not None:
+                    spec[field] = np.asarray(value)[keep]
+            for field in ("symbol", "opacity"):
+                spec["marker"][field] = np.asarray(getattr(trace.marker, field))[keep]
+            spec.update(xaxis=xaxis, yaxis=yaxis, showlegend=False)
+            fig.add_trace(scatter_cls(**spec))
 
-    # Update axis labels to include explained variance
-    if exp_var is not None:
-        fig.update_xaxes(
-            title=dict(text=f"{axis_labels[0]}({exp_var[0]:.2f}%)", font=dict(color=theme_color)),
-            tickfont=dict(color=theme_color)
-        )
-        fig.update_yaxes(
-            title=dict(text=f"{axis_labels[1]}({exp_var[1]:.2f}%)", font=dict(color=theme_color)),
-            tickfont=dict(color=theme_color),
-            showgrid=True
-        )
+    if groups["panels"]:
+        for panel in composition["panels"]:
+            if len(groups["separate_by"]) == 2 and panel["row"] == 0:
+                label = panel["values"][-1]
+                fig.add_annotation(
+                    x=sum(panel["x_domain"]) / 2, y=panel["y_domain"][1],
+                    xref="paper", yref="paper", text=html.escape(str(label)),
+                    showarrow=False, xanchor="center", yanchor="bottom", yshift=4,
+                    font=dict(color=theme_color, size=14),
+                )
+            if panel["col"] == groups["ncols"] - 1:
+                fig.add_annotation(
+                    x=panel["x_domain"][1], y=sum(panel["y_domain"]) / 2,
+                    xref="paper", yref="paper", text=html.escape(str(panel["values"][0])),
+                    showarrow=False, xanchor="left", yanchor="middle", xshift=6,
+                    font=dict(color=theme_color, size=14),
+                )
+        fig.update_layout(height=round(1000 * composition["plot_height"] + 160),
+                          margin=dict(l=80, r=140, t=70, b=90),
+                          # Reserve the legend's measured height below the axis
+                          # title, independent of the embedding/grid height.
+                          legend=dict(orientation="h", yref="container", y=0,
+                                      yanchor="bottom", xref="paper", x=0,
+                                      groupclick="togglegroup"))
     else:
-        fig.update_xaxes(
-            title=dict(text=f"{axis_labels[0]}", font=dict(color=theme_color)),
-            tickfont=dict(color=theme_color)
-        )
-        fig.update_yaxes(
-            title=dict(text=f"{axis_labels[1]}", font=dict(color=theme_color)),
-            tickfont=dict(color=theme_color),
-            showgrid=True
-        )
-
-    # Lock axis range to prevent rescaling when toggling legend items
-    x_data = df_reduced[axis_labels[0]]
-    y_data = df_reduced[axis_labels[1]]
-    x_padding = (x_data.max() - x_data.min()) * 0.05
-    y_padding = (y_data.max() - y_data.min()) * 0.05
-    fig.update_xaxes(range=[x_data.min() - x_padding, x_data.max() + x_padding])
-    fig.update_yaxes(range=[y_data.min() - y_padding, y_data.max() + y_padding])
-
+        fig.update_layout(legend=dict(groupclick="togglegroup"))
+    # Streamlit's theme pads axes by 8 px. Touching facets need their lines on
+    # the domain edges so neighboring points cannot paint over the boundaries.
+    fig.update_layout(hovermode="closest", margin=dict(pad=0, autoexpand=True),
+                      xaxis=dict(automargin="height"), yaxis=dict(automargin=False))
+    # Canonical domains also let the native chart fit the whole composition in
+    # fullscreen without changing the linked coordinate ranges.
+    fig.update_layout(meta={"dimension_reduction_layout": {
+        "plot_height": composition["plot_height"],
+        "axes": {name: list(fig.layout[name].domain) for name in fig.layout
+                 if name.startswith(("xaxis", "yaxis"))},
+        "annotations": [{"x": item.x, "y": item.y,
+                         "xref": item.xref, "yref": item.yref}
+                        for item in fig.layout.annotations],
+    }})
     return fig

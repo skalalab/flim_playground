@@ -14,6 +14,7 @@ FLIM Playground allows you to extract single-cell features from <span title="can
 
 ## 🎡 Playground Construction News
 
+- 🗺️ **Dimension Reduction separation grid** — Keep a combined UMAP, PCA, or t-SNE overview beside smaller maps highlighting individual groups. **Separate by** accepts two categorical columns: the first defines rows and the second defines columns. Color, shape, and opacity remain independent, and the Python export reproduces the whole composition in one SVG.
 - 🎨 **Point encoding in one row** — In *Feature Comparison*, use **Opacity | Subcolor | Shape** to choose how one categorical column decorates the points. Switching modes takes one click and keeps the selected column; clearing the column turns that encoding off. Subcolor assigns consistent colours across groups and changes *Color by* to *Group by*. The four controls are *Separate by*, *Color/Group by*, *Collapse by*, and the shared point encoding. Other point plots keep separate shape and opacity controls. Missing data (`N/A`) stays outside the opacity ramp so it can never outrank a real level.
 - ⚡ **Speed & scale** — Point plots switch to WebGL rendering above 5,000 drawn points, so large figures no longer freeze the page on scroll; styling tweaks restyle the existing figure instead of rebuilding it, and the KDE overlay is no longer quadratic in point count. In *Data Extraction*, lifetime curve fitting runs across CPU cores via multiprocessing, and raw-data checks are keyed on the files they actually read, so reassigning one channel no longer re-decodes every later channel's files.
 - 🎯 **"Except:" selections** — Every categorical filter and feature picker takes an *Except:* mode, so keeping all-but-a-few is one click instead of many. Filters also narrow symmetrically against each other, so the order of columns in your config no longer decides which filter combinations are reachable.
@@ -30,6 +31,45 @@ https://github.com/user-attachments/assets/a01b8a22-1bc3-46f1-aa37-1c3191a6fa1a
 - Demo uses the inhibitor treatments on cancer cell lines (MCF7 and PANC-1) [dataset](./example_data/Data_Analysis/inhibitors.csv) extracted by Data Extraction:
 
 https://github.com/user-attachments/assets/7ac6b61f-7bde-45b8-92f5-5dbdb05dde67
+
+## Compare groups in Dimension Reduction
+
+Choose **Separate by** after selecting your features and reduction method:
+
+| Selection | Display |
+| --- | --- |
+| None | One combined overview |
+| One categorical column | Overview beside one vertical column of small maps, one per value |
+| Two categorical columns | Overview beside a matrix, with the first selection defining rows and the second defining columns |
+
+UMAP, PCA, and t-SNE use consistent plotting frames that are wider than they are
+tall. Coordinate ranges are padded to preserve equal x/y scales without
+stretching the embedding. The chart fits the available screen height.
+Every panel uses the same embedding, coordinate ranges, and aspect ratio. The
+overview and the complete grid align at their top and bottom edges, including
+when resizing the chart or opening it in fullscreen. Zooming or panning one
+panel updates the others. Small maps highlight matching observations and show the
+remaining observations in gray as context. Black bottom and left axis lines
+separate the panels; gridlines remain hidden.
+Small-map points are two units smaller than overview points (minimum size 1),
+and their row and column labels follow **Legend Font Size**.
+The right margin fits the labels, and the legend has its own space below the
+overview's x-axis title.
+Empty matrix intersections retain their panel. Values follow natural order, and
+missing categories appear as `N/A`.
+
+**Color by**, **Shape by**, and **Opacity by** can reuse separation columns. Each
+Color by combination retains its own palette color across all panels. The shared
+legend controls foreground points throughout the figure. **Show group counts**
+reports unique observations in the shared legend. Gray context and repeated
+displays do not inflate those counts.
+
+Filtering and removal of incomplete feature observations happen before fitting.
+Changing separation or visual encodings reuses the
+cached coordinates. Separation settings survive method changes and column review;
+a selected separation column remains selected when filtering leaves one value.
+The standalone Python export includes these settings and saves the full view as
+one SVG. This separation grid is available in Dimension Reduction.
 
 ## Use Your Own Data in Data Analysis
 - Demo uses the [iris dataset](example_data/Data_Analysis/iris.csv) and the [wine quality dataset](example_data/Data_Analysis/wine_quality.csv):
