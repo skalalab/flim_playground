@@ -490,6 +490,30 @@ def _marker_signatures(collections):
     return {tuple(np.round(c.get_paths()[0].vertices, 6).ravel()) for c in collections}
 
 
+@pytest.mark.parametrize("marginal", ["gaussian fit", "boxplot", "violin", "none"])
+def test_2d_script_has_square_axes_and_aligned_marginals(tmp_path, monkeypatch, marginal):
+    state = _base_state(
+        "2D Feature Distribution",
+        categorical_cols=["treatment", "cell_line", "day"],
+        color_by=["treatment"],
+        method_params={"selected_x": "feature_a", "selected_y": "feature_b",
+                       "marginal_plot_type": marginal},
+    )
+    ns = _run_script(tmp_path, state, _encoding_df(), monkeypatch)
+    # Measure the rendered axes, including after changing the export's figure size.
+    # A square figure alone does not guarantee square axes once labels take space.
+    for size in [(10, 10), (12, 7), (7, 12)]:
+        ns["fig"].set_size_inches(*size)
+        ns["fig"].canvas.draw()
+        main = ns["ax_main"].get_window_extent()
+        assert main.width == pytest.approx(main.height, abs=0.1)
+        if ns["ax_top"] is not None:
+            top = ns["ax_top"].get_window_extent()
+            right = ns["ax_right"].get_window_extent()
+            assert (top.x0, top.x1) == pytest.approx((main.x0, main.x1), abs=0.1)
+            assert (right.y0, right.y1) == pytest.approx((main.y0, main.y1), abs=0.1)
+
+
 def test_2d_script_applies_shape_and_opacity_per_point(tmp_path, monkeypatch):
     """The app encodes shape_by/opacity_by per point; the exported 2D scatter must too."""
     df = _encoding_df()

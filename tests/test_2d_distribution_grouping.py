@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 
 import pandas as pd
+import pytest
 import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -37,7 +38,7 @@ def _two_color_two_shape_df():
     return pd.DataFrame(rows)
 
 
-def _run_2d_plot(df):
+def _run_2d_plot(df, **kwargs):
     st.session_state.plot_point_size = 5
     st.session_state.plot_axis_label_size = 18
     st.session_state.plot_legend_size = 16
@@ -49,6 +50,7 @@ def _run_2d_plot(df):
         selected_y="y_feat",
         color_by=["group"],
         shape_by="shape_group",
+        **kwargs,
     )
 
 
@@ -76,3 +78,17 @@ def test_marginal_densities_drawn_once_per_color_group():
     # One X- and one Y-marginal per color group (A, B); not one per sub-group.
     assert len(x_marginals) == 2
     assert len(y_marginals) == 2
+
+
+@pytest.mark.parametrize("marginal_plot_type", ["gaussian fit", "boxplot", "violin"])
+def test_y_marginals_share_the_data_scale_without_the_main_grid(marginal_plot_type):
+    fig, _, _ = _run_2d_plot(
+        _two_color_two_shape_df(), marginal_plot_type=marginal_plot_type)
+    marginals = [trace for trace in fig.data if trace.xaxis == "x2"]
+    assert len(marginals) == 2
+    assert fig.layout.yaxis.showgrid is True
+    for trace in marginals:
+        axis = fig.layout["yaxis" + (trace.yaxis or "y")[1:]]
+        assert axis.showgrid is False
+        assert axis.matches == "y"
+        assert axis.domain == fig.layout.yaxis.domain

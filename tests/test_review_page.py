@@ -1,6 +1,7 @@
 """End-to-end review-gate interaction through AppTest. The uploader and reader are stubbed;
 file parsing is covered separately.
 """
+import json
 import sys
 from pathlib import Path
 
@@ -110,6 +111,59 @@ def test_a_legacy_profiles_fov_name_never_leaks_into_a_file_that_did_not_match_i
     at.session_state._review_confirmed = True
     at.run(timeout=90)
     assert at.session_state.effective_fov_name_col is None
+
+
+@pytest.mark.parametrize("grouped", [False, True], ids=["ungrouped", "custom-groups"])
+@pytest.mark.parametrize("harmonic,suffix", [(1, "1st"), (2, "2nd")])
+def test_user_tables_offer_and_render_phasor_from_coordinate_names(
+        page, tmp_path, grouped, harmonic, suffix):
+    g_col = f"Lifetime fit free_NADH_ch1: G({suffix})"
+    s_col = f"Lifetime fit free_NADH_ch1: S({suffix})"
+    page["frame"] = _frame().assign(**{
+        g_col: [0.2, 0.3, 0.4, 0.5],
+        s_col: [0.15, 0.25, 0.35, 0.45],
+    })
+    profile = {"unique_row_id_col": "cell_id",
+               "categorical_cols": ["image_name", "treatment"],
+               "all_numerical_features": ["Area", g_col, s_col],
+               "feature_groups": {"Real": [g_col], "Imaginary": [s_col]} if grouped else {}}
+    at = _run({"p": profile}, path=tmp_path / "analysis_config.toml")
+    at = at.radio[0].set_value("### **Bivariate**").run(timeout=90)
+
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state.phasor_available is True
+    assert "Phasor Plot" in at.radio[1].options
+
+    at = at.radio[1].set_value("Phasor Plot").run(timeout=90)
+    assert not at.exception, [e.value for e in at.exception]
+    assert not at.error, [e.value for e in at.error]
+    assert _by_key(at, "selectbox", "analysis_control_phasor_harmonic_NADH_ch1").value == harmonic
+    assert at.get("plotly_chart")
+    assert at.get("download_button")
+
+
+@pytest.mark.parametrize("unavailable_role", ["missing", "ignore", "categorical"])
+def test_user_tables_hide_phasor_without_a_complete_numerical_pair(
+        page, tmp_path, unavailable_role):
+    g_col = "Lifetime fit free_ch1: G(1st)"
+    s_col = "Lifetime fit free_ch1: S(1st)"
+    page["frame"] = _frame().assign(**{g_col: [0.2, 0.3, 0.4, 0.5]})
+    profile = {"unique_row_id_col": "cell_id",
+               "categorical_cols": ["image_name", "treatment"],
+               "all_numerical_features": ["Area", g_col]}
+    if unavailable_role != "missing":
+        page["frame"][s_col] = [0.15, 0.25, 0.35, 0.45]
+        if unavailable_role == "ignore":
+            profile["ignored_cols"] = [s_col]
+        else:
+            profile["categorical_cols"].append(s_col)
+    at = _run({"p": profile}, path=tmp_path / "analysis_config.toml")
+    at = at.radio[0].set_value("### **Bivariate**").run(timeout=90)
+
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state._review_confirmed is True
+    assert at.session_state.phasor_available is False
+    assert "Phasor Plot" not in at.radio[1].options
 
 
 def test_the_read_line_spans_the_filename_it_names(page, tmp_path):
@@ -246,6 +300,64 @@ def test_review_restores_plot_options(
     assert at.get("plotly_chart")
     assert at.get("download_button")
     assert _by_key(at, "button", "review_reopen")
+
+
+@pytest.mark.parametrize("analysis_type,method", [
+    ("Bivariate", "Phasor Plot"),
+    ("Multivariate", "Classification"),
+])
+def test_plot_style_survives_switching_analysis_modules(page, tmp_path, analysis_type, method):
+    g_col = "Lifetime fit free_ch1: G(1st)"
+    s_col = "Lifetime fit free_ch1: S(1st)"
+    page["frame"] = _frame().assign(**{
+        g_col: [0.2, 0.3, 0.4, 0.5], s_col: [0.15, 0.25, 0.35, 0.45],
+    })
+    at = _plotting(tmp_path, measurements=["Area", g_col, s_col])
+    expected = {"plot_point_size": 11, "plot_axis_label_size": 20,
+                "plot_legend_size": 16, "plot_colormap": "Set2", "plot_show_group_counts": True}
+    for key in ("plot_point_size", "plot_axis_label_size", "plot_legend_size"):
+        at = _by_key(at, "number_input", key).set_value(expected[key]).run(timeout=90)
+    at = _by_key(at, "selectbox", "plot_colormap").select("Set2").run(timeout=90)
+    at = _by_key(at, "checkbox", "plot_show_group_counts").check().run(timeout=90)
+    original = json.loads(at.get("plotly_chart")[0].proto.spec)
+
+    # The destination initially needs feature selections, so its styling widgets
+    # are absent. Settings must survive cleanup on this and subsequent runs.
+    at = at.radio[0].set_value(f"### **{analysis_type}**").run(timeout=90)
+    assert not at.get("plotly_chart")
+    assert not any(w.key == "plot_point_size" for w in at.number_input)
+    for _ in range(2):
+        assert {key: at.session_state.filtered_state.get(key) for key in expected} == expected
+        at.run(timeout=90)
+        assert not at.exception, [e.value for e in at.exception]
+
+    at = at.radio[1].set_value(method).run(timeout=90)
+    assert not at.exception, [e.value for e in at.exception]
+    assert {key: at.session_state.filtered_state.get(key) for key in expected} == expected
+    if method == "Phasor Plot":
+        phasor = json.loads(at.get("plotly_chart")[0].proto.spec)
+        assert phasor["layout"]["legend"]["font"]["size"] == 16
+        assert _by_key(at, "number_input", "plot_point_size").value == 11
+
+    at = at.radio[0].set_value("### **Univariate**").run(timeout=90)
+    menu = next(w for w in at.selectbox if "_menu_" in str(w.key))
+    at = menu.select("Area").run(timeout=90)
+    assert not at.exception, [e.value for e in at.exception]
+    assert not at.warning, [w.value for w in at.warning]
+    for kind, key in (("number_input", "plot_point_size"),
+                      ("number_input", "plot_axis_label_size"),
+                      ("number_input", "plot_legend_size"),
+                      ("selectbox", "plot_colormap"),
+                      ("checkbox", "plot_show_group_counts")):
+        widget = _by_key(at, kind, key)
+        assert widget.value == expected[key]
+        assert widget.proto.set_value, key
+    restored = json.loads(at.get("plotly_chart")[0].proto.spec)
+    assert restored["layout"]["xaxis"]["title"]["font"]["size"] == 20
+    assert restored["layout"]["legend"]["font"]["size"] == 16
+    for field in ("name", "marker"):
+        assert [trace.get(field) for trace in restored["data"]] == [
+            trace.get(field) for trace in original["data"]]
 
 
 def test_saving_new_roles_discards_an_invalid_feature_selection(page, tmp_path):

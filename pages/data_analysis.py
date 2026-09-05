@@ -21,6 +21,7 @@ from src.emojis import happy_emoji, sad_emoji
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import render_top_menu
 from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
+from src.widgets.plot_layout import square_2d_plot
 from src.vis.helpers import apply_plot_styling, log_negative_error
 from src.vis.multivar import dimension_reduction_plot
 from src.vis.plot_defaults import (
@@ -78,19 +79,15 @@ from src.widgets.visualization_widgets import (
 st.set_page_config(layout="wide", page_icon="📊")
 render_top_menu()
 
-# Initialize plot settings.
+# Keep shared styling even when a module has no plot or styling widgets yet.
 if "vis_df" not in st.session_state:
     st.session_state.vis_df = None
-if "plot_point_size" not in st.session_state:
-    st.session_state.plot_point_size = DEFAULT_POINT_SIZE
-if "plot_axis_label_size" not in st.session_state:
-    st.session_state.plot_axis_label_size = DEFAULT_AXIS_LABEL_FONT_SIZE
-if "plot_legend_size" not in st.session_state:
-    st.session_state.plot_legend_size = DEFAULT_LEGEND_FONT_SIZE
-if "plot_colormap" not in st.session_state:
-    st.session_state.plot_colormap = DEFAULT_COLORMAP
-if "plot_show_group_counts" not in st.session_state:
-    st.session_state.plot_show_group_counts = False
+for state_key, default in (("plot_point_size", DEFAULT_POINT_SIZE),
+                           ("plot_axis_label_size", DEFAULT_AXIS_LABEL_FONT_SIZE),
+                           ("plot_legend_size", DEFAULT_LEGEND_FONT_SIZE),
+                           ("plot_colormap", DEFAULT_COLORMAP),
+                           ("plot_show_group_counts", False)):
+    st.session_state[state_key] = st.session_state.get(state_key, default)
 
 def _collect_categorical_filters(categorical_cols, df):
     """Read categorical filter selections from session state.
@@ -590,7 +587,7 @@ with col2:
                     if method == "2D Feature Distribution":
                         col2_1, col2_2 = st.columns([1, 1])
                         with col2_1:
-                           st.plotly_chart(fig, width='stretch', key=f"plot_chart_2d_{method}")
+                            square_2d_plot(fig, key=f"plot_chart_2d_{method}")
                         with col2_2:
                             if table_md != []:
                                 st.markdown(table_md, unsafe_allow_html=True)

@@ -49,6 +49,7 @@ def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, 
                 name=f'{name_prefix}_y_density',
                 line=dict(color=color),
                 xaxis=plotly_axis_params['xaxis'],
+                yaxis=plotly_axis_params.get('yaxis', 'y'),
                 showlegend=False,
                 opacity=0.7
             ))
@@ -67,6 +68,7 @@ def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, 
                 name=f'{name_prefix}_y_box',
                 marker_color=color,
                 xaxis=plotly_axis_params['xaxis'],
+                yaxis=plotly_axis_params.get('yaxis', 'y'),
                 showlegend=False
             ))
     elif plot_type == 'violin':
@@ -85,6 +87,7 @@ def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, 
                 name=f'{name_prefix}_y_violin',
                 line_color=color,
                 xaxis=plotly_axis_params['xaxis'],
+                yaxis=plotly_axis_params.get('yaxis', 'y'),
                 showlegend=False,
                 points=False # Hide points for a cleaner look
             ))
@@ -383,7 +386,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
 
         _plot_marginal_density(fig, x_data, 'x', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'yaxis': 'y2'})
 
-        _plot_marginal_density(fig, y_data, 'y', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'xaxis': 'x2'})
+        _plot_marginal_density(fig, y_data, 'y', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'xaxis': 'x2', 'yaxis': 'y3'})
 
     # --- GMM fitting per color group (not per shape/opacity) ---
     if fit_gmm:
@@ -456,8 +459,11 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
             zeroline=False
         ),
         # Configure axes for marginal plots
-        xaxis2=dict(domain=[0.9, 1], showgrid=False, zeroline=False, showticklabels=False), # Marginal y-density's x-axis
+        xaxis2=dict(domain=[0.9, 1], anchor='y3', showgrid=False, zeroline=False, showticklabels=False), # Marginal y-density's x-axis
         yaxis2=dict(domain=[0.9, 1], showgrid=False, zeroline=False, showticklabels=False), # Marginal x-density's y-axis
+        # Match the main Y range without extending its grid through the marginal.
+        yaxis3=dict(domain=[0, 0.9], anchor='x2', matches='y', showgrid=False,
+                    zeroline=False, showline=False, showticklabels=False),
     )
 
     # remove the column after plotting

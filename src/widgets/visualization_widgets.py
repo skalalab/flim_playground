@@ -346,27 +346,28 @@ def gmm_hyperParams_widget():
     return fit_gmm_max_components, fit_gmm_min_weight_threshold
 
 def _compute_channel_harmonics(feature_groups_dict):
-    """Map each fit-free channel to the phasor harmonics it can plot.
+    """Find phasor channels from numerical column names, independent of grouping.
 
     A harmonic is available only when BOTH its G and S coordinates are present
-    among the channel's features. Returns ``{channel: [harmonics...]}`` where the
-    list may be empty when no complete G/S pair exists.
+    with extraction-format names for the same channel. User-defined groups may
+    split a pair across groups. Returns ``{channel: [harmonics...]}``; a channel
+    with no complete pair has an empty list.
     """
-    channel_harmonics = {}
-    for extractor_channel in feature_groups_dict.keys():
-        try:
-            extractor, channel = extractor_channel.split("_", 1)
-        except Exception:
-            continue
-        if extractor == "Lifetime fit free":
-            channel_harmonics[channel] = []
-            features = feature_groups_dict[extractor_channel]
-            # A harmonic needs both its G and S coordinates present.
-            if any("G(1st)" in feature for feature in features) and any("S(1st)" in feature for feature in features):
-                channel_harmonics[channel].append(1)
-            if any("G(2nd)" in feature for feature in features) and any("S(2nd)" in feature for feature in features):
-                channel_harmonics[channel].append(2)
-    return channel_harmonics
+    prefix = "Lifetime fit free_"
+    features_by_channel = {}
+    for features in feature_groups_dict.values():
+        for column in features:
+            if not column.startswith(prefix):
+                continue
+            channel, separator, feature = column[len(prefix):].rpartition(": ")
+            if separator and channel:
+                features_by_channel.setdefault(channel, set()).add(feature)
+
+    return {
+        channel: [harmonic for harmonic, suffix in ((1, "1st"), (2, "2nd"))
+                  if {f"G({suffix})", f"S({suffix})"} <= features]
+        for channel, features in features_by_channel.items()
+    }
 
 
 def phasor_params_widget(feature_groups_dict):

@@ -1136,14 +1136,17 @@ if LOG_Y:
 if MARGINAL_PLOT_TYPE != 'none':
     from matplotlib.gridspec import GridSpec
     fig = plt.figure(figsize=(10, 10))
-    gs = GridSpec(4, 4, figure=fig, hspace=0.05, wspace=0.05)
-    ax_main = fig.add_subplot(gs[1:, :-1])
-    ax_top = fig.add_subplot(gs[0, :-1], sharex=ax_main)
-    ax_right = fig.add_subplot(gs[1:, -1], sharey=ax_main)
+    gs = GridSpec(2, 2, figure=fig, height_ratios=[1, 9], width_ratios=[9, 1],
+                  hspace=0.05, wspace=0.05)
+    # Match the app's square main axes and 10% marginal domains. Anchor the
+    # shared edges so the marginals stay aligned even if figsize is edited.
+    ax_main = fig.add_subplot(gs[1, 0], box_aspect=1, anchor='NE')
+    ax_top = fig.add_subplot(gs[0, 0], sharex=ax_main, box_aspect=1/9, anchor='SE')
+    ax_right = fig.add_subplot(gs[1, 1], sharey=ax_main, box_aspect=9, anchor='NW')
     ax_top.tick_params(labelbottom=False)
     ax_right.tick_params(labelleft=False)
 else:
-    fig, ax_main = plt.subplots(figsize=(10, 8))
+    fig, ax_main = plt.subplots(figsize=(10, 10), subplot_kw=dict(box_aspect=1))
     ax_top = None
     ax_right = None
 
