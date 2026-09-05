@@ -7,6 +7,7 @@ import streamlit as st
 from src.emojis import sad_emoji
 from src.feature_labels import format_feature_label
 from src.widgets.analysis_widget_state import number_input_default
+from src.widgets.gmm_tables import gmm_component_table, gmm_tables_html
 from src.widgets.visualization_widgets import (
     comparison_pair_widget,
     gmm_hyperParams_widget,
@@ -177,16 +178,13 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
             mu = best_gmm.means_.flatten()
             sigma = np.sqrt(best_gmm.covariances_.ravel())
             gmm_overall_mean = np.sum(pi * mu)
-            # iteratively print out the mean and standard deviation of each component in a table
             # Sort components by ascending mu (mean) values
             sorted_indices = np.argsort(mu)
-            table_md = [f"**GMM Components for {color_group}:**"]
-            table_md.append("| Component | Mean  | Std. Dev. | Weight |")
-            table_md.append("|-----------|-------|-----------|--------|")
-            for rank, i in enumerate(sorted_indices):
-                table_md.append(f"| {rank+1}       | {mu[i]:.2f} | {sigma[i]:.2f}    | {pi[i]:.2f}  |")
-
-            gmm_tables.append("\n".join(table_md))
+            component_rows = [
+                (rank + 1, f"{mu[i]:.2f} ± {sigma[i]:.2f}", f"{pi[i]:.2f}")
+                for rank, i in enumerate(sorted_indices)
+            ]
+            gmm_tables.append(gmm_component_table(color_group, component_rows, [selected_var]))
 
             h_index = 0
             # Calculate standard deviation of component means once before the loop
@@ -256,16 +254,8 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
                 assigned_labels = _assign_subpopulation_labels(x_data.values, best_gmm, None, color_group)
             df.loc[data_indices, "GMM_group"] = assigned_labels
 
-    # Display tables in two columns using modular arithmetic
     if gmm_tables:
-        col1, col2 = st.columns(2)
-        for i, table in enumerate(gmm_tables):
-            if i % 2 == 0:  # Even indices (0, 2, 4, ...) go to column 1
-                with col1:
-                    st.markdown(table)
-            else:  # Odd indices (1, 3, 5, ...) go to column 2
-                with col2:
-                    st.markdown(table)
+        st.markdown(gmm_tables_html(gmm_tables), unsafe_allow_html=True)
 
     if h_index_msg != "": 
         st.info(h_index_msg)

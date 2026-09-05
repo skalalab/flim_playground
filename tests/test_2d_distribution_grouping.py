@@ -59,7 +59,7 @@ def test_correlation_is_reported_once_per_color_group():
 
     # Two color groups → exactly two correlation entries, regardless of the
     # two shape sub-groups inside each. Fanning out per shape would give four.
-    assert table_md.count("Correlation Coefficient b/w") == 2
+    assert table_md.count("Pearson r =") == 2
     assert "**A:**" in table_md
     assert "**B:**" in table_md
 

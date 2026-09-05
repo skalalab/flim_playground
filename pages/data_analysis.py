@@ -585,12 +585,9 @@ with col2:
                     # so fragment reruns do not accumulate those changes.
                     fig = apply_plot_styling(go.Figure(base_fig), st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
                     if method == "2D Feature Distribution":
-                        col2_1, col2_2 = st.columns([1, 1])
-                        with col2_1:
-                            square_2d_plot(fig, key=f"plot_chart_2d_{method}")
-                        with col2_2:
-                            if table_md != []:
-                                st.markdown(table_md, unsafe_allow_html=True)
+                        square_2d_plot(fig, key=f"plot_chart_2d_{method}")
+                        if table_md:
+                            st.markdown(table_md, unsafe_allow_html=True)
                     else:
                         st.plotly_chart(fig, width='stretch', key=f"plot_chart_{method}")
                     # 1. Data export (if applicable)

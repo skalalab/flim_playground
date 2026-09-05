@@ -10,6 +10,7 @@ from sklearn.preprocessing import StandardScaler
 
 from src.feature_labels import format_feature_label
 from src.widgets.analysis_widget_state import number_input_default
+from src.widgets.gmm_tables import gmm_component_table, gmm_tables_html
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 
 from .helpers import (
@@ -337,6 +338,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     )
 
     table_md = []
+    gmm_tables = []
     # Per-group analysis keys on colour groups only, never per shape/opacity subgroup:
     # those two channels affect point styling and nothing else.
     for color_group in color_map.keys():
@@ -346,8 +348,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
 
         # annotate the correlation coefficient and p-value of the current group
         corr_coef, p_value = pearsonr(group_df[selected_x], group_df[selected_y])
-        table_md += [f"\n**{color_group}:**"]
-        table_md.append(f"Correlation Coefficient b/w {selected_x} and {selected_y}: **{corr_coef:.2f}** (p-value: {p_value:.2f}).\n")
+        table_md.append(f"\n**{color_group}:** Pearson r = **{corr_coef:.2f}** (p = {p_value:.3g})")
         x_data = group_df[selected_x].dropna()
         y_data = group_df[selected_y].dropna()
 
@@ -381,8 +382,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                     hovertemplate=f'<b>Regression Line</b><br>R² = {r2:.3f}<br>Slope = {reg_model.coef_[0]:.3f}<br>Intercept = {reg_model.intercept_:.3f}<extra></extra>'
                 ))
 
-                # Add R² to the table
-                table_md.append(f"**Regression R²:** {r2:.3f} (Slope: {reg_model.coef_[0]:.3f}, Intercept: {reg_model.intercept_:.3f})")
+                # Keep correlation and regression together in one line per group.
+                table_md[-1] += f" · Regression R² = **{r2:.3f}** (slope = {reg_model.coef_[0]:.3f}, intercept = {reg_model.intercept_:.3f})"
 
         _plot_marginal_density(fig, x_data, 'x', color_map.get(color_group, 'gray'), color_group, selected_marginal_plot_type, plotly_axis_params={'yaxis': 'y2'})
 
@@ -402,12 +403,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
             if len(group_data_2d) > 1: # Need at least 2 points for GMM
                 best_gmm = _find_best_gmm(group_data_2d, max_components=fit_gmm_max_components, min_weight_threshold=fit_gmm_min_weight_threshold)
                 if best_gmm and best_gmm.n_components > 1:
-                    table_md += [f"\n**{color_group} GMM Components:**"]
-                    table_md.append("")
-                    table_md.append(f"| Component | **{selected_x}** | **{selected_x}** | **{selected_y}** | **{selected_y}** | Weight |")
-                    table_md.append("|------|-----|-----|-----|-----|------|")
-                    table_md.append("| | **Mean** | **Std Dev** | **Mean** | **Std Dev** | |")
-
+                    component_rows = []
                     for i in range(best_gmm.n_components):
                         mean = best_gmm.means_[i]
                         cov = best_gmm.covariances_[i]
@@ -416,20 +412,25 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                         std_y = np.sqrt(cov[1][1])
                         weight = best_gmm.weights_[i]
 
-                        table_md.append(f"| {i+1} | {mean_x:.2f} | {std_x:.2f} | {mean_y:.2f} | {std_y:.2f} | {weight:.2f} |")
+                        component_rows.append((
+                            i + 1, f"{mean_x:.2f} ± {std_x:.2f}",
+                            f"{mean_y:.2f} ± {std_y:.2f}", f"{weight:.2f}",
+                        ))
                         # plot the gmm component using Ellipse
                         _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color_map[color_group], color_group, i+1, scatter_cls=point_cls)
+                    gmm_tables.append(gmm_component_table(
+                        color_group, component_rows, [selected_x, selected_y]))
                     # use the best gmm model to predict the component membership of the current group
                     data_indices = group_data_2d.index
                     subpopulation_labels = best_gmm.predict(group_data_2d)
                     assigned_labels = [f"{color_group}_group{label + 1}" for label in subpopulation_labels]
                     df.loc[data_indices, "2D_GMM_group"] = assigned_labels
                 elif best_gmm and best_gmm.n_components == 1:
-                    st.write(f"Only one GMM component found for {color_group} with current constraints.")
+                    table_md.append(f"\nOnly one GMM component found for {color_group} with current constraints.")
                 else:
-                    st.write(f"No suitable GMM found for {color_group} with current constraints.")
+                    table_md.append(f"\nNo suitable GMM found for {color_group} with current constraints.")
             else:
-                st.write(f"\nSkipping GMM for group: {color_group} due to insufficient data (points: {len(group_data_2d)})")
+                table_md.append(f"\nSkipping GMM for group: {color_group} due to insufficient data (points: {len(group_data_2d)})")
 
     # Note: Legend traces and hovermode are already added by add_interleaved_points_trace
     # Just update layout with additional settings
@@ -469,6 +470,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     # remove the column after plotting
     df.drop(columns=[GROUP_COL_NAME], inplace=True)
 
+    if gmm_tables:
+        table_md.append(gmm_tables_html(gmm_tables))
     table_md = "\n".join(table_md)
     return fig, table_md, df
 

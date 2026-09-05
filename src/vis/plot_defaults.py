@@ -2,7 +2,7 @@
 
 DEFAULT_POINT_SIZE = 5
 DEFAULT_AXIS_LABEL_FONT_SIZE = 24
-DEFAULT_LEGEND_FONT_SIZE = 16
+DEFAULT_LEGEND_FONT_SIZE = 18
 DEFAULT_COLORMAP = "tab10"
 
 # Switch large Plotly point sets to WebGL to avoid one SVG DOM node per point.
