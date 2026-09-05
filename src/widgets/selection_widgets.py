@@ -19,18 +19,12 @@ def reset_other_menus(selected_menu, menus):
 
 
 def feature_display_to_column(feature_list, feature_group, data_extraction=True):
-    """Map each picker-displayed name back to its real DataFrame column.
+    """Map picker labels to their full DataFrame column names, preserving order.
 
-    For Data-Extraction columns the picker shows only the part after ``": "`` (e.g.
-    "t1" for "Lifetime fit_nadh: t1"), so a selection must be resolved back to the
-    full column name. Crucially this keys off each *column itself*, not the group
-    name — so groups whose friendly name differs from the column prefix round-trip
-    correctly. The cross-channel **"Derived Features"** group is exactly such a case:
-    its columns are ``"Derived: <name>"``, so the old ``f"{group}: {name}"`` rebuild
-    produced the non-existent ``"Derived Features: <name>"`` and raised KeyError.
-
-    Returns an ordered ``{display_name: column}`` dict. Uncategorized columns and the
-    non-Data-Extraction path are shown/returned verbatim (identity mapping).
+    Data-extraction labels omit each column's prefix. Resolve them from the
+    columns themselves because group names can differ from those prefixes
+    (e.g. "Derived Features" contains "Derived: <name>"). Uncategorized
+    features and user-table columns retain their full names.
     """
     if data_extraction and "Uncategorized" not in feature_group:
         return {col.split(": ", 1)[1]: col for col in feature_list}
@@ -38,22 +32,11 @@ def feature_display_to_column(feature_list, feature_group, data_extraction=True)
 
 
 def resolve_pending_selection(feature_groups_dict, key_prefix, data_extraction=True, session_state=None):
-    """Resolve an axis's current pick from session state, before its widgets render.
+    """Return an axis's selected column before rendering, or "Select" if invalid.
 
-    ``single_feature_select_widget`` keys each group's selectbox
-    ``f"{key_prefix}_menu_{group}"``, so the previous run's choice is readable
-    ahead of the widget. ``twod_single_feature_select_widget`` needs it that
-    early to decide whether to draw the plain grid or a collapsed expander.
-
-    A stored display value is only honoured while it is still present in its
-    group's *current* option list. That matters because the x-axis pick is
-    removed from ``feature_groups_dict`` before the y-axis grid renders: when the
-    user re-opens x and steals the feature y was showing, Streamlit silently
-    resets y's selectbox to "Select". Validating here keeps the container and its
-    label agreeing with the value the widget will actually return.
-
-    Returns the full DataFrame column name, or "Select" when the axis has no
-    valid selection.
+    Read each group's keyed selection to choose the grid or expander layout.
+    Validate against current options: the x selection is removed before y
+    renders, so a saved y selection may no longer be available.
     """
     if session_state is None:
         session_state = st.session_state
@@ -67,10 +50,8 @@ def resolve_pending_selection(feature_groups_dict, key_prefix, data_extraction=T
             return display_to_col[stored]
     return "Select"
 
-# create selectboxs for variables
 def single_feature_select_widget(feature_groups_dict, data_extraction=True, n_per_row=2, key_prefix=""):
-    """
-    n_per_row: number of selectboxs in a row"""
+    """Render mutually exclusive feature pickers with ``n_per_row`` groups per row."""
 
     menus = []
     for feature_group in feature_groups_dict.keys():
@@ -95,10 +76,7 @@ def single_feature_select_widget(feature_groups_dict, data_extraction=True, n_pe
         for i, col_idx in enumerate(range(start_idx, end_idx)):
             feature_group = feature_groups[col_idx]
             menu_key = f"{key_prefix}_menu_{feature_group}"
-            # Displayed name -> real column. Resolving the selection through this map
-            # (instead of rebuilding "{group}: {name}") round-trips groups whose
-            # friendly name differs from the column prefix, e.g. the "Derived
-            # Features" group whose columns are "Derived: <name>".
+            # Group labels may differ from column prefixes; use the column mapping.
             display_to_col = feature_display_to_column(
                 feature_groups_dict[feature_group], feature_group, data_extraction)
             display_list = list(display_to_col.keys())
@@ -119,22 +97,11 @@ def single_feature_select_widget(feature_groups_dict, data_extraction=True, n_pe
     return selected_var
 
 def _axis_select_block(feature_groups_dict, axis_name, key_prefix, data_extraction=True, n_per_row=2):
-    """Render one axis's feature picker.
+    """Render an axis picker and return its selected column, or "Select".
 
-    With no pick yet, this is the plain prompt + grid of per-group selectboxes.
-    Once a feature is chosen the same grid moves inside a collapsed expander
-    labelled with the full column name, freeing the vertical space the grid ate.
-
-    The collapse relies on Streamlit *remounting* the element rather than on
-    flipping ``expanded``, which only ever initialises an expander's state
-    (Streamlit 1.54) and so cannot be trusted to close one that already exists.
-    Swapping a markdown+columns block for an expandable block mounts a fresh
-    expander, initialised collapsed. Re-opening it and changing the pick then
-    re-collapses it on the rerun, showing the new value — verified on 1.54, and
-    the behaviour we want either way, so nothing here depends on whether a given
-    frontend preserves the user's toggle.
-
-    Returns the axis's selected column, or "Select".
+    Show an unselected grid inline; place a selected grid in an expander named
+    for the full column. The expander mounts collapsed: ``expanded`` sets its
+    initial state, so a fresh container is needed to close it after a change.
     """
     pending = resolve_pending_selection(feature_groups_dict, key_prefix, data_extraction)
 
@@ -154,9 +121,7 @@ def twod_single_feature_select_widget(feature_groups_dict, data_extraction=True,
     selected_x = _axis_select_block(
         feature_groups_dict, "x", "2d_x", data_extraction, n_per_row)
 
-    # Remove the x pick so it cannot also be chosen for y. Must happen after the
-    # x grid renders (it still needs the feature in its own options) and before
-    # the y grid does.
+    # Remove x after its picker renders and before building y options.
     for feature_group in feature_groups_dict.keys():
         if selected_x in feature_groups_dict[feature_group]:
             feature_groups_dict[feature_group].remove(selected_x)
@@ -172,7 +137,6 @@ def twod_single_feature_select_widget(feature_groups_dict, data_extraction=True,
 def multi_feature_select_widget(feature_groups_dict, data_extraction=True, n_per_row=2):
 
     selected_features = []
-    # feature groups that have one or more features available for selection
     feature_groups = list(feature_groups_dict.keys())
 
     # Calculate number of rows needed
@@ -190,9 +154,7 @@ def multi_feature_select_widget(feature_groups_dict, data_extraction=True, n_per
         # Add multiselect widgets to this row
         for i, col_idx in enumerate(range(start_idx, end_idx)):
             feature_group = feature_groups[col_idx]
-            # Displayed name -> real column, so selections resolve back to actual
-            # columns even when the group's friendly name differs from the column
-            # prefix (e.g. "Derived Features" -> "Derived: <name>").
+            # Resolve display labels through the same mapping as the single picker.
             display_to_col = feature_display_to_column(
                 feature_groups_dict[feature_group], feature_group, data_extraction)
             feature_list = list(display_to_col.keys())
@@ -207,9 +169,7 @@ def multi_feature_select_widget(feature_groups_dict, data_extraction=True, n_per
                     default = feature_list
                 if key not in st.session_state:
                     st.session_state[key] = default
-                # normalize_mode_selection keeps the two sentinels coherent: picking "All"
-                # clears everything else, picking a feature drops "All" but keeps "Except:"
-                # so the exclusions stay additive.
+                # The callback keeps "All" exclusive and preserves additive exclusions.
                 selected = st.multiselect(
                     f"{feature_group}",
                     options=options,
@@ -219,9 +179,7 @@ def multi_feature_select_widget(feature_groups_dict, data_extraction=True, n_per
                     help=f'Select one or more columns corresponding to {feature_group} features. '
                          f'Pick "{EXCEPT_LABEL}" together with a few to use all the others.'
                 )
-                # None means no constraint, which here is every feature in the group. An
-                # explicit test, not `or`: an empty selection is a real state (that is the
-                # default for "Uncategorized Features") and must not expand to everything.
+                # None selects every feature; [] selects none, including the uncategorized default.
                 chosen = chosen_items(selected, feature_list)
                 if chosen is None:
                     chosen = feature_list

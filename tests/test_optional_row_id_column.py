@@ -97,8 +97,7 @@ def test_unique_mixed_type_row_ids_keep_their_labels():
 
 
 def test_a_row_id_blank_in_some_rows_is_refused():
-    """Checked before the astype(str) below it, which would turn the blanks into the
-    string "nan" and hand them to the duplicate rule as if they were a real name."""
+    """Reject missing identifiers before string conversion could turn them into "nan" labels."""
     df = _frame()
     df["flower_id"] = ["a", None, "c", None]
     fixed, _warning, error = dataset_io.check_and_fix_df(df, ["species"], "flower_id", None)
@@ -170,8 +169,7 @@ def test_a_real_row_number_column_is_never_overwritten():
 
 
 def test_an_invented_row_id_is_kept_but_is_not_a_feature():
-    """The invented column holds "1", "2", "3" ... so left out of skip_cols it converts
-    to numbers and turns up in the feature pickers."""
+    """Generated string row numbers skip numeric coercion and feature selection."""
     df, row_id_col = dataset_io.resolve_row_id_col(
         _frame().drop(columns=["flower_id"]), "")
     out, groups, _w, error = dataset_io.get_features(
@@ -416,8 +414,7 @@ def _run_page(monkeypatch, row_id_col, configured, use_extraction):
 
 
 def test_the_page_loads_a_table_with_an_invented_row_id(monkeypatch):
-    """The 5th return value reaches the page: the invented column is in the frame the
-    plots and the export prune both work from."""
+    """The resolved identifier reaches both the plotted frame and the export column snapshot."""
     at = _run_page(monkeypatch, "Row number", configured="", use_extraction=False)
     assert not at.exception
     # The prune snapshot the export replays must carry the invented column too.

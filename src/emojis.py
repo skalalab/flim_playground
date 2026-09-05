@@ -1,11 +1,7 @@
-"""Per-session happy/sad emoji picks used to sign status messages across the UI.
+"""Shared happy/sad emoji picks for UI status messages.
 
-Deliberately free of internal imports so any module can import it. These lists used
-to live in ``src.dataset_io``, which imports ``src.widgets.analysis_config_widgets``
-and therefore could not be imported back from the widget modules that need them.
-
-The ``random.choice`` calls run once at import, so a session shows one consistent
-happy emoji and one consistent sad emoji rather than a new face on every message.
+Keep this module free of internal imports so widgets and readers can both use it.
+Choices are made once at import and reused for subsequent messages.
 """
 
 import random
@@ -134,6 +130,5 @@ happy_emoji = random.choice(happy_celebratory_emojis)
 
 sad_emoji = random.choice(sad_regretful_emojis)
 
-# Three distinct happy emojis for festive multi-emoji spots (e.g. the welcome banner).
-# random.sample => no repeats; picked once at import so the trio is stable per session.
+# Three distinct happy emojis, selected once at import for multi-emoji messages.
 three_happy_emojis = "".join(random.sample(happy_celebratory_emojis, 3))

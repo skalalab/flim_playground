@@ -2,6 +2,36 @@
 from src.column_roles import code_span
 
 
+POINT_MODES = ("opacity", "subcolor", "shape")
+
+
+def initial_point_encoding(picker_column, as_colour=False, opacity_column=None):
+    """Migrate legacy controls, preferring the shared picker's existing intent."""
+    if as_colour:
+        return "subcolor", picker_column
+    if picker_column is not None:
+        return "shape", picker_column
+    if opacity_column is not None:
+        return "opacity", opacity_column
+    return "shape", None
+
+
+def resolve_point_mode(selected, last_mode="shape"):
+    """Keep one mode active when a selected native segment is clicked again."""
+    if selected in POINT_MODES:
+        return selected
+    return last_mode if last_mode in POINT_MODES else "shape"
+
+
+def point_encoding_channels(mode, column, has_color_groups):
+    """Return only the active mapping as ``(opacity, shape, subcolor)``."""
+    return (
+        column if mode == "opacity" else None,
+        column if mode == "shape" else None,
+        column if mode == "subcolor" and has_color_groups else None,
+    )
+
+
 def prune_to_options(stored, options, fallback=None):
     """Restrict a stored scalar or list to the current widget options.
 
@@ -18,9 +48,9 @@ def prune_to_options(stored, options, fallback=None):
 
 
 def color_multiselect_label(show_subcolor, as_colour):
-    """Use "Group by" when the visible subcolor slot is switched to color.
+    """Use "Group by" when the point-encoding selector is in Subcolor mode.
 
-    The switch determines which control offers color, even before a column is picked.
+    The mode determines which control offers color, even before a column is picked.
     """
     return "Group by" if (show_subcolor and as_colour) else "Color by"
 

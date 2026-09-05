@@ -1,6 +1,7 @@
 """Collapse-control wiring, channel options, plot data, and hover text. Pure collapse rules
 are covered in test_collapse.py.
 """
+import ast
 import sys
 import warnings
 from pathlib import Path
@@ -99,7 +100,7 @@ def test_the_2d_distribution_does_not(page):
 
 
 # ---------------------------------------------------------------------------
-# What it takes away, and what it deliberately does not
+# Grouping and decoration options
 # ---------------------------------------------------------------------------
 
 def test_collapse_by_is_last_in_the_grouping_chain(page):
@@ -115,49 +116,49 @@ def test_collapse_by_is_last_in_the_grouping_chain(page):
 
 
 def test_grouping_on_the_collapsed_column_retires_the_collapse(page):
-    """The yield goes downstream: one dot per x slot leaves nothing for a box or a test
-    to describe, so the collapse gives way -- not the grouping."""
+    """A grouping change that conflicts with Collapse by clears the collapse selection."""
     at = page(**{vw.COLLAPSE_BY_KEY: "dish", "vis_encoding_color_by": ["dish"]})
 
     assert "dish" not in _options(at, "Collapse by")
     assert at.session_state[vw.COLLAPSE_BY_KEY] is None
 
 
-def test_the_collapse_column_is_still_offered_to_the_decoration_channel(page):
+@pytest.mark.parametrize("mode", ["shape", "subcolor", "opacity"])
+def test_the_collapse_column_is_still_offered_to_the_decoration_channel(page, mode):
     """The collapse column stays available for one decoration per replicate."""
-    at = page(**{vw.COLLAPSE_BY_KEY: "dish"})
-
-    assert "dish" in _options(at, "Shape by")
-
-    at = page(**{vw.COLLAPSE_BY_KEY: "dish", vw.AS_COLOUR_KEY: True})
-    assert "dish" in _options(at, "Subcolor by")
-    assert "dish" in _options(at, "Opacity by")
+    at = page(**{vw.COLLAPSE_BY_KEY: "dish", "vis_encoding_point_mode": mode})
+    assert "dish" in _options(at, f"{mode.title()} by")
 
 
-def test_shape_and_subcolor_share_a_slot_and_opacity_keeps_its_own(page):
-    """The shared nominal-encoding picker toggles shape and subcolor; opacity stays
-    independent.
-    """
+def test_feature_comparison_has_one_direct_three_way_selector(page):
     at = page()
-    assert "Opacity by" in _labels(at) and "Shape by" in _labels(at)
-    assert "Subcolor by" not in _labels(at)
+    group = at.get("button_group")[0]
+    assert group.label == "Point encoding"
+    assert [option.content for option in group.options] == ["Opacity", "Subcolor", "Shape"]
+    assert group.value == "shape"
+    assert "Shape by" in _labels(at)
+    assert not {"Subcolor by", "Opacity by"}.intersection(_labels(at))
 
-    at = page(**{vw.AS_COLOUR_KEY: True})
-    assert "Subcolor by" in _labels(at) and "Shape by" not in _labels(at)
-    assert "Opacity by" in _labels(at)
+    for mode in ("subcolor", "opacity", "shape"):
+        at.get("button_group")[0].set_value([mode]).run(timeout=90)
+        assert not at.exception
+        assert set(_labels(at)).intersection({"Shape by", "Subcolor by", "Opacity by"}) == {
+            f"{mode.title()} by"}
+        assert _colour(at).label == ("Group by" if mode == "subcolor" else "Color by")
 
     at.radio[0].set_value("### **Bivariate**")
     at.run(timeout=90)
     assert not at.exception
     assert "Opacity by" in _labels(at) and "Shape by" in _labels(at)
+    assert not at.get("button_group")
 
 
-def test_a_grouped_column_is_struck_from_every_decoration(page):
+@pytest.mark.parametrize("mode", ["shape", "subcolor", "opacity"])
+def test_a_grouped_column_is_struck_from_every_decoration(page, mode):
     """Grouping columns cannot decorate points because they are constant within each group.
     """
-    at = page(**{"vis_encoding_color_by": ["treatment"]})
-    assert "treatment" not in _options(at, "Shape by")
-    assert "treatment" not in _options(at, "Opacity by")
+    at = page(**{"vis_encoding_color_by": ["treatment"], "vis_encoding_point_mode": mode})
+    assert "treatment" not in _options(at, f"{mode.title()} by")
 
     at.radio[0].set_value("### **Bivariate**")
     at.run(timeout=90)
@@ -174,8 +175,95 @@ def _colour(at):
     return next(m for m in at.multiselect if m.label in ("Color by", "Group by"))
 
 
+def _point_mode(at, mode):
+    at.get("button_group")[0].set_value([mode]).run(timeout=90)
+    assert not at.exception
+    return next(box for box in at.selectbox if box.label == f"{mode.title()} by")
+
+
+def test_switches_preserve_the_latest_column_and_clear_stays_clear(page):
+    at = page()
+    next(box for box in at.selectbox if box.label == "Shape by").select("day").run(timeout=90)
+    for mode in ("subcolor", "opacity", "shape"):
+        assert _point_mode(at, mode).value == "day"
+
+    _point_mode(at, "opacity").select("dish").run(timeout=90)
+    assert _point_mode(at, "subcolor").value == "dish"
+    _point_mode(at, "subcolor").set_value(None).run(timeout=90)
+    assert _point_mode(at, "opacity").value is None
+    at.run(timeout=90)
+    assert not at.exception
+    assert at.session_state[vw.PICKER_COL_KEY] is None
+
+
+def test_clicking_the_active_segment_keeps_the_last_mode(page):
+    at = page()
+    _point_mode(at, "opacity")
+    at.get("button_group")[0].set_value([]).run(timeout=90)
+    assert not at.exception
+    assert at.get("button_group")[0].value == "opacity"
+    assert "Opacity by" in _labels(at)
+
+
+def test_subcolor_without_groups_is_disabled_but_remembers_the_column(page):
+    at = page(**{"vis_encoding_point_mode": "subcolor", vw.PICKER_COL_KEY: "day"})
+    _colour(at).set_value([]).run(timeout=90)
+    assert not at.exception
+    picker = next(box for box in at.selectbox if box.label == "Subcolor by")
+    assert picker.disabled
+    assert picker.value == "day"
+    assert _colour(at).label == "Group by"
+
+    _colour(at).set_value(["treatment"]).run(timeout=90)
+    assert not at.exception
+    picker = next(box for box in at.selectbox if box.label == "Subcolor by")
+    assert not picker.disabled
+    assert picker.value == "day"
+
+
+def test_other_methods_keep_independent_opacity_across_feature_comparison(page):
+    at = _bivariate(page)
+    _opacity(at).select("day").run(timeout=90)
+    next(box for box in at.selectbox if box.label == "Shape by").select("dish").run(timeout=90)
+
+    at.radio[0].set_value("### **Univariate**").run(timeout=90)
+    assert not at.exception
+    _point_mode(at, "opacity").select("image_name").run(timeout=90)
+    # An extra run exposes cleanup of widgets hidden by the method change.
+    at.run(timeout=90)
+    assert not at.exception
+
+    at.radio[0].set_value("### **Bivariate**").run(timeout=90)
+    assert not at.exception
+    assert _opacity(at).value == "day"
+    assert next(box for box in at.selectbox if box.label == "Shape by").value == "image_name"
+
+    at.radio[0].set_value("### **Univariate**").run(timeout=90)
+    assert not at.exception
+    assert at.get("button_group")[0].value == "opacity"
+    assert _opacity(at).value == "image_name"
+
+
+@pytest.mark.parametrize("legacy, expected_mode, expected_column", [
+    ({vw.AS_COLOUR_KEY: True, vw.PICKER_COL_KEY: "dish", vw.OPACITY_BY_KEY: "day"},
+     "subcolor", "dish"),
+    ({vw.AS_COLOUR_KEY: False, vw.PICKER_COL_KEY: "dish", vw.OPACITY_BY_KEY: "day"},
+     "shape", "dish"),
+    ({vw.OPACITY_BY_KEY: "day"}, "opacity", "day"),
+])
+def test_legacy_encoding_migrates_once(page, legacy, expected_mode, expected_column):
+    at = page(**legacy)
+    assert at.get("button_group")[0].value == expected_mode
+    picker = next(box for box in at.selectbox if box.label == f"{expected_mode.title()} by")
+    assert picker.value == expected_column
+    picker.set_value(None).run(timeout=90)
+    at.run(timeout=90)
+    assert not at.exception
+    assert at.session_state[vw.PICKER_COL_KEY] is None
+
+
 def _bivariate(page):
-    """Where the decorations are NOT merged, so Opacity by is a column of its own."""
+    """Methods with separate shape and opacity controls keep opacity in its own column."""
     at = page()
     at.radio[0].set_value("### **Bivariate**")
     at.run(timeout=90)
@@ -214,16 +302,54 @@ def test_nothing_is_struck_when_no_column_is_collapsed(page):
 
 
 # ---------------------------------------------------------------------------
-# The caption -- the only thing that tells a user a channel went away
+# Disabled-decoration captions
 # ---------------------------------------------------------------------------
 
 # The feature picker's key, so the Feature Comparison branch actually runs.
 FEATURE_KEY = "_menu_Uncategorized Features"
 
 
+@pytest.mark.parametrize("mode", ["shape", "subcolor", "opacity"])
+@pytest.mark.parametrize("column", ["day", "image_name", None])
+def test_page_exports_only_the_active_valid_decoration(page, monkeypatch, mode, column):
+    """Exercise real page capture and generation after its collapse validation."""
+    from src import export_script
+
+    captured = []
+    generate = export_script.generate_script
+
+    def capture(state):
+        script = generate(state)
+        captured.append((state, script))
+        return script
+
+    monkeypatch.setattr(export_script, "generate_script", capture)
+    at = page(**{FEATURE_KEY: FEATURE, vw.COLLAPSE_BY_KEY: "dish",
+                 "vis_encoding_point_mode": mode, vw.PICKER_COL_KEY: column,
+                 vw.OPACITY_BY_KEY: "day"})
+    assert captured
+    state, script = captured[-1]
+    expected = {"shape_by": None, "subcolor_by": None, "opacity_by": None}
+    if column == "day":
+        expected[f"{mode}_by"] = column
+    assert {key: state[key] for key in expected} == expected
+    assert state["method_params"]["collapse_by"] == "dish"
+
+    assignments = {
+        target.id: ast.literal_eval(node.value)
+        for node in ast.parse(script).body if isinstance(node, ast.Assign)
+        if isinstance(node.value, ast.Constant)
+        for target in node.targets
+        if isinstance(target, ast.Name) and target.id in {key.upper() for key in expected}
+    }
+    assert assignments == {key.upper(): value for key, value in expected.items()}
+    assert at.get("button_group")[0].value == mode
+    if column == "image_name":
+        assert f"**{mode.title()} by** is off" in " ".join(c.value for c in at.caption)
+
+
 def test_a_decoration_finer_than_the_replicate_is_dropped_and_explained(page):
-    """`image_name` takes two values inside every dish, so a collapsed dot has no
-    single symbol to carry -- and a silently missing channel reads as a bug."""
+    """A varying image_name is dropped and the caption explains why its decoration is disabled."""
     at = page(**{FEATURE_KEY: FEATURE, vw.COLLAPSE_BY_KEY: "dish",
                  vw.PICKER_COL_KEY: "image_name"})
 
@@ -235,8 +361,7 @@ def test_a_decoration_finer_than_the_replicate_is_dropped_and_explained(page):
 
 
 def test_a_decoration_coarser_than_the_replicate_is_left_alone(page):
-    """`day` is one value per dish, so it still marks the dots -- and the collapse says
-    nothing, because there is nothing to explain."""
+    """A day constant within each dish remains available without a disabled-decoration notice."""
     at = page(**{FEATURE_KEY: FEATURE, vw.COLLAPSE_BY_KEY: "dish",
                  vw.PICKER_COL_KEY: "day"})
 
@@ -291,8 +416,7 @@ def test_the_hover_names_the_replicate_and_carries_its_count(monkeypatch):
 
 
 def test_the_fov_hover_line_survives_a_collapse_by_the_fov_column(monkeypatch):
-    """resolve_effective_fov_col answers this with no new branch: the collapse drops
-    the FOV column iff it varied, and collapsing BY it means it did not."""
+    """Collapsing by FOV retains that column for hover because it is constant in each group."""
     from src.dataset_io import resolve_effective_fov_col
 
     collapsed, _label, _varied = collapse_rows(
@@ -311,7 +435,7 @@ def test_collapsing_across_fovs_drops_the_fov_hover_line(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# The statistics, once n is three rather than eighteen
+# Statistics on replicate counts
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("sizes", [(1, 1), (1, 3), (3, 1)])
@@ -357,7 +481,7 @@ def test_one_replicate_per_group_yields_no_effect_size_and_no_numpy_warning(meth
 
 @pytest.mark.parametrize("method", ["Glass's Delta", "Absolute Cohen's d"])
 def test_two_replicates_per_group_still_compute(method):
-    """The guard must not swallow the case Collapse by is actually for."""
+    """Groups with enough replicates still receive a finite effect size."""
     import numpy as np
 
     from src.vis.helpers import _calculate_effect_size
@@ -369,7 +493,7 @@ def test_two_replicates_per_group_still_compute(method):
 
 
 # ---------------------------------------------------------------------------
-# The notice: a group too thin for a spread, among the pairs the user picked
+# Insufficient-replicate notices for selected comparisons
 # ---------------------------------------------------------------------------
 
 def _stats_frame(counts):
@@ -403,8 +527,7 @@ def _run_annotations(monkeypatch, counts, pairs, *, effect_size="Absolute Cohen'
 
 
 def test_a_group_with_one_point_is_named(monkeypatch):
-    """Both statistics return nan below two points and draw nothing, so without this
-    there is no way to tell "no difference" from "not computable"."""
+    """Warn when selected comparisons lack enough replicates to compute statistics."""
     warned = _run_annotations(monkeypatch, {"ctrl": 4, "drug": 1}, [("ctrl", "drug")])
 
     assert "`drug` (1 point)" in warned
@@ -449,8 +572,7 @@ def test_nothing_is_said_when_neither_statistic_was_requested(monkeypatch):
 
 
 def test_the_notice_names_its_separate_by_section(monkeypatch):
-    """The annotator runs once per section, so an unlabelled notice would repeat with
-    no way to tell which section each one meant."""
+    """Separate-by warnings name the section whose comparison lacks replicates."""
     warned = _run_annotations(monkeypatch, {"ctrl": 4, "drug": 1}, [("ctrl", "drug")],
                               section_label="MCF7")
 

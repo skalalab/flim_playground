@@ -70,7 +70,7 @@ def get_ch_info(metadata_df):
                 return _not_found(f"Num components column {num_components_col}"), None
             metadata_dict[channel_name]["num_components"] = metadata_df[num_components_col].iloc[0]
             if "prefitted" not in input_type:
-                # use fitting to find the shift, if it is already fitted, then do not use fitting to find shift (if needed)
+        # Prefitted data uses fit-free shift estimation when alignment is needed.
                 metadata_dict["channels_shift"][channel_name] = "fit"
             # Read fixed-lifetime columns (optional — may or may not be present in CSV)
             import pandas as _pd
@@ -86,7 +86,6 @@ def get_ch_info(metadata_df):
         if "Lifetime fit free" in selected_feature_extractors:
             fit_free = True
             if channel_name not in metadata_dict["channels_shift"]:
-                # no need to shift if channel-specific fluorescence lifetime standard file is provided
                 channel_ref_col = f"{channel_name}_Fluorescence Lifetime Standard"
                 # No IRF shift is needed when a per-channel fluorescence lifetime
                 # standard provides calibration; only fall back to "fit free" otherwise.
@@ -205,11 +204,8 @@ def parse_metadata_file(metadata_df, fov_name_col):
         else:
             return _not_found("Duration column duration"), None
 
-    # Derived-feature definitions travel in the metadata CSV as a single JSON
-    # column, repeated per row (a global setting, like laser_rate/time_bins).
-    # Reading them here — not from live config — is what makes a saved metadata
-    # CSV replayable: the baked formulas reproduce the same derived columns.
-    # Absent column (older CSVs) or unparsable JSON both fall back to [].
+    # Read the CSV's repeated JSON definitions so saved metadata replays its own
+    # formulas. Missing or unparsable definitions default to [].
     if "derived_features" in metadata_df.columns:
         raw = metadata_df["derived_features"].iloc[0]
         try:

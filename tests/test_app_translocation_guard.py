@@ -1,7 +1,5 @@
-"""A quarantined .app opened in place runs read-only under macOS App
-Translocation, so the first config save used to crash with a redacted OSError
-(real user report). render_top_menu() — run first on every page — checks
-sys.executable for the translocation mount and stops with the xattr fix instead.
+"""A translocated macOS app stops before page rendering or config writes.
+The notice gives an xattr command targeting the downloaded app.
 """
 import sys
 from pathlib import Path
@@ -19,7 +17,7 @@ _MENU_SCRIPT = (
     "st.write('PAGE-BODY-RENDERED')\n"
 )
 
-# The exact shape from the user report.
+# Representative translocated app path.
 _TRANSLOCATED = (
     "/private/var/folders/xk/lqlzjrs12yb7vscb0r20jdy00000gn/T/AppTranslocation/"
     "448EDF53-C8C9-4A62-9CA1-6412113CDF60/d/Flim-Playground 2.app/"
@@ -35,8 +33,7 @@ def test_translocated_launch_stops_with_xattr_guidance(monkeypatch):
 
     assert not at.exception, f"guard must not raise: {[e.value for e in at.exception]}"
     errors = " ".join(e.value for e in at.error)
-    # Full pasteable command targeting the real download (name recovered from
-    # the translocated path), NOT the read-only mount in sys.executable.
+    # Target the downloaded app, using the name recovered from the translocated path.
     assert 'xattr -dr com.apple.quarantine ~/Downloads/"Flim-Playground 2.app"' in errors
     assert "/AppTranslocation/" not in errors
     # st.stop() fired: nothing after render_top_menu ran.
@@ -58,13 +55,7 @@ def test_normal_launch_renders(monkeypatch):
 
 
 def _patch_version(monkeypatch):
-    """Patch the name render_top_menu actually resolves.
-
-    navigation.py does `from src.version import get_version_label`, so the
-    binding lives in src.navigation's globals -- patching src.version would miss
-    it and the test would silently assert against the real version, passing
-    today and failing the day someone cuts a release.
-    """
+    """Patch src.navigation, where render_top_menu resolves its imported version helper."""
     import src.navigation as navigation
 
     monkeypatch.setattr(navigation, "get_version_label", lambda: "v9.9.9-test")
@@ -84,21 +75,14 @@ def test_version_label_renders_inside_the_menu_bar(monkeypatch):
     assert not at.error, f"a version label must never error: {[e.value for e in at.error]}"
     bars = [m.value for m in at.markdown if "9.9.9-test" in m.value]
     assert len(bars) == 1, "exactly one element carries the version"
-    # Same element as the grey bar, not a second markdown block beneath it
-    # (which would render its own vertical gap under the nav).
+    # Keep the version in the navigation bar to avoid an extra vertical gap.
     assert "background-color:#f0f0f0" in bars[0]
     assert "Data Analysis" in bars[0], "nav links must survive the flex change"
     assert "v9.9.9-test</span></div>" in bars[0], "label closes the bar div"
 
 
 def test_translocated_launch_shows_no_version(monkeypatch):
-    """The guard's st.stop() must precede the label.
-
-    Not covered by the PAGE-BODY-RENDERED assertion above: that only watches the
-    test script's own body, so a label emitted above the guard (or slipped into
-    the <style> block) would leak on a quarantined mac launch with every
-    existing test still green.
-    """
+    """The translocation guard stops before either the version label or page body renders."""
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setattr(sys, "executable", _TRANSLOCATED)

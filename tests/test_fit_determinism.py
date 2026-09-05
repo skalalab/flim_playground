@@ -1,12 +1,5 @@
-"""Reproducibility guarantees for fit_curves().
-
-The lifetime fit must be deterministic: the same decays fit twice must give
-identical results, and the sequential and parallel code paths must agree.
-
-Regression guard for the warm-start seeding bug — the global-search warm-start
-(and the Hybrid per-curve global step) were seeded with `rng=`, which lmfit does
-not forward to scipy.differential_evolution, leaving the search unseeded and the
-whole fit nondeterministic call-to-call.
+"""Lifetime fits are reproducible across repeated calls, execution modes, and
+batch sizes for identical curves.
 """
 import os
 import sys
@@ -39,10 +32,8 @@ def _common_kwargs(mode="Local"):
 
 @pytest.mark.parametrize("mode", ["Local", "Hybrid"])
 def test_fit_reproducible_across_calls(mode):
-    """Two identical calls must produce identical results.
-
-    Local exercises the global-search warm-start seed; Hybrid exercises the
-    per-curve global-search seed. Both were broken by the `rng=` bug.
+    """Repeated calls are identical. Local exercises the global warm-start seed;
+    Hybrid exercises the per-curve global-search seed.
     """
     decays, irf, time_bins = _load_real()
     r1 = fit_curves(DURATION, time_bins, decays, irf, **_common_kwargs(mode))
@@ -74,18 +65,9 @@ def test_sequential_matches_parallel():
 
 @pytest.mark.parametrize("num_components", [2, 3])
 def test_fit_is_batch_size_invariant(num_components):
-    """A cell's fit must not depend on how many cells share its batch.
-
-    Regression guard for the Local-mode warm-start scale bug: the warm-start fit the
-    SUMMED decay, whose offset (~N x a single cell's, then clamped to the peak) and
-    peak-derived differential-evolution bounds both grew with the batch size N. That
-    leaked batch size into the ill-conditioned per-cell fits, so the same cell fit to
-    different lifetimes depending on how many cells were co-fit (e.g. tau2 swinging
-    1.8 -> 11.5 ns across N = 3 / 12 / 48). Fixed by warm-starting on the MEAN decay.
-
-    Fitting K identical copies of one real curve in different batch sizes isolates the
-    scale dependence (the mean of identical copies is the curve itself, independent of
-    K), so the lifetimes must be identical across batch sizes.
+    """A cell's fit is independent of batch size when its batch contains identical curves.
+    The mean decay is unchanged across these batches, so warm-start scaling and
+    fitted lifetimes must also remain unchanged.
     """
     decays, irf, time_bins = _load_real()
     curve = decays[0]

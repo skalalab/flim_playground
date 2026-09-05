@@ -19,14 +19,14 @@ def test_a_prefix_two_columns_share_becomes_a_group():
 
 
 def test_a_column_with_no_separator_is_left_ungrouped():
-    """Absent from the result, so it falls to Uncategorized Features as always."""
+    """Columns without a shared prefix remain ungrouped."""
     groups = detect_column_groups(["Area", "Perimeter", "nadh_t1", "nadh_t2"])
     assert "Area" not in groups and "Perimeter" not in groups
     assert groups["nadh_t1"] == "nadh"
 
 
 def test_a_prefix_carried_by_one_column_is_not_a_group():
-    """A group of one is not a group -- definition, not a tunable cutoff."""
+    """Creating a group requires at least two columns with the same prefix."""
     assert detect_column_groups(["nadh_t1_mean", "Area"]) == {}
 
 
@@ -39,7 +39,7 @@ def test_the_colon_convention_groups_too():
 
 
 def test_the_earliest_separator_in_the_name_wins():
-    """No precedence between separators to argue about -- position decides."""
+    """The earliest separator wins regardless of its type."""
     groups = detect_column_groups(["nadh_t1.mean", "nadh_t2.mean"])
     assert set(groups.values()) == {"nadh"}
 
@@ -66,13 +66,13 @@ def test_no_columns_is_no_groups():
 # Existing group names
 
 def test_a_new_column_joins_a_group_the_profile_already_has():
-    """Nothing is invented -- `nadh` exists because the user made it."""
+    """A lone new column can join an existing group with a matching prefix."""
     groups = detect_column_groups(["nadh_t3_mean"], {"nadh": ["nadh_t1_mean"]})
     assert groups == {"nadh_t3_mean": "nadh"}
 
 
 def test_joining_an_existing_group_works_for_a_single_column():
-    """The 2+ rule is for *forming* a group, not for joining one that exists."""
+    """Joining an existing group does not require a second matching column."""
     assert detect_column_groups(["nadh_t3_mean"]) == {}
     assert detect_column_groups(["nadh_t3_mean"], {"nadh": []}) == {"nadh_t3_mean": "nadh"}
 
@@ -84,14 +84,14 @@ def test_existing_groups_may_be_given_as_bare_names():
 # Known siblings take precedence
 
 def test_a_new_column_joins_the_group_its_sibling_was_filed_under():
-    """The rename case. "NADH lifetime" matches no prefix, so only the sibling finds it."""
+    """Known siblings match a renamed group even when its name has no matching prefix."""
     groups = detect_column_groups(["nadh_t3_mean"],
                                   known_groups={"nadh_t1_mean": "NADH lifetime"})
     assert groups == {"nadh_t3_mean": "NADH lifetime"}
 
 
 def test_a_sibling_outranks_a_group_that_merely_shares_the_prefix_name():
-    """Where the user actually filed a column like this one beats a matching string."""
+    """A known sibling's saved group takes precedence over a matching group name."""
     groups = detect_column_groups(["nadh_t3_mean"], existing_groups=["nadh"],
                                   known_groups={"nadh_t1_mean": "NADH lifetime"})
     assert groups == {"nadh_t3_mean": "NADH lifetime"}

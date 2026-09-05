@@ -121,7 +121,7 @@ def test_deleting_the_current_profile_moves_current_to_a_survivor(acw):
 
 
 def test_deleting_the_last_profile_is_allowed(acw):
-    """'Start over' is delete, and a file no longer needs a profile to exist to load."""
+    """Deleting the final profile leaves an empty analysis config."""
     acw.save_working_copy("pdl1", ROLES, {})
     for name in list(acw.list_profiles()):
         acw.delete_profile(name)
@@ -229,12 +229,7 @@ def test_working_copy_arguments_carry_the_identifier():
 
 
 def test_a_field_of_view_column_is_a_categorical_like_any_other():
-    """No FOV role, no fov_name_col in the hand-off: image_name is just a category.
-
-    The hand-off must not carry the key at all -- interpret_table takes the FOV name
-    positionally, and a "" smuggled through here would read as a designated column that
-    happens to be blank rather than as "this branch has none".
-    """
+    """The user-table handoff includes FOV names as categoricals and no fov_name_col argument."""
     from src.widgets.analysis_config_widgets import working_copy_arguments
 
     args = working_copy_arguments(dict(ROLES, image_name=ROLE_CATEGORICAL), {})

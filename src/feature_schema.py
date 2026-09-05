@@ -1,24 +1,15 @@
 """Predict the feature columns a configured extraction profile will emit.
 
-Derived features (``src/derived_features.py``) let a user build new columns from
-arithmetic over *existing* extracted features. To offer sensible operand choices
-at config time — before any extraction has run — we predict which columns the
-current profile will produce, from its selected extractors and per-channel
-settings alone.
+Use selected extractors and per-channel settings to supply derived-feature operand
+choices before extraction runs. Names must match ``src/fov_extraction.py``:
 
-The prediction mirrors the naming convention in ``src/fov_extraction.py``, which
-emits two kinds of column:
-
-* **categorized** — ``"{Extractor}_{channel}: {suffix}"``, the measurements
-  proper. ``predict_feature_columns()``.
+* **categorized** — ``"{Extractor}_{channel}: {suffix}"`` from
+  ``predict_feature_columns()``.
 * **uncategorized** — ``"{channel}_{suffix}"``, no extractor prefix: the fit's
   bookkeeping (``amp1``, ``offset``, ``reduced_chi_square``, the ``a2``/``a3``
   remainders) and the morphology centroids. ``predict_uncategorized_columns()``.
 
-Data Analysis files the second kind under "Uncategorized Features", but they are
-ordinary per-cell numbers, so they are offered as derived-feature operands too —
-a background-corrected intensity is ``intensity_sum - offset * time_bins``. They
-are listed *after* the categorized columns, which are what most formulas want.
+Uncategorized columns follow categorized columns in the operand list.
 """
 
 # Fixed per-extractor categorized suffixes. "Lifetime fit" is component-count
@@ -61,11 +52,8 @@ def _component_count(num_components):
 def _fit_suffixes(num_components):
     """Categorized suffixes emitted by the 'Lifetime fit' extractor.
 
-    Mirrors ``extract_fit_results`` *and* ``extract_spcimage_fit_results``, which
-    agree here: ``t1..tn`` for all n; plus ``a1..a(n-1)``, ``tm`` and ``tm_iw``
-    when n >= 2 (the multi-exponential case). Clamped to the supported 1–3
-    component range. The prefitted split lives in ``_fit_uncategorized_suffixes``
-    alone — the categorized names do not depend on the input type.
+    For both fitted and SPCImage inputs, emit ``t1..tn``; add ``a1..a(n-1)``,
+    ``tm`` and ``tm_iw`` when n >= 2. Clamp n to the supported 1–3 range.
     """
     n = _component_count(num_components)
     suffixes = [f"t{i}" for i in range(1, n + 1)]
@@ -78,11 +66,9 @@ def _fit_suffixes(num_components):
 def _fit_uncategorized_suffixes(num_components, prefitted=False):
     """Uncategorized suffixes emitted by the 'Lifetime fit' extractor.
 
-    Mirrors ``extract_fit_results``: the raw amplitudes ``amp1..ampn``, the fitted
-    background ``offset``, ``reduced_chi_square``, and the ``a{n}`` remainder that
-    completes the ``a1``(``a2``) percentages when n >= 2. A pixel-prefitted
-    (SPCImage) channel re-reads someone else's per-pixel fit, so it emits only
-    that remainder — mirrors ``extract_spcimage_fit_results``.
+    Fitted inputs emit ``amp1..ampn``, ``offset``, and ``reduced_chi_square``.
+    Both fitted and SPCImage inputs emit the remaining fraction ``a{n}`` when
+    n >= 2; SPCImage inputs emit no other uncategorized fit columns.
     """
     n = _component_count(num_components)
     if prefitted:
@@ -103,10 +89,8 @@ def predict_feature_columns(channel_names, selected_extractors, num_components, 
         num_components: dict ``{channel_name: int}`` (only read for 'Lifetime fit').
         input_types: optional dict ``{channel_name: input_type}``. Only consulted to
             narrow 'Intensity texture' on a 'Decay (2D)' channel to ``intensity_sum``.
-            Mirrors the 2D special case in
-            ``fov_extraction.extract_intensity_features``: a 2D CSV has no image/mask,
-            so ``intensity_sum`` (the decay-curve sum) is the only texture feature it
-            can emit. Omitting it (or a non-2D value) yields the full suffix list.
+            A 2D CSV has no image or mask. Omitting input_types, or supplying a
+            non-2D input type, yields the full suffix list.
 
     Returns:
         Ordered list of unique ``"{Extractor}_{channel}: {suffix}"`` column names.
@@ -132,9 +116,8 @@ def predict_feature_columns(channel_names, selected_extractors, num_components, 
 def predict_uncategorized_columns(channel_names, selected_extractors, num_components, input_types=None):
     """Predict the uncategorized (extractor-prefix-less) columns a profile will produce.
 
-    Same arguments as :func:`predict_feature_columns`. ``input_types`` is consulted
-    for 'Lifetime fit' only: a pixel-prefitted channel emits just the ``a{n}``
-    remainder, having done no fit of its own.
+    Same arguments as :func:`predict_feature_columns`. ``input_types`` affects
+    'Lifetime fit': SPCImage inputs emit only ``a{n}`` when n >= 2.
 
     Returns:
         Ordered list of unique ``"{channel}_{suffix}"`` column names.
@@ -185,11 +168,9 @@ def _profile_channels(cfg):
 
 
 def predict_feature_columns_from_cfg(cfg, include_uncategorized=False):
-    """Convenience adapter: predict columns from an active-profile config dict.
+    """Predict columns from an active-profile config dict.
 
-    With *include_uncategorized*, the profile's uncategorized bookkeeping columns
-    are appended *after* the categorized ones, so the measurements stay at the top
-    of an operand picker (see the module docstring).
+    With *include_uncategorized*, append uncategorized columns after categorized ones.
     """
     channels = _profile_channels(cfg)
     columns = predict_feature_columns(*channels)

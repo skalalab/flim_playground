@@ -5,17 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-# src/modality_alignment.py lives on the `modality-alignment` branch and is not
-# present on main, where every test here would fail at import. Skip the module
-# rather than collect it.
-#
-# This file cannot simply be moved onto that branch, which is where it belongs:
-# the branch is from 2026-04-13, ~160 commits behind main and predating `track
-# tests` (b485e83), so it still gitignores `tests/` outright and holds no test
-# tree to join. Checked out in a worktree, 13 of these 15 tests pass against its
-# module; the other two want `src.vendor.scot`, a path that exists neither there
-# (the branch has `src/scot/`) nor on main. So the branch has to catch up to main
-# before this file can follow it, and until then main is the only copy.
+# Skip when the optional modality-alignment module is absent from this checkout.
 pytest.importorskip(
     "src.modality_alignment",
     reason="src/modality_alignment.py is only on the modality-alignment branch",

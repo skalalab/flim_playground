@@ -4,16 +4,11 @@ def upsample_irf(irf, scale=10):
     return np.interp(np.linspace(0, len(irf), len(irf)*scale), np.arange(len(irf)), irf)
 
 def irf_fwhm_bins(irf):
-    """Full Width at Half Maximum of the IRF main peak, in bins.
+    """Return twice the IRF main peak's half-maximum span, at least two bins.
 
-    Walks left/right from the peak until the value drops below half-max,
-    returning the contiguous half-max region's width. This isolates the
-    main peak even when after-pulses or shoulders also exceed half-max,
-    as long as they're separated from the peak by a sub-half-max gap.
-
-    Used as the natural length scale for the shift-fit halfwidth: shifts
-    smaller than the IRF's own width still represent meaningful IRF/decay
-    alignment, while larger shifts move the IRF off the data entirely.
+    Walk outward from the maximum through contiguous bins at or above half-max.
+    Separate after-pulses are excluded. The result sets the shift-fit halfwidth;
+    a nonpositive peak raises ValueError.
     """
     irf = np.asarray(irf, dtype=float)
     peak = float(irf.max())
@@ -27,7 +22,7 @@ def irf_fwhm_bins(irf):
     R = p
     while R < len(irf) - 1 and irf[R + 1] >= half:
         R += 1
-    # returns the 2 times of the FWHM just to be safe
+    # Double the main-peak span to allow a margin for shift fitting.
     return max(2, 2*(R - L))
 
 def coerce_finite_shift(shift):
@@ -51,8 +46,7 @@ def irf_shift(irf, shift, irf_upsampled=None):
     # downsample the irf curve back to original size
     irf_shifted_downsampled = irf_shifted[::scale]
 
-    # A degenerate (all-zero) IRF would make this 0/0 -> NaN; leave it
-    # unnormalised in that case.
+    # Leave zero-sum IRFs unnormalized.
     total = np.sum(irf_shifted_downsampled)
     if total != 0:
         irf_shifted_downsampled = irf_shifted_downsampled / total
@@ -60,7 +54,7 @@ def irf_shift(irf, shift, irf_upsampled=None):
     return irf_shifted_downsampled
 
 def forward_pass(amp1, t1, offset, shifted_irf, time_axis, amp2=None, t2=None, amp3=None, t3=None):
-    #t_i is in ns
+    # Lifetimes and time_axis are in ns.
     if amp2 is not None and amp3 is not None and t2 is not None and t3 is not None:
         decay = amp1 * np.exp(-time_axis / t1) + amp2 * np.exp(-time_axis / t2) +  amp3 * np.exp(-time_axis / t3) + offset
     elif amp2 is not None and t2 is not None:
@@ -89,9 +83,7 @@ def reduced_chi_square(fitted, data, start, end, num_free_params):
     fitted_slice = fitted_slice[valid]
     residuals = data_slice - fitted_slice
     tmp_chiq = residuals**2/fitted_slice
-    # Degrees of freedom must be positive; a too-narrow time gate (or a failed
-    # fit whose curve is <= 0 everywhere) leaves <= 0 dof, where reduced
-    # chi-square is undefined. Return NaN instead of +inf / a negative value.
+    # Reduced chi-square is undefined with nonpositive degrees of freedom.
     dof = len(data_slice) - num_free_params
     if dof <= 0:
         return np.nan
@@ -112,14 +104,12 @@ def objective(params, data, irf, time_axis, start=0, end=-1, fitting_algo="MLE",
     t2 = params['t2'] if 't2' in params else None
     amp3 = params['amp3'] if 'amp3' in params else None
     t3 = params['t3'] if 't3' in params else None
-    # 
     fitted = forward_pass(amp1=amp1, t1=t1, offset=offset, shifted_irf=irf, time_axis=time_axis, amp2=amp2, t2=t2, amp3=amp3, t3=t3)
     # Poisson likelihood
     if fitting_algo == "MLE": 
         return nll_poisson(fitted, data, start, end)
     elif fitting_algo == "WLS":
-        # Pearson weighting: variance estimated from the model (fitted), so the
-        # minimized objective matches the reported reduced χ² (also Pearson).
+        # Pearson weighting estimates variance from the model, floored at one.
         weights = np.sqrt(np.maximum(fitted[start:end], 1))
         residuals = (data[start:end] - fitted[start:end]) / weights
         return residuals

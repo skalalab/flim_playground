@@ -1,16 +1,8 @@
-"""
-Shared semantics for the "All" / "Except:" sentinels used by the multiselects that
-offer a whole-set shortcut: the categorical filters in ``filter_widgets`` and the
-per-feature-group pickers in ``selection_widgets``.
+"""Shared "All" / "Except:" selection modes for filters and feature pickers.
 
-Both sentinels live inside the option list rather than in a separate mode control, so a
-selection is always a single list. "Except:" flips the remaining chips from *keep these* to
-*drop these*, which is re-derived from the current data on every rerun -- so "all except X"
-keeps meaning that when new data loads or another filter widens, unlike a hand-picked list
-of everything-but-X.
-
-The label is kept short because it shares a chip row with the values it excludes, inside a
-column that can be one of seven: "All except" truncated to "All exc..." and wrapped.
+Sentinels share the selection list with values. "Except:" treats those values as
+exclusions, expanded against the current data on every rerun. Its short label
+fits the narrow columns used by grouped pickers.
 """
 
 import streamlit as st
@@ -53,7 +45,7 @@ def chosen_items(stored, universe):
         [EXCEPT_LABEL]           -> None                (excluding nothing)
         [EXCEPT_LABEL, "B"]      -> universe minus "B"
         ["B"]                    -> ["B"]
-        []                       -> []                  (as before: chooses nothing)
+        []                       -> []                  (chooses nothing)
 
     "All" wins over "Except:" if both somehow appear together, being the wider of the
     two. `normalize_mode_selection` never produces that pair.

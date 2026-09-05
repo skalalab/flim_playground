@@ -1,12 +1,6 @@
-"""A profile's columns, viewed as {name: role} without changing how they are stored.
-
-analysis_config.toml keeps its parallel lists. `profile_column_roles` assembles the
-map the review table edits and matching compares; `apply_column_roles` writes one back
-out. Both are pure, so the storage format never has to know the UI's shape.
-
-`ignored_cols` is the one added key. It records nothing about what to analyse --
-get_features drops unroled columns regardless -- and exists only so the identity test
-can tell a column that was seen and dismissed from one the profile has never seen.
+"""Profile role maps round-trip through the stored parallel column lists.
+Ignored columns remain part of profile identity so matching includes every column
+the user reviewed.
 """
 import sys
 from pathlib import Path
@@ -20,8 +14,7 @@ def _profile(**cfg):
     return lambda *a, **k: cfg
 
 
-# Written while the FOV role still existed: image_name sits in fov_name_col *and*
-# categorical_cols. Both must still read back, as one ordinary categorical.
+# Legacy configs may list image_name in both fields; read it once as categorical.
 PDL1 = {
     "unique_row_id_col": "cell_id",
     "fov_name_col": "image_name",
@@ -48,12 +41,7 @@ def test_every_stored_list_becomes_a_role(monkeypatch):
 
 
 def test_a_legacy_fov_column_reads_back_as_an_ordinary_categorical(monkeypatch):
-    """There is no FOV role to give it back to, and it must not vanish either.
-
-    Losing it would cost more than a wrong role: profile_known_columns is the union of
-    these lists, so a profile that forgot image_name would know one column fewer than
-    the file it was saved from and could never match it again.
-    """
+    """A legacy FOV column becomes categorical and remains part of the profile's known columns."""
     monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
     monkeypatch.setattr(acw, "_get_profile_config", _profile(**PDL1))
 
@@ -61,7 +49,7 @@ def test_a_legacy_fov_column_reads_back_as_an_ordinary_categorical(monkeypatch):
 
 
 def test_a_migrated_profile_keeps_a_fov_column_listed_nowhere_else(monkeypatch):
-    """The old flat config had fov_name_col as its own key, not a categorical."""
+    """Legacy flat configs retain their FOV name as an ordinary categorical."""
     monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
     monkeypatch.setattr(acw, "_get_profile_config", _profile(
         unique_row_id_col="cell_id", fov_name_col="image_name",
@@ -102,7 +90,7 @@ def test_a_blank_identifier_names_no_column(monkeypatch):
 
 
 def test_a_profile_saved_before_ignored_cols_existed_still_loads(monkeypatch):
-    """The key is new, so every existing profile lacks it."""
+    """Profiles without ignored_cols read it as an empty list."""
     monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
     monkeypatch.setattr(acw, "_get_profile_config", _profile(
         unique_row_id_col="cell_id", fov_name_col="",
@@ -131,8 +119,7 @@ def test_apply_writes_each_role_to_its_list():
     # A field-of-view column lands here like any other category -- that is what
     # stringifies it, fills "N/A" and makes it filterable.
     assert set(cfg["categorical_cols"]) == {"treatment", "well"}
-    # No FOV key is written any more. Since Save replaces the whole profile, a legacy
-    # one stops carrying it after the first save rather than lingering half-read.
+    # Saving writes the FOV column only to categorical_cols.
     assert "fov_name_col" not in cfg
 
 
@@ -159,11 +146,7 @@ def test_roles_round_trip_through_the_stored_lists(monkeypatch):
 # ------------------------------------------------- what matching compares
 
 def test_all_profile_columns_reads_every_profile_not_just_the_active_one(monkeypatch):
-    """The file picks the profile, so matching has to see all of them.
-
-    Nothing is preselected -- which is what stops a mismatched upload from damaging
-    whichever profile happened to be active.
-    """
+    """Column maps include every saved profile, independent of current_profile."""
     monkeypatch.setattr(acw, "load_config", lambda *a, **k: {
         "current_profile": "iris",
         "profiles": {
@@ -180,11 +163,7 @@ def test_all_profile_columns_reads_every_profile_not_just_the_active_one(monkeyp
 
 
 def test_the_store_feeds_the_matching_functions_directly(monkeypatch):
-    """all_profile_columns hands rank_profiles what it wants, with nothing between.
-
-    That is what keeps profile_matching free of config: it never learns where a
-    profile lives, and this module never learns how a fit is scored.
-    """
+    """Pass profile column sets to ranking without adding config dependencies to matching."""
     from src import profile_matching
 
     monkeypatch.setattr(acw, "load_config", lambda *a, **k: {
@@ -202,10 +181,7 @@ def test_the_store_feeds_the_matching_functions_directly(monkeypatch):
 
 
 def test_known_columns_include_the_ignored_ones(monkeypatch):
-    """P, in the spec's terms: everything the profile has seen.
-
-    The ignored column is the whole reason this is not just the roled set.
-    """
+    """Known columns include ignored columns as well as analysis roles."""
     monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
     monkeypatch.setattr(acw, "_get_profile_config", _profile(**PDL1))
 

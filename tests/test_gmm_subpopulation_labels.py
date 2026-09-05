@@ -1,10 +1,5 @@
-"""GMM subpopulation labels (`GMM_group`) must be numbered by ascending-mean
-rank — group1 is the smallest-mean component — so they line up with the
-component table shown to the user in `feature_gmm_plot`. The bug was that the
-hard-assignment path used `best_gmm.predict` (original component indices) and
-the intersection path remapped digitize buckets back to original indices, so
-the labels disagreed with the rank-ordered table whenever the fitted components
-were not already in ascending-mean order.
+"""GMM_group labels follow ascending component means: group1 is the smallest.
+Both hard assignment and intersection thresholds match the displayed component table.
 """
 import sys
 from pathlib import Path

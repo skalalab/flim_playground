@@ -1,14 +1,6 @@
-"""The review gate feeding Collapse by: two features that meet only on this path.
-
-The gap these close: the collapse suites drive the *extraction* branch, where
-categorical_cols comes from config.toml and a FOV column is designated; the review
-suites never build a plot. So the user-table path into Collapse by was untested,
-and it is the path where the three things the gate owns all differ -- the
-categoricals come from the review table's working copy, no role names a FOV column,
-and the row id may have been invented rather than read.
-
-The page has no file_uploader accessor, so the gate is driven the way
-test_review_page.py drives it: the chooser by prefix, then `_review_confirmed`.
+"""User-table review decisions feed Collapse by, plotting, and export.
+Categoricals come from the working copy, FOV has no designated role, and identifiers
+may be generated. AppTest drives the chooser by prefix and then _review_confirmed.
 """
 import sys
 from pathlib import Path
@@ -48,11 +40,7 @@ def _frame():
                 "dish": dish,
                 "treatment": treatment,
                 "day": day,
-                # Fractional, like a real lifetime. Round numbers here made this
-                # column an all-distinct whole-numbered bijection in the no-cell_id
-                # case below, so auto-detect claimed it as the identifier and the
-                # table had no measurement left -- an artefact of the fixture, not
-                # of the data this stands in for.
+                # Fractional values keep this measurement from qualifying as a generated Row ID.
                 "nadh_tm_mean": 1200.0 + 10 * i + j + 0.37,
             })
     return pd.DataFrame(rows)
@@ -93,12 +81,7 @@ def _gated(page, **session):
 
 
 def _pick_feature(at, group="Uncategorized Features", feature="nadh_tm_mean"):
-    """Select the feature in its *group* selectbox.
-
-    selected_var is read off the group menus, not off the filter's "Select Feature 1"
-    box -- and it defaults to "Select", which skips the whole plot branch, so without
-    this no figure is built and the export button never renders.
-    """
+    """Select the feature in its group menu so the page renders a plot and export button."""
     box = next(b for b in at.selectbox if b.label == group)
     assert feature in box.options, box.options
     box.set_value(feature).run(timeout=90)
@@ -115,12 +98,7 @@ def _options(at, label):
 
 
 def test_the_gate_hands_its_categoricals_to_collapse_by(page):
-    """The gate's working copy -- not config.toml -- is what fills the picker.
-
-    Collapse by offers every categorical the gate found except the ones already
-    fixing a point's x slot: the first categorical seeds Color by, so `image_name`
-    is spoken for and the remaining three are the offer.
-    """
+    """Collapse options use reviewed categoricals, excluding columns already used for grouping."""
     at = _gated(page)
     assert at.session_state.vis_df is not None, "the frame never loaded past the gate"
     assert "Collapse by" in _labels(at), _labels(at)
@@ -136,8 +114,7 @@ def test_the_gate_hands_its_categoricals_to_collapse_by(page):
 
 
 def test_a_user_table_collapses_without_a_designated_fov_column(page):
-    """The FOV role is gone on this branch, so plot_fov_name_col resolves from ""
-    -- the collapse must not demand a column no role names."""
+    """User-table collapse works without a designated FOV column."""
     at = _pick_feature(_gated(page))
     box = next(b for b in at.selectbox if b.label == "Collapse by")
     box.set_value("dish").run(timeout=90)
@@ -166,11 +143,9 @@ def test_collapsing_by_an_invented_row_number_table(page, monkeypatch):
 
 
 def test_the_exported_script_of_a_collapsed_user_table_compiles(page, monkeypatch):
-    """The two halves of the merge meet in the export: the branch supplies the
-    *configured* row id (blank included) and main supplies the collapse block.
-
-    AppTest exposes no download_button, so the state the page hands to
-    generate_script is captured at the seam and the real generator run on it.
+    """Capture the page's export state and run the real generator on it.
+    AppTest cannot drive download buttons; the captured state must include both the
+    configured identifier and the collapse parameters.
     """
     import src.export_script as es
 

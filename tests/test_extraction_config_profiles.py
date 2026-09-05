@@ -1,9 +1,6 @@
-"""Multi-profile support for the extraction config (config.toml).
-
-The extraction config gained named profiles mirroring the analysis config: a
-legacy flat config migrates to ``{current_profile, profiles.default}``, and the
-``src/config.py`` accessor layer resolves the active profile transparently so
-that every downstream consumer keeps working unchanged.
+"""Extraction config supports named profiles and reads legacy flat configs.
+Migration wraps flat settings under profiles.default; accessors resolve the
+active profile.
 """
 import sys
 from pathlib import Path
@@ -75,7 +72,7 @@ def test_create_profile_is_blank(tmp_path):
     p = _write(tmp_path, {"num_channels": 3})
     create_profile("blank", config_path=p)
     on_disk = toml.load(p)
-    # blank with app defaults -> seeded later by the UI, empty on disk for now
+    # Empty profiles are seeded with defaults when the UI opens them.
     assert on_disk["profiles"]["blank"] == {}
 
 
@@ -113,7 +110,7 @@ def test_load_active_profile_cfg_returns_active(tmp_path):
     assert active["num_channels"] == 4
 
 
-# ---- accessor rewire (end-to-end through the default path) --------------
+# Active-profile accessors
 
 def test_accessor_reads_active_profile(tmp_path, monkeypatch):
     p = _write(tmp_path, {

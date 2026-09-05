@@ -354,7 +354,6 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
 
     fig = go.Figure()
     COLOR_GROUP_COL_NAME = 'compare_group'
-    # Use the new helper for color, shape, opacity
     grouped_sep, color_map, shape_map, opacity_map, separate_groups = get_point_visual_mappings(
         df,
         color_by=color_by,
@@ -377,8 +376,7 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
     subcolor_of = create_subcolor_map(
         plotted, subcolor_by, COLOR_GROUP_COL_NAME, list(color_map.keys()), colormap=colormap,
     )
-    # Counted per value across the whole frame, matching the global mapping: one legend
-    # entry covers every group the value appears in, so its count has to as well.
+    # Count each subcolor value across the frame to match its shared legend entry.
     subcolor_counts = {}
     if subcolor_of:
         subcolor_counts = (plotted[subcolor_by].fillna("N/A").astype(str)
@@ -489,9 +487,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
 
     grouped_list.sort(key=group_sort_key)
 
-    # Row positions drawn in each (separate section, colour group) cell, pooled from the
-    # subgroups so a row with a NaN shape/opacity value is excluded here too. Positions
-    # rather than index labels, sorted, so the pooled order is row order.
+    # Pool row positions for each section/colour cell, excluding missing styling keys.
+    # Sort positions to retain the input row order.
     all_y = df[selected_var].to_numpy(dtype=float)
     pooled_rows = {}
     for group_key, group_df in grouped_list:
@@ -533,8 +530,7 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         x_of_row[rows] = x_position + (rng.uniform(-1, 1, size=len(y_data))
                                        * norm_densities * max_jitter)
 
-    # Filled by the subgroup loop, drained after it: drawing is deferred so a colour
-    # group's shape/opacity subgroups can be pooled into one trace.
+    # Collect styling subgroups before drawing each colour group's trace.
     point_buckets = {}
 
     for group_key, group_df in grouped_list:
@@ -579,9 +575,7 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         y_data = group_df[selected_var].values
         x_jittered = x_of_row[df.index.get_indexer(group_df.index)]
 
-        # Accumulate instead of drawing: the shape/opacity subgroups of one colour group
-        # share an x band, so they are pooled into one trace carrying symbol and opacity
-        # as per-point arrays, the same way helpers.add_interleaved_points_trace does.
+        # Pool styling subgroups into a shared x band with per-point symbol and opacity.
         bucket = point_buckets.setdefault((separate_group, color_group), {
             "x": [], "y": [], "text": [], "customdata": [],
             "symbol": [], "opacity": [], "subcolor": [],
@@ -597,15 +591,12 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         # rather than read one per row.
         bucket["symbol"].append(np.repeat(marker_symbol, len(y_data)))
         bucket["opacity"].append(np.repeat(marker_opacity, len(y_data)))
-        # Only under subcolor: this is the one channel read in just that
-        # branch, and filling it otherwise allocates a full-length array of empty
-        # strings per subgroup on every ordinary sina plot for nothing.
+        # Allocate value arrays only when subcolor is active.
         if subcolor_of:
             bucket["subcolor"].append(group_df[subcolor_by].fillna("N/A").astype(str).to_numpy())
 
-    # One renderer for the whole figure, decided from the total the buckets hold. Chosen
-    # once rather than per trace: Plotly paints every WebGL trace beneath every SVG one, so
-    # a figure mixing the two would stack its colour groups by renderer, not by draw order.
+    # Choose one renderer for the full figure; mixed SVG/WebGL layering
+    # would override colour-group draw order.
     scatter_cls = point_trace_class(
         sum(len(chunk) for bucket in point_buckets.values() for chunk in bucket["y"])
     )
@@ -621,14 +612,11 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         marker_kwargs = dict(size=point_size, line=dict(width=0.5, color='DarkSlateGrey'))
         trace_kwargs = dict(mode='markers', hovertemplate=final_hovertemplate)
         if scatter_cls is go.Scatter:
-            # Scattergl rejects zorder outright, and has no use for it: the WebGL layer
-            # already sits beneath the SVG boxes, which is exactly what zorder=1 buys
-            # against the boxes' zorder=10 below.
+            # Only SVG traces support zorder; WebGL box outlines use above-layer shapes.
             trace_kwargs['zorder'] = 1
 
         if not subcolor_of:
-            # One trace per colour group: symbol and opacity vary per point, colour does
-            # not, so there is no paint order for a batcher to fix.
+            # A single-colour group needs one trace with per-point symbol and opacity.
             show_legend = color_group not in legend_entries
             if show_legend:
                 legend_entries.add(color_group)
@@ -645,17 +633,14 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
             ))
             continue
 
-        # Subcolor: colour varies by value, so each value needs its own trace to stay
-        # clickable in the legend. Batch them and cycle, so no value paints over another.
+        # Interleave subcolor values in batches while retaining per-value legend control.
         for value, mask in interleave_point_batches({
             value: np.flatnonzero(columns["subcolor"] == value)
             # The map's keys are the figure's value list in natural-sort order; a value
             # this group has no points for yields an empty mask, which the batcher skips.
             for value in subcolor_of
         }):
-            # One legend entry per value, and every batch of it -- in this colour group
-            # and in every other -- repeats the value, so the entry appears once and its
-            # legendgroup toggles all of them.
+            # All batches of a subcolor value share one legend entry across comparison groups.
             show_entry = value not in legend_entries
             if show_entry:
                 legend_entries.add(value)
@@ -666,9 +651,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
                             symbol=columns["symbol"][mask],
                             opacity=columns["opacity"][mask], **marker_kwargs),
                 showlegend=show_entry,
-                # \x1f rather than '::' because apply_plot_styling dedupes on the joined
-                # legendgroup string, and '::' would let a real group name collide with
-                # this synthetic one.
+                # Use a control-character separator to prevent ordinary group names from
+                # colliding with synthetic legend groups during styling.
                 legendgroup=f"subcolor\x1f{value}",
                 text=columns["text"][mask],
                 customdata=None if customdata_all is None else customdata_all[mask],

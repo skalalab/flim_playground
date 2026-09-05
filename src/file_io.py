@@ -56,8 +56,7 @@ def read_asc(path):
     return array
 
 def _get_sample_decay_curves(decays: pd.DataFrame, n_samples: int, max_intensity: float):
-    # use the top n_samples that have the highest intensity less than max_intensity
-    # return the decay curves
+    # Select the brightest n_samples curves below max_intensity.
     decay_intensity = np.sum(decays, axis=1)
     sorted_indices = np.argsort(decay_intensity)[::-1]
     filtered_indices = [idx for idx in sorted_indices if decay_intensity[idx] < max_intensity]
@@ -83,9 +82,6 @@ def _time_bins_msg(actual, expected):
 
 def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=True):
 
-    # step 1 file check
-    # decay file, irf file, mask file for roi summing and SPCImage
-    # histogram, irf for K-Flow
     error_msg = ""
     decay_curves = {}
     fov_name_col = get_fov_name_col()
@@ -130,7 +126,7 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
             if shift:
                 # binarize the mask
                 binary_mask = np.where(mask > 0, 1, 0)
-                # image_level ROI summing: sum the time axis of all non-zero pixels in the decay
+                # Sum masked pixels into one decay curve per FOV, retaining time bins.
                 summed_decay_curve = np.sum(decay * binary_mask[:, :, np.newaxis], axis=(0, 1))
                 decay_curves[fov_name] = summed_decay_curve
             else:
@@ -159,11 +155,10 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
                 return _time_bins_msg(decays.shape[1], time_bins), None 
             
             if shift:
-                # get sample decay curves from each kflow experiment, totoalling at 30 samples 
-                # Use integer division to get number of samples per image, ensuring at least 1 sample
-                samples_per_experiment = max(1, 30 // num_fovs)  # // operator performs integer division
+                # Divide a target of 30 samples across FOVs, allowing at least one each.
+                samples_per_experiment = max(1, 30 // num_fovs)
                 sample_decays, top_indices = _get_sample_decay_curves(decays, samples_per_experiment, 100000)
-                # use the indices (essentially cell_number) to concatenate with image_name to form decay_id
+                # Combine the FOV name and original row index into each cell ID.
                 for i, index in enumerate(top_indices):
                     decay_curves[f"{fov_name}_{index}"] = sample_decays[i]
 

@@ -1,13 +1,6 @@
-"""Round-trip for the feature-picker's display-name <-> real-column mapping.
-
-The Data-Analysis feature pickers show only the part after ``": "`` (e.g. "t1" for
-"Lifetime fit_nadh: t1") and must resolve a selection back to the full column name.
-The old code rebuilt it as ``f"{group}: {name}"``, which assumed the group name
-equals the column prefix. The cross-channel "Derived Features" group breaks that
-invariant (its columns are "Derived: <name>"), so selecting a derived feature
-produced the bogus "Derived Features: <name>" and raised KeyError in data_analysis.
-
-These lock in ``feature_display_to_column``, the single mapping both pickers use.
+"""Feature pickers map shortened display names back to exact column names.
+Group names can differ from column prefixes: Derived Features contains columns
+named Derived: <name>. Both pickers use feature_display_to_column.
 """
 import sys
 from pathlib import Path
@@ -28,11 +21,11 @@ def test_normal_group_strips_prefix_and_maps_back_to_full_column():
 
 
 def test_derived_features_group_round_trips_to_real_derived_column():
-    """Regression: the group name "Derived Features" != the column prefix "Derived"."""
+    """The Derived Features group resolves columns with the Derived: prefix."""
     cols = ["Derived: redox_ratio", "Derived: C"]
     mapping = feature_display_to_column(cols, "Derived Features", data_extraction=True)
     assert list(mapping.keys()) == ["redox_ratio", "C"]
-    # The exact bug: this must be "Derived: C", NOT "Derived Features: C".
+    # Resolve the actual column: Derived: C.
     assert mapping["C"] == "Derived: C"
     assert mapping["redox_ratio"] == "Derived: redox_ratio"
 
@@ -52,7 +45,6 @@ def test_non_data_extraction_is_identity_even_with_colon_columns():
 
 
 def test_derived_name_with_only_one_colon_split():
-    # split(": ", 1) keeps everything after the first ": " (defensive; the builder
-    # already forbids ": " in derived names, but never rely on messy column text).
+    # Split only at the first separator to preserve the rest of an uploaded name.
     mapping = feature_display_to_column(["Derived: a_b_c"], "Derived Features")
     assert mapping == {"a_b_c": "Derived: a_b_c"}

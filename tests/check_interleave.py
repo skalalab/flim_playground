@@ -1,8 +1,6 @@
-"""Contract for donor-batch interleaving.
+"""Check donor-batch interleaving and one legend entry per donor.
 
-Emitting one trace per donor paints each donor entirely over the previous one, so the
-last donor in every group is systematically the most visible. Batching each donor and
-cycling through them removes that bias while keeping one legend entry per donor.
+Cycling batches between donors limits occlusion bias from trace order.
 """
 import sys
 import numpy as np

@@ -58,8 +58,7 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
                     # Store the indices of selected slots instead of the actual values
                     selected_indices = [slots.index(slot) for slot in selected_slots]
                     cat_label_map[cat] = selected_indices
-    # preview the change by loading the first 5 unique values of fov_name_col or all unique values if less than 5
-    # construct a new df with the selected categories and slots and cell_id from the first 5 unique fov_name_col values
+    # Preview one row from each of the first five FOVs with the selected labels.
     unique_fov_values = combined_df[fov_name_col].unique()
     if len(unique_fov_values) <= 5:
         preview_fov_values = unique_fov_values
@@ -70,7 +69,7 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
     # filter the dataframe to only include one row for each selected unique fov_name_col value
     preview_df = combined_df[combined_df[fov_name_col].isin(preview_fov_values)].drop_duplicates(subset=[fov_name_col])[[fov_name_col]].copy()
 
-    # add the chosen categories to the preview df and assign values based on the selected_indices from that category and concatenate them using delimiter
+    # Build each preview label from the selected FOV-name slots.
     for cat in chosen_categories:
         if cat_label_map[cat]:  # Only if user has selected slots for this category
             if delimiter == "":
@@ -117,7 +116,6 @@ def _fov_parts_msg(col, file, example):
 def find_available_dfs_widget(df_folder_path, delimiter):
     unique_cell_id_col = get_unique_cell_id_col()
     fov_name_col = get_fov_name_col()
-    # use glob to recursively find all the csv files in the folder that does end with _merged.csv and _metadata.csv
     if not os.path.isdir(df_folder_path):
         st.warning("Please provide a valid folder path.")
         return []
@@ -126,7 +124,7 @@ def find_available_dfs_widget(df_folder_path, delimiter):
     # Find all CSV files recursively
     all_csv_files = [str(file) for file in path.rglob("*.csv")]
 
-    # Filter out files ending with _merged.csv and _metadata.csv
+    # Skip previously combined data and metadata files.
     all_csv_files = [
         file for file in all_csv_files
         if not (file.endswith('_combined.csv') or file.endswith('_metadata.csv'))
@@ -148,12 +146,9 @@ def find_available_dfs_widget(df_folder_path, delimiter):
             if df[unique_cell_id_col].isna().any():
                 st.warning(f"The {unique_cell_id_col} column in {file} has NaN values. Please check the {unique_cell_id_col} column.")
                 continue
-            # check if all rows of this column can be split by the delimiter in equal number of parts
-            # reject if not
             cell_ids = df[unique_cell_id_col].tolist()
             fov_names = df[fov_name_col].unique()
-            # A cell_id already seen in a previously-loaded file means the ids collide
-            # across files: warn once and skip the whole file, as the checks above do.
+            # Reject the whole file if any cell ID overlaps an earlier file.
             existing_ids = set(existing_cell_ids)
             if any(cell_id in existing_ids for cell_id in cell_ids):
                 st.warning(_dup_values_msg(unique_cell_id_col, file))
@@ -169,7 +164,7 @@ def find_available_dfs_widget(df_folder_path, delimiter):
                 st.warning(f"The {unique_cell_id_col} column in {file} is empty.")
                 continue
             elif len(set(fov_names_parts)) > 1:
-                # find the first row that has different number of parts
+                # Report the first FOV with the maximum number of delimiter-separated parts.
                 first_row_with_different_parts = fov_names_parts.index(max(fov_names_parts))
                 first_row_with_different_parts_fov_name = fov_names[first_row_with_different_parts]
                 st.warning(_fov_parts_msg(fov_name_col, file, first_row_with_different_parts_fov_name))
@@ -188,9 +183,7 @@ def find_available_dfs_widget(df_folder_path, delimiter):
     return available_csv_files
 
 def check_and_merge_df_widget(available_dfs):
-    # what we can assume about each df:
-    # it is openable, has a unique and no-nan cell_id column
-    # between df, the cell_id is unique
+    # Inputs have been validated for readable data and nonmissing, globally unique cell IDs.
     first_df = pd.read_csv(available_dfs[0])
     combined = first_df.dropna(axis=1, how='all').copy()
     st.info("Merging datasets...")
@@ -199,20 +192,19 @@ def check_and_merge_df_widget(available_dfs):
         nxt_df = pd.read_csv(nxt)
         # remove all empty columns
         nxt_df = nxt_df.dropna(axis=1, how='all')
-         # --- 1.  Compute column differences -----------------------------
-        only_left  = combined.columns.difference(nxt_df.columns)      # in combined, not in nxt
+        only_left  = combined.columns.difference(nxt_df.columns)
         only_right = nxt_df.columns.difference(combined.columns)
         if len(only_left) != 0:
             st.write(f"Columns dropped from combined : {list(only_left)}")
         if len(only_right) != 0:
             st.write(f"Columns dropped from {nxt} : {list(only_right)}")
-        common = combined.columns.intersection(nxt_df.columns)        # fast set-intersection
+        common = combined.columns.intersection(nxt_df.columns)
         combined = pd.concat(
-            [combined[common], nxt_df[common]],        # input list
-            axis=0,                                # stack rows
-            ignore_index=True,                     # re-number the index
-            verify_integrity=False,                # no duplicate-index check; ignore_index renumbers
-            join="inner"                           # redundant but explicit
+            [combined[common], nxt_df[common]],
+            axis=0,
+            ignore_index=True,
+            verify_integrity=False,
+            join="inner"
         )
     st.write(f"Finished combining all datasets and got {len(combined)} cells!")
     categorical_cols = get_categorical_cols()

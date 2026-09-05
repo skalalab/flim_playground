@@ -1,4 +1,4 @@
-"""App-vs-export parity for the remaining analysis methods, on the real example datasets.
+"""App-vs-export parity for analysis methods on the example datasets.
 
 Covers histogram bin edges, GMM subpopulation numbering, the sina jitter +
 effect-size defaults, 2D marginals for every marginal type, PCA/UMAP embeddings, and
@@ -134,9 +134,7 @@ def feature_comparison(separate_by, effect_size, statistical_test="Welch's t-tes
     from src.vis.univar import feature_comparison_plot
 
     df, _ = load_app_df(CSV, CATS, "cell_id", "image_name")
-    # data_analysis.py collapses on the page, before the plot function -- so the app side
-    # of this harness has to as well, or it compares a collapsed script against an
-    # uncollapsed app.
+    # Match the page's replicate collapse before calling the plot function.
     plot_df = df.copy()
     row_id_col, row_id_label, fov_col = "cell_id", "ID", "image_name"
     if collapse_by:
@@ -185,9 +183,7 @@ def feature_comparison(separate_by, effect_size, statistical_test="Welch's t-tes
     R.check(f"sina groups: counts, y values, jitter offsets ({len(app_sigs)} groups, {n_pts} pts)",
             same, "" if same else f"app={[s[0] for s in app_sigs]} exp={[s[0] for s in exp_sigs]}")
 
-    # Absolute x positions. With separate_by these only agree if the export spaces
-    # sections by the app's section_spacing (univar.py) rather than a whole slot —
-    # otherwise every later section, and its divider, drifts right by 0.5 per section.
+    # Absolute x positions must use the app's section_spacing for separate_by groups.
     app_x = np.sort(np.concatenate([np.asarray(t.x, float) for t in app_point_traces(fig)]))
     exp_x = np.sort(scatter_points(ax)[:, 0])
     R.check("absolute x positions (section spacing)",
@@ -232,8 +228,7 @@ def feature_comparison(separate_by, effect_size, statistical_test="Welch's t-tes
 # ---------------------------------------------------------------- 2D distribution
 def two_d(marginal, fit_gmm):
     print(f"\n=== 2D Feature Distribution (marginal={marginal}, gmm={fit_gmm}) ===")
-    # NOTE: the app offers exactly 'gaussian fit' | 'boxplot' | 'violin'. Passing
-    # anything else makes the export draw no marginal at all and look like a bug.
+    # Exercise only marginal types offered by the app.
     patch_streamlit({"2D Gaussian Mixture Model": fit_gmm, "Marginal Plot Type": marginal})
     from src.vis.bivar import feature_2d_distribution_plot
 

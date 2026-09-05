@@ -19,14 +19,9 @@ from src.fit_helper import (
 
 
 def get_offset(decay_curve):
-    """
-    Estimate the constant background offset of a decay curve as the MEAN of the
-    last 10% of time bins (the late-time tail, assumed to be flat background once
-    the fluorescence has decayed).
+    """Estimate background as the mean of the last 10% of decay bins.
 
-    Note: this computes the mean, not the median. The old docstring/variable name
-    said "median" but the implementation has always used np.mean — the docstring
-    was wrong, the behavior is intentional and unchanged.
+    The late-time tail is assumed to contain flat background after fluorescence decays.
     """
     tail_bins_percentile = 90  # tail = bins from the 90% mark onward (last 10%)
 
@@ -42,17 +37,9 @@ def get_offset(decay_curve):
 def extract_texture_features_from_arrays(intensity_image, mask, fov_name, feature_prefix):
     """Per-cell intensity-texture features, cropping each ROI to its bounding box.
 
-    Equivalent to processing the full frame but orders of magnitude cheaper. The
-    texture functions only ever need a cell's own pixels plus a background
-    margin, so we crop to the cell's bbox instead of sweeping
-    ``morphology.opening`` over the whole (mostly-background) frame for every
-    cell — the dominant cost on large images with many cells.
-
-    The pad is ``2 * max(granularity radius)``: opening = dilation(erosion(.))
-    reads up to ``2*radius`` around a pixel, so that margin of real background
-    zeros makes each cropped value byte-identical to the full-frame result
-    (pinned in tests/test_texture_bbox_parity.py). Cropping also re-applies
-    ``mask == id`` so an overlapping neighbour's intensity never leaks in.
+    Cropping avoids a full-frame morphological opening per cell. Pad by twice
+    the largest granularity radius to cover erosion followed by dilation and
+    preserve full-frame results. Reapply the cell mask to exclude neighboring cells.
     """
     granularity_values = [1, 3, 5, 7]
     radial_distribution_values = [1, 2, 3, 4]
@@ -134,19 +121,11 @@ def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask
         cell_id = f"{fov_name}_{region.label}"
         if cell_id not in single_cell_morph_features_fov:
             single_cell_morph_features_fov[cell_id] = {}
-        # Add centroid x and y: image data is indexed in NumPy and most image processing libraries in "reverse"
+        # regionprops centroids use (row, column), corresponding to (y, x).
         single_cell_morph_features_fov[cell_id][f'{channel_name}_centroid_x'] = region.centroid[1]
         single_cell_morph_features_fov[cell_id][f'{channel_name}_centroid_y'] = region.centroid[0]
         for feature in mask_morphology_features:
-            # Read every regionprops property through region[feature], never behind a
-            # `feature in region` guard: RegionProperties defines no __contains__, so
-            # `in` falls back to __iter__, which lists only scikit-image's *current*
-            # spellings. major_axis_length / minor_axis_length are legacy aliases that
-            # __getitem__ still resolves (via PROPS) but __iter__ omits, so the guard
-            # answered False and those two columns were silently never written — while
-            # feature_schema kept offering them as derived-feature operands. An alias
-            # that a future release really drops now raises here, which is the right
-            # failure mode for a step that writes data files.
+            # Indexing resolves axis-length aliases that RegionProperties iteration omits.
             if feature == "circularity":
                 # Not a regionprops property at all — derived from two that are.
                 value = 4 * np.pi * region.area / region.perimeter**2 if region.perimeter > 0 else 0
@@ -233,11 +212,7 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
         intensity_images[f"{fit_feature_prefix}t3"] = t3
         intensity_images[f"{channel_name}_a3"] = 100 - a1 - a2
 
-    # Mean lifetimes are the multi-exponential case only. A single exponential's
-    # mean lifetime IS t1, so n=1 used to emit two bit-identical copies of it —
-    # and redundant columns are not free downstream: three perfectly collinear
-    # features inflate PCA's apparent dimensionality and split one feature's
-    # importance three ways. n=1 now emits neither, matching extract_fit_results.
+    # Emit mean lifetimes only for multiple components; for one component both equal t1.
     if num_components >= 2:
         if num_components == 2:
             tm = (a1 / 100 * t1) + ((100 - a1) / 100 * t2)
@@ -285,10 +260,10 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
 
 def extract_fit_results(channel_name, decay_curves, results, num_components, shifted_irf, time_axis, start, end, fixed_lifetimes=None):
     """
-    Extract fitting results for a specific channel and store them in single_cell_features_img
+    Return channel fit warnings and per-cell feature dictionaries.
 
     Args:
-        channel_name
+        channel_name: channel label used in feature-column names
         decay_curves: dict of cell_id -> decay curve
         results: fitting result dictionary from fit_curves
         num_components: number of fitting components
@@ -303,15 +278,14 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
     num_fixed = sum(1 for v in (fixed_lifetimes or {}).values() if v is not None and v > 0)
     num_free_params = num_components * 2 + 1 - num_fixed  # k amps + k taus + offset, minus fixed
     warning_msg = ""
-    # A degenerate (all-zero) IRF makes every fit feature NaN (fit_curves returns
-    # NaN params); flag it ONCE at the channel level rather than once per cell.
+    # Report an all-zero IRF once per channel; its fit parameters are NaN.
     irf_degenerate = shifted_irf is not None and not np.any(shifted_irf)
     if irf_degenerate:
         warning_msg += f"Channel {channel_name}: IRF is all zeros — lifetime fit features set to NaN. "
     for i, cell_id in enumerate(decay_curves.keys()):
         if cell_id not in single_cell_features_fov:
             single_cell_features_fov[cell_id] = {}
-        # amplitudes and offsets are just bookkeeping, should be default to uncategorized features (i.e. without prefix)
+        # Raw amplitudes and offsets use uncategorized feature names.
         single_cell_features_fov[cell_id][f"{channel_name}_amp1"] = results["amp1"][i]
         single_cell_features_fov[cell_id][f"{fit_feature_prefix}t1"] = results["t1"][i] * 1000  # Convert to ps
         single_cell_features_fov[cell_id][f"{channel_name}_offset"] = results["offset"][i]
@@ -333,8 +307,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
             # Calculate alpha values
             amp1, amp2 = results["amp1"][i], results["amp2"][i]
             total_amp = amp1 + amp2
-            # guard against division by zero AND non-finite amps: a failed fit
-            # returns NaN params, and NaN == 0 is False, so check finiteness too.
+            # Fractions and derived lifetimes require a finite, nonzero total amplitude.
             if not np.isfinite(total_amp) or total_amp == 0:
                 if not irf_degenerate:
                     warning_msg += _invalid_total_amp_warning(cell_id)
@@ -344,8 +317,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
             a1_pct = alpha1 * 100
             single_cell_features_fov[cell_id][f"{fit_feature_prefix}a1"] = a1_pct
             single_cell_features_fov[cell_id][f"{channel_name}_a2"] = 100 - a1_pct
-            # Calculate mean lifetime (in original units, not converted)
-            # Calculate intensity weighted average lifetime (in original units, not converted)
+            # Calculate means in ns, then convert output lifetimes to ps.
             t1_val = results["t1"][i]
             t2_val = results["t2"][i]
             tm_ns = alpha1 * t1_val + alpha2 * t2_val
@@ -362,8 +334,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
             # Calculate alpha values for 3 components
             amp1, amp2, amp3 = results["amp1"][i], results["amp2"][i], results["amp3"][i]
             total_amp = amp1 + amp2 + amp3
-            # guard against division by zero AND non-finite amps: a failed fit
-            # returns NaN params, and NaN == 0 is False, so check finiteness too.
+            # Fractions and derived lifetimes require a finite, nonzero total amplitude.
             if not np.isfinite(total_amp) or total_amp == 0:
                 if not irf_degenerate:
                     warning_msg += _invalid_total_amp_warning(cell_id)
@@ -390,8 +361,7 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
     return warning_msg, single_cell_features_fov
 
 def get_raw_phasor(decay_curve, h, w, time_axis=None, full_period=False):
-    # A signal-less cell (decay sums to 0) has an undefined phasor; return NaN
-    # deliberately instead of a 0/0 division (truncated) or a phasorpy NaN.
+    # Zero-total decays have undefined phasor coordinates.
     total = np.sum(decay_curve)
     if total == 0:
         return np.nan, np.nan
@@ -404,9 +374,7 @@ def get_raw_phasor(decay_curve, h, w, time_axis=None, full_period=False):
     return g_raw, s_raw
 
 def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf=None,fluorescence_lifetime_standard_image=None, fluorescence_lifetime_standard_lifetime=None, fluorescence_lifetime_standard_time_axis=None):
-    """
-    Extract fit free results for a specific channel and store them in single_cell_features_img (for now, only phasor is implemented)
-    """
+    """Return an error and per-cell calibrated phasor features for a channel."""
     if len(decay_curves) == 0:
         return f"Error: No decay curves found for {channel_name}", pd.DataFrame()
 
@@ -446,13 +414,12 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         if cell_id not in single_cell_features_fov:
             single_cell_features_fov[cell_id] = {}
 
-        # subtract the esetimated offset and clip the timebin to above or equal to 0
+        # Subtract estimated background and clip negative bins to zero.
         offset = get_offset(decay_curve)
         decay_curve = decay_curve - offset
-        # clip the timebin to above or equal to 0
         decay_curve = np.clip(decay_curve, 0, None)
 
-         # calculate the raw phasor coordinates
+        # Calculate raw phasor coordinates.
         g_raw, s_raw = get_raw_phasor(decay_curve, h=1, w=w, time_axis=time_axis, full_period=full_period)
         g_raw_2nd, s_raw_2nd = get_raw_phasor(decay_curve, h=2, w=w, time_axis=time_axis, full_period=full_period)
 
@@ -581,10 +548,9 @@ def extract_intensity_features(metadata, channel_name, fov_col_name, input_type,
                                 selected_feature_extractors, extracted_morphology_masks):
     """Extract intensity morphology and/or texture features for a channel.
 
-    Shared by both FLIM and Intensity-only branches so the logic lives in one
-    place.  Returns (feature_dfs, error_occurred) where *feature_dfs* is a list
-    of DataFrames (possibly empty) and *error_occurred* is True if the mask
-    could not be loaded.
+    Return (feature_dfs, error_occurred), where feature_dfs may be empty and
+    error_occurred signals a decay-curve or mask-loading failure requiring the
+    caller to skip this channel.
     """
     int_morph = "Intensity morphology" in selected_feature_extractors
     int_texture = "Intensity texture" in selected_feature_extractors
@@ -593,11 +559,8 @@ def extract_intensity_features(metadata, channel_name, fov_col_name, input_type,
     if not (int_morph or int_texture):
         return feature_dfs, False
 
-    # Decay (2D): tabular CSV (row = cell, column = time bin) — no image, no mask.
-    # The only intensity feature derivable is intensity_sum = sum of each cell's
-    # decay curve. Reuse the identical get_decay_curves(..., shift=False) call the
-    # lifetime path uses so the summed values match. Morphology is never offered
-    # for 2D (needs regionprops on a mask), so only texture is handled here.
+    # Decay (2D) has one cell per CSV row and no mask. Its only intensity feature
+    # is intensity_sum, computed from the same per-cell curves as lifetime features.
     if input_type == "Decay (2D)":
         if int_texture:
             error_msg, decay_curves = get_decay_curves(

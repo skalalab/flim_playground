@@ -1,15 +1,9 @@
-"""Drive every synthetic table through the whole user-table path and report what happens.
+"""Exercise reading, role review, interpretation, and profile round trips for tables.
 
-Not collected by pytest -- a standalone harness, run after make_review_datasets.py:
-
+After saving a working copy, its profile must exactly match the same file on reload.
+Run this standalone harness after generating its default datasets:
     uv run python tests/make_review_datasets.py
     uv run python tests/stress_review_datasets.py
-
-For each file it walks the page's own sequence -- read_table, the gate's working copy,
-working_copy_arguments, interpret_table -- and then the round trip the whole design rests
-on: **save the working copy, re-read the same file, and the profile must match it
-exactly**. A dataset that fails that would send its own author back to the chooser on
-every upload, forever, and no unit test covers the combination.
 """
 import argparse
 import sys
@@ -42,12 +36,7 @@ SWEEPABLE = {".csv", ".tsv", ".txt", ".xlsx", ".xlsm", ".ods"}
 
 
 def upload(path):
-    """A genuine UploadedFile, not a named BytesIO.
-
-    read_table goes through the *decorated* _read_table_cached, and st.cache_data hashes
-    an object carrying a `name` down its file-path branch -- os.path.getmtime(name),
-    which raises on a name that is not a path. UploadedFile has a hasher branch of its own.
-    """
+    """Use UploadedFile so Streamlit's cache hashes upload contents instead of a file path."""
     from streamlit.runtime.uploaded_file_manager import UploadedFile, UploadedFileRec
 
     return UploadedFile(UploadedFileRec("id", path.name, "text/csv", path.read_bytes()), None)
@@ -81,9 +70,7 @@ def one(path):
         return "BLOCKED", f"{summary} | {blocked.replace(chr(10), ' ')[:96]}", failures
 
     args = working_copy_arguments(roles, groups)
-    # "" for the FOV column, exactly as pages/data_analysis.py passes it here: the
-    # analysis profile has no FOV role, so on a user table a field-of-view column is an
-    # ordinary categorical and resolve_effective_fov_col answers None.
+    # User tables have no designated FOV role, matching the page's blank FOV argument.
     frame, feature_groups, ok, row_id = interpret_table(
         df.copy(), args["categorical_cols"], args["unique_row_id_col"],
         "", ignored_cols=args["ignored_cols"],
@@ -110,10 +97,7 @@ def one(path):
 
 
 def main():
-    # --dir points the sweep at tables this feature was *not* tuned on, which is the
-    # only way it meets a file nobody wrote for it: a colleague's export, a folder of
-    # hand-made reader probes. The synthetic set is the default because it is the one
-    # with stated expectations to check against.
+    # Use --dir for external datasets; the default synthetic set has documented expectations.
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dir", type=Path, default=DATA,
                         help="directory of tables to sweep (default: tests/review_data)")

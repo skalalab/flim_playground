@@ -1,8 +1,6 @@
-"""Capture what an exported Matplotlib figure actually draws, per point.
+"""Capture exported Matplotlib point positions, colors, and alpha values.
 
-scatter_with_encodings is extracted into all seven method builders, so any change to
-it must leave every point's position, colour and alpha untouched — only the grouping
-of the draw calls may differ.
+Compare rendered points independently of how scatter calls group them.
 """
 import json, pathlib, sys
 import numpy as np, pandas as pd

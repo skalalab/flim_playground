@@ -1,16 +1,9 @@
-"""
-Benchmark and correctness test: parallel vs sequential fitting.
+"""Benchmark sequential and parallel fitting of synthetic two-component decays.
 
-Synthesises N two-component decays with Poisson noise, runs fit_curves
-with parallel ON and OFF, then compares wall-clock time and result agreement.
-
-Usage:
+Compare timing and numerical results on Poisson-noisy data. Run manually:
     PYTHONPATH=. uv run python tests/bench_parallel_fit.py
     PYTHONPATH=. uv run python tests/bench_parallel_fit.py --curves 200 --mode Hybrid --fit-shift
-
-Named bench_ rather than test_: it has no test functions, so pytest imported it
-and ran nothing. Run it by hand when touching the parallel path; the correctness
-claim it makes is guarded continuously by test_fit_determinism.py.
+Automated correctness coverage lives in test_fit_determinism.py.
 """
 
 import argparse

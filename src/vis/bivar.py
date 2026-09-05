@@ -221,7 +221,7 @@ def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i, scatter_c
    # Calculate eigenvalues and eigenvectors for ellipse orientation
     eigenvals, eigenvecs = np.linalg.eigh(cov)
     angle = np.degrees(np.arctan2(eigenvecs[1, 0], eigenvecs[0, 0]))
-    # Create confidence ellipse (e.g., 2-sigma ~ 95% confidence)
+    # Scale the ellipse to 95% probability for a 2D Gaussian.
     r = np.sqrt(chi2.ppf(0.95, df=2))
     width = 2 * r * np.sqrt(eigenvals[0])
     height = 2 * r * np.sqrt(eigenvals[1])
@@ -237,9 +237,7 @@ def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i, scatter_c
     ellipse_x_rot = ellipse_x * cos_angle - ellipse_y * sin_angle + mean_x
     ellipse_y_rot = ellipse_x * sin_angle + ellipse_y * cos_angle + mean_y
 
-    # Add ellipse to plot. scatter_cls, not go.Scatter: the ellipse is drawn after the
-    # points on the same axes, and Plotly paints the whole WebGL canvas above every SVG
-    # trace, so an SVG ellipse would sit under the cloud it outlines.
+    # Use the points' renderer so the ellipse can layer above them in WebGL.
     fig.add_trace(scatter_cls(
         x=ellipse_x_rot,
         y=ellipse_y_rot,
@@ -273,8 +271,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         selected_marginal_plot_type = st.selectbox(
             'Marginal Plot Type',
             ['gaussian fit', 'boxplot', 'violin'],
-            index=['gaussian fit', 'boxplot', 'violin'].index(marginal_plot_type), # Set default based on function arg
-            key=f'marginal_plot_type_selector_{selected_x}_{selected_y}' # More unique key
+            index=['gaussian fit', 'boxplot', 'violin'].index(marginal_plot_type),
+            key=f'marginal_plot_type_selector_{selected_x}_{selected_y}'
         )
     with col2:
         st.write("")
@@ -296,7 +294,6 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         else:
             df[selected_y] = np.log10(df[selected_y] + 1e-6)
 
-    # Use the new helper for color, shape, opacity
     grouped, color_map, shape_map, opacity_map, group_keys = get_point_visual_mappings(
         df,
         color_by=color_by,
@@ -371,9 +368,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                 x_range = np.linspace(x_clean.min(), x_clean.max(), 100)
                 y_range = reg_model.predict(x_range.reshape(-1, 1))
 
-                # Add regression line to plot
-                # point_cls, not go.Scatter: this line is drawn after the points on the
-                # same axes, so in WebGL mode an SVG line would render under the cloud.
+                # Use the points' renderer so the regression line can layer above them.
                 fig.add_trace(point_cls(
                     x=x_range,
                     y=y_range,
@@ -662,8 +657,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         axis_labels=[g_feature, s_feature],
         text_col=unique_row_id_col,
         customdata_col=fov_name_col,
-        # The identifier may be an invented row number, so the value needs its label:
-        # a bare "42" says nothing about what it counts.
+        # Label identifiers because they may be generated row numbers.
         hovertemplate=hover_field(row_id_label, "%{text}"),
         show_counts=st.session_state.get("plot_show_group_counts", False)
     )

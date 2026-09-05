@@ -1,8 +1,5 @@
-"""phasor_params_widget detects which harmonics a fit-free channel supports.
-A channel only supports a harmonic when BOTH its G and S phasor coordinates are
-present; otherwise the harmonic list is empty. The empty-list case previously
-made the harmonic selectbox empty, leaving the laser-rate `f` unassigned and
-crashing the widget with UnboundLocalError.
+"""A fit-free channel supports a harmonic only when both G and S are present.
+The parameter widget handles an empty harmonic list without raising.
 """
 import sys
 from pathlib import Path

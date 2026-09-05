@@ -1,20 +1,15 @@
-"""Pytest entry point for the visual-encoding checks.
-
-The checks live in ``check_*.py`` rather than ``test_*.py`` so pytest does not collect
-their module bodies directly — each runs standalone and exits non-zero on failure, which
-is also how they are convenient to run by hand while iterating:
+"""Pytest entry points for standalone visual-encoding checks.
+check_*.py scripts exit nonzero on failure and can also run directly, for example:
 
     python tests/check_subcolor.py
 
-Two of the checks are golden-image style: they re-render figures and compare every point
-against a stored baseline. Regenerate a baseline only when a change is *meant* to move
-points, and say so in the commit:
+Regenerate point baselines only when a change intentionally moves points:
 
     python tests/capture_sina.py tests/sina_baseline.json
-    python tests/capture_export.py          # writes tests/export_baseline.json
+    python tests/capture_export.py
 
-capture_export.py takes its output directory as argv[1] and chdir()s into it, so a
-relative path there resolves twice; with no arguments it defaults to this directory.
+capture_export.py defaults to this directory. If supplying its output directory,
+use an absolute path because it changes into that directory.
 """
 import json
 import pathlib
@@ -41,12 +36,9 @@ def _load(name):
 
 
 def test_sina_points_have_not_moved():
-    """The sina jitter comes from a KDE fitted per (separate section, colour group) with
-    a reseeded rng; any change to the drawing loop must leave every point exactly where
-    it was, or the cluster silhouette changes for reasons the reader cannot see.
-
-    check_sina_scope.py asserts the *rule* (no channel may move a point); this asserts
-    the *numbers*, so a change to the KDE itself is caught too."""
+    """Compare sina coordinates with the baseline to catch changes to KDE or jitter.
+    check_sina_scope.py separately checks that encoding choices cannot move points.
+    """
     sys.path.insert(0, str(HERE))
     sys.path.insert(0, str(ROOT))
     import capture_sina

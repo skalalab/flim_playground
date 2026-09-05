@@ -339,6 +339,18 @@ def _render_gate(uploaded_file, df, profiles=None):
     for notice in st.session_state.pop("_review_notices", []):
         st.info(notice)
     _group_section(df)
+    st.markdown(
+        "**Column preview**",
+        help="Use each column's **Role** dropdown to choose how it is used:\n\n"
+             "- **Row ID**: one column of unique identifiers with no missing values. "
+             "Optional; row numbers are generated if none is assigned.\n"
+             "- **Categorical**: labels for grouping or filtering, such as treatment, "
+             "donor, or batch, even when encoded as numbers.\n"
+             "- **Numerical**: measurements to plot or analyze, such as lifetime "
+             "or cell area.\n"
+             "- **Ignore**: exclude the column from analysis.\n\n"
+             "Only Numerical columns can be assigned to feature groups.",
+    )
     _editor(df)
     # Use the corrected roles to announce row numbers before they are generated.
     numbering = row_id_notice(st.session_state._review_roles)

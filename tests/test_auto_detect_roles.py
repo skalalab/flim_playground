@@ -87,7 +87,7 @@ def test_an_identifier_qualifies_in_either_dtype():
     """
     for values, dtype in (([1, 2, 3], "int64"), ([1.0, 2.0, 3.0], "float64")):
         df = pd.DataFrame({"g": ["a", "a", "b"], "cell_id": values})
-        assert df["cell_id"].dtype == dtype     # the dtypes that made this necessary
+        assert df["cell_id"].dtype == dtype     # Whole-valued spreadsheet columns can use either dtype.
         assert detect_column_roles(df)["cell_id"] == ROLE_ROW_ID, values
 
 
@@ -98,8 +98,7 @@ def test_an_identifier_with_gaps_still_qualifies():
 
 
 def test_a_boolean_column_is_never_the_identifier():
-    """Two rows make a bool column all-distinct and its values are whole, so both
-    questions pass -- and it is still a two-level category, not an identifier."""
+    """Boolean values remain categorical even when both rows are unique and whole-valued."""
     df = pd.DataFrame({"flag": [True, False], "feat": [1.5, 2.5]})
     assert ROLE_ROW_ID not in detect_column_roles(df).values()
 
@@ -153,7 +152,7 @@ def test_the_fov_role_is_never_guessed():
 
 
 def test_nothing_is_ignored_by_guess_while_it_still_has_values():
-    """Ignore stays a decision, not an assumption -- see the empty column below."""
+    """Nonempty text columns are categorical; only empty columns are inferred as Ignore."""
     df = pd.DataFrame({"cell_id": ["a", "b"], "notes": ["p", "q"], "feat": [1.0, 2.0]})
     assert "ignore" not in detect_column_roles(df).values()
 
@@ -162,7 +161,7 @@ def test_a_column_with_no_values_at_all_is_ignored():
     """An all-NaN column is ignored even when pandas assigns it a numerical dtype."""
     df = pd.DataFrame({"cell_id": ["a", "b"], "notes": [float("nan")] * 2,
                        "feat": [1.0, 2.0]})
-    assert df["notes"].dtype == "float64"   # the dtype that made this necessary
+    assert df["notes"].dtype == "float64"   # pandas assigns an all-NaN column a numeric dtype.
     assert detect_column_roles(df)["notes"] == ROLE_IGNORE
 
 

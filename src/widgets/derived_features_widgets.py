@@ -1,15 +1,9 @@
-"""Compact Configuration-page editor for per-profile derived features.
+"""Configuration-page editor for per-profile derived features.
 
-Revealed by a "Derived features" checkbox on the (already large) Configuration
-page (``main.py``), so it must stay self-contained and small. It reads the current
-list from the active-profile ``cfg`` for display, builds operand choices from the
-profile's *live* extractor selections — categorized features plus the
-uncategorized bookkeeping columns (``predict_feature_columns_from_cfg``) — and
-persists Add/Delete immediately via ``set_derived_features`` — mirroring the
-profile create/delete pattern — so an edit survives the Streamlit rerun without
-waiting for the page-level "Update Configuration" save.
-
-See ``src/derived_features.py`` for the storage schema and safe evaluator.
+Build operand choices from the active profile's current extractor selections,
+including uncategorized numeric columns. Add/Delete persist immediately through
+``set_derived_features`` so edits survive reruns before Update Configuration.
+See ``src/derived_features.py`` for the storage schema and evaluator.
 """
 import re
 
@@ -21,8 +15,7 @@ from src.derived_features import alias_names, evaluate_expression, is_single_ope
 from src.emojis import happy_emoji, sad_emoji
 from src.feature_schema import predict_feature_columns_from_cfg
 
-# Shown as the help "?" on the reveal checkbox in main.py (st.expander has no help
-# parameter in Streamlit 1.54, so the checkbox carries this description instead).
+# Help text for the reveal checkbox in main.py.
 DERIVED_FEATURES_HELP = (
     "Build new features from arithmetic over already-extracted features "
     "(e.g. a redox ratio). Each becomes a "
@@ -40,9 +33,7 @@ _TEMPLATES = {
     "Custom…": None,
 }
 
-# A lone +, -, or * is a Markdown bullet-list marker, so st.button (which renders
-# its label as Markdown) shows it blank. Escape the label; the *raw* operator is
-# still what gets appended to the formula. /, (, ) aren't list markers -> fine.
+# Escape Markdown list markers in button labels; append the raw operator.
 _OP_LABELS = {"+": r"\+", "-": r"\-", "*": r"\*"}
 
 
@@ -75,19 +66,13 @@ def _validate(expression, operands):
 
 
 def render_derived_features_widget(cfg, active_profile):
-    """Render the derived-features editor for the active profile.
+    """Render the active profile's derived-features editor.
 
-    *cfg* is the active profile's config sub-dict (used for display + operand
-    prediction); writes go straight to disk via ``set_derived_features``. The
-    section-level description lives on the reveal checkbox in main.py
-    (``DERIVED_FEATURES_HELP``), not here.
+    Use ``cfg`` for display and operand prediction; persist edits through
+    ``set_derived_features``. The reveal checkbox carries DERIVED_FEATURES_HELP.
     """
-    # Every builder INPUT widget is keyed by a per-profile "generation" counter that the
-    # Add handler bumps, so the next run gives them brand-new keys and they come up
-    # empty. This is the only reset that works live: deleting a widget's session_state
-    # key leaves its identity unchanged, so Streamlit restores the frontend value on the
-    # rerun (AppTest, having no frontend, resets either way). The Template selectbox is
-    # deliberately not generation-scoped, so the template persists across adds.
+    # Bump per-profile generation keys after Add to reset builder inputs. Deleting
+    # keys alone can restore browser values; keep the template key stable across adds.
     gen = st.session_state.setdefault(f"df_gen_{active_profile}", 0)
 
     existing = cfg.get("derived_features", []) or []
@@ -108,12 +93,8 @@ def render_derived_features_widget(cfg, active_profile):
     else:
         st.caption("No derived features yet. Add one below.")
 
-    # --- Operand choices come from the profile's *current* extractor selections:
-    # the categorized measurements first, then the uncategorized bookkeeping
-    # columns ({channel}_offset, _amp1, _reduced_chi_square, _centroid_x/y, the
-    # a2/a3 remainders). Those carry no extractor prefix but are ordinary per-cell
-    # numbers — background-correcting an intensity needs the fit's offset — so
-    # they are operands too, just listed last.
+    # List current extractor measurements first, then uncategorized numeric
+    # columns such as fit offsets, amplitudes, and centroids, which are valid operands.
     available = predict_feature_columns_from_cfg(cfg, include_uncategorized=True)
     if not available:
         st.warning(
@@ -210,8 +191,6 @@ def render_derived_features_widget(cfg, active_profile):
             "expression": expression.strip(),
             "operands": list(operands),
         }])
-        # Bump the generation so every input widget is recreated with a fresh key
-        # (hence empty/default) on the next run. See the note at the top of this
-        # function for why deleting the keys doesn't reset them in the live app.
+        # Fresh generation keys reset builder inputs on the next render.
         st.session_state[f"df_gen_{active_profile}"] = gen + 1
         st.rerun()

@@ -9,8 +9,7 @@ from src.fit_helper import forward_pass, irf_shift, nll_poisson, reduced_chi_squ
 
 def display_shift_data_widget(results, channel_name, choose_shift_method, time_axis=None, period=None, num_components=None, log_y=True, start=None, end=None, fixed_lifetimes=None):
 
-    # combines image_name and shift from results into a df
-    # kflow decay_id is the cell_name, otherwise it is the image_name
+    # decay_id names a cell for kflow inputs and an image for other inputs.
     plot_df =  pd.DataFrame({"decay_id": results["decay_id"], "shift": results["shift"]})
     color = get_context_theme_color()
 
@@ -32,7 +31,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
             fillcolor='rgba(0,0,0,0)',
             line_color='rgba(0,0,0,0)',
             hovertext=plot_df["decay_id"],
-            customdata=plot_df["decay_id"], # Assign image_name to customdata
+            customdata=plot_df["decay_id"],
             hovertemplate="<b>Shift</b>: %{y}<br>%{hovertext}<extra></extra>",
         ))
         # Set hover label colors based on theme
@@ -65,8 +64,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
             st.plotly_chart(fig) # no event for fit free
             event = None
         else:
-            # display the shift in an interactive plot scatter plot, the y-axis is the shift. When click on the point, it will show the curve with the fitted line
-            # prepare the data
+            # Selecting a fitted shift displays its decay curve in the adjacent column.
             try:
                 decay_curves = results["decay_curves"]
                 shift_data = results["shift"]
@@ -86,8 +84,7 @@ def display_shift_data_widget(results, channel_name, choose_shift_method, time_a
 
     with cols[1]:
         if event and event.selection and event.selection.points:
-        # each point dict has point_index, customdata, x, y, etc.
-            p = event.selection.points[0]         # first (or loop them)
+            p = event.selection.points[0]         # Display the first selected point.
 
             idx = p["point_index"]                # row index back into plot_df
             clicked_shift_identifier = plot_df.iloc[idx]["decay_id"]

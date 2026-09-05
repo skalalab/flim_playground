@@ -1,9 +1,7 @@
 """Walk every Data Analysis control and check the app and the exported script agree.
 
-`parity_methods.py` proves each METHOD agrees on full data with default settings. This
-walks the CONTROL surface instead: every widget on the page, each option in turn, from a
-per-method baseline. Runs on a filtered subset (see SUBSET) so the matrix stays quick —
-the full-size runs live in parity_methods.py.
+Exercise control options from per-method baselines on a filtered subset (SUBSET)
+to keep the matrix quick. parity_methods.py covers full-data default settings.
 
 Run:  uv run python tests/parity/parity_controls.py [all|shared|filters|enc|fc|hist|2d|phasor|dr|clf]
 """
@@ -116,10 +114,8 @@ def _alphas_exp(ax):
 def compare_alphas(tag, fig, ax, main_axis_only=False):
     """The opacity channel, point by point.
 
-    The two engines take it in differently — a scalar `marker.opacity` per Plotly trace
-    against a per-point alpha array in one Matplotlib scatter call — so nothing else here
-    would notice if the export applied a different ramp. Compared as multisets: the paint
-    order is deliberately not the same (scatter_with_encodings' docstring).
+    Compare Plotly's per-trace marker.opacity with Matplotlib's per-point alpha
+    arrays as multisets, because the renderers use different paint orders.
     """
     app, exp = _alphas_app(fig, main_axis_only=main_axis_only), _alphas_exp(ax)
     same = app.shape == exp.shape and np.allclose(app, exp, atol=1e-9)
@@ -249,10 +245,8 @@ def run_fc(ctrl, tag):
 
     df = _load(ctrl)
     plot_df = df.copy()
-    # data_analysis.py collapses BEFORE the plot and BEFORE the log, and resolves the
-    # decoration channels against what the collapse dropped. Both halves of that have to
-    # happen here, or this harness compares a collapsed export against an uncollapsed app
-    # and reports a point-count mismatch that reads like a jitter bug.
+    # Match the page: collapse before logging or plotting, then disable encoding
+    # channels whose columns varied within a collapsed group.
     collapse_by = ctrl.get("collapse_by")
     row_id_col, row_id_label, fov_col = "cell_id", "ID", "image_name"
     shape_by, opacity_by = ctrl.get("shape_by"), ctrl.get("opacity_by")
@@ -453,9 +447,7 @@ def shared_controls():
     case(run_2d, "legend_size=18", {"legend_size": 18}, main_axis_only=True)
     case(run_2d, "colormap=Set2", {"colormap": "Set2"}, colors=True, main_axis_only=True)
 
-    # "Show group counts (n) in legend" — a real Plot Styling control, read from
-    # st.session_state by all 7 app plot paths. base_state() now reads the same key,
-    # so flipping it here is all it takes for the export to carry it.
+    # Both app plots and base_state() read the group-count toggle from session state.
     print("\n-- show_group_counts --")
     import re
 
@@ -464,13 +456,7 @@ def shared_controls():
     from src.vis.helpers import format_group_label
 
     def _plain(label):
-        """Strip Plotly's legend markup so the two renderers can be compared.
-
-        The app writes the count as `<br>` + a 0.75em span because Plotly renders
-        markup in legend entries; Matplotlib renders none, so the exported label is
-        the same text with a newline. Comparing the raw strings can never match even
-        when the export is correct — which is what made this look like a permanent gap.
-        """
+        """Convert Plotly legend markup to plain text with Matplotlib-style newlines."""
         return re.sub(r"<[^>]+>", "", label.replace("<br>", "\n"))
 
     st.session_state["plot_show_group_counts"] = True
@@ -498,20 +484,11 @@ def shared_controls():
 
 
 def _encoding_csv():
-    """inhibitors.csv plus two encoding columns the stock file has no equivalent of.
+    """Add numeric and missing-value encoding columns to inhibitors.csv.
 
-    Every categorical column in the example data is a plain string with no missing
-    values, so two things nothing else exercises: `passage` holds numeric-looking
-    values whose numeric order differs from their lexical order (2, 4, 10), and
-    `batch` has genuine NaNs.
-
-    Neither can diverge as long as both sides keep calling the same
-    `check_and_fix_df` (src/dataset_io.py:294 fills NaN with "N/A" then casts to str,
-    so the app's shape_map keys and the export's `.unique().astype(str)` are the same
-    strings). That shared call is exactly what these cases pin: the app keeps raw
-    dtypes in `create_shape_groups_and_map`, so if either side ever stopped
-    normalising, a numeric encoding column would order differently and a missing one
-    would split into a "nan" group on one side and "N/A" on the other.
+    passage uses 2, 4, and 10 to distinguish numeric from lexical ordering; batch
+    contains NaNs. Cases using this fixture verify that both paths normalize
+    category values to the same strings, including "N/A" for missing values.
     """
     path = WORK / "encodings.csv"
     if not path.exists():
@@ -550,9 +527,7 @@ def encoding_controls():
 
     fig, ax, _ns, _state = case(run_fc, "enc: numeric shape + missing opacity",
                                 {**common, "shape_by": "passage", "opacity_by": "batch"})
-    # Opacity is the one ordinal channel, so create_opacity_mapping pins "N/A" below the
-    # ramp (na_opacity=0.15) instead of letting missing data outrank a real level. Both
-    # sides have to read that off the same shared function.
+    # The shared opacity mapping assigns "N/A" 0.15, below the ordinal ramp.
     R.check("enc: missing opacity level is held below the ramp on both sides",
             np.isclose(_alphas_app(fig).min(), 0.15)
             and np.isclose(_alphas_exp(ax).min(), 0.15),
@@ -603,19 +578,14 @@ def fc_controls():
         ("fc: custom_order", {"custom_order": {"compare_groups": ["IAA", "2DG"]}}),
         ("fc: shape_by", {"shape_by": "dish"}),
         ("fc: opacity_by", {"opacity_by": "dish"}),
-        # Both encodings at once, which no other Feature Comparison case sets: the sina
-        # jitter is fitted per (colour, shape, opacity) subgroup, so this is the only
-        # case that exercises the nested split rather than a single encoding level.
-        # The shared-controls "shape+opacity" case runs on 2D, which does not jitter.
+    # Exercise sina jitter split jointly by colour, shape, and opacity.
         ("fc: shape+opacity", {"shape_by": "dish", "opacity_by": "cell_line"}),
         ("fc: everything", {"log_y": True, "add_boxplot": True, "connect_means": True,
                             "effect_size_method": "Absolute Cohen's d",
                             "mean_or_median": "mean",
                             "statistical_test": "Welch's t-test",
                             "separate_by": "cell_line", "shape_by": "dish"}),
-        # Collapse by: one point per replicate, per x group, holding the MEAN of its
-        # cells. The frame the plot sees is a different SHAPE from the filtered one, so
-        # every downstream number moves -- point count, box quartiles, effect size n.
+    # Collapse to replicate means within x groups; check counts, quartiles, and effect sizes.
         ("fc: collapse=dish", {"collapse_by": "dish"}),
         ("fc: collapse+separate_by", {"collapse_by": "dish", "separate_by": "cell_line"}),
         # The SuperPlot: one colour per replicate, held across every x group.
@@ -624,8 +594,7 @@ def fc_controls():
         ("fc: collapse+boxplot+effect", {"collapse_by": "dish", "add_boxplot": True,
                                          "effect_size_method": "Absolute Cohen's d",
                                          "mean_or_median": "mean"}),
-        # A decoration FINER than the replicate: the collapse drops it, and both sides
-        # must agree that the channel is off rather than one drawing symbols.
+    # Disable encoding channels that vary within a replicate.
         ("fc: collapse drops a finer decoration", {"collapse_by": "dish",
                                                    "shape_by": "image_name"}),
     ]:
@@ -633,13 +602,11 @@ def fc_controls():
 
 
 def subcolor_controls():
-    """The subcolor channel: colour means the nested VALUE, not the x-axis group.
+    """Check one global color and legend entry per subcolor value in Feature Comparison.
 
-    Feature Comparison only (data_analysis.py gates it on the sina layout), and it shares
-    its picker with Shape by, so shape+subcolor is unreachable and not tested. What the
-    cases have to pin is the part that is global rather than per-group: one colour and one
-    legend entry per distinct value across the whole figure, and — because the export
-    builds its own palette from the same seed — the same colour on both sides.
+    Both renderers must assign the same colors across x groups. The page offers
+    subcolor only for sina plots and shares its picker with shape, so the two
+    encodings cannot be selected together.
     """
     print("\n=== Subcolor channel (Feature Comparison) ===")
     import re
@@ -649,10 +616,8 @@ def subcolor_controls():
     def _plain(label):
         return re.sub(r"<[^>]+>", "", label.replace("<br>", "\n"))
 
-    # (tag, controls, the subcolour values, the colour groups they are nested in). The
-    # colour groups are listed to be checked ABSENT from the legend: with subcolor on they
-    # are named only by the x ticks. Other channels still add their own entries (opacity
-    # does), so the legend is not asserted to hold nothing else.
+    # Cases hold (tag, controls, subcolor values, x groups). X groups must appear
+    # only in ticks; the legend may also contain entries for other encodings.
     cases = [
         # dish under SUBSET: two values, each present in both colour groups.
         ("subcolor: dish", {"subcolor_by": "dish"}, {"dish1", "dish2"}, {"IAA", "2DG"}),
@@ -685,10 +650,7 @@ def subcolor_controls():
                 and f"subcolor: {ctrl['subcolor_by']}" in ax.get_title(),
                 f"app={app_title!r} exp={ax.get_title()!r}")
 
-    # Counts: the legend entry covers every colour group the value appears in, so its
-    # count is over the whole figure and not per group. Both sides count on the
-    # NaN-filtered frame — the app on `plotted`, the export after its own notna() — which
-    # is what these numbers pin.
+    # Subcolor legend counts span all x groups and include only plotted, non-NaN rows.
     st.session_state["plot_show_group_counts"] = True
     try:
         fig, ax, _ns, _state = run_fc({"subcolor_by": "dish"}, "subcolor_counts")
@@ -834,12 +796,9 @@ def _seed_filter_session(cat_selections, num_filters):
 
 
 def filter_controls():
-    """End-to-end filter parity: the app's filters_widget() vs the exported script.
+    """Compare filters_widget() output with exports using the page's filter collectors.
 
-    Everything else in this file mirrors filtering with apply_filters(). This section
-    instead runs the real chain — filters_widget() for the app's frame, and the page's
-    real _collect_* helpers for what the export button captures — so a disagreement
-    between the widget and the capture/replay would actually show up.
+    Exercise widget, capture, and replay together instead of using apply_filters().
     """
     print("\n=== Filter controls (real widget + real capture) ===")
     import streamlit as st
@@ -861,17 +820,11 @@ def filter_controls():
         ("cat+num: two of each",
          {"treatment": ["IAA", "2DG"], "dish": ["dish1"]},
          [(VAR, ">", 800.0), (VAR2, "<=", 2.0)]),
-        # Out-of-range threshold: filter_widgets.py clamps it to the CURRENT filtered
-        # frame's max and writes the clamped value back to session state, so the capture
-        # sees the clamp rather than what was typed. Both sides must still agree.
+    # Capture thresholds after the widget clamps them to the current filtered range.
         ("num: threshold clamped", {}, [(VAR, ">", 800.0), (VAR2, "<=", 99.0)]),
-        # "Except:" (multiselect_modes.py) is stored as the sentinel plus the values to
-        # drop, but captured as the values it KEEPS -- so these carry the keep-list the
-        # capture has to produce, written out rather than derived through chosen_items so
-        # the expectation cannot follow the code it is checking. The app masks with
-        # resolve_selections' narrowed list while the export gets the full-frame
-        # complement; conjunction of masks is what makes those agree, and combining
-        # "Except:" with a second filter is where it would show if it did not.
+    # "Except:" stores exclusions but exports a keep-list. Explicit expectations
+    # verify that full-frame complements agree with the widget's narrowed choices,
+    # including when combined with another filter.
         ("cat: except one", {"treatment": [EXCEPT_LABEL, "IAA"]}, [],
          {"treatment": ["Cyanide", "Antimycin", "0-control", "2DG"]}),
         ("cat: except several", {"treatment": [EXCEPT_LABEL, "IAA", "2DG"]}, [],
@@ -894,8 +847,7 @@ def filter_controls():
         # what the export button would capture from that same session state
         cap_cat = collect_cat(CATS, full)
         cap_num = collect_num()
-        # The capture must reflect the state the widget SETTLED on, which is not always
-        # what was typed: an out-of-range threshold is clamped and written back.
+        # Capture the final widget state, including threshold clamps.
         settled = [(f, st.session_state[f"num_filter_operator_{i}_{f}"],
                     float(st.session_state[f"num_filter_threshold_{i}_{f}"]))
                    for i, (f, _o, _t) in enumerate(num_f)]
@@ -931,10 +883,8 @@ def filter_controls():
                 len(app_ids) < len(full) or tag == "no filter (All)",
                 f"{len(app_ids)} of {len(full)}")
 
-    # Excluding every value of a column: the app warns and draws nothing, so there is no
-    # export button to press and only the capture is checkable. It must say isin([]) --
-    # dropping the filter as falsy would export the whole dataset for a selection that
-    # shows none of it.
+    # With every value excluded there is no plot/export button. Check that capture
+    # preserves the empty keep-list, which must filter out every row.
     print("\n-- filters: except everything --")
     patch_streamlit()
     all_treatments = full["treatment"].unique().tolist()

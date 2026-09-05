@@ -1,22 +1,10 @@
-"""Overlays drawn after the points must use the points' own renderer.
+"""Overlays on WebGL points use the WebGL renderer too.
+Plotly composites the WebGL canvas above SVG traces regardless of trace order;
+SVG zorder cannot cross that boundary. Tests enable every overlay at a forced
+WebGL threshold.
 
-Plotly composites WebGL and SVG by DOM layer, not by trace order. Every SVG cartesian
-trace lands in the first ``<svg class="main-svg">``; the whole WebGL canvas sits in
-``div.gl-container``, which the DOM places *after* that svg. So once a figure crosses
-``WEBGL_POINT_THRESHOLD`` and the points become ``go.Scattergl``, any SVG trace drawn
-after them on the same axes is painted underneath -- silently, with no error and no
-warning. ``zorder`` cannot rescue it: it only reorders traces within the SVG layer.
-
-This bit five overlays at once -- the box plot, the mean connector, the 2D regression
-line, the 2D GMM ellipses and the phasor k-means hulls -- every one of them behind an
-optional checkbox that the plot functions' defaults leave off, so nothing else in the
-suite renders them. This module turns those checkboxes on, forces WebGL, and fails if an
-overlay ever lands in the SVG layer after the points again.
-
-The single deliberate exception is ``feature_comparison_plot``'s ``go.Box``: Plotly has
-no WebGL box trace, so the trace is kept (buried) for its hover statistics and legend
-entry, and its outline is redrawn as ``layer="above"`` shapes, which are the one thing
-that paints on top of the canvas.
+Box traces retain hover and legend data, while layer="above" shapes draw their
+visible outlines because Plotly has no WebGL box trace.
 """
 import sys
 from pathlib import Path
@@ -34,9 +22,7 @@ from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
 from src.vis.multivar import dimension_reduction_plot
 from src.vis.univar import feature_comparison_plot
 
-# Every checkbox that gates an overlay drawn after the points. Enabled by label rather
-# than by turning all checkboxes on, so a future "Log Y" (which changes the data, not the
-# layering) cannot silently alter what this module measures.
+# Enable only overlay checkboxes so data-transform controls cannot alter the fixture.
 OVERLAY_TOGGLES = {
     "Add boxplot",
     "Connect means",
@@ -53,12 +39,7 @@ S_COL = f"{_PHASOR_PREFIX}S(1st)"
 
 @pytest.fixture
 def webgl(monkeypatch):
-    """Force the WebGL renderer and switch every overlay on.
-
-    The threshold is patched to 0 rather than feeding in 5000+ synthetic rows: the bug is
-    about which renderer each trace uses, not about point count, and a tiny frame keeps
-    the GMM and k-means fits fast and deterministic.
-    """
+    """Force WebGL on a small frame and enable overlays to keep clustering fast and deterministic."""
     monkeypatch.setattr(helpers, "WEBGL_POINT_THRESHOLD", 0)
 
     real_checkbox = st.checkbox
@@ -72,11 +53,7 @@ def webgl(monkeypatch):
 
 
 def _blobs_df():
-    """Two colour groups, each bimodal so the GMM finds more than one component.
-
-    k-means, the GMM and the sina KDE all need real spread; two separated blobs per group
-    give every fit something to find without depending on a real dataset.
-    """
+    """Two bimodal color groups give k-means, GMM, and KDE enough spread to fit."""
     rng = np.random.default_rng(0)
     rows = []
     for group in ("A", "B"):
@@ -106,11 +83,8 @@ def _figure(result):
 
 
 def _svg_overlays_after_points(fig):
-    """SVG traces on the MAIN axes drawn after the first WebGL trace.
-
-    Traces on a secondary axis (the 2D plot's ``x2``/``y2`` marginal densities) are
-    excluded: they occupy their own strips and never overlap the point cloud, so being in
-    the SVG layer costs them nothing.
+    """Find main-axis SVG traces drawn after the first WebGL trace.
+    Marginal densities on secondary axes occupy separate strips and are excluded.
     """
     first_gl = next((i for i, t in enumerate(fig.data) if t.type == "scattergl"), None)
     assert first_gl is not None, "expected the points to render as WebGL"

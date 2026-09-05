@@ -1,8 +1,4 @@
-"""AppTest harness that exercises notify_on_config_change() in isolation.
-
-Kept as a tiny standalone page so a test can drive the config-change notifier
-without booting the whole Data Extraction page and its heavy imports.
-"""
+"""Exercise config-change notifications without loading the Data Extraction page."""
 import sys
 from pathlib import Path
 

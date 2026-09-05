@@ -16,7 +16,7 @@ import platform
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
     try:
-        # PyInstaller creates a temp folder and stores path in _MEIPASS
+        # PyInstaller exposes bundled resources through _MEIPASS.
         base_path = sys._MEIPASS
     except Exception:
         base_path = os.path.abspath(".")
@@ -73,7 +73,7 @@ def check_server_running(port):
 
 
 def check_browser_windows_open(port):
-    """Check if browser windows are open to our app"""
+    """Check browser-process connections to the app, falling back to server reachability."""
     try:
         import psutil
 
@@ -98,7 +98,6 @@ def check_browser_windows_open(port):
             except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                 continue
 
-        # Return result
         windows_open = connected_browsers > 0
         status = f"Connected browsers: {connected_browsers}"
 
@@ -141,7 +140,7 @@ def aggressive_shutdown():
 
 
 def monitor_browser_windows(port, shutdown_event):
-    """Monitor browser windows and shutdown when all are closed"""
+    """Shut down after two consecutive checks find no browser connections."""
     print("Starting browser monitoring...")
 
     # Wait for server to start
@@ -226,7 +225,7 @@ def run_streamlit_app(main_script):
             "true"
         ]
 
-        # Start a thread to open the browser after a delay
+        # Open the browser after server startup, with a bounded wait.
         def open_browser():
             print("Waiting for server to start...")
 

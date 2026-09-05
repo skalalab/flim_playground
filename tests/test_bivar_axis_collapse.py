@@ -51,9 +51,7 @@ def test_resolves_derived_features_group_to_its_derived_prefix():
 
 
 def test_returns_select_when_stored_value_left_the_option_list():
-    # x took t2, so twod_single_feature_select_widget removed it from the y grid's
-    # options. Streamlit silently resets that selectbox to "Select" on render, so
-    # the pre-render probe must agree instead of reporting a stale "t2".
+    # Taking t2 on x removes it from y; the pending probe must match y's reset to Select.
     reduced = {
         "Lifetime fit_nadh": ["Lifetime fit_nadh: t1"],
         "Derived Features": ["Derived: ratio"],
@@ -120,8 +118,7 @@ def test_choosing_y_collapses_the_y_grid():
 
 
 def test_both_axes_chosen_renders_no_summary_box():
-    # The two expander labels already carry the full column names, so a summary
-    # would be a third restatement of the same pair.
+    # The expander labels already name both columns; no extra summary is needed.
     at = _run()
     at.selectbox(X_MENU).select("t1").run()
     at.selectbox(Y_MENU).select("t2").run()
@@ -130,9 +127,7 @@ def test_both_axes_chosen_renders_no_summary_box():
 
 
 def test_stealing_ys_feature_for_x_reopens_the_y_grid():
-    # x=t1, y=t2; then re-open x and take t2 for it. t2 leaves the y option list,
-    # Streamlit resets y to "Select", so y must fall back to the expanded grid
-    # rather than keep a collapsed expander labelled with a value it no longer holds.
+    # Taking y's feature on x resets y to Select and restores its expanded picker.
     at = _run()
     at.selectbox(X_MENU).select("t1").run()
     at.selectbox(Y_MENU).select("t2").run()

@@ -1,14 +1,6 @@
-"""The "All" sentinel in the cascading filter and feature multiselects must be
-matched by equality, not substring containment. Otherwise a genuine category
-label that merely contains the text "All" (e.g. "Overall", "Allo") wrongly
-collapses the whole selection to ["All"] when it happens to be the last chosen
-item.
-
-``normalize_mode_selection`` is the single ``on_change`` callback behind both
-multiselects now (``filter_widgets.filters_widget`` and
-``selection_widgets.multi_feature_select_widget``), so one set of tests covers
-both call paths. It also owns the "Except:" sentinel, whose coherence rules are
-exercised here for the same reason.
+"""The shared multiselect callback matches All and Except: by exact equality.
+Labels containing All remain ordinary values. Tests cover the selection rules used
+by categorical filters and feature pickers.
 """
 import sys
 from pathlib import Path

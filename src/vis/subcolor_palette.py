@@ -1,50 +1,21 @@
-"""Generate ``n`` distinguishable colours from one seed colour.
+"""Generate a deterministic family of distinguishable colours from one seed.
 
-Used by subcolor (``create_subcolor_map`` in src/vis/helpers.py),
-which maps every distinct value of the nested column to one colour for the whole
-figure. One seed grows the whole palette, sized to the number of distinct values.
+Subcolor uses one palette for all distinct values in a figure. Sample colours in
+OKLCH, keeping hue and chroma near the seed, then score separation and visibility
+after gamut mapping and alpha compositing over the plot background.
 
-Why generate rather than slice a named palette. Slicing fails two ways that matter
-here: cyclic palettes (``husl``, ``hls``) put their first and last entries at adjacent
-hues, so "take the ends" yields two colours a viewer cannot tell apart; and seaborn
-cycles qualitative palettes past their length, so ``tab10`` at 20 colours contains
-exact duplicates. Generating for the requested count sidesteps both.
-
-Colours are sampled in OKLCH and scored on how they look *composited over the plot
-background* at the opacity the points are drawn with, because scatter points are
-semi-transparent and two colours that differ in RGB can composite to nearly the same
-thing.
-
-The palette is one *harmonious family*: hue is confined to an arc around the seed,
-chroma stays near the seed's own, and lightness steps outward from it, so members look
-related rather than merely different. Within that arc the scorer still maximises
-separation, so what comes back is the most distinguishable palette that coherence allows.
-
-This was chosen over the alternative -- fanning hue most of the way round the wheel and
-shuffling a lightness ramp, which buys roughly 2-3x the separation -- after rendering
-both on real sina plots. Two findings decided it. At the group sizes this encoding is
-actually used at (2-5 members) the wide fan is no more readable, and it emits entries
-that read as mistakes: a near-black, or a pale yellow-green that half-disappears against
-white. At 7+ members the wide fan does separate better, but by then neither palette lets
-a reader assign a point to a member, so the advantage is moot. See the ``_sample_family``
-docstring for what the arc costs and why the bounds sit where they do.
-
-This module is deliberately free of app imports and of scipy: it is inlined verbatim
-into exported standalone scripts (src/export_script.py), so it must run with numpy
-alone. Everything is deterministic given its arguments, which is what keeps an exported
-script's colours identical to the screen's.
+Keep this module free of app and scipy imports: standalone script exports inline
+it and rely on numpy. Determinism keeps exported colours consistent with the app.
 """
 
 import math
 
 import numpy as np
 
-# Chroma below which a seed is treated as a grey. A grey has no meaningful hue to fan
-# around, so its palette is built from lightness instead.
+# Below this chroma, use lightness to distinguish neutral colours.
 _NEUTRAL_C = 0.035
 
-# Bound on the memo. A Streamlit process lives for days and each (seed, count) the user
-# lands on adds one entry.
+# Bound cache growth across Streamlit reruns.
 _CACHE_LIMIT = 64
 _CACHE = {}
 
@@ -111,9 +82,7 @@ def _alpha_over(foreground, alpha, background):
 def _gamut_map(lch, iterations=12):
     """Bring OKLCH colours into sRGB by reducing chroma only.
 
-    Clipping RGB instead would shift hue and lightness, which is what distinguishes the
-    entries from each other; binary-searching chroma keeps both and only desaturates
-    until the colour is representable.
+    Binary-search chroma to preserve hue and lightness within the RGB gamut.
     """
     lch = np.asarray(lch, dtype=float)
     L = np.clip(lch[..., 0], 0.0, 1.0)
@@ -133,11 +102,10 @@ def _gamut_map(lch, iterations=12):
 
 
 def _overlap_confusion(rgb, shown_lab, alpha, background):
-    """Closest approach between a two-deep overlap and some *third* palette entry.
+    """Return the smallest distance from a two-colour overlap to a third entry.
 
-    Semi-transparent points pile up, and two stacked entries composite into a new
-    colour. Where that stack lands on a third entry's colour, a dense region reads as
-    the wrong member. Returns ``inf`` below 3 entries, where no third exists.
+    Compare alpha-composited colours to detect overlaps that resemble another
+    palette member. Return ``inf`` when fewer than three entries exist.
     """
     count, n, _ = rgb.shape
     if n < 3:
@@ -156,41 +124,17 @@ def _overlap_confusion(rgb, shown_lab, alpha, background):
 
 
 def _sample_family(rng, position, anchor, seed_lch, neutral, n, samples):
-    """Candidate (L, C, h) grids: one coherent family rather than unrelated colours.
+    """Sample (L, C, h) grids around the seed at ``anchor``.
 
-    One progression variable ``t`` drives hue and lightness together, so a step along the
-    palette advances both at once -- co-varying them is most of what makes a set of
-    colours read as a family rather than as a list. The seed sits at slot ``anchor`` and
-    is the fixed point of both: offsets are measured from *its* position in ``t``, so the
-    seed is the colour the family grew out of rather than merely one of its members.
+    One ordered progression drives hue and lightness together. Hue spans at most
+    145 degrees, chroma stays near the seed, and lightness uses the available
+    range on each side. Hue and lightness ranges grow with ``n`` to separate
+    larger palettes; neutral seeds vary mainly in lightness.
 
-    Three things are deliberately narrow, and each is a bound the scorer would happily
-    blow past if it were left free -- separation is all it optimises, and it will spend
-    any coherence it is given:
-
-    hue        a sampled arc of at most ~145 deg rather than most of the wheel. Wider
-               arcs separate better and stop looking related; this is as far open as the
-               family still reads as one.
-    chroma     held within a hair of the seed's own, so entries share one saturation
-               character. A palette mixing a pastel with a fully saturated neighbour
-               reads as two palettes however close their hues.
-    lightness  travels outward from the seed instead of ramping across a shuffled range,
-               and the travel is bounded by the room actually available on each side, so
-               a dark seed leans upward and a light one downward rather than clipping.
-               These bounds assume the light plot background the app draws on -- the
-               sampler is not passed ``background``, so on a dark one the darkest member
-               can approach it. Only the scorer sees the background, and only through its
-               visibility term.
-
-    Both the arc and the lightness travel grow with ``n``, because neither alone can
-    separate many entries: at eight members even a 145 deg arc leaves ~21 deg between
-    neighbours, which is under the confusion threshold once alpha compositing has shrunk
-    it. So the family opens up on both axes as it gets more crowded, and a pair of
-    members -- the common case here -- stays tight.
+    Lightness bounds assume a light plot background. The supplied background
+    only affects scoring, including the visibility penalty.
     """
-    # Shared progression. Noise then sort, so entries stay ordered along the family while
-    # not sitting on a perfectly even grid -- an even grid is a worse starting point for
-    # the scorer, which is trying to even out *perceived* rather than nominal spacing.
+    # Perturb then sort the progression to search perceptual spacing while retaining order.
     t = np.broadcast_to(position, (samples, n)).copy()
     t += rng.normal(0.0, max(0.015, 0.045/math.sqrt(max(1.0, n/3))), (samples, n))
     t = np.clip(t, 0.0, 1.0)
@@ -198,88 +142,55 @@ def _sample_family(rng, position, anchor, seed_lch, neutral, n, samples):
     rows = np.arange(samples)
     t_seed = t[rows, anchor][:, None]
     offset = t - t_seed
-    # How much of the progression falls on each side of the seed. Guard the division: the
-    # seed can land on either end, leaving one side empty.
+    # Guard division when the seed occupies an endpoint.
     below = np.maximum(t_seed - t[:, :1], 1e-6)
     above = np.maximum(t[:, -1:] - t_seed, 1e-6)
 
     # Lightness reach per side, grown with n and clamped to the room the seed leaves.
     wanted = min(0.42, 0.075 + 0.050*max(0, n-2))
     if neutral:
-        # A grey has neither hue nor chroma to vary, so lightness is carrying the whole
-        # palette and gets the full room rather than a share of it. The ceiling is the
-        # usable range itself, not a fixed reach: a seed sitting near black or near white
-        # can travel in one direction only, and a reach tuned for a mid grey would crowd
-        # every member into a fraction of the range.
+        # Neutral palettes need a wider lightness range, including for seeds near an endpoint.
         wanted = min(0.70, 0.10 + 0.085*max(0, n-1))
-    # A hair off black stops reading as a hue at all, which costs the family a member;
-    # the floor gives way to a seed that is already darker than it rather than dragging
-    # the seed's own family upward away from it.
+    # Keep hues above near-black unless the seed itself is darker.
     floor = min(0.30, float(seed_lch[0]))
     scale = rng.uniform(0.70, 1.0, (samples, 1))
     down = np.minimum(wanted*scale, max(seed_lch[0]-floor, 0.0))
-    # Ceiling well short of white, and lower the more saturated the seed is. Two separate
-    # things go wrong at the top of the range. A semi-transparent point at L above ~0.9
-    # composited over a white background lands within the confusion threshold *of the
-    # background*, so the member reads as absent rather than as faint. And sRGB simply
-    # holds less chroma the lighter a colour gets, so a saturated seed's family loses its
-    # saturation on the way up -- climbing to 0.88 turned a 0.165-chroma pink into a
-    # 0.063-chroma wash, which is the same washed-out entry by another route. Ceding the
-    # top of the range costs nothing, because the travel goes downward instead, and dark
-    # is where the gamut has chroma to spare.
+    # Limit lightness to retain visibility on white and chroma within the sRGB gamut.
     up = np.minimum(wanted*scale, max(0.88 - 0.35*seed_lch[1] - seed_lch[0], 0.0))
-    # Piecewise linear in ``offset`` and increasing on both sides, so the ramp is monotone
-    # through the seed and lands exactly on the seed's own lightness at ``anchor``.
+    # Keep lightness monotone through the seed and exact at its anchor.
     L = seed_lch[0] + np.where(offset < 0.0, offset/below*down, offset/above*up)
     L = np.clip(L, min(0.24, float(seed_lch[0])), max(0.88, float(seed_lch[0])))
 
     if neutral:
-        # Hue is meaningless at this chroma; keep it at the seed's so the family cannot
-        # pick up a faint cast that differs entry to entry.
+        # Keep neutral entries at the seed hue to avoid varying colour casts.
         h = np.full((samples, n), seed_lch[2])
         C = np.clip(rng.normal(seed_lch[1], 0.006, (samples, n)), 0.0, _NEUTRAL_C)
     else:
-        # The arc opens with n rather than being one width for every size. The scorer
-        # always spends whatever arc it is given, so a fixed cap would make a pair as far
-        # apart as an octet needs to be -- and two colours 110 deg apart are trivially
-        # distinguishable while no longer looking related, which is separation bought at
-        # the exact price this palette exists to avoid paying.
+        # Widen the hue arc with palette size while keeping small families close.
         cap = min(145.0, 58.0 + 16.0*n)
         span = rng.uniform(0.60*cap, cap, (samples, 1))
         h = (seed_lch[2] + offset*span) % 360.0
         C = np.clip(rng.normal(seed_lch[1], 0.016, (samples, n)),
                     max(0.020, seed_lch[1]-0.042), seed_lch[1]+0.042)
-        # Tie chroma gently to lightness, the way a hand-picked family does it: the
-        # entries below the seed carry a little more, the ones above a little less. It
-        # reads as one family lit from one side instead of a row of equally saturated
-        # chips, and it buys separation that a muted seed cannot get from hue alone --
-        # without it a low-chroma seed like Set2 turns to mud once crowded.
+        # Use slightly more chroma below the seed's lightness and less above it.
         C *= np.clip(1.0 - 0.45*(L-seed_lch[0]), 0.85, 1.15)
-        # A very light colour held at full chroma goes garish and loses its edge against
-        # a pale background, so taper chroma as lightness climbs.
+        # Taper chroma for very light entries.
         C *= np.clip(1.0 - 0.65*np.maximum(L-0.78, 0.0), 0.74, 1.0)
     return L, C, h
 
 
 def make_palette(seed_rgb, n, alpha=0.7, background=(1.0, 1.0, 1.0),
                  samples=6000, rng_seed=20260820):
-    """Return ``n`` distinguishable (r, g, b) tuples seeded by ``seed_rgb``.
+    """Return ``n`` distinguishable RGB float triples, with ``seed_rgb`` first.
 
-    seed_rgb   : (r, g, b) floats in 0..1 — always returned first, bit-for-bit
-    n          : how many colours to produce (>= 1)
-    alpha      : the opacity the points are drawn at, so entries are compared as seen
-    background : plot background the points are composited over
-    samples    : candidate palettes to draw; the best-scoring one wins
-    rng_seed   : fixes the draw, so the same arguments always give the same palette
+    ``seed_rgb`` contains RGB values in 0..1; ``n`` is coerced to at least one.
+    ``alpha`` and ``background`` define the displayed colours used for scoring.
+    ``samples`` sets the candidate count; ``rng_seed`` makes the search repeatable.
+    Score whole palettes by pair separation, visibility, and overlap confusion
+    because gamut mapping and compositing change the spacing between entries.
 
-    Whole palettes are sampled and then scored, rather than each colour being placed by
-    a rule, because the thing being optimised — the *smallest* gap between any two
-    entries after gamut mapping and alpha compositing — is a property of the set, not of
-    any one colour. Even hue spacing in OKLCH is not even once those two steps have run.
-
-    The seed occupies a random slot per sample rather than always the first, so the
-    palette is not forced to treat the seed as its darkest or its middle entry; it is
-    moved to the front only on the way out.
+    Vary the seed's position within each candidate, then move it to the front
+    of the result without altering its RGB values.
     """
     seed_rgb = np.asarray(seed_rgb, dtype=float).reshape(3)
     n = max(int(n), 1)
@@ -301,9 +212,7 @@ def make_palette(seed_rgb, n, alpha=0.7, background=(1.0, 1.0, 1.0),
     h[np.arange(samples), anchor] = seed_lch[2]
     C[np.arange(samples), anchor] = seed_lch[1]
     rgb, mapped = _gamut_map(np.stack([L, C, h], axis=2))
-    # Restore the seed exactly: the gamut map's binary search leaves a sub-1/255 residue,
-    # and the seed must round-trip bit-for-bit so the first entry equals the colour the
-    # caller asked to build around.
+    # Restore the exact seed after the approximate gamut search.
     rgb[np.arange(samples), anchor] = seed_rgb
     mapped[np.arange(samples), anchor] = seed_lch
 
@@ -316,16 +225,13 @@ def make_palette(seed_rgb, n, alpha=0.7, background=(1.0, 1.0, 1.0),
     within = pair_values.min(axis=1)
     background_min = np.linalg.norm(shown-background_lab, axis=2).min(axis=1)
     visibility_target = min(0.080, max(0.030, 0.60*np.linalg.norm(shown_seed-background_lab)))
-    # Maximise the closest pair first — one confusable pair spoils the palette however
-    # well separated the rest are — then the mean as a tie-break, and penalise any entry
-    # fading into the background.
+    # Score closest-pair and mean separation, penalizing low background visibility.
     score = (
         within + 0.12*pair_values.mean(axis=1)
         - 0.75*np.maximum(visibility_target-background_min, 0.0)
     )
 
-    # Re-score only the strongest candidates for overlap confusion: it is O(n^2) per
-    # candidate, and a palette that already loses on the cheap terms cannot win on this.
+    # Limit the more expensive overlap-confusion scoring to the strongest candidates.
     ranked = np.argsort(score)[::-1][:min(samples, 400)]
     overlap = _overlap_confusion(rgb[ranked], shown[ranked], alpha, background)
     effective = np.where(np.isfinite(overlap), np.minimum(overlap, within[ranked]), within[ranked])
@@ -334,9 +240,7 @@ def make_palette(seed_rgb, n, alpha=0.7, background=(1.0, 1.0, 1.0),
     chosen_rgb, chosen_lch = rgb[best], mapped[best]
     slot = int(anchor[best])
     others = [index for index in range(n) if index != slot]
-    # Seed first, then the rest in a stable perceptual order — by hue around the seed,
-    # or by lightness for a grey seed — so consecutive entries are neighbours and a
-    # legend read top to bottom walks the palette rather than jumping around it.
+    # Return the seed first, then sort by hue around it, or by lightness for neutral seeds.
     if neutral:
         others.sort(key=lambda index: float(chosen_lch[index, 0]))
     else:
@@ -347,11 +251,9 @@ def make_palette(seed_rgb, n, alpha=0.7, background=(1.0, 1.0, 1.0),
 
 def make_palette_cached(seed_rgb, n, alpha=0.7, background=(1.0, 1.0, 1.0),
                         samples=6000, rng_seed=20260820):
-    """:func:`make_palette`, memoised on its arguments.
+    """Memoize ``make_palette`` by its arguments across figure reruns.
 
-    The search costs a fraction of a second (measured: 25 ms at n=2, 232 ms at n=20,
-    7 us on a hit) and there is one call per figure, repeated on every Streamlit rerun --
-    which is what the memo is for. Safe because the search is pure and deterministic.
+    The search is pure and deterministic; a bounded cache avoids repeating it.
     """
     key = (tuple(round(float(v), 9) for v in np.asarray(seed_rgb).reshape(3)),
            int(n), float(alpha), tuple(float(v) for v in background), int(samples),

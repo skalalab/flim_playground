@@ -167,8 +167,7 @@ def test_a_confirmed_decision_reports_auto_detect_as_no_profile(acw):
 
 
 def test_a_profile_just_saved_is_the_one_the_summary_names(acw):
-    """Auto-detect then Save as: the roles now belong to a profile with a name, and
-    the plot page's summary bar is the only place that name is ever shown."""
+    """Save as binds auto-detected roles to the profile named in the analysis summary."""
     gate.review_gate(_Upload("pdl1_rep1.csv"), _frame())
     gate.st.session_state._review_roles = ROLES
     gate.st.session_state._review_source = gate.AUTO_DETECT
@@ -247,8 +246,7 @@ def test_the_profile_in_use_is_the_matched_one_not_the_last_saved(acw):
 
 
 def test_an_applied_profile_is_written_back_to_itself():
-    """The one save target. Offering "save as new" here is what used to let two
-    profiles end up holding the same column set."""
+    """An applied profile is the sole save target for its working copy."""
     assert gate.exit_actions("pdl1", reopened=False) == [("save", "pdl1")]
 
 
@@ -257,14 +255,12 @@ def test_auto_detect_can_only_leave_by_naming_a_new_profile():
 
 
 def test_reopening_adds_a_way_out_that_changes_nothing():
-    """✏️ has to be safe to press out of curiosity, so there is a way back that does
-    not write. Without it the only exit from a look is a write to the profile."""
+    """Reopened review offers Cancel without writing the profile."""
     assert gate.exit_actions("pdl1", reopened=True) == [("save", "pdl1"), ("cancel", None)]
 
 
 def test_no_state_can_leave_the_gate_without_saving():
-    """`Use this ->` is gone: every file that reaches a plot is described by a profile
-    on disk, which is what makes the file able to pick it next time."""
+    """Initial review requires saving a profile before analysis."""
     for applied in ("pdl1", None):
         for reopened in (True, False):
             kinds = [kind for kind, _ in gate.exit_actions(applied, reopened=reopened)]
@@ -276,8 +272,7 @@ def test_no_state_can_leave_the_gate_without_saving():
 
 
 def test_reopening_an_exact_match_asks_no_question(acw):
-    """Only one profile can hold a given column set, so there is nothing to choose --
-    and a chooser here would offer to write this file's columns onto a second one."""
+    """Reopening an exact match suppresses the chooser and retains its save target."""
     acw.save_working_copy("pdl1", ROLES, {})
     gate.review_gate(_Upload("rep2.csv"), _frame())            # auto-applied, no gate
     gate.reopen_gate()
@@ -401,8 +396,7 @@ def test_a_group_the_file_cannot_fill_comes_back_with_the_working_copy(acw):
 
 
 def test_a_new_column_joins_an_empty_group_that_shares_its_name(acw):
-    """detect_column_groups' second rule, which the empty group is the whole case for:
-    a group whose columns are all elsewhere is precisely one waiting to be filled."""
+    """New columns can join an existing empty group by matching its name."""
     acw.save_working_copy("pdl1", ROLES, {}, group_names=["nadh"])
     wider = _frame().assign(nadh_t1_mean=[0.4, 0.5, 0.6])
     gate._load_working_copy(wider, "pdl1")
@@ -410,8 +404,7 @@ def test_a_new_column_joins_an_empty_group_that_shares_its_name(acw):
 
 
 def test_a_group_cannot_be_renamed_to_the_ungrouped_marker(acw, monkeypatch):
-    """Add refused NO_GROUP and Rename did not, and a duplicated option resolves through
-    `index()` to the first slot -- so every column in the group silently left it."""
+    """Renaming to NO_GROUP is rejected so it cannot duplicate the ungrouped option."""
     monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
     acw.save_working_copy("pdl1", ROLES, {"Area": "morphology"})
     gate._load_working_copy(_frame(), "pdl1")
@@ -432,8 +425,7 @@ def test_a_group_takes_every_column_the_bar_hands_it(acw, monkeypatch):
 
     assert gate.st.session_state._review_groups == {
         "nadh_t1": "morphology", "nadh_t2": "morphology"}
-    # The destination stays put, so filling a group in two passes does not mean picking it
-    # twice. The ticks do not -- see the browser flow, and `_clear_picks` above.
+    # Retain the destination for another assignment; clear only the selection ticks.
     gen = gate.st.session_state[gate._GEN]
     assert gate.st.session_state[f"review_group_target_{gen}"] == "morphology"
 
@@ -528,7 +520,7 @@ def test_a_group_cannot_be_called_uncategorized_either(acw, monkeypatch):
 
 
 def test_deleting_a_group_drops_its_members_to_uncategorized(acw, monkeypatch):
-    """The bulk verb that already worked, pinned so the merge rewrite cannot break it."""
+    """Deleting a group unassigns its members."""
     monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
     acw.save_working_copy("pdl1", _WIDE_ROLES,
                           {"nadh_t1": "lifetime", "nadh_t2": "lifetime"})
@@ -583,7 +575,7 @@ def test_the_gate_reads_the_config_once_per_rerun(acw, count_config_reads):
 
 
 def test_a_profile_saved_inside_a_run_is_visible_to_the_next_read(acw, count_config_reads):
-    """What a memo over the config would break. The gate writes from inside a rerun."""
+    """A profile written during a rerun is available to the next config read."""
     acw.save_working_copy("pdl1", ROLES, {})
     assert gate.review_gate(_Upload("rep1.csv"), _frame()) is not None
 

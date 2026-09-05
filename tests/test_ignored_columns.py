@@ -1,10 +1,6 @@
-"""Ignoring a column has to be enforced, not assumed.
-
-get_features picks features by *dtype*, so a text column marked Ignore drops out on
-its own -- it is neither the row id, nor a matched categorical, nor numeric -- while a
-numeric one sails straight through and is offered as a measurement. Without this,
-Ignore is silently inert on exactly the ambiguous numeric columns (`plate_number`,
-`well`, `day`) that auto-detect exists to ask the user about.
+"""Ignore excludes columns from analysis regardless of dtype.
+Numeric labels such as plate_number must stay out of feature selection and
+coercion warnings when the user marks them Ignore.
 """
 import sys
 from pathlib import Path
@@ -26,7 +22,7 @@ def _frame():
 
 
 def test_a_numeric_column_can_be_ignored():
-    """The case that was silently broken."""
+    """Numerical columns marked Ignore are excluded from features and the analysis frame."""
     out, groups, _w, error = dataset_io.get_features(
         _frame(), [], use_data_extraction=False, unique_row_id_col="row",
         ignored_cols=["plate_number"])
@@ -52,7 +48,7 @@ def test_ignoring_every_measurement_is_an_error_not_an_empty_plot():
 
 
 def test_a_deliberately_ignored_column_is_not_reported_as_a_surprise():
-    """The prune warning exists to surprise you; an Ignore is the opposite of that."""
+    """Intentionally ignored columns produce no pruning warning."""
     _out, _groups, warning, _error = dataset_io.get_features(
         _frame(), [], use_data_extraction=False, unique_row_id_col="row",
         ignored_cols=["notes", "plate_number"])
@@ -61,7 +57,7 @@ def test_a_deliberately_ignored_column_is_not_reported_as_a_surprise():
 
 
 def test_an_unexpected_column_is_still_reported():
-    """Only the *ignored* ones are silent -- everything else still gets named."""
+    """Pruning warnings still name unconfigured columns that were not marked Ignore."""
     _out, _groups, warning, _error = dataset_io.get_features(
         _frame(), [], use_data_extraction=False, unique_row_id_col="row")
 
@@ -83,15 +79,9 @@ def test_no_ignored_columns_behaves_exactly_as_before():
 
 
 def test_an_ignored_column_is_not_coerced_to_numeric():
-    """A column nobody will analyse should not be converted on the way to the bin.
-
-    The warning is what makes this observable. Excluding the column from
-    numeric_cols by name already keeps it out of the features and out of the frame,
-    so asserting only that proves nothing about the coercion -- it passes with the
-    ignored set left out of skip_cols entirely. What skipping the coercion buys is
-    silence: "1 non-numeric value in 'code' was converted to NaN" is noise about a
-    column the user has already dismissed, the same reason the prune warning leaves
-    ignored columns out.
+    """Ignored columns skip numeric coercion without a conversion warning.
+    Checking only their absence from the output frame would miss unnecessary coercion
+    before pruning, so assert the warning text too.
     """
     vals = [str(i) for i in range(200)]
     vals[0] = "n/a"  # 0.5% non-numeric: inside the 1% rule, so it would convert

@@ -243,7 +243,7 @@ def classifier_options_widget(df, categorical_cols, fov_name_col, selected_featu
 def classification_plot_widget(results, classification_method, threshold_method):
     st.subheader("📈 Performance Metrics")
     
-    # Display metrics tables side by side (moved above plots)
+    # Display metrics tables side by side.
     metrics = results['metrics']
     cols_metrics = st.columns(2)
     with cols_metrics[0]:

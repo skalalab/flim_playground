@@ -1,14 +1,6 @@
-"""Completeness of the inlined-helper mechanism in generated analysis scripts.
-
-`src/export_script.py` reproduces the app by `inspect.getsource()`-ing shared
-helpers. getsource copies function *bodies* only — so a helper that reads a
-module-level constant compiles fine and then raises NameError at runtime, in a
-script advertised as behaving identically to the app.
-
-getsource copies function *bodies* only — so an inlined helper that reads a
-module-level constant compiles fine and then raises NameError at runtime, in a
-script advertised as behaving identically to the app. The tests below guard that
-mechanism.
+"""Inlined export helpers include every required module-level constant.
+inspect.getsource copies function source without its module namespace, so the
+generated script must supply any referenced globals.
 """
 import runpy
 import sys
@@ -39,12 +31,9 @@ INLINED_HELPERS = (
 
 
 def _module_constants_read_by(func):
-    """Module-level constants `func` closes over — not imports, not other helpers.
-
-    Modules and functions are excluded because the generated script gets those
-    from its own import block and from the other inlined helpers. The owning module
-    is resolved from the function itself, so a helper inlined from anywhere else is
-    checked against its own namespace rather than dataset_io's.
+    """Find constants referenced by func in its owning module.
+    Modules and functions are supplied by the script's imports and other inlined
+    helpers, so they are excluded.
     """
     namespace = vars(sys.modules[func.__module__])
     return {
@@ -72,7 +61,7 @@ def _state(filename="data.csv"):
 
 @pytest.mark.parametrize("helper", INLINED_HELPERS, ids=lambda h: h.__name__)
 def test_no_inlined_helper_reads_a_module_level_constant(helper):
-    """The current truth, not just the one constant that broke it before."""
+    """Every inlined helper has the module-level constants it references."""
     constants = _module_constants_read_by(helper)
     assert constants == set(), (
         f"{helper.__name__} reads module-level {constants}, which the generated "

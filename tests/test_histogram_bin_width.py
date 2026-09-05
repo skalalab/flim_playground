@@ -1,7 +1,5 @@
-"""histogram_bin_width_widget must return valid bin edges even when the feature
-is constant. numpy's 'auto' rule yields a single bin for zero-variance data, and
-the widget previously fell through to `return common_bin_edges` with that name
-never assigned -> UnboundLocalError.
+"""histogram_bin_width_widget returns valid bin edges for constant features,
+including numpy's single-bin auto result.
 """
 import sys
 from pathlib import Path

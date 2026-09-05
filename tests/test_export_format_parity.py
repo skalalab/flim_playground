@@ -1,13 +1,6 @@
-"""App<->export parity for *how the uploaded file is opened*.
-
-The exported script reproduces the app's view by inlining the app's own helpers,
-but the read call itself cannot be inlined — it is generated. So the one thing
-these tests hold down is that a file the app just plotted is a file the exported
-script can still open, and that both reach the same frame.
-
-Without this, a workbook would plot fine in the app and its exported script would
-die on `pd.read_csv` against a zip archive — the failure mode the suffix dispatch
-in src/export_script.py::_build_read_call exists to prevent.
+"""Generated scripts and the app open each supported table format into the same frame.
+The generated read call preserves suffix dispatch, header normalization, and the
+app's detected delimiter.
 """
 import runpy
 import sys
@@ -117,9 +110,7 @@ def test_exported_script_loads_the_same_frame_the_app_did(tmp_path, monkeypatch,
     finally:
         plt.close("all")
 
-    # The script's df has picked up the plot's own derived columns (_color_group
-    # and friends) by the time it finishes. The claim under test is narrower: every
-    # column the app loaded is present and identical.
+    # Plotting adds derived columns; compare every column loaded by the app.
     app_df = _app_frame(path, delimiter)
     exported = namespace["df"]
     missing = [col for col in app_df.columns if col not in exported.columns]
@@ -129,14 +120,12 @@ def test_exported_script_loads_the_same_frame_the_app_did(tmp_path, monkeypatch,
 
 
 def test_spreadsheet_read_call_never_uses_read_csv():
-    """The failure this whole dispatch exists to prevent, asserted directly."""
+    """Spreadsheet exports use the Excel reader and normalize headers to strings."""
     for filename in ("book.xlsx", "book.xlsm", "book.xlsb", "book.xls", "book.ods"):
         call = _build_read_call(filename)
         assert "read_excel" in call and "read_csv" not in call
         assert 'engine="calamine"' in call
-        # The app stringifies spreadsheet headers; so must the script, or a numeric
-        # header reaches the inlined helpers as an int and the categorical lookup
-        # and df[name] accesses inside them silently miss it.
+        # Stringify spreadsheet headers for categorical membership and df[name] lookups.
         assert "str(col) for col in df.columns" in call
 
 
@@ -153,7 +142,7 @@ def test_a_csv_bakes_in_the_separator_the_app_detected():
 
 
 def test_a_semicolon_csv_round_trips_through_the_exported_script(tmp_path, monkeypatch):
-    """The case the old comma-only read line would have silently mangled."""
+    """A semicolon-separated CSV exports with the delimiter detected by the app."""
     path = tmp_path / "euro.csv"
     _frame().to_csv(path, index=False, sep=";")
     (tmp_path / "analysis.py").write_text(generate_script(_state("euro.csv", ";")))

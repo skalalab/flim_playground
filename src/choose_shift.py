@@ -6,7 +6,7 @@ from src.file_io import get_decay_curves, get_irf
 
 
 def guess_shift(irf, curves, fit_free=False):
-    # if fit_free, return the shifts as they are, otherwise return the median shift as the initialization to the fit routine
+    # Fit-free analysis uses per-curve shifts; fitting starts from their median.
     def align_irf(irf, curve):
         # Cross-correlation to find the optimal shift
         correlation = np.correlate(curve, irf, mode='full')
@@ -55,4 +55,3 @@ def choose_shift_fit(metadata_df, duration, time_bins, num_components, fitting_a
     results["decay_id"] = list(decay_curves.keys())
     results["irf"] = irf
     return "", results
-

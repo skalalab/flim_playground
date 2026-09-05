@@ -1,13 +1,5 @@
-"""Data Extraction page must not crash on a blank/unconfigured profile.
-
-Multi-profile support made it possible for the *active* extraction profile to be
-empty (a profile created via the Configuration page's sidebar but never saved
-with "Update Configuration"). In that state ``get_channel_names()`` returns ``{}``
-and the page used to call ``st.columns(0)``, raising
-``StreamlitInvalidColumnSpecError`` the instant the user opened Data Extraction.
-
-The page should instead detect the no-channels state and stop with a helpful
-message pointing the user at the Configuration page.
+"""An empty extraction profile shows guidance to configure channels and stops.
+Profiles with channels render the extraction workflow normally.
 """
 import sys
 from pathlib import Path
@@ -38,9 +30,8 @@ def test_empty_active_profile_does_not_crash(tmp_path, monkeypatch):
 
     at = AppTest.from_file(_PAGE).run(timeout=60)
 
-    # No uncaught exception (the st.columns(0) crash must be gone)...
+    # Render configuration guidance without an exception.
     assert not at.exception, f"page raised: {[e.value for e in at.exception]}"
-    # ...and the user is told to configure the profile.
     warnings = " ".join(w.value.lower() for w in at.warning)
     assert "channel" in warnings or "configuration" in warnings, (
         f"expected a no-channels warning, got warnings={[w.value for w in at.warning]}"
@@ -70,9 +61,7 @@ def test_configured_profile_still_renders(tmp_path, monkeypatch):
     assert "no channels" not in warnings
 
 
-# --- Per-step render characterization (added with the controller refactor) ---
-# These pin that the thin-controller / per-step-renderer restructure keeps every
-# step reachable and crash-free, and that the FOV "no channel" guard still fires.
+# Each extraction step renders, with an explicit guard for an empty FOV channel selection.
 
 _STEPS = [
     "FOV Metadata Extraction",

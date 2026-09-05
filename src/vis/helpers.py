@@ -21,11 +21,10 @@ def log_negative_error(var_name):
 
 
 def hover_field(label, value_ref):
-    """One bolded `label: value` line of a hovertemplate, with `label` escaped.
+    """Return a bold ``label: value`` hover line with the label escaped.
 
-    Every label is a column name, and Plotly renders a hovertemplate as markup -- so a
-    column called `a<b` swallows the rest of its line as a tag. Escape here, where the
-    name enters the template, never over the whole string: the <b> tags are ours.
+    Column names can contain markup. Escape them at interpolation while keeping
+    the template's own HTML tags intact.
     """
     return f"<b>{html.escape(str(label))}:</b> {value_ref}<br>"
 
@@ -53,16 +52,11 @@ def find_intersection(pi1, mu1, sigma1, pi2, mu2, sigma2):
     pi1 * N(x; mu1, sigma1) = pi2 * N(x; mu2, sigma2).
     """
     f = lambda x: pi1 * norm.pdf(x, mu1, sigma1) - pi2 * norm.pdf(x, mu2, sigma2)
-    # The root must lie between the two means
+    # Search for the intersection between the two means.
     return brentq(f, min(mu1, mu2), max(mu1, mu2))
 
 def glass_delta(group1, group2, mean_or_median):
-    # group1 should be the control
-    # Glass's delta divides by the CONTROL group's spread alone, so only group1 needs a
-    # degree of freedom. Below two, np.std(ddof=1) is itself nan and the arithmetic
-    # already returns nan -- but silently in the app and through a bare numpy
-    # RuntimeWarning in the exported script. Collapse by makes this reachable with
-    # ordinary data (two replicates in a slot), so say it once, here.
+    # Glass's delta uses group1 as control; its spread needs at least two samples.
     if len(group1) < 2:
         return np.nan
     if mean_or_median == "Mean": 
@@ -83,11 +77,8 @@ def cohens_d(group1, group2, mean_or_median):
     # sample sizes
     n1, n2 = len(group1), len(group2)
 
-    # BOTH groups need a degree of freedom: the pooled variance weights each group's own
-    # np.var(..., ddof=1), which is undefined at one point. Guarding the SUM would leave
-    # n1=1, n2=3 to survive on pandas returning NaN from Series.var of one element -- the
-    # same call on a numpy array emits a bare RuntimeWarning instead, and the exported
-    # script is where that would print. See glass_delta, which needs only group1.
+    # Each group needs at least two samples for its sample variance,
+    # regardless of the combined sample count.
     if n1 < 2 or n2 < 2:
         return np.nan
 
@@ -109,15 +100,11 @@ def cohens_d(group1, group2, mean_or_median):
 
 def create_opacity_mapping(groups, min_opacity=0.3, max_opacity=1.0,
                            na_value="N/A", na_opacity=0.15):
-    """Opacity mapping for groups, evenly spaced in natural order, with ``na_value`` held out.
+    """Assign evenly spaced opacities in natural order, excluding missing values.
 
-    Opacity is the only ordinal channel, so a ramp slot is a rank and missing data has no
-    claim to one. ``na_value`` is pinned below ``min_opacity``, leaving the real levels the
-    full spread. "N/A" is the loader's marker for a missing categorical (check_and_fix_df
-    in src/dataset_io.py).
-
-    Keep ``na_opacity`` a default argument, not a module constant: export_script's
-    _extract_source copies this function's source and defaults but no module state.
+    The loader's missing-category label ``na_value`` receives ``na_opacity``
+    below the ranked levels. Keep it a default argument: script export copies
+    this function without module state.
     """
     groups = list(groups)
     real = [group for group in groups if group != na_value]
@@ -125,8 +112,7 @@ def create_opacity_mapping(groups, min_opacity=0.3, max_opacity=1.0,
     if len(real) == 1:
         mapping = {real[0]: max_opacity}
     else:
-        # len(real) == 0 (an all-N/A column) yields an empty linspace and an empty map,
-        # which is the honest answer: no real level to rank.
+        # An all-missing column has no ranked levels.
         opacity_values = np.linspace(min_opacity, max_opacity, len(real))
         mapping = {group: opacity_values[i] for i, group in enumerate(real)}
     if na_value in groups:
@@ -159,10 +145,8 @@ def _palette_rgb(colormap, count):
             colors = [cmap(0.5)] if count == 1 else [cmap(i / (count - 1)) for i in range(count)]
             return [(color[0], color[1], color[2]) for color in colors]
         return [tuple(color[:3]) for color in sns.color_palette(colormap, n_colors=count)]
-    # ValueError for a name seaborn does not know; KeyError should the whitelist above
-    # drift from plt.colormaps. Not ImportError: the imports sit above the try so
-    # _extract_source carries them into the exported script, and the fallback needs
-    # seaborn anyway.
+    # Fall back for unknown palettes. Keep imports outside the try so script
+    # export captures them; the fallback also requires seaborn.
     except (ValueError, KeyError):
         return [tuple(color[:3]) for color in sns.color_palette("tab10", n_colors=count)]
 
@@ -207,7 +191,6 @@ def _calculate_effect_size(group1_data, group2_data, method: str, mean_or_median
     if method == "Glass's Delta":
         return glass_delta(group1_data, group2_data, mean_or_median)
     elif method == "Absolute Cohen's d":
-        # Ensure cohens_d function is available and handles data appropriately
         return cohens_d(group1_data, group2_data, mean_or_median)
     else:
         st.warning(f"Unsupported effect size method: {method}")
@@ -355,11 +338,8 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
     if selected_pairs is None:
         selected_pairs = comparison_pair_widget(all_possible_pairs)
 
-    # A group with fewer than two points has no spread, so glass_delta and cohens_d
-    # return nan, ttest_ind returns a nan p-value, and NOTHING is drawn -- leaving no way
-    # to tell "no difference" from "not computable". Say it, and only about the pairs the
-    # user actually asked for. Collapse by makes this ordinary rather than exotic: one
-    # dish in a treatment is one point.
+    # Warn about requested pairs with fewer than two points in a group,
+    # so an uncomputable comparison is distinguishable from no difference.
     if selected_pairs and (effect_size_method != "None" or statistical_test != "None"):
         counts = {}
         for pair in selected_pairs:
@@ -370,11 +350,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
         thin = [group for group in compare_groups if counts.get(group, 2) < 2]
         thin += [group for group in counts if counts[group] < 2 and group not in thin]
         if thin:
-            # code_span, not bare backticks: both the group names and the section label
-            # are values out of the user's file, and st.warning renders Markdown -- a
-            # level called *ctrl* arrived in italics with the asterisks eaten, naming a
-            # group the data does not contain, and one holding a backtick closed the
-            # span early and mangled the rest of the sentence.
+            # Escape file-provided group and section names for Markdown warnings.
             named = ", ".join(
                 f"{code_span(group)} ({counts[group]} point"
                 f"{'' if counts[group] == 1 else 's'})"
@@ -581,12 +557,8 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
     best_gmm = None
     lowest_bic = np.inf
 
-    # Pin the BLAS/OpenMP pool to one thread: a 1-D or 2-D feature gives each thread too
-    # little work to pay for synchronising them, so the sweep runs ~9x faster single-
-    # threaded. Fitted means then differ by ~1e-12 from the multi-threaded reduction
-    # order, which can only matter on a near-tie in BIC between two component counts.
-    # Imported inside the function so the source stays self-contained when
-    # export_script.py inlines it via inspect.getsource().
+    # Use one BLAS/OpenMP thread: synchronization dominates these 1D/2D fits.
+    # Keep the import local so script export captures it with the function.
     from threadpoolctl import threadpool_limits
 
     with threadpool_limits(1):
@@ -853,10 +825,8 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     ghost_traces = []
     seen_legendgroups = set()
     for trace in fig.data:
-        # WebGL data traces must reach this block too, or a large figure keeps its
-        # trace-tied legend markers and never gets the decoupled ghost entries. The ghosts
-        # themselves stay go.Scatter below: they draw a single None point, so SVG is right
-        # for a legend swatch and costs no WebGL trace.
+        # Create independent legend markers for both SVG and WebGL data traces.
+        # Ghosts use SVG because they draw only a legend swatch.
         if trace.type not in ('scatter', 'scattergl'):
             continue
         if hasattr(trace, 'name') and trace.name in skip_trace_names:
@@ -909,14 +879,10 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     return fig
 
 def _estimate_density_1d(y_values, bw_method='scott'):
-    """
-    Estimate the density of y_values using KDE. Returns a function that maps y to density.
+    """Return a KDE callable, or zero density when no valid KDE exists.
 
-    Degenerate inputs have no well-defined KDE and make gaussian_kde raise
-    LinAlgError on a singular covariance matrix: fewer than 2 finite points, or zero
-    variance (a constant column — e.g. an all-zero feature). In those cases return a
-    zero-density fallback so callers still render points/box without a density shape,
-    instead of the LinAlgError aborting the whole plot.
+    Fewer than two finite points, constant values, or a singular covariance
+    use the fallback so points and boxes can render without a density shape.
     """
     y_values = np.asarray(y_values, dtype=float)
     y_values = y_values[np.isfinite(y_values)]
@@ -931,28 +897,17 @@ def _estimate_density_1d(y_values, bw_method='scott'):
         return zero_density
 
 def _density_at_points(y_values, grid_size=1024, bw_method='scott'):
-    """Density at each of ``y_values``, without evaluating the KDE at every point.
+    """Estimate density at each point by interpolating a KDE evaluated on a grid.
 
-    ``gaussian_kde.evaluate`` costs O(n_train x n_eval), so asking it for the density at
-    its own training points is O(n^2) -- 60 s for a single 113k-point group. Evaluating on
-    a small grid and interpolating back is O(n x grid_size) and takes that to under a
-    second.
+    Grid evaluation costs O(n * grid_size), avoiding O(n²) evaluation at all
+    training points. Combine uniform and quantile spacing to resolve both the
+    full range and dense regions of heavy-tailed data.
 
-    The grid deliberately unions a uniform spacing with a quantile spacing. Uniform alone
-    is accurate through the bulk but collapses on heavy-tailed features, where nearly every
-    grid point lands in empty space and the dense core goes unresolved -- measured at
-    several pixels of drift in the sina jitter on a Cauchy-distributed feature, which is
-    visible. Quantile spacing puts resolution wherever the points actually are. Together
-    they stayed sub-pixel on every distribution shape tested (normal, bimodal, lognormal,
-    exponential, spiky mixture, Cauchy).
-
-    Returns zeros for the degenerate inputs ``_estimate_density_1d`` rejects, which is what
-    its zero-density fallback produced when it was called per point.
+    Return zeros for inputs with no valid KDE.
     """
     y_values = np.asarray(y_values, dtype=float)
     finite = y_values[np.isfinite(y_values)]
-    # Same guards as _estimate_density_1d, checked here too so the grid below never
-    # degenerates to a single repeated value (np.interp needs an increasing xp).
+    # Reject degenerate inputs before building the increasing grid np.interp needs.
     if len(finite) < 2 or np.ptp(finite) == 0:
         return np.zeros_like(y_values)
 
@@ -1035,14 +990,11 @@ def add_interleaved_points_trace(
     import math
     import random
 
-    # Local RNG so the per-color shuffle is reproducible run-to-run without
-    # touching (or being perturbed by) the global `random` state. Seeded by
-    # default; pass random_seed=None for a nondeterministic order.
+    # Use a local seeded RNG for reproducible order without changing global state.
     rng = random.Random(random_seed)
 
-    # Collect each colour's points as columns rather than one dict per point. A single
-    # colour can receive points from several (shape, opacity, separate) subgroups, so
-    # gather the chunks in iteration order and concatenate once at the end.
+    # Collect array chunks from all styling subgroups of each colour, then
+    # concatenate once in group iteration order.
     chunks_by_color = {}
     for group_key, group_df in grouped:
         chunks_by_color.setdefault(group_key[0], []).append(
@@ -1056,10 +1008,7 @@ def add_interleaved_points_trace(
             'x': np.concatenate([c[axis_labels[0]].to_numpy() for c, _, _ in chunks]),
             'y': np.concatenate([c[axis_labels[1]].to_numpy() for c, _, _ in chunks]),
             'text': np.concatenate([c[text_col].to_numpy() for c, _, _ in chunks]),
-            # The shape and opacity groups are constant within a chunk (they come from
-            # the group key), so repeat them instead of reading one per row. Object
-            # dtype is what keeps an inactive channel's None group as None rather than
-            # coercing it to nan.
+            # Repeat the subgroup's constant shape/opacity keys; object dtype preserves None.
             'shape_group': np.repeat(
                 np.array([s for _, s, _ in chunks], dtype=object), lengths),
             'opacity_group': np.repeat(
@@ -1071,8 +1020,7 @@ def add_interleaved_points_trace(
             points_by_color[color_group]['customdata'] = np.concatenate(
                 [c[customdata_col].to_numpy() for c, _, _ in chunks])
 
-    # Shuffle points within each color group. An index permutation is shuffled rather
-    # than the rows, so `rng` is drawn from in the same sequence either way.
+    # Shuffle indices once per colour and apply the same permutation to every column.
     for color_group, columns in points_by_color.items():
         order = list(range(len(columns['x'])))
         rng.shuffle(order)
@@ -1110,10 +1058,8 @@ def add_interleaved_points_trace(
     # Find maximum number of batches across all colors
     max_batches = max(len(batches) for batches in batches_by_color.values())
 
-    # One renderer for every batch of every colour, decided from the figure's total. Chosen
-    # once rather than per batch because Plotly paints every WebGL trace beneath every SVG
-    # one: a mixed figure would stack its colours by renderer and undo the interleaving this
-    # function exists to produce.
+    # Choose one renderer for the full figure; mixed SVG/WebGL layering
+    # would override the batches' intended interleaving order.
     scatter_cls = point_trace_class(sum(len(c['x']) for c in points_by_color.values()))
 
     # Interleave batches: add batch i from each color before moving to batch i+1
@@ -1128,21 +1074,16 @@ def add_interleaved_points_trace(
             start_idx, end_idx = batches[batch_idx]
             columns = points_by_color[color_group]
 
-            # Build arrays for this batch. Left as numpy rather than .tolist(): Plotly 6
-            # serialises a numpy array to base64 binary, which measured ~30% off the wire
-            # payload and skips building a Python list per batch, while a list round-trips
-            # as JSON numbers. The string columns gain nothing from it but stay numpy so
-            # every column is sliced the same way.
+            # Keep numeric arrays for Plotly's binary serialization and avoid list copies.
+            # String arrays use the same slicing path.
             x_vals = columns['x'][start_idx:end_idx]
             y_vals = columns['y'][start_idx:end_idx]
             text_vals = columns['text'][start_idx:end_idx]
             customdata_vals = (columns['customdata'][start_idx:end_idx]
                                if 'customdata' in columns else None)
 
-            # Map visual properties to arrays. These stay full-length lists even though
-            # each batch has a single shape/opacity group: apply_plot_styling reads
-            # marker.symbol/marker.opacity and branches on whether they are sequences
-            # when it builds the ghost legend traces.
+            # Keep per-point symbol and opacity arrays: batches can mix styling subgroups,
+            # and apply_plot_styling uses these sequences to build legend entries.
             batch_shape_groups = columns['shape_group'][start_idx:end_idx]
             batch_opacity_groups = columns['opacity_group'][start_idx:end_idx]
             marker_symbols = [shape_map[g] if g is not None and shape_map else 'circle' for g in batch_shape_groups]
@@ -1177,12 +1118,8 @@ def add_interleaved_points_trace(
         hovermode='closest'
     )
 
-    # The renderer, not the figure: callers mutate the figure they passed in, but any
-    # overlay they draw AFTER this call (regression line, cluster hulls, centroids) must
-    # use the SAME class. Plotly paints the whole WebGL canvas above every SVG trace, so
-    # trace order cannot rescue an SVG overlay -- it lands under the cloud it is meant to
-    # sit on. A GL overlay added after the points paints above them, because GL traces do
-    # stack in trace order within the canvas.
+    # Return the renderer for overlays on these axes. Later overlays must use
+    # the same trace class to appear above the points in WebGL as well as SVG.
     return scatter_cls
 
 def add_point_legend_traces(fig, shape_map, opacity_map, shape_by=None, opacity_by=None):

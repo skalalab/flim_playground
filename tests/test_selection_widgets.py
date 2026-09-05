@@ -1,14 +1,7 @@
-"""Desugaring of a stored multiselect value into the items it actually chooses.
-
-``chosen_items`` is what the feature pickers and the categorical filters call to
-turn a stored selection -- which may carry the "All" or "Except:" sentinel --
-into a plain list. It returns ``None`` for "no constraint" because the two
-callers disagree on what that means: the filters skip the mask entirely, the
-feature pickers take every feature in the group.
-
-The stale-value pruning at the bottom is the filters' half of the same contract:
-a value that has vanished from the data is dropped, and a selection left empty
-falls back to "All".
+"""Resolve All and Except: selections for feature pickers and categorical filters.
+chosen_items returns None for no constraint: filters skip masking, while feature
+pickers select every feature. Removed filter values are pruned; an emptied
+selection falls back to All.
 """
 import pandas as pd
 

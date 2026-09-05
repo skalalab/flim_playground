@@ -37,11 +37,9 @@ class TestPruneToOptions:
 
 
 class TestColorMultiselectLabel:
-    """Two booleans, so four inputs and four tests. Exactly one control CLAIMS colour at
-    any time: the moment the switch goes on, the third slot is the one offering it, so the
-    multiselect must give the name up in the same run. Named after the claim rather than
-    the wording because the third slot no longer spells "Color by" on screen -- it shows a
-    static phrase and reads "Subcolor by" only to a screen reader."""
+    """Only one control claims colour at a time. Enabling the nominal colour slot
+    renames the multiselect in the same run; the slot's accessible label is Subcolor by.
+    """
 
     def test_switch_on_hands_the_name_over(self):
         assert color_multiselect_label(True, True) == "Group by"

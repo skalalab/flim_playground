@@ -14,9 +14,7 @@ _MIN_CURVES_FOR_PARALLEL = 10
 def _init_params(duration, time_bins, num_components, num_curves, fit_shift, shift_guess, shift_halfwidth, fixed_lifetimes):
     """Build lmfit Parameters and allocate result arrays."""
     params = Parameters()
-    # `duration` seeds param bounds (max=duration) that are JSON-serialized via
-    # params.dumps() on the parallel fit path; a numpy float32 (e.g. from an SDT
-    # tac_r/tac_g laser rep time) is not JSON-serializable, so coerce to float.
+    # Native float bounds are required by params.dumps() for multiprocessing.
     duration = float(duration)
     _fl = fixed_lifetimes or {}
 
@@ -227,17 +225,15 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
                      Example: {'t1': 0.4, 't2': None}  → fix τ1, fit τ2 freely.
     shift_halfwidth: optional float, half-width of the shift parameter's bounds
                      in bins (bounds = [shift_guess ± halfwidth]). When None and
-                     fit_shift=True, defaults to the IRF's FWHM in bins —
-                     adapts to detector physics with no hardcoded constant.
+                     fit_shift=True, defaults to irf_fwhm_bins(irf): twice the
+                     main peak's half-maximum span, with a minimum of two bins.
     """
     num_curves = len(decay_curves)
     if fit_shift and shift_halfwidth is None:
         shift_halfwidth = irf_fwhm_bins(irf)
     params, arrays, fixed = _init_params(duration, time_bins, num_components, num_curves, fit_shift, shift_guess, shift_halfwidth, fixed_lifetimes)
 
-    # A degenerate (all-zero) IRF makes the reconvolution model identically zero,
-    # so the fit is meaningless; return the NaN-initialised results to flag it
-    # explicitly instead of fitting a zero model to finite-but-garbage params.
+    # An all-zero IRF has no meaningful fit; retain the NaN-initialized results.
     if irf is not None and not np.any(irf):
         return arrays
 
@@ -255,17 +251,14 @@ def fit_curves(duration, time_bins, decay_curves, irf, num_components, fitting_a
 
     irf_upsampled = upsample_irf(irf) if fit_shift else None
 
-    # Warm-start: fit the mean decay with Global to seed initial lifetimes for Local
-    # mode. The mean, not the sum: τ is scale-invariant either way, but a summed decay's
-    # offset and peak scale with the number of cells, and the peak sets the DE parameter
-    # bounds — so a summed warm fit would make each cell's result depend on its batch size.
+    # Seed Local fits with a global fit of the mean decay. Averaging keeps the
+    # offset, peak, and resulting parameter bounds independent of batch size.
     if fitting_mode == "Local" and num_curves >= 1:
         mean_decay = np.mean(np.array(decay_curves), axis=0)
         warm_params = params.copy()
         _set_amplitude_guesses(warm_params, mean_decay, num_components)
         try:
-            # `seed` (not `rng`) is what lmfit forwards to differential_evolution;
-            # required for a reproducible warm-start (see test_fit_determinism.py).
+            # lmfit forwards seed to differential_evolution for reproducibility.
             warm_global_opts = dict(optimizers["global_opts"], seed=0)
             warm_result = lmfit_minimize(objective, warm_params, args=(mean_decay, irf, time_axis, start, end, fitting_algo, irf_upsampled), method=optimizers["global"], **warm_global_opts)
             for key in ['t1', 't2', 't3']:

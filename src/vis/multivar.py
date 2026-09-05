@@ -26,7 +26,7 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, ra
     if 'dr_lock' not in st.session_state:
         st.session_state.dr_lock = threading.Lock()
     with st.session_state.dr_lock:
-        # Standardize features before PCA and umap
+        # Standardize features before dimensionality reduction.
         X_std = StandardScaler().fit_transform(X)
         if method == "PCA":
             # Seeded like UMAP/t-SNE below: svd_solver="auto" can pick the randomized
@@ -95,8 +95,7 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
         axis_labels=axis_labels,
         text_col=unique_row_id_col,
         customdata_col=fov_name_col,
-        # The identifier may be an invented row number, so the value needs its label:
-        # a bare "42" says nothing about what it counts.
+        # Label identifiers because they may be generated row numbers.
         hovertemplate=hover_field(row_id_label, "%{text}"),
         show_counts=st.session_state.get("plot_show_group_counts", False)
     )

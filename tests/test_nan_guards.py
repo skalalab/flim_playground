@@ -1,26 +1,7 @@
-"""Degenerate-cell NaN/inf guards for per-cell feature extraction.
-
-Each test pins a degenerate input that previously produced NaN/inf (often via an
-unguarded division emitting a RuntimeWarning) to a deliberate, documented value:
-
-1. `mass_displacement` (src/cell_texture.py): a fully-dark cell hit `np.mean([])`
-   and a 0/0 division -> NaN with RuntimeWarnings. Now returns a deliberate NaN
-   (a dark cell has no centroid, so the displacement is undefined), warning-free.
-2. `reduced_chi_square` (src/fit_helper.py): an unguarded degrees-of-freedom term
-   `len(data_slice) - num_free_params` <= 0 gave +inf / a negative reduced chi-
-   square for a too-narrow gate. Now returns NaN.
-3. `get_raw_phasor` (src/fov_extraction.py): a signal-less cell (decay sums to 0)
-   divided 0/0. Now returns deliberate (NaN, NaN), no RuntimeWarning.
-4. `extract_fit_results` (src/fov_extraction.py): a failed fit returns NaN amps;
-   `total_amp == 0` did not catch them (NaN == 0 is False), so a1/a2/tm/tm_iw
-   were computed as NaN/NaN. Now the cell is skipped (those keys absent -> NaN).
-5. `irf_shift` (src/fit_helper.py): a degenerate (all-zero) IRF made the
-   `/= np.sum(...)` normalisation 0/0 -> all NaN. Now left unnormalised.
-6. `fit_curves` + `extract_fit_results` (src/fit.py, src/fov_extraction.py): an
-   all-zero IRF makes the reconvolution model identically zero, so a fit returns
-   finite-but-meaningless params (silent garbage). Now `fit_curves` returns NaN
-   results and `extract_fit_results` flags it once at the channel level instead
-   of emitting per-cell warnings.
+"""Degenerate extraction inputs return deliberate results without division warnings.
+Dark-cell displacement and zero-signal phasors are undefined; nonpositive fit
+degrees of freedom return NaN. Failed fits omit derived amplitude features, and
+an all-zero IRF yields NaN fit results with one channel-level warning.
 """
 import sys
 import warnings
@@ -37,7 +18,7 @@ from src.fit_helper import reduced_chi_square, irf_shift
 from src.fov_extraction import get_raw_phasor, extract_fit_results
 
 
-# --- Bug 1: mass_displacement on a dark/empty cell ---------------------------
+# Dark or empty cell displacement
 
 def test_mass_displacement_dark_cell_returns_nan():
     # A fully-dark cell (no pixel with intensity > 0) has no defined centroid, so
@@ -49,7 +30,7 @@ def test_mass_displacement_dark_cell_returns_nan():
 
 
 def test_mass_displacement_normal_cell_unchanged():
-    # Non-regression: an asymmetric two-pixel cell keeps its exact value.
+    # An asymmetric two-pixel cell retains its exact displacement.
     cell_image = np.zeros((5, 5))
     cell_image[1, 1] = 1.0
     cell_image[1, 3] = 100.0
@@ -60,10 +41,10 @@ def test_mass_displacement_normal_cell_unchanged():
     assert result == pytest.approx(expected)
 
 
-# --- Bug 2: reduced_chi_square with non-positive degrees of freedom ----------
+# Reduced chi-square with nonpositive degrees of freedom
 
 def test_reduced_chi_square_zero_dof_returns_nan():
-    # len(data_slice) == num_free_params -> dof 0 -> currently +inf.
+    # len(data_slice) == num_free_params gives zero degrees of freedom.
     fitted = np.array([1.0, 1.0, 1.0])
     data = np.array([2.0, 2.0, 2.0])
     result = reduced_chi_square(fitted, data, start=0, end=3, num_free_params=3)
@@ -71,8 +52,7 @@ def test_reduced_chi_square_zero_dof_returns_nan():
 
 
 def test_reduced_chi_square_negative_dof_returns_nan():
-    # len(data_slice) < num_free_params -> dof negative -> currently a
-    # nonsensical negative reduced chi-square.
+    # len(data_slice) < num_free_params gives negative degrees of freedom.
     fitted = np.array([1.0, 1.0])
     data = np.array([2.0, 2.0])
     result = reduced_chi_square(fitted, data, start=0, end=2, num_free_params=5)
@@ -80,7 +60,7 @@ def test_reduced_chi_square_negative_dof_returns_nan():
 
 
 def test_reduced_chi_square_normal_case_unchanged():
-    # Non-regression: dof > 0 computes the ordinary reduced chi-square.
+    # Positive degrees of freedom use the ordinary reduced chi-square.
     fitted = np.array([1.0, 1.0, 1.0, 1.0, 1.0])
     data = np.array([2.0, 2.0, 2.0, 2.0, 2.0])
     # residuals**2 / fitted = 1 each, sum = 5; dof = 5 - 3 = 2; chiq = 2.5
@@ -88,7 +68,7 @@ def test_reduced_chi_square_normal_case_unchanged():
     assert result == pytest.approx(2.5)
 
 
-# --- Bug 3: get_raw_phasor on a signal-less cell -----------------------------
+# Phasors for cells with no signal
 
 def test_get_raw_phasor_zero_signal_no_warning_and_nan():
     # A cell whose (offset-subtracted, clipped) decay sums to 0 -> undefined
@@ -103,7 +83,7 @@ def test_get_raw_phasor_zero_signal_no_warning_and_nan():
 
 
 def test_get_raw_phasor_normal_signal_matches_formula():
-    # Non-regression: a real decay still matches the raw-phasor formula.
+    # A nonzero decay follows the raw-phasor formula.
     decay = np.array([0.0, 5.0, 3.0, 1.0])
     time_axis = np.array([0.0, 1.0, 2.0, 3.0])
     w = 0.5
@@ -115,7 +95,7 @@ def test_get_raw_phasor_normal_signal_matches_formula():
     assert s == pytest.approx(expected_s)
 
 
-# --- Bug 4: extract_fit_results propagating failed-fit NaN amps --------------
+# Derived features for failed fits
 
 def _fit_results_kwargs(results, num_components):
     return dict(
@@ -147,7 +127,7 @@ def test_extract_fit_results_nan_amps_skips_derived():
 
 
 def test_extract_fit_results_finite_amps_unchanged():
-    # Non-regression: a normal fit still produces the derived features.
+    # A valid fit produces its derived features.
     results = {
         "amp1": [80.0], "amp2": [20.0],
         "t1": [0.4], "t2": [2.5], "offset": [5.0],
@@ -160,7 +140,7 @@ def test_extract_fit_results_finite_amps_unchanged():
     assert warning_msg == ""
 
 
-# --- Bug 5: irf_shift normalisation of a degenerate IRF ----------------------
+# Degenerate IRF normalization
 
 def test_irf_shift_zero_irf_no_nan():
     # An all-zero IRF must not produce NaN via the 0/0 normalisation.
@@ -172,7 +152,7 @@ def test_irf_shift_zero_irf_no_nan():
 
 
 def test_irf_shift_normal_irf_normalized():
-    # Non-regression: a normal IRF is normalised to sum 1, no NaN.
+    # A nonzero IRF normalizes to a finite unit sum.
     irf = np.zeros(20)
     irf[5] = 10.0
     irf[6] = 5.0
@@ -181,11 +161,10 @@ def test_irf_shift_normal_irf_normalized():
     assert not np.any(np.isnan(result))
 
 
-# --- Bug 6: all-zero IRF flagged as NaN (not silently fit to garbage) --------
+# All-zero IRFs yield NaN fits
 
 def test_fit_curves_all_zero_irf_returns_nan():
-    # A zero IRF -> zero reconvolution model -> a fit would return finite garbage.
-    # fit_curves must instead return its NaN-initialised results.
+    # A zero IRF gives a zero reconvolution model, so the fit returns NaN results.
     duration, time_bins = 12.5, 64
     decay = np.linspace(100.0, 1.0, time_bins)
     results = fit_curves(

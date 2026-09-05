@@ -1,10 +1,5 @@
-"""The config-change notifier lets an already-open Data Extraction tab tell the
-user their view is stale (another tab clicked "Update Configuration") so they can
-refresh when ready — instead of silently reloading the page.
-
-It records the config mtime the page rendered with; a periodic poll then renders a
-"refresh to apply" banner when the on-disk mtime has moved ahead. It must NOT
-auto-adopt the new mtime (the user, not the app, decides when to refresh).
+"""Config polling shows a refresh banner when the disk mtime advances.
+The page retains its rendered mtime until the user refreshes.
 """
 import os
 import sys
@@ -36,9 +31,9 @@ def test_fresh_page_records_baseline_and_shows_no_banner(tmp_path, monkeypatch):
     at = AppTest.from_file(_NOTIFY_HARNESS).run(timeout=60)
 
     assert not at.exception, f"harness raised: {[e.value for e in at.exception]}"
-    # The page records the mtime it was built from...
+    # Record the rendered config version.
     assert at.session_state["_config_mtime_seen"] == p.stat().st_mtime
-    # ...and a freshly-loaded page is not stale, so no banner.
+    # Matching the disk version needs no banner.
     warnings = " ".join(w.value.lower() for w in at.warning)
     assert "configuration was updated" not in warnings
 
@@ -48,15 +43,15 @@ def test_stale_config_shows_refresh_banner_without_adopting(tmp_path, monkeypatc
 
     _point_config_at(tmp_path, monkeypatch)
     at = AppTest.from_file(_BANNER_HARNESS)
-    # A tab opened *before* another tab's save: its remembered mtime is stale.
+    # Another tab has saved a newer config.
     at.session_state["_config_mtime_seen"] = 1.0
     at.run(timeout=60)
 
     assert not at.exception, f"harness raised: {[e.value for e in at.exception]}"
-    # It tells the user to refresh...
+    # Request a refresh.
     warnings = " ".join(w.value.lower() for w in at.warning)
     assert "configuration was updated" in warnings
-    # ...but must NOT silently adopt the new mtime — the user decides when to apply.
+    # Keep the rendered version until the user refreshes.
     assert at.session_state["_config_mtime_seen"] == 1.0
 
 

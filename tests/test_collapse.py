@@ -1,9 +1,6 @@
-"""Collapsing single cells to one dot per replicate (src/collapse.py).
-
-Pure-function tests: no Streamlit, no config, no page. The contract they pin is the
-one rule the whole feature rests on -- a column survives the collapse iff it holds a
-single value in every group -- plus the inlining constraint that makes the exported
-script able to reproduce it.
+"""Collapse produces one point per replicate and layout group.
+Numeric columns are averaged; other non-ID columns survive only when constant in
+every group. The helper must also work when inlined into a standalone export.
 """
 import inspect
 
@@ -43,7 +40,7 @@ def _paired_df():
 
 
 # ---------------------------------------------------------------------------
-# The key: one dot per (Collapse by x Color by x Separate by) combination
+# One dot per (Collapse by × Color by × Separate by) combination
 # ---------------------------------------------------------------------------
 
 def test_one_row_per_collapse_level_within_each_x_slot():
@@ -55,7 +52,7 @@ def test_one_row_per_collapse_level_within_each_x_slot():
 
 
 def test_an_x_slot_holds_as_many_dots_as_it_has_replicates():
-    """The headline misconception: collapsing does not put ONE dot in a slot."""
+    """Each treatment slot retains one dot per dish."""
     df = _paired_df()
     out, _label, _varied = collapse_rows(df, "dish", ["treatment"], "cell_id")
 
@@ -64,8 +61,7 @@ def test_an_x_slot_holds_as_many_dots_as_it_has_replicates():
 
 
 def test_a_replicate_spanning_two_slots_contributes_one_dot_to_each():
-    """The paired design. D1 is measured under both treatments, so it is two dots
-    -- one in each x slot -- and the pairing survives the collapse."""
+    """A dish measured under both treatments retains one dot in each slot for pairing."""
     df = _paired_df()
     df.loc[df["dish"] == "D1", "treatment"] = ["Control", "Control", "Drug", "Drug"]
 
@@ -87,8 +83,7 @@ def test_the_value_is_the_arithmetic_mean_over_the_cells():
 
 
 def test_every_numeric_column_is_averaged_not_just_one():
-    """The frame stays a valid analysis frame, so switching the y feature does not
-    need a different collapse."""
+    """All numerical features are averaged so the collapsed frame supports feature changes."""
     df = _paired_df()
     out, _label, _varied = collapse_rows(df, "dish", ["treatment"], "cell_id")
 
@@ -109,8 +104,7 @@ def test_key_columns_always_survive():
 
 
 def test_a_coarser_column_survives_and_keeps_its_value():
-    """`day` is one value per dish, so a collapsed dot can carry it -- this is the
-    case that MUST keep working, or Shape by = day stops being expressible."""
+    """A day constant within each dish survives for use as a point decoration."""
     df = _paired_df()
     out, _label, varied = collapse_rows(df, "dish", ["treatment"], "cell_id")
 
@@ -130,8 +124,7 @@ def test_a_finer_column_is_dropped_and_named():
 
 
 def test_varying_in_any_one_group_drops_the_column_everywhere():
-    """All-or-nothing: one offending group is enough. Otherwise the channel would
-    apply to some dots and not others, which no legend can express."""
+    """A column varying in any group is dropped from the entire collapsed frame."""
     df = _paired_df()
     df.loc[df["dish"] == "D1", "day"] = ["Day 1", "Day 1", "Day 9", "Day 9"]
 
@@ -142,9 +135,7 @@ def test_varying_in_any_one_group_drops_the_column_everywhere():
 
 
 def test_a_column_that_is_constant_but_partly_missing_counts_as_varying():
-    """"A" in three rows and NaN in the fourth is NOT constant. With dropna=True
-    it would read as constant and .first() would paint the whole dot "A" without
-    ever saying so -- silent, and wrong."""
+    """Nulls count as values: a group containing both "A" and NaN is not constant."""
     df = _paired_df()
     df["batch"] = "A"
     df.loc[df.index[0], "batch"] = np.nan
@@ -264,9 +255,7 @@ def test_column_order_follows_the_input_frame():
 # ---------------------------------------------------------------------------
 
 def test_the_module_imports_no_streamlit_and_nothing_from_src():
-    """_extract_source strips `from src.*` lines and resolves no transitive
-    dependency, so anything this module reaches for becomes a NameError inside a
-    generated script -- at run time, days later, on the user's machine."""
+    """Export inlining strips project imports and does not resolve transitive dependencies."""
     import src.collapse as module
 
     source = inspect.getsource(module)
@@ -276,8 +265,7 @@ def test_the_module_imports_no_streamlit_and_nothing_from_src():
 
 
 def test_collapse_rows_calls_no_private_helper_of_its_own():
-    """One public function, no helpers: _extract_source copies a body and nothing
-    it calls."""
+    """The exported function is self-contained because _extract_source does not copy helpers."""
     import src.collapse as module
 
     private = [name for name in vars(module)

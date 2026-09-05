@@ -65,9 +65,8 @@ def fov_extraction_widget(metadata_df, metadata_dict, num_cols=3):
         )
         for warning in derived_warnings:
             st.warning(warning)
-        # Surface NaN in the new derived columns. check_fov_features() runs per FOV
-        # *before* derived columns exist, so a divide-by-zero -> NaN (or NaN inherited
-        # from a NaN operand) would otherwise go unreported, unlike base-feature NaNs.
+        # Check derived-column NaNs separately: per-FOV validation runs before
+        # these columns are computed.
         total_cells = len(single_cell_features)
         new_derived_cols = [c for c in single_cell_features.columns
                             if c.startswith("Derived: ") and c not in cols_before]

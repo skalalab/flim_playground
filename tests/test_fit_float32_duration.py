@@ -1,11 +1,6 @@
-"""Regression guard: a numpy float32 `duration` must not disable parallel fitting.
-
-An SDT laser rep time is derived as float32 (tac_r / tac_g * 1e9). That float32
-flowed into fit_curves() as `duration`, became an lmfit parameter bound
-(`max=duration`), and broke `params.dumps()` on the parallel path with
-"Object of type float32 is not JSON serializable" — silently falling back to
-sequential fitting. `duration` is now coerced to a native float at both the SDT
-source (src/decay_io.py) and the fit boundary (src/fit.py:_init_params).
+"""A numpy float32 duration remains compatible with parallel fitting.
+SDT repetition times can arrive as float32; lmfit parameter bounds must serialize
+to JSON for transfer to workers.
 """
 import sys
 from pathlib import Path
@@ -32,11 +27,11 @@ def _delta_irf(n_bins):
 
 
 def test_init_params_float32_duration_is_json_serializable():
-    """The precise failure: max=duration must not leave a float32 in the params."""
+    """A float32 duration produces JSON-serializable parameter bounds."""
     dur32 = np.float32(0.05) / np.float32(4.0955) * 1e9  # float32, as from an SDT header
     assert isinstance(dur32, np.float32)
     params, _arrays, _fixed = _init_params(dur32, 256, 2, 12, False, None, None, None)
-    params.dumps()  # must not raise "Object of type float32 is not JSON serializable"
+    params.dumps()  # Parameter serialization must succeed.
     assert type(params["t1"].max) is float
 
 

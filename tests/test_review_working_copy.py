@@ -174,7 +174,7 @@ def test_a_table_with_no_row_id_says_what_will_identify_its_rows():
 
 
 def test_an_ignored_column_does_not_count_as_an_identifier():
-    """Ignore is how a bad Row ID is put down, so it must not read as one on the way out."""
+    """An ignored former identifier is excluded from the identifier notice."""
     assert row_id_notice({"cell_id": ROLE_IGNORE, "Area": ROLE_NUMERICAL})
 
 
@@ -434,8 +434,7 @@ def test_a_row_id_that_repeats_is_blocked_where_the_dropdown_is():
 
 
 def test_a_row_id_blank_in_some_rows_is_blocked():
-    """A row with no identifier is not identified -- and two of them are not two rows:
-    `duplicated` treats missing values as equal, so they collapse into one."""
+    """Missing identifiers block review before pandas could treat them as duplicate labels."""
     from src.dataset_io import review_blocking_reason
 
     df = pd.DataFrame({"cell_id": ["a", None, None], "Area": [1.0, 2.0, 3.0]})

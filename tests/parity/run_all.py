@@ -20,10 +20,8 @@ def _src_mtimes():
 
 
 def main():
-    # inspect.getsource() re-reads the file through linecache but indexes it with
-    # the already-imported code object's line numbers, so a source edit landing
-    # mid-run splices generated scripts out of the wrong functions. That produced
-    # a NameError that vanished on the next run and looked like flakiness.
+    # Source must remain unchanged: inspect.getsource() uses imported code's line
+    # numbers, which can become stale if edits land during script generation.
     before = _src_mtimes()
     failures = []
     for name in SCRIPTS:

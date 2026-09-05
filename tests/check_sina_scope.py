@@ -1,27 +1,9 @@
-"""Every statistic in the sina plot is scoped to the COLOUR GROUP, never to the
-(colour, shape, opacity) subgroup.
+"""Check that sina jitter and box statistics are scoped to each section/color group.
 
-Two things used to be computed per subgroup, and both were wrong for the same reason:
-the subgroup is not a thing the reader can see. It has no x position of its own -- it
-shares the colour group's -- so a number computed from it is drawn as if it described
-the colour group.
+Encodings change appearance without moving points. Require one pooled box per
+group and matching app/export coordinates.
 
-  * the KDE that sets the sina jitter width, so switching shape_by on re-estimated
-    every density over a quarter of the data and moved every point sideways
-  * the boxplot quartiles, so shape_by + opacity_by drew 12 overlapping boxes on 2 x
-    positions and the visible one was whichever got painted last
-
-The contract asserted here:
-
-  1. no visual-encoding channel moves any point (shape/opacity/match change appearance,
-     never geometry)
-  2. one box per (section, colour group), whatever the channels
-  3. box statistics equal the pooled colour group's, computed straight from numpy
-  4. the exported Matplotlib script draws the same points as the app
-
-Run standalone; exits non-zero on the first failure:
-
-    python tests/check_sina_scope.py
+Run: python tests/check_sina_scope.py
 """
 import contextlib
 import os
@@ -81,9 +63,7 @@ def build_df():
 
 @contextlib.contextmanager
 def boxplot_on():
-    """Force the "Add boxplot" checkbox. Bare-mode Streamlit hands back the widget's
-    default and ignores session_state, so the checkbox is the one thing that has to be
-    stubbed; everything asserted below is read off the real figure."""
+    """Enable boxplots in bare-mode Streamlit, which otherwise returns widget defaults."""
     real = univar.st.checkbox
 
     def fake(label, value=False, key=None, **kwargs):
@@ -99,12 +79,9 @@ def boxplot_on():
 
 
 def point_xy(fig, precision=9):
-    """(x, y) per cell id. Point traces are the ones carrying cell ids in ``text``,
-    which excludes the boxes, the mean line and the ghost legend entries.
+    """Return coordinates by cell ID, excluding boxes, connectors, and legend entries.
 
-    ``precision=None`` keeps full float64, for the export comparison: rounding here and
-    again at the comparison turns a value sitting on a .5 boundary into a false
-    difference of one ulp of the coarser precision.
+    Keep full precision for export comparisons to avoid errors from double rounding.
     """
     out = {}
     for trace in fig.data:

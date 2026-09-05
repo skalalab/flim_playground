@@ -1,9 +1,7 @@
-"""Shared plumbing for app-vs-export parity checks on the real example datasets.
+"""Shared app-vs-export parity helpers for the example datasets.
 
-The app side loads a CSV through the same get_features() pipeline pages/data_analysis.py
-uses, then calls the plotting function directly. The export side generates the standalone
-script from an equivalent `state` dict and runs it with runpy. Both sides then get poked
-for the numbers that are supposed to agree.
+Mirror the app's CSV preparation and call its plotting functions directly. Generate
+and run an export from equivalent state, then compare plotted values and metadata.
 
 See README.md in this directory for how to run these.
 """
@@ -29,8 +27,7 @@ if str(REPO) not in sys.path:
 warnings.filterwarnings("ignore")
 
 EXAMPLES = REPO / "example_data" / "Data_Analysis"
-# Scratch space for generated scripts and their outputs. Under tests/, so already
-# gitignored; safe to delete at any time.
+# Gitignored scratch space for generated scripts and outputs.
 WORK_ROOT = HERE / "_work"
 
 
@@ -50,8 +47,7 @@ def load_app_df(csv_path, categorical_cols, unique_row_id_col, fov_name_col):
     df = pd.read_csv(csv_path, index_col=False)
     df, _w, err = check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col)
     assert err == "", err
-    # A no-op for every fixture here, which all name a real identifier -- but the app
-    # runs it between these two steps, and this function's job is to be that path.
+    # Resolve identifiers before coercion, matching the app's load order.
     df, unique_row_id_col = resolve_row_id_col(df, unique_row_id_col)
     skip = set([unique_row_id_col] + list(categorical_cols))
     df, _ = coerce_majority_numeric_cols(df, skip)
@@ -66,12 +62,8 @@ def base_state(method, csv_name, categorical_cols, unique_row_id_col="cell_id",
                fov_name_col="image_name", analysis_columns=None, **overrides):
     """Mirror the dict pages/data_analysis.py::_export_script_button collects.
 
-    Keep this in sync with that function — if it grows a key, add it here too, or the
-    harness will silently stop exercising it.
-
-    Method-only controls do NOT belong here: they ride `method_params`, the way `log_y`,
-    `add_boxplot` and `collapse_by` do for Feature Comparison. Adding one in both places
-    is the mistake this note exists to prevent.
+    Keep shared keys synchronized with the page's capture function. Store controls
+    specific to one method, such as log_y and collapse_by, in method_params only.
     """
     import streamlit as st
 
@@ -93,8 +85,7 @@ def base_state(method, csv_name, categorical_cols, unique_row_id_col="cell_id",
         "axis_label_size": 12,
         "legend_size": 10,
         "colormap": "tab10",
-        # Read from session state, exactly as _export_script_button does, so a harness
-        # case that flips the toggle is captured without also passing it here.
+        # Capture the same session-state toggle as the export button.
         "show_group_counts": st.session_state.get("plot_show_group_counts", False),
         "method_params": {},
     }
@@ -139,9 +130,7 @@ def apply_filters(df, state):
     loading. The app reaches the same frame through filters_widget(); doing it here keeps
     both sides on identical rows without needing the widget.
     """
-    # The app's Operator selectbox offers exactly these two (filter_widgets.py). Anything
-    # else cannot come out of the UI, so accepting it here would only let a harness test a
-    # combination that never occurs — and quietly pass.
+    # Accept only operators offered by filter_widgets.py.
     ops = {">": "gt", "<=": "le"}
     for col, values in (state.get("categorical_filters") or {}).items():
         df = df[df[col].isin(values)]
@@ -157,12 +146,9 @@ def apply_filters(df, state):
 
 
 def page_collectors():
-    """The real `_collect_categorical_filters` / `_collect_numerical_filters` from
-    pages/data_analysis.py, without importing the page.
+    """Load the page's actual categorical and numerical filter collectors via AST.
 
-    Importing the module would execute the whole Streamlit page. Instead the two function
-    definitions are lifted out by AST and compiled on their own, so the harness exercises
-    the actual capture code the export button relies on rather than a copy of it.
+    Compile their definitions and imports without executing the Streamlit page body.
     """
     import ast
 
@@ -173,9 +159,7 @@ def page_collectors():
     missing = wanted - {n.name for n in defs}
     if missing:
         raise RuntimeError(f"pages/data_analysis.py no longer defines {sorted(missing)}")
-    # The page's own module-level imports come along, so a collector that starts calling a
-    # newly imported helper keeps working instead of NameError-ing here (selection_key /
-    # chosen_items / ALL_LABEL arrived that way with the "Except:" filter mode).
+    # Include module-level imports needed by the collector functions.
     imports = [n for n in tree.body if isinstance(n, (ast.Import, ast.ImportFrom))]
 
     ns = {}
@@ -186,11 +170,7 @@ def page_collectors():
 
 
 def enable_derived(script):
-    """Flip the exported script's opt-in constant so it writes its derived-data CSV.
-
-    In the app that CSV comes from a download button; the script ships it behind
-    SAVE_DERIVED_DATA = False so running it has no side effects.
-    """
+    """Enable the exported script's opt-in derived-data CSV output."""
     assert "SAVE_DERIVED_DATA = False" in script
     return script.replace("SAVE_DERIVED_DATA = False", "SAVE_DERIVED_DATA = True")
 
@@ -211,12 +191,9 @@ def sorted_rows(a):
 
 
 def app_point_traces(fig, main_axis_only=False):
-    """Plotly traces that carry real plotted points.
+    """Return Plotly marker traces with data, excluding empty encoding-legend traces.
 
-    Robust to Box/Violin traces, which have no `.mode` attribute at all, and skips the
-    shape/opacity legend traces add_point_legend_traces() adds as `x=[None], y=[None]`
-    — the export's add_encoding_legend_entries() draws those as empty scatters, so
-    counting them makes the app look like it has one extra point per encoding level.
+    With main_axis_only, also exclude traces attached to secondary y axes.
     """
     out = []
     for t in fig.data:

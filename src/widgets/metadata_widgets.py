@@ -22,8 +22,7 @@ from src.file_io import load_image
 
 
 def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_components, selected_feature_extractors):
-    """
-    """
+    """Collect per-channel file suffixes and report missing or conflicting entries."""
     actual_file_suffix = {}
     error_lines = []
     t1_suffix_list = []
@@ -56,9 +55,8 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
                     error_lines.append(f"Please provide a suffix for {file_type} in {channel_name}")
                 else:
                     actual_file_suffix[channel_name][file_type] = suffix
-            # Track the ACTUAL entered (non-empty) suffixes for the cross-channel
-            # checks below; empty ones are already reported above as missing, so
-            # they must not masquerade as duplicates.
+            # Collect only entered suffixes for cross-channel checks; missing values
+            # are already reported and must not count as duplicates.
             if suffix != "":
                 if file_type == "SPCImage t1":
                     t1_suffix_list.append(suffix)
@@ -77,9 +75,7 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
                 for key in needed_suffix:
                     actual_file_suffix[channel_name][key] = actual_file_suffix[channel_name]["SPCImage t1"].replace(spc_output_suffix["t1"], spc_output_suffix[key])
 
-    # check for duplicate t1 suffixes across channels — only non-empty, actually
-    # entered suffixes were collected, so missing ones no longer show up as an
-    # empty-string "duplicate".
+    # Check entered t1 suffixes for cross-channel duplicates.
     if len(set(t1_suffix_list)) != len(t1_suffix_list):
         error_lines.append(f"Duplicate t1 suffixes found: {t1_suffix_list}")
 
@@ -106,23 +102,17 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
     return actual_file_suffix_dict, error_msg
 
 def _permission_denied_message(folder_path, err):
-    """Build the message shown when a folder exists but can't be listed.
+    """Explain a folder-listing failure, with platform-specific guidance when relevant.
 
-    A folder can be un-listable for several unrelated reasons — plain
-    filesystem/ACL permissions, a network server refusing access, or an OS
-    privacy gate (macOS TCC, Windows Controlled Folder Access). So lead with a
-    statement that is true on every platform and for every cause, then append a
-    platform-specific hint only when the signal actually matches, so the advice
-    never misleads a user on a platform or cause it doesn't apply to.
+    Permission and privacy restrictions can both block access. Add the macOS
+    volume-access hint only for the matching platform and error/path signals.
     """
     msg = (
         f"⛔ **Permission denied** reading **{folder_path}**.\n\n"
         "Your account doesn't have permission to list this folder. If it's on a "
         "shared or network drive, check that you're connected and authorized to access it."
     )
-    # macOS: errno 1 (EPERM, 'Operation not permitted') — or any /Volumes path —
-    # is the privacy/TCC signature, a different problem from a filesystem-permission
-    # denial (errno 13, EACCES) and one the user fixes by granting volume access.
+    # On macOS, EPERM or a /Volumes path prompts guidance about volume access.
     if sys.platform == "darwin" and (
         getattr(err, "errno", None) == errno.EPERM or str(folder_path).startswith("/Volumes/")
     ):
@@ -141,10 +131,10 @@ def _permission_denied_message(folder_path, err):
 
 @st.cache_data
 def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
-    """
-    Load data from a folder and check its validity. Display the file sets for each image group. 
-    file_names = image_name + suffix (exactly that, no more, no less)
-    image_group: keyed by image_name, and the value is a list of all the files that belong to that image
+    """Scan and display each FOV's files, keyed by image name.
+
+    Per-FOV filenames must equal image_name + suffix. IRF and lifetime-standard
+    files are shared across the dataset and matched by suffix alone.
     """
 
     valid_image_groups = {}
@@ -153,10 +143,8 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
 
     path = Path(folder_path)
 
-    # Validate the folder is reachable and readable BEFORE scanning. Path.rglob()
-    # silently swallows PermissionError/OSError, so an unreadable folder (e.g. a
-    # macOS-blocked network/SMB volume) would otherwise look like an empty folder
-    # and produce a misleading "check the path and the file suffixes" message.
+    # Probe folder access before rglob, which can suppress OS errors and make
+    # an unreadable folder appear empty.
     if not path.exists():
         st.warning(f"Folder does not exist: **{folder_path}**. Please check the path.")
         return {}
@@ -203,7 +191,7 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
         st.warning(f"No image files found with suffix: **{image_search_suffix}**.")
         return {}
 
-    # get the image names from the file names by removing the suffix
+    # Derive image names by removing the required file suffix.
     image_names = [os.path.basename(file).removesuffix(image_search_suffix) for file in image_files]
     # for each image name, build a widget card with the image name and the files that belong to it
     num_images = len(image_names)
@@ -278,11 +266,9 @@ def preview_metadata_widget(metadata_df, num_cols=3):
         st.write(metadata_df)
 
 def export_metadata_widget(metadata_df, folder_path):
-    # use a botton to export the fovs as one csv file (one fov per row) to the folder_path
+    # Export one metadata row per FOV to the selected folder.
     confirm_export = st.button("Export FOV Metadata as CSV", help=f"Export the fov metadata as one csv file (one fov per row) to {folder_path}", key="export_metadata_button")
     if confirm_export:
-        # convert the dictionary to a dataframe
-        # save the dataframe to a csv file
         time_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         csv_file_path = os.path.join(folder_path, f"fov_metadata_{time_stamp}.csv")
         try:
@@ -294,32 +280,23 @@ def export_metadata_widget(metadata_df, folder_path):
         st.session_state["last_extracted_metadata"] = metadata_df
         st.session_state["last_extracted_metadata_filepath"] = csv_file_path
 
-# --- Raw-data checks --------------------------------------------------------
-# Each check is split in two: an uncached wrapper keeping the (fov_df, channel_name)
-# signature check_assign_channel_widget calls with, and a cached core keyed only on
-# the columns the check actually reads. Caching on fov_df instead would key every
-# channel's check on every other channel's answer, because Streamlit hashes a
-# DataFrame by its values and check_assign_channel_widget writes `{channel}_channel`
-# into that same frame between calls.
+# Cache validation by the columns each check reads. Channel assignments
+# mutate fov_df between calls and must not invalidate other channels' scans.
 
 
 def _column_values(fov_df, column_name):
-    """One column as a hashable tuple, values left exactly as they are.
+    """Return a column as a hashable tuple, preserving missing values.
 
-    Deliberately not stringified: a missing path has to stay NaN so the readers
-    still report "No decay file path provided" rather than hunting for a file
-    literally named "nan". `.tolist()` rather than `tuple(series)` keeps numpy
-    scalars out of the cache key, where they hash slowly.
+    ``tolist`` converts numpy scalars for faster cache hashing. Keep NaNs as
+    missing paths so readers can report them without attempting a "nan" file.
     """
     return tuple(fov_df[column_name].tolist())
 
 
 def _fov_labels(fov_df):
-    """Per-row display labels, for error messages that have to point at a FOV.
+    """Return FOV labels as strings for errors and fast cache hashing.
 
-    Stringified here because every consumer wants text, and because a bare
-    RangeIndex would otherwise put numpy int64s in the cache key -- those miss
-    Streamlit's int fast path and fall through to slow generic hashing.
+    Stringifying also avoids generic hashing of numpy integer index values.
     """
     fov_name_col = get_fov_name_col()
     source = fov_df[fov_name_col] if fov_name_col in fov_df.columns else fov_df.index
@@ -353,15 +330,11 @@ class _DecayScan(NamedTuple):
 
 @st.cache_data(show_spinner="Reading decay files...")
 def _scan_decay_files(decay_paths, fov_labels):
-    """Read every decay file once and report the raw facts about them.
+    """Read decay files and return ``(error_msg, _DecayScan | None)``.
 
-    Deliberately channel-agnostic, and keyed on the file list alone: two channels
-    whose Decay suffixes resolve to the same multi-detector file then share one
-    decode instead of each paying for it. That only holds as long as nothing
-    channel-specific leaks in here -- error wording that names a channel, and the
-    channel the user eventually picks, both belong in check_raw_decay_data.
-
-    Returns ``(error_msg, _DecayScan | None)``.
+    Cache by file paths and FOV labels, without channel-specific state, so
+    channels sharing multi-detector files reuse one decode. Channel assignment and channel-specific
+    messages belong in ``check_raw_decay_data``.
     """
     shape_list = []
     shape_to_files = {}  # shape -> list of decay file paths
@@ -388,9 +361,8 @@ def _scan_decay_files(decay_paths, fov_labels):
         if len(shape) == 4 and shape == shape_list[0]:
             if channel_has_signal is None:
                 channel_has_signal = np.zeros(shape[0], dtype=bool)
-                # Same first-4D-row branch: sum the time axis while this FOV's decay is
-                # still in memory, so the preview costs no extra read. float64 keeps the
-                # photon totals shown under each thumbnail exact.
+                # Sum the first 4D FOV while it is in memory to avoid a preview reread.
+                # Use float64 for photon totals.
                 preview_images = np.sum(decay_data, axis=-1, dtype=np.float64)
             if not np.any(decay_data):
                 empty_fov_labels.append(fov_label)
@@ -411,28 +383,20 @@ def _scan_decay_files(decay_paths, fov_labels):
 
 
 def check_raw_decay_data(fov_df, channel_name):
-    """
-    Check if the raw decay data is available.
+    """Interpret cached decay data for one channel.
 
-    Returns ``(error_msg, available_channels, shape, laser_rep_time, preview_images)``.
-    ``shape`` is (Y, X, T) on *both* success paths -- 3D files have no channel axis to
-    drop, 4D ones get theirs sliced off here -- which is what lets the caller read time
-    bins as ``shape[-1]`` and spatial dims as ``shape[:-1]`` without caring which it got.
-    ``preview_images`` is a (C, Y, X) array of photon counts for the first FOV, summed
-    over the time axis, and backs the channel-assignment preview in
-    ``check_assign_channel_widget``. It is None whenever there is no channel to assign
-    (3D decay) or the data never got read.
+    Return ``(error_msg, available_channels, shape, laser_rep_time, preview_images)``.
+    On success, ``shape`` is (Y, X, T) for both 3D and 4D inputs. Preview images
+    are (C, Y, X) photon totals for the first FOV, or None for 3D inputs/errors.
 
-    The file reading lives in the cached _scan_decay_files; everything here is the
-    channel-specific interpretation of it, and stays uncached so that reassigning one
-    channel costs no re-reads for the others.
+    Keep this wrapper uncached so assignments reuse ``_scan_decay_files`` without
+    rereading files for any channel.
     """
     decay_column_name = f"{channel_name}_Decay"
     mask_column_name = f"{channel_name}_Mask"
     if decay_column_name not in fov_df.columns:
         return "Error: No decay data found. Please check the data.", [], None, None, None
-    # Presence only -- the mask paths themselves are never read here, so they stay out
-    # of the cache key and this check stays per-channel.
+    # Only check mask-column presence here; mask paths are not scan-cache inputs.
     if mask_column_name not in fov_df.columns:
         return "Error: No mask data found. Please check the data.", [], None, None, None
 
@@ -471,12 +435,10 @@ def check_raw_decay_data(fov_df, channel_name):
                 f"{len(scan.empty_fov_labels)} field(s) of view have entirely zero "
                 f"{channel_name} decay data ({listed}). Please check the data."
             ), [], None, None, None
-        # Reaching here means no FOV was entirely zero, so at least one channel carries
-        # signal and the caller's selectbox never gets an empty list of options.
+        # Each FOV has signal, so at least one channel is available for assignment.
         non_zero_channels = [c for c in range(shape[0]) if scan.channel_has_signal[c]]
         return "", non_zero_channels, shape[1:], laser_rep_time, scan.preview_images
-    # read_decay only ever yields 3D or 4D today; return an error rather than falling
-    # off the end, which would hand the caller a bare None to unpack five ways.
+    # Preserve the error return structure for unexpected dimensions.
     return (
         f"Error: Unexpected {channel_name} decay data shape {shape}. "
         "Expected 3 or 4 dimensions."
@@ -485,13 +447,10 @@ def check_raw_decay_data(fov_df, channel_name):
 
 @st.cache_data(show_spinner="Reading 2D decay files...")
 def _scan_2d_decay_files(decay_paths):
-    """Number of time bins (columns) in the 2D decay CSVs.
+    """Return ``(error_detail, time_bins)`` from the first 2D decay CSV.
 
-    Only ``decay_paths[0]`` is ever read: the original loop returned on its first
-    iteration and that behaviour is preserved. The whole tuple is still the cache
-    key on purpose, so finishing the loop later cannot silently under-key this.
-
-    Returns ``(error_detail, time_bins)``; the caller adds the channel name.
+    Only the first file is read, though the full path tuple identifies the cached
+    result. The caller adds channel context to errors.
     """
     for decay_path in decay_paths:
         try:
@@ -514,13 +473,10 @@ def check_raw_2D_decay_data(fov_df, channel_name):
 
 @st.cache_data(show_spinner="Reading intensity images...")
 def _scan_intensity_images(intensity_paths, mask_paths):
-    """Read each intensity image with its mask, checking both are 2D and agree.
+    """Check that each intensity image and mask are 2D and have equal shapes.
 
-    Keyed on both path tuples because unlike the decay check this one actually
-    reads the mask files, not just the presence of the column. Every message here
-    names a file rather than a channel, so none of them needs rewording upstream.
-
-    Returns ``(error_msg, dimension_list)``.
+    Cache by both path tuples because both files are read. Return
+    ``(error_msg, dimension_list)`` with file-specific errors.
     """
     dimension_list = []
     for image_path, mask_path in zip(intensity_paths, mask_paths):
@@ -567,13 +523,9 @@ def check_raw_intensity_data(fov_df, channel_name):
         return "", dimension_list[0]
 
 def clear_folder_scan_caches():
-    """Clear every cached folder-scan / raw-data-validation result so the next
-    scan re-reads all files from disk. Backs the "Rescan folder" button, whose
-    "ignore cached results" promise only holds if *all* these readers are
-    cleared, not just the folder listing.
+    """Clear folder listing and all raw-data caches for the Rescan folder action.
 
-    These are the cached cores, not the check_raw_* wrappers that call them: the
-    wrappers are plain functions and have no .clear().
+    Clear the cached readers; their check_raw_* wrappers are uncached.
     """
     load_list_data_from_folder_widget.clear()
     _scan_decay_files.clear()

@@ -1,11 +1,4 @@
-"""Put the repo root on sys.path so `import src...` resolves in every test module.
-
-pytest only prepends the test file's own directory, so a module that imports
-`src.*` without inserting the root itself is importable only when it happens to
-be collected alongside one that does -- it fails when run on its own. Doing it
-here once covers every test module regardless of how it is invoked; the existing
-per-file `sys.path.insert` calls remain harmless.
-"""
+"""Put the repository root on sys.path so each test module can import src independently."""
 import sys
 from pathlib import Path
 
@@ -17,29 +10,38 @@ if ROOT not in sys.path:
 
 
 @pytest.fixture(autouse=True)
+def _single_selection_button_group_indices(monkeypatch):
+    """Bridge Streamlit 1.54 AppTest's scalar single-select serialization.
+
+    A real segmented control stores a scalar, while AppTest's ButtonGroup.indices
+    assumes a list (iterating a string character by character on the next rerun).
+    Normalize only that scalar case; native widgets and multi-select tests are
+    unchanged. Remove when Streamlit's test driver supports single selection.
+    """
+    from streamlit.proto.ButtonGroup_pb2 import ButtonGroup as ButtonGroupProto
+    from streamlit.testing.v1.element_tree import ButtonGroup
+
+    original = ButtonGroup.indices.fget
+
+    def indices(group):
+        value = group.value
+        if (group.proto.click_mode == ButtonGroupProto.SINGLE_SELECT
+                and not isinstance(value, list)):
+            return ([] if value is None else
+                    [group.options.index(group.format_func(value))])
+        return original(group)
+
+    monkeypatch.setattr(ButtonGroup, "indices", property(indices))
+
+
+@pytest.fixture(autouse=True)
 def _forget_bare_mode_containers():
-    """Undo a container a bare-mode render left standing on Streamlit's block stack.
+    """Clear form state left on Streamlit generators by bare-mode widget rendering.
 
-    Widget code called outside `streamlit run` -- which is how the gate suites drive it --
-    opens each `with st.form(...)` / `st.popover(...)` against Streamlit's block stack, and
-    with no ScriptRunContext to build a child block against, the form id is written onto
-    the *main* DeltaGenerator itself. Popping the stack therefore restores an object that
-    is still marked as being a form, and it is the singleton every later run starts from.
-    AppTest runs the page in this same thread, its first `st.button` reads that mark, and
-    the page dies inside `st.form()` -- in a test that never mentioned a form, in a file
-    after the one that rendered it. Suites that pass alone and fail together, so the
-    reset lives here rather than in whichever module happens to trip it.
-
-    **The mark is cleared on the generators themselves, never on a copy.** The poison is
-    an attribute of that process-wide singleton, so a copy would be cleaned and thrown
-    away with the singleton still marked. Both the current stack and the default one are
-    swept, because either may hold a generator a `with` block left marked.
-
-    **Imported inside the body, and tolerant of an ImportError.** These are Streamlit
-    private internals with no API guarantee; at module scope a rename would fail
-    *collection* for the whole suite, with a traceback pointing nowhere near the cause.
-    In here it degrades to a no-op -- the suites that need it fail on the symptom above,
-    which at least names a form.
+    Without a ScriptRunContext, forms can mark the shared main DeltaGenerator.
+    Restore the default stack and clear form marks on generators from both stacks
+    so later AppTests start outside a form. Import private internals during teardown
+    and tolerate renames without failing collection.
     """
     yield
     try:

@@ -1,12 +1,6 @@
-"""Classification must report the real problem when no categorical feature exists.
-
-`classifier_options_widget` filters `categorical_cols` down to columns that are
-present in the data, have more than one unique value, and aren't the FOV/identifier
-column. When that filtered set is empty, the "Classify by" multiselect is never
-rendered at all -- yet the widget used to return "Please select at least one
-category for classification.", telling the user to select something that is not
-offered. The true cause is that the dataset has no usable categorical feature, and
-the message should say so.
+"""Classification explains when no usable categorical feature exists.
+Eligible columns must be present, have multiple values, and not be the FOV or
+identifier. If none qualify, the message cannot ask for an unavailable selection.
 """
 import sys
 from pathlib import Path
@@ -66,11 +60,11 @@ def test_no_categorical_feature_reports_true_cause():
 
     assert not at.exception, f"widget raised: {[e.value for e in at.exception]}"
     errors = " ".join(e.value.lower() for e in at.error)
-    # The message must name the real problem (no categorical feature)...
+    # Explain the missing usable categorical feature.
     assert "categorical" in errors, (
         f"expected a no-categorical-feature message, got: {[e.value for e in at.error]}"
     )
-    # ...and must NOT tell the user to select something that is never offered.
+    # Do not ask for a selection the widget cannot offer.
     assert "select at least one category" not in errors, (
         f"misleading 'please select' message shown when there is nothing to select: "
         f"{[e.value for e in at.error]}"

@@ -1,37 +1,24 @@
-"""Shared FLIM feature-label vocabulary (co-design between extraction and analysis).
+"""Shared FLIM axis labels for analysis plots and exported Matplotlib scripts.
 
-Single source of truth that turns the Data-Extraction column naming convention
-("{Extractor}_{channel}: {feature}", plus uncategorized "{channel}_{suffix}") into
-human-readable axis titles in proper FLIM notation: channel + Greek/scientific
-symbol + unit, e.g. ``"nadh τ₁ (ps)"``.
-
-``format_feature_label`` is imported by the Data-Analysis plots (``src/vis/*``) AND
-inlined verbatim into exported Matplotlib scripts via ``inspect.getsource`` (see
-``src/export_script.py``), so the GUI and the exported script always render identical
-labels — there is no second copy of this mapping. For that reason the function is
-fully self-contained: its lookup tables live inside it and it uses only the standard
-library (``re``).
+Convert extracted column names to channel, symbol, and unit labels such as
+``"nadh τ₁ (ps)"``. Keep format_feature_label self-contained apart from re:
+export_script.py embeds it with inspect.getsource(), including its lookup tables.
 """
 import re
 
 
 def format_feature_label(column_name, engine="plotly"):
-    """Return a pretty FLIM axis label for an extracted feature column.
+    """Return a FLIM axis label for an extracted feature column.
 
     Recognised columns become ``"{channel} {symbol} ({unit})"`` (the unit is omitted
     when the quantity is dimensionless). Unrecognised columns — identifiers,
     categoricals, or arbitrary user CSVs — are returned unchanged.
 
-    ``engine`` selects the subscript markup so the label renders correctly in either
-    renderer: ``"plotly"`` (the app, default) emits HTML ``<sub>``/``<sup>`` where needed;
-    ``"mpl"`` (the exported Matplotlib script) converts those to mathtext. Single-character
-    subscripts use real unicode (τ₁, α₂, τₘ, τᵩ, χ²ᵣ — present in DejaVu Sans and browser
-    fonts, identical in both engines); only multi-letter subscripts Unicode lacks use
-    markup — currently just modulation lifetime ``Tau_mod`` → ``τ_mod`` (Unicode has no
-    subscript "d"); the legacy key ``Tau_m`` (pre-rename CSVs) is aliased to the same label.
-    Mean lifetime ``tm`` → τₘ is therefore distinct from modulation. Units
-    verified against extracted data ranges: fit lifetimes are ps, phasor-derived lifetimes
-    (Tau_*) are ns, amplitude fractions are %.
+    ``engine="plotly"`` uses HTML for subscripts unavailable in Unicode;
+    ``engine="mpl"`` converts that markup to mathtext. Unicode symbols are shared.
+    Modulation lifetime ``Tau_mod`` (alias ``Tau_m``) uses τ_mod, distinct from
+    mean lifetime ``tm`` (τₘ). Fit lifetimes are ps, phasor-derived lifetimes are
+    ns, and amplitude fractions are %.
     """
     if not isinstance(column_name, str):
         return column_name
@@ -51,7 +38,7 @@ def format_feature_label(column_name, engine="plotly"):
         "G(2nd)": ("g (2nd harm.)", ""), "S(2nd)": ("s (2nd harm.)", ""),
         # phasor-derived lifetimes (ns)
         "Tau_phase": ("τᵩ", "ns"), "Tau_mod": ("τ<sub>mod</sub>", "ns"),
-        "Tau_m": ("τ<sub>mod</sub>", "ns"),  # legacy alias: pre-rename CSVs (extraction now writes Tau_mod)
+        "Tau_m": ("τ<sub>mod</sub>", "ns"),  # Supported alias for Tau_mod.
         # morphology
         "area": ("Area", "px²"), "perimeter": ("Perimeter", "px"),
         "major_axis_length": ("Major axis", "px"),

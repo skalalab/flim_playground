@@ -1,14 +1,7 @@
-"""Capture per-point (x, y) keyed by cell id, for every channel combination.
+"""Capture sina point coordinates by cell ID for each encoding combination.
 
-The sina jitter comes from a KDE fitted per (separate section, colour group) and an
-rng reseeded per group; any restructure of the drawing loop must leave every point on
-the exact x it had, or the cluster silhouette changes.
-
-Because the fit is scoped to the colour group, the shape/opacity/subcolor cases here must
-agree with ``plain`` point for point -- see tests/check_sina_scope.py, which asserts
-that directly. This file is the wider net: it pins the actual numbers, so a change to
-the KDE, the grid, or the seed is caught even though it would keep the channels
-consistent with each other.
+Jitter is scoped to each section and color group. Encodings must preserve those
+coordinates; numeric baselines also detect changes to the KDE, grid, or random seed.
 """
 import json, sys
 import numpy as np, pandas as pd

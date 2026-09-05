@@ -1,11 +1,6 @@
-"""Derived features: features built from arithmetic over existing extracted ones.
-
-Covers the four pieces of the feature:
-  1. compute_derived_features()  — safe AST evaluation, divide-by-zero, skips.
-  2. predict_feature_columns()   — operand-schema prediction incl. fit expansion.
-  3. analysis grouping + labels  — single "Derived Features" group + clean label.
-  4. metadata round-trip         — the JSON column bakes definitions into the CSV
-                                    so a replayed metadata CSV is self-contained.
+"""Derived-feature evaluation, operand prediction, grouping, and metadata round-trips.
+Formulas use safe AST evaluation; predicted operands match extractor output, and
+CSV metadata preserves definitions for replay.
 """
 import json
 import sys
@@ -264,8 +259,7 @@ def test_predict_texture_2d_is_intensity_sum_only():
 
 
 def test_predict_texture_2d_absent_without_texture_extractor():
-    # A 2D channel selecting only fit-free must NOT predict intensity_sum — it is no
-    # longer auto-tucked into the fit-free path; it requires "Intensity texture".
+    # Fit-free alone does not emit intensity_sum; 2D intensity requires Intensity texture.
     cols = predict_feature_columns(
         ["cyto"],
         {"cyto": ["Lifetime fit free"]},
@@ -291,9 +285,8 @@ def test_predict_texture_non_2d_keeps_full_list():
 # --------------------------------------------------------------------------- #
 # 2b. predict_uncategorized_columns
 #
-# The bookkeeping columns fov_extraction emits WITHOUT an extractor prefix
-# ("{channel}_{suffix}"). They are ordinary per-cell numbers, so they are offered
-# as operands too — background-correcting an intensity needs the fit's offset.
+# Unprefixed bookkeeping columns ("{channel}_{suffix}") are also operands,
+# including the fit offset needed for background correction.
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize(
@@ -379,8 +372,7 @@ def test_from_cfg_appends_uncategorized_after_the_measurements():
 
 
 def test_uncategorized_operand_evaluates_end_to_end():
-    # The evaluator never cared about the prefix — only the picker did. A literal
-    # (the time-bin count) is already allowed, which is what makes this formula work.
+    # Unprefixed operands and numeric literals support background correction.
     df = pd.DataFrame({
         "Intensity texture_nadh: intensity_sum": [1000.0, 2000.0],
         "nadh_offset": [1.0, 2.0],
@@ -398,13 +390,8 @@ def test_uncategorized_operand_evaluates_end_to_end():
 # --------------------------------------------------------------------------- #
 # 2c. predictor <-> emitter cross-check
 #
-# feature_schema PREDICTS, from config alone, what fov_extraction EMITS — two
-# lists that drift apart silently. A column the emitter adds but the schema
-# forgets is an operand the picker never offers; one the schema invents is an
-# operand whose derived feature is skipped at extraction time with "operand
-# column(s) not found". These run the REAL emitters on synthetic input and
-# compare the unprefixed columns they produce against the prediction, so the
-# coupling is checked by measurement rather than by a hand-copied list.
+# Compare real emitter output with both schema lists so the operand picker
+# offers every available column and no absent ones.
 # --------------------------------------------------------------------------- #
 
 CH = "nadh"
@@ -435,11 +422,7 @@ def _split(emitted):
 
 
 def _assert_schema_matches(emitted, channel_extractors, num_components, input_types=None):
-    """Both halves of the schema, against what the emitter actually produced.
-
-    Asserting them together is the point: a column in one list and not the other
-    is precisely the drift that used to go unnoticed, in either direction.
-    """
+    """Compare both categorized and uncategorized predictions with real emitter output."""
     categorized, uncategorized = _split(emitted)
     assert categorized == sorted(predict_feature_columns(
         [CH], channel_extractors, num_components, input_types))
@@ -480,19 +463,14 @@ def test_spcimage_emitter_matches_schema(n, monkeypatch):
 
     err, emitted = extract_spcimage_fit_results(metadata, CH, n, "fov")
     assert err == ""
-    # The prefitted path used to write tm/tm_iw at n=1 (both bit-identical to t1)
-    # that extract_fit_results does not. It no longer does; this pins the two paths
-    # to the same categorized names. They still differ on the UNcategorized half —
-    # a prefitted channel reports no amp/offset/chi-square of its own.
+    # At one component, both paths omit redundant tm/tm_iw columns.
+    # Prefitted data has no unprefixed amp, offset, or chi-square columns.
     _assert_schema_matches(emitted, {CH: ["Lifetime fit"]}, {CH: n},
                            {CH: "Decay (3/4D) pixel-prefitted"})
 
 
 def test_morphology_emitter_matches_schema():
-    """Covers the axis-length trap: ``feature in region`` asks scikit-image for its
-    *current* spelling, so the legacy ``major_axis_length``/``minor_axis_length``
-    names answered False and their columns were silently never written, while the
-    schema kept offering them as operands."""
+    """Morphology emits the axis-length columns offered by the operand schema."""
     from src.fov_extraction import get_intensity_morphology_features
 
     err, emitted = get_intensity_morphology_features(
@@ -551,9 +529,7 @@ def _extracted_frame():
 
 
 def test_every_uncategorized_operand_is_present_and_computable():
-    """Not just offered — each one has to survive compute_derived_features on a real
-    extracted frame. A predicted-but-absent column would be skipped there with a
-    warning instead of producing a column."""
+    """Every predicted operand computes successfully on a frame assembled from real emitters."""
     df = _extracted_frame()
     uncategorized = predict_uncategorized_columns(
         [CH], {CH: ["Lifetime fit", "Intensity morphology", "Intensity texture"]},
@@ -570,8 +546,7 @@ def test_every_uncategorized_operand_is_present_and_computable():
 
 
 def test_background_corrected_intensity_over_real_extractor_output():
-    """The motivating formula, on columns two different extractors actually produced:
-    intensity_sum (texture) minus offset (fit) times the time-bin count."""
+    """Background correction combines emitted texture intensity, fit offset, and a bin count."""
     df = _extracted_frame()
     intensity, offset = f"Intensity texture_{CH}: intensity_sum", f"{CH}_offset"
     out, warnings = compute_derived_features(df.copy(), [{

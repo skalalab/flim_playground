@@ -11,20 +11,20 @@ from copy import deepcopy
 
 class TunedThresholdClassifierCV:
     """
-    A generalized threshold tuning classifier that works for both binary and multi-class classification.
-    Uses cross-validation to tune thresholds based on a specified scoring metric.
-    For multi-class problems, all thresholds are tuned simultaneously.
+    Tune binary or multi-class probability thresholds using cached CV predictions.
+    Multi-class thresholds are optimized together.
     
     Parameters
     ----------
     estimator : object
         A scikit-learn compatible classifier that implements predict_proba.
     scoring : str or callable, default='balanced_accuracy'
-        Scoring metric to optimize. Can be any sklearn scorer string or callable.
-    cv : int, cross-validation generator or iterable, default=5
-        Cross-validation splitting strategy.
+        'balanced_accuracy' and 'f1_macro' select those metrics; other accepted
+        sklearn scorers use accuracy for threshold optimization.
+    cv : int or cross-validation splitter, default=5
+        Number of stratified folds, or an object implementing split(X, y).
     n_jobs : int, default=None
-        Number of jobs to run in parallel during cross-validation.
+        Stored for API compatibility; CV folds are fitted sequentially.
     random_state : int, default=None
         Random state for reproducibility.
     """
@@ -85,15 +85,14 @@ class TunedThresholdClassifierCV:
 
     def _objective_function(self, thresholds, X, y, cv_splits, cached_probas):
         """
-        Objective function to minimize (negative of scoring metric).
-        Uses cached probabilities if available to avoid refitting models.
+        Return the negative mean validation score using cached fold probabilities.
         
         Parameters
         ----------
         thresholds : array-like
             Threshold values to evaluate.
         X : array-like
-            Feature matrix (only used if cached_probas is None).
+            Unused; retained in the optimizer call signature.
         y : array-like
             True labels.
         cv_splits : list
@@ -218,8 +217,7 @@ class TunedThresholdClassifierCV:
                 self.best_thresholds_ = np.full(self.n_classes_, 1.0 / self.n_classes_)
             return self
 
-        # Use a single, efficient optimization method
-        # Nelder-Mead is good for threshold optimization and doesn't require gradients
+        # Nelder-Mead optimizes thresholds without gradients.
         best_score = initial_score
         best_thresholds = initial_threshold.copy()
 

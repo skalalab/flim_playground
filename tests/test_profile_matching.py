@@ -1,13 +1,6 @@
-"""Which saved profile fits an uploaded file, and how the rest are offered.
-
-The rule is strict identity: a profile auto-applies only when the columns it has seen
-are exactly the columns the file has. Containment is deliberately not enough -- a file
-holding every column the profile knows *plus* `n.t2.mean` is not the same dataset, and
-auto-applying would drop a real measurement without asking.
-
-Everything else goes to the chooser, where the ranking orders the candidates but never
-picks one. That is what keeps a fudge factor out: there is no threshold separating
-"close enough" from "not close enough", because the human decides either way.
+"""Only a unique nonempty exact column match auto-applies a profile.
+Other profiles sharing columns are ranked for the chooser by shared count, missing
+count, and name; Auto-detect comes last.
 """
 import sys
 from pathlib import Path
@@ -56,11 +49,7 @@ def test_a_file_missing_a_known_column_is_not_an_exact_fit():
 
 
 def test_an_ignored_column_still_counts_toward_the_profile():
-    """`notes` was seen and dismissed, so the file that contains it matches.
-
-    Drop `notes` from what the profile remembers and the very same file stops
-    matching -- which is the entire reason ignored columns are recorded.
-    """
+    """Ignored columns remain in profile identity so the same file still matches."""
     assert compare_columns("pdl1", set(PDL1), PDL1).is_exact
     assert not compare_columns("pdl1", set(PDL1), PDL1 - {"notes"}).is_exact
 
@@ -94,11 +83,8 @@ def test_more_shared_columns_ranks_higher():
 
 
 def test_fewer_missing_breaks_a_tie_on_shared():
-    """Both know 2 of the file's columns; the one naming fewer absent ones wins.
-
-    The names are chosen so alphabetical order *contradicts* the expected order: the
-    third sort key is the name, so a version named `clean`/`stale` passed unchanged
-    with the missing-count key deleted.
+    """Equal shared counts are ordered by fewer missing columns.
+    Names sort in the opposite order so the assertion exercises the missing-count key.
     """
     profiles = {
         "a_stale": {"cell_id", "treatment", "gone_a", "gone_b"},
@@ -135,13 +121,7 @@ def test_no_profiles_ranks_to_nothing():
 
 
 def test_an_empty_profile_is_not_a_fit_for_an_empty_file():
-    """A profile created and never saved must not silently claim every file.
-
-    Two empty sets are equal, so the identity rule alone would auto-apply it. The
-    fit itself has to say so, not just exact_match: the chooser badges its rows with
-    is_exact, and an "exact fit" the auto-apply then refuses is a contradiction the
-    user would see on screen.
-    """
+    """An empty profile is not an exact match, even for an empty file."""
     assert not compare_columns("unsaved", set(), set()).is_exact
     assert exact_match(set(), {"unsaved": set()}) is None
 
@@ -149,24 +129,13 @@ def test_an_empty_profile_is_not_a_fit_for_an_empty_file():
 # --------------------------------------------------- what the chooser is handed
 
 def test_the_make_a_new_one_option_comes_last():
-    """The list is "which of these is it?", and "none of them" is the fallback.
-
-    Ranked profiles first, best fit at the top; the new-profile option is the end of
-    the list rather than its head, so the eye lands on the candidate most likely to
-    be right instead of on the escape hatch.
-    """
+    """The chooser lists ranked candidates first and Auto-detect last."""
     profiles = {"partial": {"treatment", "species"}, "pdl1": PDL1}
     assert chooser_options(PDL1, profiles, "NEW") == ["pdl1", "partial", "NEW"]
 
 
 def test_a_profile_sharing_no_column_is_left_out_of_the_chooser():
-    """Not a candidate under any reading, so it only lengthens the list.
-
-    Picking it would fill the table with the file's own columns and nothing else --
-    which is exactly what the last option does, and says so. The cost is that this
-    profile cannot be renamed or deleted from this screen until a file that shares a
-    column with it is uploaded; the chooser is the only place those two live.
-    """
+    """Profiles with no shared columns are excluded from the chooser."""
     profiles = {"iris": {"species", "sepal_length"}, "pdl1": PDL1}
     assert chooser_options(PDL1, profiles, "NEW") == ["pdl1", "NEW"]
 
@@ -188,11 +157,7 @@ def test_with_no_profiles_the_chooser_offers_only_the_new_one():
 # ------------------------------------------------- whether to ask the question
 
 def test_no_chooser_once_the_applied_profile_describes_the_file_exactly():
-    """The whole point of the ✏️ path: there is nothing left to choose.
-
-    Only one profile can ever hold a given column set, so offering the others would
-    invite the user to write this file's columns onto a second profile.
-    """
+    """Reopening an exact match suppresses the chooser."""
     assert not chooser_is_needed("pdl1", PDL1, {"pdl1": PDL1, "iris": {"species"}})
 
 

@@ -1,14 +1,7 @@
-"""Contract for the opacity ramp's treatment of missing data.
+"""Check that missing categorical values stay below the opacity ramp.
 
-Opacity is the only ordinal visual channel, so a slot in ``np.linspace`` is a RANK.
-"N/A" is the loader's marker for a missing categorical, not a level, and it used to take
-a slot: which one depended on how the string happened to sort (last among numeric levels,
-so absent data drew at max_opacity -- the most prominent thing on the plot), and taking
-one compressed the real levels into what was left.
-
-Nothing else covers this. No golden baseline fixture has "N/A" in an opacity column, so
-sina_baseline.json and export_baseline.json stay byte-identical either way and cannot
-catch a regression here.
+Real levels retain the full ramp regardless of where "N/A" sorts. Also verify
+that the mapping works when inlined without surrounding module state.
 """
 import inspect
 import sys
@@ -74,10 +67,7 @@ check("a substring of N/A is a real level, not the marker",
       create_opacity_mapping(["N/AA", "z"]) == {"N/AA": MIN, "z": MAX},
       create_opacity_mapping(["N/AA", "z"]))
 
-# Export parity: export_script inlines this function's source with _extract_source, which
-# copies the signature and defaults but NO surrounding module state. Had na_opacity been a
-# module-level constant, every generated script would NameError on it. Compile the
-# extracted source against only the names the export actually provides.
+# Compile the inlined helper with only the names the standalone export supplies.
 namespace = {"np": np, "natural_tuple_sort": natural_tuple_sort}
 exec(inspect.getsource(create_opacity_mapping), namespace)
 inlined = namespace["create_opacity_mapping"](["1", "2", NA])

@@ -1,12 +1,4 @@
-"""Theme color comes from `st.context.theme`, not a bidirectional component.
-
-The old `st_theme()` component returned None on its first render and then reported the
-theme back, forcing a second script run. Callers keyed it by the selected feature, so a
-fresh component mounted — and the plot was rebuilt — on every pick. It also needed a
-unique key per call site to avoid duplicate element IDs.
-
-`get_context_theme_color()` is a plain server-side read: no key, no widget, no rerun.
-"""
+"""Theme color is a server-side st.context.theme read with no widget or rerun."""
 import sys
 from pathlib import Path
 
@@ -18,8 +10,7 @@ from src.vis.helpers import get_context_theme_color
 
 ROOT = str(Path(__file__).resolve().parents[1])
 
-# Two calls in one run stands in for two channels / two plots on a page — the case that
-# forced the old component's per-call-site keys.
+# Multiple plots can read the theme in one run without distinct widget keys.
 SCRIPT = f"""
 import sys
 sys.path.insert(0, {ROOT!r})

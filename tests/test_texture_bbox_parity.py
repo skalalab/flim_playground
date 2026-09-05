@@ -1,17 +1,7 @@
-"""Bbox-crop parity for intensity-texture extraction.
-
-`get_intensity_texture_features` used to build a *full-frame* ``intensity * (mask
-== id)`` array for every cell and run ``morphology.opening`` (a sliding-window
-neighbourhood op) across the whole 2048x2044 frame per cell — ~2.7 s/cell on real
-data, dominated 98% by ``granularity``. The fix crops each cell to its bounding
-box (padded by 2x the largest granularity radius) before the texture ops.
-
-These tests pin the refactor to *bit-identical* output vs. the old full-frame
-algorithm (the oracle below), on inputs chosen to break a careless crop:
-  * an interior cell with internal texture (granularity must be non-trivial),
-  * a cell touching the image border (crop must clamp, not wrap),
-  * two adjacent cells whose padded bboxes overlap (crop must re-apply
-    ``== id`` so a neighbour's intensity never leaks in).
+"""Bounding-box texture extraction matches a full-frame reference.
+Padded crops cover textured interior cells, clamp at image borders, and mask out
+neighbors in overlapping bounds. Intensity and granularity are bit-identical;
+coordinate-derived features allow floating-point rounding.
 """
 import sys
 from pathlib import Path
@@ -26,14 +16,14 @@ from src.cell_texture import granularity, radial_distribution, mass_displacement
 from src.fov_extraction import extract_texture_features_from_arrays
 
 
-# --- Oracle: the original full-frame algorithm, verbatim ---------------------
+# Full-frame reference
 
 GRANULARITY_VALUES = [1, 3, 5, 7]
 RADIAL_VALUES = [1, 2, 3, 4]
 
 
 def _full_frame_texture_oracle(intensity_image, mask, fov_name, feature_prefix):
-    """Reference impl: process every cell on the FULL frame (the old code path)."""
+    """Reference implementation: process every cell on the full image."""
     mask_ids = np.unique(mask)
     mask_ids = mask_ids[mask_ids != 0]
     out = {}
@@ -92,14 +82,12 @@ def test_bbox_crop_matches_full_frame():
     assert list(got.index) == list(oracle.index)
     assert list(got.columns) == list(oracle.columns)
 
-    # intensity_sum + granularity use no pixel coordinates -> BIT-IDENTICAL.
-    # This is the morphology hot path the crop optimises; it must not drift.
+    # Intensity sum and granularity must be bit-identical.
     exact_cols = [c for c in got.columns if "granularity" in c or "intensity_sum" in c]
     pd.testing.assert_frame_equal(got[exact_cols], oracle[exact_cols], check_exact=True)
 
-    # radial_distribution + mass_displacement derive from absolute pixel
-    # coordinates (np.where), so a bbox crop shifts the origin -> identical only
-    # up to floating-point rounding (~1e-15 here, scientifically irrelevant).
+    # A crop shifts the coordinate origin, so radial distribution and mass displacement
+    # may differ by floating-point rounding (~1e-15).
     fp_cols = [c for c in got.columns if "radial_distribution" in c or "mass_displacement" in c]
     np.testing.assert_allclose(
         got[fp_cols].to_numpy(dtype=float),

@@ -50,7 +50,7 @@ IRF = _delta_irf(TIME_BINS)
 # ---------------------------------------------------------------------------
 
 class TestAllFree:
-    """Regression guard: no fixed_lifetimes produces reasonable free-fit."""
+    """Without fixed_lifetimes, both free lifetimes converge to reasonable values."""
 
     def test_single_component_no_fixed(self):
         decay = _synth_decay(TIME_AXIS, [5000], [0.5])

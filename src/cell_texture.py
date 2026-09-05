@@ -61,8 +61,7 @@ def radial_distribution(cell_image, ring_number):
     centroid_y = np.mean(y_coords)
     centroid_x = np.mean(x_coords)
     
-    # Calculate distances directly for masked pixels only (optimization)
-    # This avoids creating a full-size distance array for the entire image
+    # Compute distances only at masked pixels to avoid a full-image array.
     distances_masked = np.sqrt((y_coords - centroid_y)**2 + (x_coords - centroid_x)**2)
     max_distance = np.max(distances_masked)
     
@@ -96,20 +95,15 @@ def radial_distribution(cell_image, ring_number):
     return mean_fraction
 
 def mass_displacement(cell_image):
-    # geometric displacement between the centroid and the intensity weighted centroid of the cell 
-    # step1: get the centroid of the cell
+    # Distance between the geometric and intensity-weighted cell centroids.
     cell_mask = cell_image > 0
     y_coords, x_coords = np.where(cell_mask)
-    # A dark/empty cell (no pixel with intensity > 0) has no defined centroid,
-    # so the displacement is undefined -> deliberate NaN (avoids np.mean([]) and
-    # the 0/0 division below).
+    # Cells without positive pixels have no defined centroid or displacement.
     if len(y_coords) == 0:
         return np.nan
     centroid_y = np.mean(y_coords)
     centroid_x = np.mean(x_coords)
-    # step2: get the intensity weighted centroid of the cell
     intensity_weighted_centroid_y = np.sum(y_coords * cell_image[y_coords, x_coords]) / np.sum(cell_image[y_coords, x_coords])
     intensity_weighted_centroid_x = np.sum(x_coords * cell_image[y_coords, x_coords]) / np.sum(cell_image[y_coords, x_coords])
-    # step3: calculate the geometric displacement between the centroid and the intensity weighted centroid
     geometric_displacement = np.sqrt((centroid_y - intensity_weighted_centroid_y)**2 + (centroid_x - intensity_weighted_centroid_x)**2)
     return geometric_displacement

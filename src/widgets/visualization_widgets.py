@@ -9,16 +9,27 @@ from src.vis.plot_defaults import (
     DEFAULT_LEGEND_FONT_SIZE,
     DEFAULT_POINT_SIZE,
 )
-from src.widgets.encoding_state import color_multiselect_label, prune_to_options
+from src.widgets.encoding_state import (
+    POINT_MODES,
+    color_multiselect_label,
+    initial_point_encoding,
+    point_encoding_channels,
+    prune_to_options,
+    resolve_point_mode,
+)
 from src.widgets.analysis_widget_state import control_default, number_input_default
 
 # Explicit keys preserve selections when labels or option lists change.
 COLOR_BY_KEY = "vis_encoding_color_by"
+# Read only when migrating a session from the previous Shape/Subcolor switch.
 AS_COLOUR_KEY = "vis_encoding_as_colour"
+POINT_MODE_KEY = "vis_encoding_point_mode"
+_LAST_POINT_MODE_KEY = "vis_encoding_last_point_mode"
 
-# Shape and subcolor share a selection across point-based methods. Methods without
+# Point encodings share a selection across point-based methods. Methods without
 # this picker allow Streamlit to clear it through normal widget cleanup.
 PICKER_COL_KEY = "vis_encoding_picker_col"
+# Other point-based methods still offer an independent opacity picker.
 OPACITY_BY_KEY = "vis_encoding_opacity_by"
 
 # Collapse controls row aggregation and is not passed to get_point_visual_mappings.
@@ -40,39 +51,89 @@ def _pruned_selectbox(label, options, key, **kwargs):
 
 
 def _picker_selectbox(label, options, **kwargs):
-    """Select a column shared by the shape and subcolor modes."""
+    """Select the column shared by the point-encoding modes."""
     return _pruned_selectbox(label, options, PICKER_COL_KEY, **kwargs)
 
 
-# Native labels remain available to screen readers when the visible label is custom.
-PICKER_LABELS = {True: "Subcolor by", False: "Shape by"}
-
-# The label reads "Shape [switch] subcolor by" above the column picker.
-# Both modes encode nominal values; opacity has its own ordinal control.
-SWITCH_LEAD = "Shape"
-SWITCH_TRAIL = "subcolor by"
+# Native labels remain available to screen readers beneath the mode selector.
+PICKER_LABELS = {mode: f"{mode.title()} by" for mode in POINT_MODES}
 
 
-def _shape_selectbox(available_categories, **kwargs):
-    """Render the shared picker in shape mode, with optional native-label hiding."""
-    return _picker_selectbox(PICKER_LABELS[False], available_categories, **kwargs)
+def _retain_point_mode():
+    """Restore the active segment before rendering if it was deselected."""
+    mode = resolve_point_mode(st.session_state.get(POINT_MODE_KEY),
+                              st.session_state.get(_LAST_POINT_MODE_KEY))
+    st.session_state[POINT_MODE_KEY] = mode
+    st.session_state[_LAST_POINT_MODE_KEY] = mode
 
 
-def _picker_label(text):
-    """Align the custom label and toggle above their shared picker.
+def _initialize_point_mode():
+    """Migrate once so clearing the picker cannot revive legacy opacity."""
+    if (POINT_MODE_KEY not in st.session_state
+            and _LAST_POINT_MODE_KEY not in st.session_state):
+        mode, column = initial_point_encoding(
+            st.session_state.get(PICKER_COL_KEY),
+            st.session_state.get(AS_COLOUR_KEY, False),
+            st.session_state.get(OPACITY_BY_KEY),
+        )
+        st.session_state[POINT_MODE_KEY] = mode
+        st.session_state[PICKER_COL_KEY] = column
+    _retain_point_mode()
 
-    Match Streamlit's widget-label font and toggle height. Keep the CSS in the
-    same markdown element to avoid adding a child and gap to the label row.
-    """
-    st.markdown(
-        f"<style>.st-key-{AS_COLOUR_KEY} p{{font-size:0.875rem;line-height:1.6}}</style>"
-        f"<div style='font-size:0.875rem; margin:0; white-space:nowrap;"
-        f" display:flex; align-items:center; min-height:1.5rem;'>{text}</div>",
-        unsafe_allow_html=True,
-    )
+
+def _encoding_columns(slots, merged_point_encoding):
+    """Keep Feature Comparison's controls aligned, with scrolling inside its row."""
+    if not merged_point_encoding:
+        return st.columns(len(slots))
+
+    st.html("""
+        <style>
+        .st-key-vis_encoding_fc_row {
+            max-width: 100%;
+            min-width: 0;
+            overflow-x: auto;
+        }
+        .st-key-vis_encoding_fc_row [data-testid="stHorizontalBlock"] {
+            min-width: 44rem;
+            flex-wrap: nowrap;
+        }
+        .st-key-vis_encoding_fc_row [data-testid="stColumn"] {
+            min-width: 0;
+        }
+        .st-key-vis_encoding_point_selector [data-testid="stButtonGroup"]
+        [data-baseweb="button-group"][role="radiogroup"] {
+            flex-wrap: nowrap;
+        }
+        .st-key-vis_encoding_point_selector [data-testid="stButtonGroup"]
+        [data-testid^="stBaseButton-segmented_control"] {
+            font-size: 0.875rem;
+            height: 1.75rem;
+            min-height: 1.75rem;
+            padding: 0 0.375rem;
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+        .st-key-vis_encoding_point_selector [data-testid="stButtonGroup"]
+        [data-testid^="stBaseButton-segmented_control"] p {
+            font-size: 0.875rem;
+            white-space: nowrap;
+        }
+        </style>
+    """)
+    with st.container(key="vis_encoding_fc_row"):
+        return st.columns([1.4 if slot == "picker" else 1 for slot in slots],
+                          vertical_alignment="bottom")
 
 
 def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False, subcolor_available=False, collapse_available=False):
+    merged_point_encoding = subcolor_available and point_based
+    # Public self-assignment interrupts cleanup while a widget is hidden. Mode
+    # survives method changes; standalone opacity remains owned by other methods.
+    if POINT_MODE_KEY in st.session_state:
+        st.session_state[POINT_MODE_KEY] = st.session_state[POINT_MODE_KEY]
+    if merged_point_encoding and OPACITY_BY_KEY in st.session_state:
+        st.session_state[OPACITY_BY_KEY] = st.session_state[OPACITY_BY_KEY]
+
     available_categories = [category for category in categorical_cols if category in filtered_df.columns and filtered_df[category].nunique() > 1]
     color_by = []
     opacity_by = shape_by = separate_by = subcolor_by = collapse_by = None
@@ -83,8 +144,8 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     if not color_based:
         return color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by
 
-    # Named, equal-width slots keep the layout consistent as method-specific controls
-    # appear. The shape/subcolor switch shares the final picker's label row.
+    # Feature Comparison has one wider picker slot; other point-based methods
+    # retain independent opacity and shape controls.
     slots = []
     if separate_by_available and point_based:
         slots.append("separate")
@@ -92,8 +153,10 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     if collapse_available and point_based:
         slots.append("collapse")
     if point_based:
-        slots += ["opacity", "picker"]
-    cols = st.columns(len(slots))
+        if not merged_point_encoding:
+            slots.append("opacity")
+        slots.append("picker")
+    cols = _encoding_columns(slots, merged_point_encoding)
     at = {name: index for index, name in enumerate(slots)}
 
     # Separate by widget
@@ -103,9 +166,8 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                 "Separate by", available_categories, key="analysis_control_separate_by")
 
     available_for_color = [cat for cat in available_categories if cat != separate_by]
-    show_subcolor = subcolor_available and point_based
 
-    # Resolve grouping before the shape/subcolor control. Seed and prune through
+    # Resolve grouping before the point-encoding control. Seed and prune through
     # session state only, avoiding duplicate-default warnings from the multiselect.
     default_color = [available_for_color[0]] if available_for_color else []
     if COLOR_BY_KEY not in st.session_state:
@@ -122,48 +184,44 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     available_for_decoration = [cat for cat in available_categories
                                 if cat != separate_by and cat not in effective_color]
 
-    as_colour = False
+    point_mode = "shape"
     if point_based:
         with cols[at["picker"]]:
-            if show_subcolor:
-                # Evaluate the switch before Color by so its label reflects this run.
-                # Match native label/input spacing while keeping the picker full width.
-                with st.container(gap="xxsmall"):
-                    with st.container(horizontal=True, vertical_alignment="top",
-                                      gap="xsmall"):
-                        with st.container(width="content"):
-                            _picker_label(SWITCH_LEAD)
-                        as_colour = st.toggle(
-                            SWITCH_TRAIL, key=AS_COLOUR_KEY, width="content",
-                            help="**Off** — the column below sets point shape."
-                                 "\n\n**On** — it sets color: each value keeps one "
-                                 "color plot-wide, so you can spot it in every group it "
-                                 "appears in and see the spread within each. Best for a "
-                                 "column nested inside the grouping one (e.g. donors "
-                                 "within each treatment).",
-                        )
-                    # Keep the active channel in the native label for screen readers.
-                    if as_colour:
-                        subcolor_by = _picker_selectbox(
-                            PICKER_LABELS[True], available_for_decoration,
-                            disabled=not effective_color, label_visibility="collapsed",
-                        )
-                        # A disabled selectbox can still return its stored value.
-                        if not effective_color:
-                            subcolor_by = None
-                    else:
-                        shape_by = _shape_selectbox(available_for_decoration,
-                                                    label_visibility="collapsed")
+            if merged_point_encoding:
+                _initialize_point_mode()
+                # Read the mode before Color by so its label changes in this run.
+                with st.container(key="vis_encoding_point_selector", gap="xxsmall"):
+                    point_mode = st.segmented_control(
+                        "Point encoding", POINT_MODES, selection_mode="single",
+                        format_func=str.title, key=POINT_MODE_KEY,
+                        on_change=_retain_point_mode, label_visibility="collapsed",
+                        help="**Opacity** varies point transparency across ordered "
+                             "categories. "
+                             "**Subcolor** gives each value one color across all "
+                             "x-axis groups, useful for tracking donors within "
+                             "treatments. **Shape** changes the marker for each "
+                             "category. The selected column follows "
+                             "the active mode; clear it to turn point encoding off.",
+                    )
+                    column = _picker_selectbox(
+                        PICKER_LABELS[point_mode], available_for_decoration,
+                        disabled=point_mode == "subcolor" and not effective_color,
+                        label_visibility="collapsed",
+                    )
+                    opacity_by, shape_by, subcolor_by = point_encoding_channels(
+                        point_mode, column, bool(effective_color),
+                    )
             else:
-                shape_by = _shape_selectbox(available_for_decoration)
+                shape_by = _picker_selectbox(PICKER_LABELS["shape"],
+                                             available_for_decoration)
 
     with cols[at["color"]]:
         color_by = st.multiselect(
-            color_multiselect_label(show_subcolor, as_colour),
+            color_multiselect_label(merged_point_encoding, point_mode == "subcolor"),
             available_for_color,
             key=COLOR_BY_KEY,
             help="Groups compared along the x axis. These groups set the color too, "
-                 "unless the Shape/subcolor switch is on — then that column sets the "
+                 "unless Point encoding is set to Subcolor — then that column sets the "
                  "color and these only set the x positions.",
         )
 
@@ -185,7 +243,7 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                      "trace one replicate across every group.",
             )
 
-    if point_based:
+    if "opacity" in at:
         with cols[at["opacity"]]:
             opacity_by = _pruned_selectbox("Opacity by", available_for_decoration,
                                            OPACITY_BY_KEY)

@@ -1,10 +1,5 @@
-"""Guards for degenerate (constant / all-zero) columns in univariate plotting.
-
-Selecting a feature whose values are all identical (e.g. an all-zero derived
-column) used to crash feature_comparison_plot: gaussian_kde raises LinAlgError on
-the singular covariance of a zero-variance sample, and the effect-size functions
-divide by a zero spread. These lock in the graceful fallbacks so a constant column
-renders flat instead of aborting the whole page.
+"""Constant columns render without KDE or zero-spread effect-size failures.
+Degenerate samples use defined fallbacks without aborting the plot.
 """
 import sys
 from pathlib import Path

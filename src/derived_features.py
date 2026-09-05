@@ -4,15 +4,11 @@ A derived feature is defined by a dict::
 
     {"name": str, "expression": str, "operands": [column_name, ...]}
 
-where ``expression`` uses positional aliases ``A, B, C, ...`` that map to
-``operands[0], operands[1], ...``. Using aliases (rather than the real, often
-messy, column names like ``"Lifetime fit_nadh: a1"``) keeps the stored formula
-trivial to author and safe to parse.
+``expression`` uses positional aliases ``A, B, C, ...`` mapped to
+``operands[0], operands[1], ...``.
 
-Evaluation is a restricted-AST interpreter — NOT ``eval()``/``DataFrame.eval()`` —
-so a formula can only reference its own aliases and use ``+ - * /`` and
-parentheses. Anything else (function calls, attribute access, unknown names) is
-rejected. Divide-by-zero yields NaN rather than raising or producing ``inf``.
+The AST interpreter accepts those aliases, numbers, ``+ - * /``, and parentheses.
+Other syntax is rejected. Nonfinite division results are replaced with NaN.
 
 The output column is named ``"Derived: {name}"``, which the analysis layer
 (``src/dataset_io.py``, ``src/feature_labels.py``) recognises as a single
@@ -28,12 +24,12 @@ _ALLOWED_BINOPS = (ast.Add, ast.Sub, ast.Mult, ast.Div)
 
 
 def alias_names(count):
-    """Positional aliases ``A, B, C, ...`` for *count* operands (A–Z, max 26)."""
+    """Generate aliases starting at A; callers limit count to 26 for A–Z names."""
     return [chr(ord("A") + i) for i in range(count)]
 
 
 def _safe_divide(left, right):
-    """Vectorized division with divide-by-zero -> NaN (never raises, keeps index)."""
+    """Divide elementwise, replacing infinities with NaN and preserving Series indices."""
     with np.errstate(divide="ignore", invalid="ignore"):
         result = left / right
     if isinstance(result, pd.Series):
@@ -71,8 +67,7 @@ def _eval_node(node, series_by_alias):
 def evaluate_expression(expression, series_by_alias):
     """Parse and evaluate one alias expression against *series_by_alias*.
 
-    Raises ``ValueError`` on any unsafe or malformed input (so callers can catch a
-    single exception type).
+    Raises ``ValueError`` for syntax errors, unknown aliases, or disallowed AST nodes.
     """
     try:
         tree = ast.parse(expression, mode="eval")
@@ -97,10 +92,9 @@ def is_single_operand(expression):
 def compute_derived_features(df, derived_defs):
     """Append a ``"Derived: {name}"`` column to *df* for each definition.
 
-    Returns ``(df, warnings)``. A definition is skipped (with a human-readable
-    warning appended to *warnings*) when it is malformed, references a missing
-    operand column, or has an invalid/unsafe expression — the function never
-    raises, so one bad formula cannot abort a whole extraction run.
+    Returns ``(df, warnings)``, modifying df in place. Skip definitions with empty
+    names or expressions and record evaluation failures, including referenced
+    operands missing from df, as warnings.
     """
     warnings = []
     if not derived_defs:
@@ -114,10 +108,7 @@ def compute_derived_features(df, derived_defs):
             warnings.append("Skipped a derived feature with an empty name or expression.")
             continue
 
-        # Map aliases to the operand columns that exist. Only operands actually
-        # referenced by the expression matter, so we don't pre-reject on a
-        # missing-but-unused operand; a referenced-yet-missing alias surfaces as
-        # an "unknown operand" error below and is reported as a missing column.
+        # Missing columns matter only when the expression references their aliases.
         aliases = alias_names(len(operands))
         series_by_alias = {}
         missing = []

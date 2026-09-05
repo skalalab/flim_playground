@@ -61,6 +61,8 @@ class FakeStreamlit:
     def columns(self, spec, **kw):
         # Streamlit accepts either a count or per-column weights.
         self.n_cols = spec if isinstance(spec, int) else len(spec)
+        self.column_weights = [1] * spec if isinstance(spec, int) else list(spec)
+        self.column_kw = kw
         return [self._slot(f"col{i}") for i in range(self.n_cols)]
 
     def container(self, **kw):
@@ -72,6 +74,9 @@ class FakeStreamlit:
         text = re.sub(r"<[^>]+>", "", text).strip()
         self.events.append(("markdown", text, self.stack[-1] if self.stack else None))
         self.visible.append(text)
+
+    def html(self, body, **kw):
+        self.events.append(("html", body, self.stack[-1] if self.stack else None))
 
     def _widget(self, kind, label, key, default, label_visibility="visible"):
         """Keyed widgets read and update session state; unkeyed widgets return their
@@ -92,7 +97,7 @@ class FakeStreamlit:
 
     def selectbox(self, label, options, index=None, key=None, disabled=False,
                   label_visibility="visible", **kw):
-        self.widget_kw[label] = kw
+        self.widget_kw[label] = {**kw, "disabled": disabled, "label_visibility": label_visibility}
         self.widget_options[label] = list(options)
         # Disabled widgets still return their retained selection.
         value = self._widget("selectbox", label, key, None, label_visibility)
@@ -109,6 +114,12 @@ class FakeStreamlit:
         self.widget_kw[label] = kw
         return bool(self._widget("toggle", label, key, False,
                                  kw.get("label_visibility", "visible")))
+
+    def segmented_control(self, label, options, default=None, key=None, **kw):
+        self.widget_kw[label] = kw
+        self.widget_options[label] = list(options)
+        return self._widget("segmented_control", label, key, default,
+                            kw.get("label_visibility", "visible"))
 
     def purge_unrendered(self, keys):
         """Simulate missing widget state by key, including the picker shared by shape and
@@ -141,7 +152,6 @@ def run(state=None, separate=True, match=True, collapse=False):
         )
     finally:
         vw.st = real
-    fake.purge_unrendered([vw.PICKER_COL_KEY, vw.OPACITY_BY_KEY, vw.COLLAPSE_BY_KEY])
     return fake, result
 
 
@@ -156,255 +166,109 @@ def order_of(fake, kind, label=None):
     return -1
 
 
-print("1. layout")
-fake, _ = run()
-check("four equal columns with Separate by", fake.n_cols == 4, fake.n_cols)
-fake3, _ = run(separate=False)
-check("three equal columns without Separate by", fake3.n_cols == 3, fake3.n_cols)
-fakep, _ = run(match=False)
-check("unchanged for methods with no colour channel", fakep.n_cols == 4, fakep.n_cols)
-fakec, _ = run(collapse=True)
-check("five with Collapse by", fakec.n_cols == 5, fakec.n_cols)
-check("Collapse by is DISPLAYED third, after the two grouping channels",
-      [lab for k, lab, slot in fakec.events
-       if k == "selectbox" and slot == "col2"] == ["Collapse by"],
-      [(k, lab, slot) for k, lab, slot in fakec.events if k == "selectbox"])
-
-print("2. evaluation order vs display order")
-fake, _ = run(state={vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: ["experiment"],
-                     vw.PICKER_COL_KEY: "patient_id"})
-check("the switch's slot evaluated before the colour multiselect",
-      order_of(fake, "selectbox", vw.PICKER_LABELS[True]) < order_of(fake, "multiselect"),
-      fake.events)
-check("switch evaluated before the picker it labels",
-      order_of(fake, "toggle") < order_of(fake, "selectbox", vw.PICKER_LABELS[True]),
-      fake.events)
-label_slot = next(w for k, _lab, w in fake.events if k == "markdown")
-switch_slot = next(w for k, _lab, w in fake.events if k == "toggle")
-# The label and switch share a content-width horizontal row.
-check("switch shares one row with the hand-drawn label",
-      fake.slot_parent.get(label_slot) == switch_slot,
-      f"label in {label_slot} (parent {fake.slot_parent.get(label_slot)}), "
-      f"switch in {switch_slot}")
-check("that row lays out horizontally",
-      fake.slot_kw.get(switch_slot, {}).get("horizontal") is True,
-      fake.slot_kw.get(switch_slot))
-check("neither label nor switch stretches, so they stay adjacent",
-      fake.slot_kw.get(label_slot, {}).get("width") == "content"
-      and fake.widget_kw.get(vw.SWITCH_TRAIL, {}).get("width") == "content",
-      f"label {fake.slot_kw.get(label_slot)}, "
-      f"switch {fake.widget_kw.get(vw.SWITCH_TRAIL)}")
-check("the picker itself is not in that row, so it keeps the full column width",
-      fake.slot_parent.get(next(w for k, lab, w in fake.events
-                                if k == "selectbox"
-                                and lab == vw.PICKER_LABELS[True])) != switch_slot)
-# The phrase stays fixed while the switch selects the active channel.
-drawn = lambda f: next(lab for k, lab, _w in f.events if k == "markdown")
-fake_off, _ = run(state={vw.AS_COLOUR_KEY: False, vw.COLOR_BY_KEY: ["experiment"]})
-for state_name, f in (("switch on", fake), ("switch off", fake_off)):
-    check(f"{state_name}: phrase reads '{vw.SWITCH_LEAD} [switch] {vw.SWITCH_TRAIL}'",
-          drawn(f) == vw.SWITCH_LEAD
-          and any(k == "toggle" and lab == vw.SWITCH_TRAIL for k, lab, _w in f.events),
-          f"drawn {drawn(f)!r}, toggle "
-          f"{[lab for k, lab, _w in f.events if k == 'toggle']}")
-check("the phrase does not change with the switch", drawn(fake) == drawn(fake_off),
-      f"{drawn(fake)!r} vs {drawn(fake_off)!r}")
-# Container position determines display order independently of evaluation order.
-def column_of(f, kind, label=None):
-    """Find a widget's display column through nested containers."""
-    slot = next(w for k, lab, w in f.events
-                if k == kind and (label is None or lab == label))
+def column_of(fake, kind, label):
+    """Find a widget's display column through keyed containers."""
+    slot = next(where for k, lab, where in fake.events if k == kind and lab == label)
     while slot is not None and not slot.startswith("col"):
-        slot = f.slot_parent.get(slot)
+        slot = fake.slot_parent.get(slot)
     return slot
-check("the switch's picker is in the last column, Opacity by in the one before",
-      column_of(fake, "selectbox", vw.PICKER_LABELS[True]) == "col3"
-      and column_of(fake, "selectbox", "Opacity by") == "col2",
-      f"switch picker {column_of(fake, 'selectbox', vw.PICKER_LABELS[True])}, "
-      f"opacity {column_of(fake, 'selectbox', 'Opacity by')}")
 
-print("3. exactly one control offers the colour channel")
-# Either the Color by multiselect or the enabled switch controls colour.
-for name, state in {
-    "switch off": {vw.AS_COLOUR_KEY: False, vw.COLOR_BY_KEY: ["experiment"]},
-    "switch on, nothing picked": {vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: ["experiment"]},
-    "switch on, column picked": {vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: ["experiment"],
-                                 vw.PICKER_COL_KEY: "patient_id"},
-    "switch on, no groups": {vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: []},
-}.items():
-    fake, _ = run(state=state)
-    multiselect_claims = label_of(fake, "multiselect") == "Color by"
-    switch_claims = bool(state.get(vw.AS_COLOUR_KEY))
-    check(f"{name}: exactly one claim on colour",
-          multiselect_claims != switch_claims,
-          f"multiselect={'Color by' if multiselect_claims else label_of(fake, 'multiselect')}, "
-          f"switch={'on' if switch_claims else 'off'} -- visible {fake.visible}")
-    # Ignore collapsed labels when checking for duplicate visible control names.
-    dupes = {lab for lab in fake.visible if fake.visible.count(lab) > 1}
-    check(f"{name}: no two visible controls share a name", not dupes,
-          f"duplicated {sorted(dupes)} -- {fake.visible}")
 
-print("4. the relabel happens in the same run")
-fake, (_c, _o, _s, _sep, subcolor_by, _collapse) = run(
-    state={vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: ["experiment"],
-           vw.PICKER_COL_KEY: "patient_id"})
-check("first picker is 'Group by' once the switch claims colour",
-      label_of(fake, "multiselect") == "Group by", label_of(fake, "multiselect"))
-check("subcolor_by is returned", subcolor_by == "patient_id", subcolor_by)
-check("opacity_by is not also set", _o is None, _o)
+print("1. Feature Comparison has four aligned columns")
+fake, _ = run(collapse=True)
+check("four columns, with extra width for the selector",
+      fake.column_weights == [1, 1, 1, 1.4], fake.column_weights)
+check("pickers align along their bottom edge",
+      fake.column_kw.get("vertical_alignment") == "bottom", fake.column_kw)
+check("Collapse by is third", column_of(fake, "selectbox", "Collapse by") == "col2")
+check("selector and shared picker occupy the fourth column",
+      column_of(fake, "segmented_control", "Point encoding") == "col3"
+      and column_of(fake, "selectbox", "Shape by") == "col3")
+check("no standalone opacity in Feature Comparison",
+      "Opacity by" not in fake.widget_options, fake.widget_options)
+check("the row has a stable CSS scope",
+      any(kw.get("key") == "vis_encoding_fc_row" for kw in fake.slot_kw.values()))
+check("full mode names are available from one native control",
+      fake.widget_options["Point encoding"] == ["opacity", "subcolor", "shape"]
+      and [fake.widget_kw["Point encoding"]["format_func"](m)
+           for m in fake.widget_options["Point encoding"]] == ["Opacity", "Subcolor", "Shape"])
+check("native accessible labels are retained without taking another row",
+      fake.widget_kw["Point encoding"].get("label_visibility") == "collapsed"
+      and fake.widget_kw["Shape by"].get("label_visibility") == "collapsed")
+fake, _ = run(match=False)
+check("other methods retain separate opacity and shape controls",
+      fake.n_cols == 4 and "Opacity by" in fake.widget_options
+      and "Shape by" in fake.widget_options and "Point encoding" not in fake.widget_options)
 
-fake, _ = run(state={vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: ["experiment"]})
-check("renamed even before a column is picked",
-      label_of(fake, "multiselect") == "Group by", label_of(fake, "multiselect"))
+print("2. mode selects one channel and relabels grouping in the same run")
+for mode, active_index in (("shape", 2), ("subcolor", 4), ("opacity", 1)):
+    label = f"{mode.title()} by"
+    fake, result = run(state={vw.POINT_MODE_KEY: mode,
+                              vw.COLOR_BY_KEY: ["experiment"],
+                              vw.PICKER_COL_KEY: "patient_id",
+                              vw.OPACITY_BY_KEY: "dish"}, collapse=True)
+    check(f"{mode}: only the chosen role is returned",
+          result[active_index] == "patient_id"
+          and all(result[i] is None for i in (1, 2, 4) if i != active_index), result)
+    check(f"{mode}: mode is evaluated before the colour label",
+          order_of(fake, "segmented_control") < order_of(fake, "multiselect"), fake.events)
+    check(f"{mode}: shared picker follows its mode selector",
+          order_of(fake, "segmented_control") < order_of(fake, "selectbox", label), fake.events)
+    check(f"{mode}: correct grouping label",
+          label_of(fake, "multiselect") == ("Group by" if mode == "subcolor" else "Color by"))
+    check(f"{mode}: only one decoration picker",
+          set(fake.widget_options).intersection({"Shape by", "Subcolor by", "Opacity by"}) == {label})
+    check(f"{mode}: independent opacity is retained for other methods",
+          fake.session_state[vw.OPACITY_BY_KEY] == "dish")
 
-fake, _ = run(state={vw.AS_COLOUR_KEY: False, vw.COLOR_BY_KEY: ["experiment"],
-                     vw.PICKER_COL_KEY: "patient_id"})
-check("reverts with the switch off", label_of(fake, "multiselect") == "Color by",
-      label_of(fake, "multiselect"))
-check("opacity picker is shown instead",
-      any(lab == "Opacity by" for _k, lab, _w in fake.events), fake.events)
+fake, result = run(state={vw.POINT_MODE_KEY: "subcolor", vw.COLOR_BY_KEY: []})
+check("Subcolor relabels even without a field or groups",
+      label_of(fake, "multiselect") == "Group by")
+check("Subcolor requires a group", fake.widget_kw["Subcolor by"]["disabled"] and result[4] is None)
+fake, result = run(state={vw.POINT_MODE_KEY: "subcolor", vw.COLOR_BY_KEY: [],
+                          vw.PICKER_COL_KEY: "patient_id"})
+check("disabled Subcolor remembers its column without applying it",
+      fake.session_state[vw.PICKER_COL_KEY] == "patient_id" and result[4] is None)
 
-fake, (_c, _o, _s, _sep, subcolor_by, _collapse) = run(
-    state={vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: ["experiment"],
-           vw.PICKER_COL_KEY: "experiment"})
-check("a match column claimed by Group by is pruned away", subcolor_by is None, subcolor_by)
+print("3. grouping exclusions and Collapse by stay consistent in all modes")
+for mode in ("shape", "subcolor", "opacity"):
+    label = f"{mode.title()} by"
+    state = {vw.POINT_MODE_KEY: mode, "analysis_control_separate_by": "treatment",
+             vw.COLOR_BY_KEY: ["experiment"], vw.PICKER_COL_KEY: "dish",
+             vw.COLLAPSE_BY_KEY: "dish"}
+    fake, result = run(state=state, collapse=True)
+    check(f"{mode}: grouping excludes both grouping columns from decorations",
+          not {"experiment", "treatment"}.intersection(fake.widget_options[label]))
+    check(f"{mode}: the collapse column remains a decoration option",
+          "dish" in fake.widget_options[label])
+    check(f"{mode}: collapse leaves grouping choices available",
+          "dish" in fake.widget_options["Separate by"]
+          and "dish" in fake.widget_options[label_of(fake, "multiselect")])
+    check(f"{mode}: collapse runs downstream of grouping",
+          order_of(fake, "multiselect") < order_of(fake, "selectbox", "Collapse by")
+          and not {"experiment", "treatment"}.intersection(fake.widget_options["Collapse by"]))
+    for invalid in ("experiment", "treatment", "removed_column"):
+        fake, result = run(state={**state, vw.PICKER_COL_KEY: invalid}, collapse=True)
+        check(f"{mode}: invalid {invalid!r} clears safely",
+              fake.session_state[vw.PICKER_COL_KEY] is None
+              and all(result[i] is None for i in (1, 2, 4)))
 
-print("5. grouping columns are struck from EVERY decoration")
-# Decorations exclude columns used by either grouping control.
-fake, (color_by, _o, _s, sep, subcolor_by, _collapse) = run(
-    state={"analysis_control_separate_by": "experiment",
-           vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: ["treatment"],
-           vw.PICKER_COL_KEY: "patient_id"})
-check("Separate by is returned", sep == "experiment", sep)
-# Inspect offered options; an unselected return value cannot prove exclusion.
-check("a column used by Separate by is not offered as a colour group",
-      "experiment" not in fake.widget_options.get("Group by", []),
-      fake.widget_options.get("Group by"))
-check("nor is it offered as the subcolor column",
-      "experiment" not in fake.widget_options.get(vw.PICKER_LABELS[True], []),
-      fake.widget_options.get(vw.PICKER_LABELS[True]))
-check("nor is a column Color by is grouping on",
-      "treatment" not in fake.widget_options.get(vw.PICKER_LABELS[True], []),
-      fake.widget_options.get(vw.PICKER_LABELS[True]))
+fake, result = run(state={vw.COLOR_BY_KEY: ["dish"], vw.COLLAPSE_BY_KEY: "dish"}, collapse=True)
+check("grouping on a collapse column retires collapse, preserving grouping",
+      result[0] == ["dish"] and result[5] is None
+      and fake.session_state[vw.COLLAPSE_BY_KEY] is None)
+fake, result = run()
+check("collapse is absent when not offered", "Collapse by" not in fake.widget_options and result[5] is None)
 
-# Shape follows the same exclusions as subcolor.
-fake, (_c, _o, shape_by, sep, _m, _collapse) = run(
-    state={"analysis_control_separate_by": "treatment",
-           vw.AS_COLOUR_KEY: False, vw.COLOR_BY_KEY: ["experiment"],
-           vw.PICKER_COL_KEY: "treatment"})
-check("the Shape role obeys the same rule",
-      "treatment" not in fake.widget_options.get(vw.PICKER_LABELS[False], []),
-      fake.widget_options.get(vw.PICKER_LABELS[False]))
-check("and cannot hold it", shape_by is None, shape_by)
-check("nor is the colour column offered to it",
-      "experiment" not in fake.widget_options.get(vw.PICKER_LABELS[False], []),
-      fake.widget_options.get(vw.PICKER_LABELS[False]))
-
-# Opacity, the third: its own column on every point-based method, and the same list.
-fake, _ = run(state={"analysis_control_separate_by": "treatment",
-                     vw.COLOR_BY_KEY: ["experiment"]})
-check("Opacity by excludes both as well",
-      not {"treatment", "experiment"} & set(fake.widget_options.get("Opacity by", [])),
-      fake.widget_options.get("Opacity by"))
-
-# A changing option list preserves valid keyed selections and clears invalid ones.
-fake, (_c, opacity_by, _s, _sep, _m, _collapse) = run(
-    state={vw.COLOR_BY_KEY: ["experiment"], vw.OPACITY_BY_KEY: "treatment"})
-check("a pick survives a change to Color by that does not touch it",
-      opacity_by == "treatment", opacity_by)
-
-fake, (_c, opacity_by, _s, _sep, _m, _collapse) = run(
-    state={vw.COLOR_BY_KEY: ["treatment"], vw.OPACITY_BY_KEY: "treatment"})
-check("grouping ON the held column retires it", opacity_by is None, opacity_by)
-check("and clears it from session state, so the keyed widget cannot raise on it",
-      fake.session_state.get(vw.OPACITY_BY_KEY) is None,
-      fake.session_state.get(vw.OPACITY_BY_KEY))
-
-print("6. one selection, shared by both roles")
-# Both switch positions use the latest selected column.
-state = {vw.AS_COLOUR_KEY: False, vw.COLOR_BY_KEY: ["experiment"]}
-fake, _ = run(state=state)
-state = dict(fake.session_state)
-state[vw.PICKER_COL_KEY] = "treatment"          # picked while the switch is off
-fake, (_c, _o, shape_by, _sep, _m, _collapse) = run(state=state)
-check("held as shape while the switch is off", shape_by == "treatment", shape_by)
-
-state = dict(fake.session_state); state[vw.AS_COLOUR_KEY] = True
-fake, (_c, _o, shape_by, _sep, subcolor_by, _collapse) = run(state=state)
-check("the SAME column carries over to subcolor", subcolor_by == "treatment", subcolor_by)
-check("and stops driving shape", shape_by is None, shape_by)
-
-state = dict(fake.session_state); state[vw.AS_COLOUR_KEY] = False
-fake, (_c, _o, shape_by, _sep, subcolor_by, _collapse) = run(state=state)
-check("and carries back again", shape_by == "treatment", shape_by)
-check("without also driving subcolor", subcolor_by is None, subcolor_by)
-
-# A new subcolor selection must also become the shape selection.
-state = dict(fake.session_state); state[vw.AS_COLOUR_KEY] = True
-state[vw.PICKER_COL_KEY] = "patient_id"         # changed while on subcolor
-fake, (_c, _o, _s, _sep, subcolor_by, _collapse) = run(state=state)
-check("a change made on subcolor sticks", subcolor_by == "patient_id", subcolor_by)
-state = dict(fake.session_state); state[vw.AS_COLOUR_KEY] = False
-fake, (_c, _o, shape_by, _sep, _m, _collapse) = run(state=state)
-check("flipping back shows the NEW column, not the old one",
-      shape_by == "patient_id", shape_by)
-
-# Clear selections that no longer appear in the options.
-state = {vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: ["experiment"],
-         vw.PICKER_COL_KEY: "experiment"}
-fake, (_c, _o, _s, _sep, subcolor_by, _collapse) = run(state=state)
-check("a column Color by is grouping on cannot also subdivide it",
-      subcolor_by is None, subcolor_by)
-
-state = {vw.AS_COLOUR_KEY: False, vw.COLOR_BY_KEY: ["experiment"],
-         vw.PICKER_COL_KEY: "not_a_column"}
-fake, (_c, _o, shape_by, _sep, _m, _collapse) = run(state=state)
-check("a column that is no longer offered is dropped", shape_by is None, shape_by)
-# Check state too: the stub's filtered return alone cannot prove the value was cleared.
-check("and cleared from session state, so the keyed widget cannot raise on it",
-      fake.session_state.get(vw.PICKER_COL_KEY) is None,
-      fake.session_state.get(vw.PICKER_COL_KEY))
-
-print("7. Collapse by is LAST in the grouping chain")
-# Grouping constrains Collapse by; collapsing must leave grouping options intact.
-state = {vw.COLLAPSE_BY_KEY: "dish", vw.AS_COLOUR_KEY: False,
-         vw.COLOR_BY_KEY: ["experiment"]}
-fake, (_c, _o, _s, _sep, _sub, collapse_by) = run(state=state, collapse=True)
-check("the picked column is returned", collapse_by == "dish", collapse_by)
-check("Color by keeps its full list", "dish" in fake.widget_options["Color by"],
-      fake.widget_options["Color by"])
-check("Separate by keeps its full list", "dish" in fake.widget_options["Separate by"],
-      fake.widget_options["Separate by"])
-check("a grouped column is struck from Collapse by",
-      "experiment" not in fake.widget_options["Collapse by"],
-      fake.widget_options["Collapse by"])
-check("evaluated AFTER the colour multiselect",
-      order_of(fake, "multiselect") < order_of(fake, "selectbox", "Collapse by"),
-      fake.events)
-
-# The collapse column remains available to decorate each replicate's point.
-for as_colour, label in ((False, vw.PICKER_LABELS[False]), (True, vw.PICKER_LABELS[True])):
-    state = {vw.COLLAPSE_BY_KEY: "dish", vw.AS_COLOUR_KEY: as_colour,
-             vw.COLOR_BY_KEY: ["experiment"]}
-    fake, _ = run(state=state, collapse=True)
-    check(f"still offered as {label}", "dish" in fake.widget_options[label],
-          fake.widget_options[label])
-check("still offered as Opacity by", "dish" in fake.widget_options["Opacity by"],
-      fake.widget_options["Opacity by"])
-
-# The yield goes the other way: grouping on the collapsed column retires the collapse.
-state = {vw.COLLAPSE_BY_KEY: "dish", vw.AS_COLOUR_KEY: False,
-         vw.COLOR_BY_KEY: ["dish"]}
-fake, (_c, _o, _s, _sep, _sub, collapse_by) = run(state=state, collapse=True)
-check("grouping ON the collapsed column retires the collapse, not the grouping",
-      collapse_by is None, collapse_by)
-check("and cleared from session state, so the keyed widget cannot raise on it",
-      fake.session_state.get(vw.COLLAPSE_BY_KEY) is None,
-      fake.session_state.get(vw.COLLAPSE_BY_KEY))
-
-fake, (_c, _o, _s, _sep, _sub, collapse_by) = run()
-check("absent when the method does not offer it", collapse_by is None, collapse_by)
-check("and not drawn", "Collapse by" not in fake.visible, fake.visible)
+print("4. methods with independent decorations retain the existing behavior")
+state = {vw.COLOR_BY_KEY: ["experiment"], vw.OPACITY_BY_KEY: "treatment",
+         vw.PICKER_COL_KEY: "patient_id"}
+fake, result = run(state=state, match=False)
+check("shape and opacity can both be used", result[1:3] == ("treatment", "patient_id"), result)
+fake, result = run(state={**state, vw.COLOR_BY_KEY: ["treatment"]}, match=False)
+check("a newly grouped opacity column is cleared",
+      result[1] is None and fake.session_state[vw.OPACITY_BY_KEY] is None)
+check("a still-valid shape column survives", result[2] == "patient_id")
 
 print(f"\n{len(FAILS)} failure(s)" + (": " + ", ".join(FAILS) if FAILS else ""))
 sys.exit(1 if FAILS else 0)

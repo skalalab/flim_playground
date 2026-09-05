@@ -1,6 +1,4 @@
-"""
-read data from raw decay file (sdt or ptu)
-"""
+"""Read raw decay data and acquisition metadata from SDT or PTU files."""
 
 import os
 
@@ -68,9 +66,7 @@ def read_decay_metadata(filename):
             tac_g = sdt.measure_info[0].tac_g
             if not tac_g or tac_g == 0:
                 return f"Error: Invalid TAC gain (tac_g={tac_g}) in {filename}", None
-            # tac_r / tac_g are float32 SDT header fields; coerce so `duration`
-            # stays a native float (float32 is not JSON-serializable, which
-            # otherwise breaks lmfit params.dumps() on the parallel fit path).
+            # Convert SDT float32 fields to a native float for lmfit JSON serialization.
             laser_rep_time = float(tac_r / tac_g * 1e9)
         except Exception:
             return _msg_no_laser_rep(filename), None
@@ -154,12 +150,7 @@ def read_ptu(filename, channel=-1):
         if c == 1:
             decay_data = ptu_data.reshape(y, x, t)
         else:
-            # ptu[0] is laid out as (Y, X, C, H) (ptu.dims minus the leading T).
-            # Move the channel axis to the front -> (C, Y, X, H) so the later
-            # decay_data[channel] actually selects a channel. A blind
-            # reshape(c, y, x, t) reinterprets this buffer and scrambles
-            # channels/pixels/time bins. (read_sdt's identical reshape is safe
-            # only because sdtfile already returns channel-first (C, Y, X, T).)
+            # Reorder (Y, X, C, H) to (C, Y, X, H) for channel indexing.
             c_axis = ptu.dims.index("C") - 1  # -1: ptu[0] dropped the leading T axis
             decay_data = np.moveaxis(ptu_data, c_axis, 0)
         if channel != -1:

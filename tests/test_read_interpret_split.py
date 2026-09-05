@@ -1,21 +1,6 @@
-"""load_table is two halves: read_table judges structure, interpret_table judges meaning.
-
-The split exists so a caller can stop between them -- holding the file's own headers,
-before any profile has been consulted. Two properties make that possible, and both fail
-silently if lost:
-
-- `read_table` reads no config, so it cannot be blocked by a profile that does not fit
-  the file. Proved here by mutation: the config accessors are replaced with ones that
-  raise, and read_table still returns the frame.
-- `interpret_table` takes every column role as an *argument*, so the same code serves a
-  name that came from the saved profile and one the user just picked in the UI. The
-  review table's other column, the feature groups, travels the same way and has no
-  fall-back to the *active* profile, which under "the file picks the profile" need not
-  be the profile the file matched at all.
-
-`load_table` composes the two for the Data Extraction branch, and only for it, because
-a user's table has to stop between the halves by construction: the gate shows the file's
-own headers before any profile has been applied.
+"""read_table validates structure without consulting config; interpret_table applies
+explicit column roles and groups. Review can inspect raw headers between the two.
+load_table composes them for the Data Extraction branch.
 """
 import sys
 from pathlib import Path
@@ -35,11 +20,8 @@ def _frame():
 
 
 def _real_upload(df, suffix=".csv"):
-    """A genuine UploadedFile, which st.cache_data has a dedicated hasher branch for.
-
-    read_table goes through the *decorated* _read_table_cached, unlike the reader
-    tests in test_table_formats, which call its __wrapped__ body. A bare BytesIO
-    sends the hasher down its file-path branch and it stats the name.
+    """Use a real UploadedFile for Streamlit's dedicated buffer hasher.
+    read_table calls the cached reader; a named BytesIO uses the file-path hasher.
     """
     buf = _upload(df, suffix)
     return _uploaded_file(buf.getvalue(), buf.name)
@@ -52,7 +34,7 @@ def _explode(*_a, **_k):
 # ------------------------------------------------------------- read_table
 
 def test_read_table_reads_no_config(monkeypatch):
-    """The property the whole redesign rests on, proved by breaking config."""
+    """read_table returns the frame even when every config accessor raises."""
     monkeypatch.setattr(dataset_io, "get_unique_row_id_col", _explode)
     monkeypatch.setattr(dataset_io, "get_fov_name_col_analysis", _explode)
 
@@ -65,7 +47,7 @@ def test_read_table_reads_no_config(monkeypatch):
 
 
 def test_read_table_hands_back_the_files_own_headers():
-    """What step 3's matching and the review table are built from."""
+    """Raw file headers and values are available for profile matching and review."""
     df, _meta, _delim, _warning, error = dataset_io.read_table(
         _real_upload(pd.DataFrame({"a": [1], "b c": [2], "IL-18": [3]})))
     assert error == ""
@@ -101,11 +83,7 @@ def test_interpret_table_takes_roles_as_arguments_not_from_config(monkeypatch):
 
 
 def test_the_grouping_is_an_argument_like_the_roles():
-    """Not a role -- the review table's other column. Same argument treatment.
-
-    A caller holding a session-local working copy has to be able to say "group feat
-    under lifetime" without that edit having been saved to disk first.
-    """
+    """Unsaved working-copy groups reach interpretation through explicit arguments."""
     _out, groups, complete, _row_id = dataset_io.interpret_table(
         _frame(), ["treatment"], "cell_id", "",
         feature_groups={"lifetime": ["feat"]}, use_data_extraction=False)
@@ -115,12 +93,7 @@ def test_the_grouping_is_an_argument_like_the_roles():
 
 
 def test_the_ignored_columns_are_an_argument_too():
-    """The Ignore role reaches get_features through here, or it is inert.
-
-    A *numeric* ignored column is the case that matters: it passes the dtype test, so
-    only exclusion by name keeps it out of the features. Left unplumbed, the role
-    would be recorded in the profile and silently do nothing.
-    """
+    """Numeric Ignore roles reach get_features and exclude columns that otherwise qualify."""
     df = pd.DataFrame({"cell_id": ["a", "b"], "treatment": ["DMSO", "PBS"],
                        "feat": [1.0, 2.0], "plate": [3, 4]})
 
@@ -142,14 +115,7 @@ def test_an_empty_group_map_puts_everything_in_uncategorized():
 
 
 def test_omitting_the_grouping_reads_no_config_at_all():
-    """The same answer as `{}` -- there is no fall-back to the active profile.
-
-    Left in, that fall-back was reachable only from a caller that passed nothing, and
-    under "the file picks the profile" the active profile need not be the matched one:
-    a file described by `pdl1` would take its groups from whatever was saved last. It
-    was also `dataset_io`'s second reason to import the widget modules, which is why
-    the accessor is gone from this module rather than merely unused.
-    """
+    """Omitted groups mean no groups, without consulting the active profile or widget modules."""
     _out, groups, _complete, _row_id = dataset_io.interpret_table(
         _frame(), ["treatment"], "cell_id", "", use_data_extraction=False)
 
@@ -179,11 +145,7 @@ def test_interpret_table_rejects_a_named_row_id_the_frame_lacks():
 
 @pytest.mark.parametrize("suffix", [".csv", ".tsv", ".xlsx"])
 def test_load_table_still_returns_what_the_two_halves_produce(suffix, monkeypatch):
-    """The composition matches the halves called by hand, on every read branch.
-
-    Both sides are the extraction branch now -- load_table has no other -- so the
-    stepwise call leaves `use_data_extraction` at its default rather than passing False.
-    """
+    """Extraction load_table matches read_table plus interpret_table on every read branch."""
     monkeypatch.setattr(dataset_io, "get_unique_row_id_col", lambda *a, **k: "cell_id")
     monkeypatch.setattr(dataset_io, "get_fov_name_col_analysis", lambda *a, **k: "")
 

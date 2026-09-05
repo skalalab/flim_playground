@@ -1,8 +1,5 @@
-"""A FLIM 3/4D-decay channel using 'Lifetime fit free' with a per-channel
-fluorescence-lifetime-standard calibration still needs its `channel_no`
-extracted. A `continue` that was meant only to skip IRF-shift assignment must
-not also skip channel-number parsing — otherwise `fov_extraction` later raises
-a KeyError on `metadata_dict[channel]["channel_no"]`.
+"""FLIM 3/4D fit-free channels retain channel_no with lifetime-standard calibration,
+even when IRF-shift assignment is skipped.
 """
 import sys
 from pathlib import Path

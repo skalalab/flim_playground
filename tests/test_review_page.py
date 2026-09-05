@@ -417,8 +417,7 @@ def test_create_then_assign_puts_two_ticked_rows_in_one_group(page, tmp_path):
     assert at.session_state._review_groups == {"area": "shape", "perimeter": "shape"}
     gen = at.session_state["_review_editor_gen"]
     assert _by_key(at, "selectbox", _group_key(gen, "area", True)).value == "shape"
-    # Finished, so the ticks are gone: the box scrolls, and five more ticks on top of a
-    # forgotten twenty would quietly put all twenty-five in the next group.
+    # Clear completed selections so the next assignment includes only newly ticked rows.
     assert _tick(at, "area").value is False
 
 
@@ -516,7 +515,7 @@ def test_with_no_groups_the_section_stays_and_only_add_is_live(page, tmp_path):
 
 
 def test_select_all_ticks_every_measurement_and_then_clears(page, tmp_path):
-    """One button, because the pair it replaces would both sit idle most of the time."""
+    """One Apply button handles bulk assignment."""
     at = _fresh_gate(page, tmp_path)
 
     _by_key(at, "button", "review_select_all").click().run(timeout=90)
@@ -732,7 +731,7 @@ def test_deleting_the_applied_profile_on_the_reopen_path_reopens_the_chooser(pag
 
 
 def test_keep_disarms_the_row_without_deleting(page, tmp_path):
-    """A confirm that cannot be backed out of is a delete button with extra steps."""
+    """Armed deletion can be cancelled without deleting the profile."""
     config = tmp_path / "analysis_config.toml"
     at = _pick(_run({"pdl1": _PDL1, "iris": _IRIS}, current="pdl1", path=config), "pdl1")
 
@@ -744,8 +743,7 @@ def test_keep_disarms_the_row_without_deleting(page, tmp_path):
 
 
 def test_renaming_a_profile_moves_the_working_copys_save_target(page, tmp_path):
-    """The working copy is bound to its profile by name. Rename the profile without
-    following it and the one write the gate offers points at nothing."""
+    """Renaming a profile updates the working-copy binding and save target."""
     config = tmp_path / "analysis_config.toml"
     at = _pick(_run({"pdl1": _PDL1}, current="pdl1", path=config), "pdl1")
 
@@ -807,8 +805,7 @@ def test_what_the_reader_says_about_the_file_is_shown_while_the_gate_is_open(pag
                        "'ReadMe', was read ('Data' skipped).")
     at = _run(profiles={}, current="", path=tmp_path / "analysis_config.toml")
 
-    # Two stages, because the warning has to survive both: the chooser, which is what a
-    # first upload lands on, and the table behind it.
+    # Warnings remain visible in both the initial chooser and the review table.
     assert [b for b in at.button if str(b.label).startswith(AUTO_DETECT)], \
         f"chooser not open; wrong state under test: {[str(b.label) for b in at.button]}"
     assert [m for m in at.markdown if "ReadMe" in str(m.value)], \
@@ -817,9 +814,7 @@ def test_what_the_reader_says_about_the_file_is_shown_while_the_gate_is_open(pag
     shown = [str(m.value) for m in at.markdown if "ReadMe" in str(m.value)]
     assert shown, f"reader warning not rendered while the table is open: {[str(m.value) for m in at.markdown][:6]}"
 
-    # ... and still shown when the gate is blocked, which is when it is needed most:
-    # nothing the user can do in the table clears the block, so this line is the only
-    # thing pointing at the file.
+    # File warnings remain visible when invalid content blocks Save.
     page["frame"] = pd.DataFrame({"cell_id": [1, 2], "note": ["a", "b"]})
     at = _pick(_run(profiles={}, current="", path=tmp_path / "analysis_config.toml"), AUTO_DETECT)
     save = [b for b in at.button if "Save" in str(b.label)]   # labelled "💾 Save profile as"

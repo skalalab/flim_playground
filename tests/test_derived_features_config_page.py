@@ -1,11 +1,6 @@
-"""The derived-features builder on the Configuration page (main.py).
-
-Complements the pure-logic tests in test_derived_features.py: this drives the
-actual Streamlit page via AppTest to confirm the "Derived features" reveal
-checkbox (which carries the section description as its help "?", since
-st.expander has no help param) shows/hides the builder and that the builder's
-populated path — Template selectbox + operand pickers, and the custom append
-buttons — renders without raising.
+"""AppTest coverage of the Configuration page's derived-feature builder.
+The reveal checkbox carries section help, shows or hides the builder, and supports
+template operands and custom formula buttons.
 """
 import copy
 import sys
@@ -166,12 +161,10 @@ def test_add_clears_custom_builder_inputs(tmp_path, monkeypatch):
 
 
 def test_add_bumps_builder_generation(tmp_path, monkeypatch):
-    """Reset works by re-keying the inputs (a per-profile generation counter that
-    Add bumps), NOT by deleting their session_state — deleting a widget's key does
-    not reset it in the live app: Streamlit restores the frontend value on the
-    rerun. AppTest has no frontend, so the state-based tests above pass either way
-    and can't guard the mechanism. This one does: it fails if the code regresses to
-    the delete-the-key approach (which leaves df_gen absent / static).
+    """Add resets builder inputs by advancing their widget-key generation.
+
+    Deleting session-state keys alone lets the browser restore old values. AppTest
+    has no frontend, so assert the generation change as well as the cleared values.
     """
     from streamlit.testing.v1 import AppTest
 
@@ -267,8 +260,7 @@ def test_operand_dropdown_offers_uncategorized_columns_last(tmp_path, monkeypatc
 
 
 def test_background_corrected_intensity_saves(tmp_path, monkeypatch):
-    """The motivating formula: intensity_sum - offset * (number of time bins), with
-    the bin count typed as a literal (the evaluator allows plain numbers)."""
+    """Background correction accepts the time-bin count as a numeric literal."""
     from streamlit.testing.v1 import AppTest
 
     _write_fit_and_texture_seed(tmp_path, monkeypatch)

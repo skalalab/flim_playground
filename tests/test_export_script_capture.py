@@ -102,7 +102,7 @@ def _grouped_df(group_means, n_per_group=20, group_col="treatment", seed=0):
 
 
 # ---------------------------------------------------------------------------
-# Bug 1 — data loading must mirror the app's CSV normalization
+# Data loading mirrors app normalization
 # ---------------------------------------------------------------------------
 
 def test_categorical_filter_matches_numeric_column(tmp_path, monkeypatch):
@@ -143,13 +143,7 @@ def test_categorical_column_keeps_its_own_spelling_for_grouping(tmp_path, monkey
 
 
 def test_duplicate_row_ids_stop_the_script(tmp_path, monkeypatch):
-    """The app refuses the file; the script must refuse it too, and say the same thing.
-
-    Both used to keep the first row per id -- consistent, and consistently wrong: the
-    script would plot 10 of 11 cells and print a warning nobody reads. The generated
-    loader already raises SystemExit on check_and_fix_df's error, so making it an error
-    is the whole change on this side.
-    """
+    """Duplicate identifiers reject the file with the same message in the app and export."""
     df = _grouped_df({"ctrl": 1.0}, n_per_group=10)
     df = pd.concat([df, df.iloc[[0]]], ignore_index=True)  # duplicate one cell_id
     state = _base_state(
@@ -182,13 +176,8 @@ def test_majority_numeric_object_feature_coerced(tmp_path, monkeypatch, capsys):
 
 
 def test_an_ignored_column_is_left_alone_by_the_script_too(tmp_path, monkeypatch, capsys):
-    """The other half of the app's skip set: the columns the review table marked Ignore.
-
-    `plate_number` is the case the role exists for -- a label that reads as a number, with
-    a stray value in it. The app skips coercing it because the user dismissed it, so the
-    script must skip it as well: converted here it would report a conversion the app
-    suppressed, and with no ANALYSIS_COLUMNS captured (as here) the script's frame would
-    carry a numeric column the app's never held.
+    """Ignored columns bypass numeric coercion and its warnings in both paths,
+    including exports without an ANALYSIS_COLUMNS restriction.
     """
     df = _grouped_df({"ctrl": 1.0, "drug": 2.0}, n_per_group=60)
     df["plate_number"] = [str(1 + i % 3) for i in range(len(df))]
@@ -231,7 +220,7 @@ def test_missing_unique_id_column_errors_like_the_app(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Bug 2 — statistical-test-only annotations (no effect size selected)
+# Statistical-test-only annotations
 # ---------------------------------------------------------------------------
 
 def test_stat_test_only_draws_significance_stars(tmp_path, monkeypatch):
@@ -322,10 +311,7 @@ def test_effect_size_threshold_capture_reads_session_keys():
 
     session = {"cohens_d_thresh_feature_a": 1.3}
     assert get_effect_size_threshold_capture(session, "Absolute Cohen's d", "feature_a", None) == 1.3
-    # Widget defaults are Cohen's d 0.5 and Glass's Delta 0.7 on BOTH paths --
-    # src/vis/helpers.py:368-378 and src/vis/univar.py:841-851 are the same block,
-    # so separate_by changes neither default. This previously asserted 0.7 for the
-    # non-separate path, locking in a capture default the app never used.
+    # Both separate-by paths default to Cohen's d 0.5 and Glass's delta 0.7.
     assert get_effect_size_threshold_capture({}, "Absolute Cohen's d", "feature_a", None) == 0.5
     assert get_effect_size_threshold_capture({}, "Absolute Cohen's d", "feature_a", "day") == 0.5
     session = {"glass_delta_thresh_feature_a": 0.9}
@@ -525,11 +511,8 @@ def test_2d_script_applies_shape_and_opacity_per_point(tmp_path, monkeypatch):
     )
     ns = _run_script(tmp_path, state, df, monkeypatch)
     points = _nonempty_collections(ns["ax_main"])
-    # One scatter call per (colour, shape) -- 2 x 2. Opacity is deliberately NOT split
-    # into its own calls: it goes in as a per-point alpha array, because splitting it
-    # would paint one opacity group wholly over another and create_opacity_mapping
-    # raises alpha with sort order, so the most opaque group would always land on top --
-    # a paint order the screen does not have. See scatter_with_encodings.
+    # Two colors × two shapes give four calls. Per-point alpha preserves draw order
+    # across opacity levels instead of painting each level in a separate batch.
     assert len(points) == 4, f"expected 4 (colour x shape) scatters, got {len(points)}"
     assert len(_marker_signatures(points)) == 2
     # Alpha is a per-point array on every call, carrying both opacity levels.
@@ -538,9 +521,7 @@ def test_2d_script_applies_shape_and_opacity_per_point(tmp_path, monkeypatch):
         assert alpha is not None and not np.isscalar(alpha), (
             "opacity must be a per-point alpha array, not one alpha per sub-group")
         assert set(np.round(np.asarray(alpha), 6)) == {0.3, 1.0}
-    # Per-point correspondence: _encoding_df separates the two days on feature_b
-    # (d1 ~ N(1.0, 0.2), d2 ~ N(2.0, 0.2)), which is the y axis here -- so each point's
-    # alpha must follow its own day, not its sub-group.
+    # The y coordinates distinguish days, so each alpha must match its point's day.
     for c in points:
         ys = np.asarray(c.get_offsets())[:, 1]
         alphas = np.asarray(c.get_alpha(), dtype=float)
@@ -586,8 +567,7 @@ def _2d_corr_state(fit_regression):
 
 
 def test_2d_export_reports_correlation_without_regression(tmp_path, monkeypatch, capsys):
-    """The app always prints Pearson r + p per color group; the export must too,
-    even when the regression line is off (it was gated behind FIT_REGRESSION)."""
+    """Pearson r and p appear per color group even when the regression line is off."""
     df = _two_group_2d_df()
     _run_script(tmp_path, _2d_corr_state(fit_regression=False), df, monkeypatch)
     out = capsys.readouterr().out
@@ -598,7 +578,7 @@ def test_2d_export_reports_correlation_without_regression(tmp_path, monkeypatch,
 
 
 def test_2d_export_adds_r2_only_when_regression_on(tmp_path, monkeypatch, capsys):
-    """Regression ON keeps the per-group correlation and adds R^2 (guards the refactor)."""
+    """Enabling regression retains per-group correlation and adds R²."""
     df = _two_group_2d_df()
     _run_script(tmp_path, _2d_corr_state(fit_regression=True), df, monkeypatch)
     out = capsys.readouterr().out
@@ -704,8 +684,7 @@ def test_phasor_kmeans_uses_ten_seeded_restarts():
     ten = KMeans(n_clusters=3, random_state=42, n_init=10).fit(scaler.transform(X))
     assert (labels == ten.labels_).all()
     assert np.allclose(centers, scaler.inverse_transform(ten.cluster_centers_))
-    # the blobs are chosen so one init finds a worse optimum than ten — the
-    # assertions above would fail if phasor_kmeans regressed to a single init
+    # These blobs distinguish best-of-ten restarts from a single initialization.
     one = KMeans(n_clusters=3, random_state=42, n_init=1).fit(scaler.transform(X))
     assert not (one.labels_ == ten.labels_).all()
 
@@ -776,15 +755,8 @@ def test_histogram_gmm_derived_data_saved_behind_flag(tmp_path, monkeypatch):
 
 
 def test_exported_gmm_group_numbering_matches_app(tmp_path, monkeypatch):
-    """`GMM_group` must be numbered by ascending-mean rank on BOTH paths.
-
-    The app labels via `_assign_subpopulation_labels` (group1 == smallest-mean
-    component, matching the component table it renders). The export used to label
-    with sklearn's *internal* component index instead — `sorted_idx[digitize(...)]`
-    on the intersection path and a raw `gmm.predict` on the hard-assignment path —
-    so the exported CSV disagreed with the app, and with the export's own printed
-    component table, whenever the fitted components were not already in
-    ascending-mean order.
+    """GMM_group labels follow ascending component means in both paths:
+    group1 is the smallest-mean component, matching the displayed component table.
     """
     from src.vis.helpers import _find_best_gmm
     from src.vis.univar import _assign_subpopulation_labels
@@ -984,12 +956,8 @@ def test_phasor_lifetime_markers_match_the_app_at_each_harmonic(tmp_path, monkey
 
 @pytest.mark.parametrize("harmonic", [1, 2])
 def test_phasor_marker_labels_name_the_lifetime_they_mark(tmp_path, monkeypatch, harmonic):
-    """A marker labelled "2 ns" must sit where tau=2 ns lands at this harmonic.
-
-    G/S for harmonic n are computed at n*omega (fov_extraction.py passes
-    harmonic=h to phasor_from_signal), so the reference point for tau is
-    g = 1/(1+(n*2*pi*f*tau)^2). Ignoring n put every 2nd-harmonic label on the
-    coordinate of a lifetime twice as long as the label claimed.
+    """Lifetime markers use the selected harmonic: g = 1/(1+(n*2*pi*f*tau)^2).
+    Extraction computes G/S at n*omega, so reference markers must use that frequency too.
     """
     f = 0.08
     ns = _run_script(tmp_path, _phasor_state(harmonic, f), _phasor_df(), monkeypatch)
@@ -1100,7 +1068,7 @@ def test_missing_analysed_column_warns_instead_of_raising(tmp_path, monkeypatch,
 
 
 # ---------------------------------------------------------------------------
-# Regression net — every method's script must compile with the shared sections
+# Every method compiles with the shared script sections
 # ---------------------------------------------------------------------------
 
 def test_all_methods_generate_compilable_scripts():
@@ -1162,7 +1130,7 @@ def test_all_methods_generate_compilable_scripts():
 
 
 # ---------------------------------------------------------------------------
-# Tier-1 app↔export parity fixes (2026-06-11 audit)
+# Clustering and summary parity
 # ---------------------------------------------------------------------------
 
 def _2d_gmm_state():
@@ -1252,8 +1220,7 @@ def _histogram_state(**mp_overrides):
 
 
 def test_histogram_skewness_uses_app_seven_way_label(tmp_path, monkeypatch, capsys):
-    """Near-symmetric data is 'almost symmetric' (app's 7-way ladder), not the
-    export's old 3-way 'approximately symmetric'."""
+    """Near-symmetric data uses the app's "almost symmetric" classification."""
     rng = np.random.default_rng(40)
     base = rng.uniform(0, 5, 150)
     vals = np.concatenate([5 - base, 5 + base])  # symmetric about 5 -> |skew| ~ 0
@@ -1312,7 +1279,7 @@ def test_feature_gmm_single_component_group_left_unlabeled(tmp_path, monkeypatch
 
 
 # ---------------------------------------------------------------------------
-# Tier-2 app↔export parity fixes (edge cases)
+# Degenerate-input parity
 # ---------------------------------------------------------------------------
 
 def test_2d_skips_constant_column_group_like_app(tmp_path, monkeypatch, capsys):
@@ -1363,7 +1330,7 @@ def test_classification_does_not_silently_drop_nan_feature_rows(tmp_path, monkey
 
 
 # ---------------------------------------------------------------------------
-# Tier-3 app↔export parity fixes (figure faithfulness)
+# Figure labels and styling parity
 # ---------------------------------------------------------------------------
 
 def test_2d_log_axis_labels_match_app(tmp_path, monkeypatch):
@@ -1459,8 +1426,7 @@ def test_feature_comparison_bracket_spacing_uses_global_range(tmp_path, monkeypa
 
 
 def test_2d_point_alpha_matches_app_effective(tmp_path, monkeypatch):
-    """2D points (no opacity encoding) use the app's effective alpha 0.8 (1.0 color × 0.8 marker),
-    not the export's old flat 0.7."""
+    """Unencoded 2D points use alpha 0.8, matching the app's 1.0 color × 0.8 marker alpha."""
     rng = np.random.default_rng(62)
     n = 40
     df = pd.DataFrame({"cell_id": [f"img1_{i}" for i in range(n)], "image_name": ["img1"] * n,
@@ -1591,12 +1557,8 @@ def test_export_phasor_axes_lowercase_like_app(tmp_path, monkeypatch):
 
 
 def test_feature_comparison_constant_group_keeps_uniform_jitter(tmp_path, monkeypatch):
-    """A constant-valued group has no KDE.
-
-    The app falls back to uniform jitter (`_estimate_density_1d` returns zero
-    density, and `univar.py` then normalises to ones) so the points stay visible
-    as a spread cloud. The export used to call `gaussian_kde` directly and fall
-    back to *zero* jitter, collapsing the whole group onto a single x position.
+    """Constant groups use uniform sina jitter when density estimation returns zero,
+    keeping their points visible in both renderers.
     """
     n = 12
     df = pd.DataFrame({
@@ -1647,11 +1609,7 @@ def test_feature_comparison_constant_group_keeps_uniform_jitter(tmp_path, monkey
     ],
 )
 def test_exported_figures_carry_the_app_title(method, params, expected_title_fragment):
-    """Every figure the app titles must be titled in the export too.
-
-    The app titles all figures except Dimension Reduction (src/vis/univar.py,
-    src/vis/bivar.py); exported scripts previously emitted no `set_title` at all.
-    """
+    """Every app figure title is reproduced in the export."""
     state = _base_state(method, categorical_cols=["treatment"], color_by=["treatment"],
                         method_params=params)
     script = generate_script(state)
@@ -1729,13 +1687,7 @@ def _app_section_layout(fig):
 
 @pytest.mark.parametrize("n_sections,n_groups", [(2, 3), (3, 2)])
 def test_separate_by_section_spacing_matches_the_app(tmp_path, monkeypatch, n_sections, n_groups):
-    """The gap between sections is 0.5 in the app (univar.py section_spacing).
-
-    The export used a full 1.0, so section 2 started at 6.0 where the app put it at
-    5.5 — and because positions accumulate, every later section drifted further.
-    Group membership and statistics were unaffected; this is purely x-layout, but it
-    is the layout a figure lifted into a paper carries.
-    """
+    """Separate-by sections have the app's 0.5-slot gap."""
     sections = [str(i + 1) for i in range(n_sections)]
     groups = [chr(ord("A") + i) for i in range(n_groups)]
     df = _sectioned_df(sections, groups)
@@ -1756,8 +1708,7 @@ def test_separate_by_section_spacing_matches_the_app(tmp_path, monkeypatch, n_se
 
     assert export_positions == pytest.approx(app_positions)
     assert export_dividers == pytest.approx(app_dividers)
-    # Guard the fix against a later "tidy up to whole numbers": with a 0.5 gap the
-    # second section must start half a slot after the first section's width.
+    # Section two starts half a slot after section one's width.
     assert export_positions[n_groups] == pytest.approx(n_groups + 0.5 - 1 + 1)
 
 
@@ -1785,11 +1736,7 @@ def _app_section_annotations(df, monkeypatch, axis_label_size=24):
 
 
 def test_app_section_header_offset_is_pixels_not_plot_fraction(tmp_path, monkeypatch):
-    """The header used to sit at y=-0.20 of the plot height. Tick labels hang below the
-    axis by a pixel amount that grows with the tick font, so above a certain font size
-    the fraction was inside the labels and the two collided on screen. The offset is now
-    a pixel yshift anchored at the axis, and it grows with the font.
-    """
+    """Section headers use an axis-anchored pixel offset that grows with the tick font."""
     df = _sectioned_df(["1", "2"], ["0-control", "Antimycin", "Cyanide"])
 
     _, small = _app_section_annotations(df, monkeypatch, axis_label_size=10)
@@ -1798,15 +1745,12 @@ def test_app_section_header_offset_is_pixels_not_plot_fraction(tmp_path, monkeyp
     assert [a.y for a in small] == [0, 0]           # anchored at the axis, not -0.20
     assert all(a.yshift < 0 for a in small)          # pushed below it
     assert all(a.yanchor == "top" for a in small)
-    # Bigger font, longer drop — the whole point of the change.
+    # Larger fonts need a larger offset.
     assert abs(large[0].yshift) > abs(small[0].yshift)
 
 
 def test_app_pins_the_tick_angle_so_the_offset_is_exact(tmp_path, monkeypatch):
-    """The header offset can only be right if the tick angle is known. Plotly otherwise
-    chooses 0/45/90 from the container width, which the server cannot see, so the offset
-    had to assume the worst angle and left a large gap whenever Plotly chose less.
-    """
+    """An explicit tick angle keeps label geometry predictable across container widths."""
     long_df = _sectioned_df(["1", "2"], ["0-control", "Antimycin", "Cyanide"])
     fig_long, _ = _app_section_annotations(long_df, monkeypatch)
     assert fig_long.layout.xaxis.tickangle == -45
@@ -1817,11 +1761,7 @@ def test_app_pins_the_tick_angle_so_the_offset_is_exact(tmp_path, monkeypatch):
 
 
 def test_app_section_header_offset_does_not_depend_on_the_label_text(tmp_path, monkeypatch):
-    """The header sits above the group labels now, so nothing about its placement may be
-    derived from how far those labels reach. The old placement dropped it past them and
-    had to predict their extent from the character count — a calibrated guess that
-    collided with the labels whenever it ran short.
-    """
+    """Headers sit above group labels, so their offset is independent of label length."""
     _, five = _app_section_annotations(
         _sectioned_df(["1", "2"], ["AAAAA", "BBBBB"]), monkeypatch)
     _, twelve = _app_section_annotations(
@@ -1835,10 +1775,7 @@ def test_app_section_header_offset_does_not_depend_on_the_label_text(tmp_path, m
 
 
 def test_app_reserves_the_header_slot_with_ticklabelstandoff(tmp_path, monkeypatch):
-    """The group labels are pushed down by the space the header occupies. That space is
-    one line of header text, whose height this code sets, so it is arithmetic on the font
-    size rather than a measurement of anything.
-    """
+    """Tick labels reserve one line of header text using the configured font size."""
     df = _sectioned_df(["1", "2"], ["0-control", "Antimycin"])
     fig_small, small = _app_section_annotations(df, monkeypatch, axis_label_size=10)
     fig_large, large = _app_section_annotations(df, monkeypatch, axis_label_size=34)
@@ -1849,15 +1786,12 @@ def test_app_reserves_the_header_slot_with_ticklabelstandoff(tmp_path, monkeypat
     # would run into the labels it is supposed to sit above.
     assert fig_small.layout.xaxis.ticklabelstandoff > abs(small[0].yshift)
     assert fig_large.layout.xaxis.ticklabelstandoff > abs(large[0].yshift)
-    # The tick labels are the lowest element now, so the bottom margin is Plotly's to
-    # size from what it rendered rather than something computed from the label text here.
+    # Plotly automargin measures the lowest element: the tick labels.
     assert fig_large.layout.xaxis.automargin is True
 
 
 def test_app_section_header_is_theme_aware(tmp_path, monkeypatch):
-    """The header colour was hardcoded "black", which apply_plot_styling does not
-    override (it only rewrites annotation *size*), so it vanished in dark mode.
-    """
+    """Section headers use the current theme color."""
     df = _sectioned_df(["1", "2"], ["A", "B"])
     _, headers = _app_section_annotations(df, monkeypatch, axis_label_size=24)
     assert all(a.font.color == "black" for a in headers)  # the patched theme colour
@@ -1875,11 +1809,7 @@ def test_app_section_header_is_theme_aware(tmp_path, monkeypatch):
 
 
 def test_app_bottom_margin_is_a_floor_not_a_text_measurement(tmp_path, monkeypatch):
-    """Placing the header correctly is useless if the margin clips it off the figure, but
-    the margin is no longer what guarantees that — automargin is. What is asserted here
-    is that the floor stopped depending on the label text: it used to be
-    max(120, len(longest_label) * 5), a character count standing in for a pixel height.
-    """
+    """The bottom-margin floor is independent of label text; Plotly automargin sizes the rest."""
     short = _sectioned_df(["1", "2"], ["A", "B"])
     long_ = _sectioned_df(["1", "2"], ["a-very-long-treatment-name", "another-long-one"])
     fig_short, headers = _app_section_annotations(short, monkeypatch, axis_label_size=34)
@@ -1903,11 +1833,7 @@ def _section_state(**overrides):
 
 
 def test_section_name_is_a_header_not_repeated_in_every_tick(tmp_path, monkeypatch):
-    """The app labels each tick with the group alone and names the section once, in a
-    centred header below the axis (univar.py separate_sections_info). The export used
-    to fold the section into every tick as "{section}\\n{group}", which collided into
-    an unreadable smear as soon as a section held more than about three groups.
-    """
+    """Ticks show group names only; each section has one centered header below the axis."""
     df = _sectioned_df(["1", "2"], ["Antimycin", "Cyanide", "0-control"])
     ns = _run_script(tmp_path, _section_state(), df, monkeypatch)
 
@@ -1939,22 +1865,15 @@ def test_section_headers_are_centred_under_their_own_groups(tmp_path, monkeypatc
 ])
 def test_export_tick_angle_follows_the_same_rule_as_the_app(
         tmp_path, monkeypatch, labels, expected_angle):
-    """The app pins the tick angle (0 for labels of up to four characters, 90 beyond)
-    so it can offset its section headers exactly; the export has to use the same rule or
-    the two figures disagree on something the reader sees immediately. Matplotlib never
-    rotates on its own, so without this the long names collide head-on.
-    """
+    """Export tick angles follow the app's label-length rule."""
     df = _sectioned_df(["1", "2"], labels)
     ns = _run_script(tmp_path, _section_state(axis_label_size=24), df, monkeypatch)
     assert all(t.get_rotation() == expected_angle for t in ns["ax"].get_xticklabels())
 
 
 def test_export_tick_angle_matches_the_app_figure(tmp_path, monkeypatch):
-    """Pin the two together directly rather than against a copied constant.
-
-    The signs are opposite on purpose: Plotly measures tickangle clockwise, Matplotlib
-    measures rotation counter-clockwise, so -45 there and +45 here are the same uphill
-    slant on screen. Comparing the raw numbers would enforce mirrored figures.
+    """Compare the two renderers directly, accounting for opposite rotation signs:
+    Plotly measures clockwise and Matplotlib counter-clockwise.
     """
     df = _sectioned_df(["1", "2"], ["0-control", "Antimycin", "Cyanide"])
     ns = _run_script(tmp_path, _section_state(axis_label_size=24), df, monkeypatch)
@@ -1968,11 +1887,7 @@ def test_export_tick_angle_matches_the_app_figure(tmp_path, monkeypatch):
 
 
 def test_section_headers_sit_between_the_axis_and_the_tick_labels(tmp_path, monkeypatch):
-    """The header goes directly under the axis line with the group labels pushed below
-    it, mirroring the app's xaxis.ticklabelstandoff. Ordering them this way is what makes
-    the placement exact — the reserved gap is one line of header text, whose height the
-    script sets, rather than a guess at how far the rotated labels reach.
-    """
+    """Export headers sit below the axis and above group labels, matching the reserved app gap."""
     df = _sectioned_df(["1", "2"], ["0-control", "Antimycin", "Cyanide", "2DG", "IAA"])
     ns = _run_script(tmp_path, _section_state(axis_label_size=24), df, monkeypatch)
 
@@ -1988,11 +1903,7 @@ def test_section_headers_sit_between_the_axis_and_the_tick_labels(tmp_path, monk
 
 
 def test_separate_by_divider_sits_in_the_middle_of_the_gap(tmp_path, monkeypatch):
-    """The app centres the dashed divider between the two sections it separates
-    (univar.py: midpoint of the previous section's last point and the next section's
-    first). Shrinking the gap without moving the divider would leave it hugging the
-    left-hand section.
-    """
+    """Each divider is centered between the adjacent sections' nearest point slots."""
     df = _sectioned_df(["1", "2"], ["A", "B", "C"])
     state = _base_state(
         "Feature Comparison",
@@ -2014,9 +1925,7 @@ def test_separate_by_divider_sits_in_the_middle_of_the_gap(tmp_path, monkeypatch
 # ---------------------------------------------------------------------------
 
 def _app_effective_annotation_size(axis_label_size):
-    """The size the app actually renders annotations at, taken from the real styling
-    pass rather than from the literal each plot function happens to pass.
-    """
+    """Read annotation sizes after the app's shared styling pass."""
     import plotly.graph_objects as go
 
     from src.vis.helpers import apply_plot_styling
@@ -2029,17 +1938,13 @@ def _app_effective_annotation_size(axis_label_size):
 
 
 def test_app_styling_overrides_every_annotation_size():
-    """The premise of the tests below, asserted directly: the size a plot function
-    writes on an annotation is discarded — src/vis/helpers.py apply_plot_styling
-    rewrites it to plot_axis_label_size after the figure is built. Any exported
-    counterpart that copies the literal from the source is therefore wrong.
-    """
+    """apply_plot_styling sets every annotation to plot_axis_label_size."""
     assert _app_effective_annotation_size(24) == 24
     assert _app_effective_annotation_size(11) == 11
 
 
 def test_effect_size_bracket_text_matches_the_app_size(tmp_path, monkeypatch):
-    """The export hardcoded 10 while the app renders these at plot_axis_label_size."""
+    """Export annotation text uses the app's plot_axis_label_size."""
     df = _grouped_df({"A": 1.0, "B": 3.0}, n_per_group=15)
     state = _base_state(
         "Feature Comparison", categorical_cols=["treatment"], color_by=["treatment"],
@@ -2053,9 +1958,7 @@ def test_effect_size_bracket_text_matches_the_app_size(tmp_path, monkeypatch):
 
 
 def test_phasor_annotation_sizes_match_the_app(tmp_path, monkeypatch):
-    """Lifetime marker labels (app literal 12) and the frequency text (app literal 15)
-    are both annotations, so both render at plot_axis_label_size.
-    """
+    """Lifetime marker labels and frequency text both use plot_axis_label_size."""
     ns = _run_script(tmp_path, _phasor_state(1, axis_label_size=24), _phasor_df(), monkeypatch)
     expected = _app_effective_annotation_size(24)
 
@@ -2067,9 +1970,7 @@ def test_phasor_annotation_sizes_match_the_app(tmp_path, monkeypatch):
 
 
 def test_gmm_threshold_text_matches_the_app_size(tmp_path, monkeypatch):
-    """The GMM threshold label is an annotation in the app (univar.py) with no size of
-    its own, so styling gives it plot_axis_label_size; the export hardcoded 9.
-    """
+    """GMM threshold labels use plot_axis_label_size after shared styling."""
     state = _base_state(
         "Feature Histogram", categorical_cols=["treatment"], axis_label_size=24,
         method_params={"selected_var": "feature_a", "log_x": False, "bin_width": None,
@@ -2083,9 +1984,7 @@ def test_gmm_threshold_text_matches_the_app_size(tmp_path, monkeypatch):
 
 
 def test_no_hardcoded_annotation_font_sizes_remain():
-    """Regression net for the whole family: every text the app draws as an annotation
-    must derive its exported size from AXIS_LABEL_SIZE, never from a copied literal.
-    """
+    """All exported annotation text derives its size from AXIS_LABEL_SIZE."""
     source = (Path(__file__).resolve().parents[1] / "src" / "export_script.py").read_text()
     import re
     leftovers = re.findall(r"fontsize=\d+", source)
@@ -2093,12 +1992,7 @@ def test_no_hardcoded_annotation_font_sizes_remain():
 
 
 def test_exported_tick_font_size_derives_from_axis_label_size():
-    """Ticks follow the app's single rule — `axis_label_size - 2`, applied centrally
-    in `apply_plot_styling` — not the export's former three competing rules
-    (LEGEND_SIZE, AXIS_LABEL_SIZE-6, AXIS_LABEL_SIZE-4). Legend size is an
-    independent user control, so the old export ticks drifted from the app
-    whenever the two sizes differed.
-    """
+    """Ticks use axis_label_size - 2 in both renderers, independently of legend size."""
     source = (Path(__file__).resolve().parents[1] / "src" / "export_script.py").read_text()
     assert "labelsize=LEGEND_SIZE" not in source
     assert "AXIS_LABEL_SIZE - 6" not in source
@@ -2109,9 +2003,7 @@ def test_exported_tick_font_size_derives_from_axis_label_size():
 # ---------------------------------------------------------------------------
 # "Show group counts (n) in legend" must reach the exported script
 #
-# The toggle (visualization_widgets.py) writes plot_show_group_counts, which every
-# app plot path passes to format_group_label(). The export captured neither the flag
-# nor the helper, so a legend that read "2DG / n=2522" on screen exported as "2DG".
+# Capture plot_show_group_counts and share format_group_label with the app.
 # ---------------------------------------------------------------------------
 
 def _stub_streamlit_for_plots(monkeypatch, show_counts):
@@ -2154,12 +2046,8 @@ def _stub_streamlit_for_plots(monkeypatch, show_counts):
 
 
 def _app_legend_labels(fig):
-    """Legend entries of the app's Plotly figure, normalised to the export's text.
-
-    Plotly renders markup in legend entries, so the app puts the count on a second
-    line with <br> and a 0.75em span; Matplotlib renders none, so the exported label
-    is the same text with a newline. Comparing the two means stripping the markup —
-    the words and the count are what have to agree.
+    """Normalize app legend markup to plain text for comparison with export labels.
+    Plotly's <br> and smaller count span correspond to a newline in Matplotlib.
     """
     import re
 
@@ -2220,11 +2108,7 @@ def test_feature_comparison_legend_counts_match_the_app(tmp_path, monkeypatch, s
 @pytest.mark.parametrize("show_counts", [True, False])
 def test_separate_by_legend_counts_are_group_totals_not_section_subtotals(
         tmp_path, monkeypatch, show_counts):
-    """With separate_by, a colour group appears in several sections but keeps one
-    legend entry. The app counts it once over the whole frame (univar.py builds
-    group_counts before splitting), so the entry shows the total — counting the
-    section a group happens to be drawn in first would halve it here.
-    """
+    """Separate-by legends count each color group over the whole frame, across all sections."""
     from src.vis import univar
 
     df = _counts_df(_COUNTS)
@@ -2304,10 +2188,8 @@ def test_2d_legend_counts_match_the_app(tmp_path, monkeypatch, show_counts):
 
 @pytest.mark.parametrize("show_counts", [True, False])
 def test_phasor_legend_counts_match_the_app(tmp_path, monkeypatch, show_counts):
-    """Phasor is the one point plot data_analysis.py hands over unfiltered; the app
-    drops the missing coordinates inside phasor_plot instead (bivar.py: notna on both
-    G and S). The count therefore excludes them, and the export has to apply the same
-    dropna before counting — this fixture blanks 4 of 30 G values to pin that down.
+    """Phasor counts exclude rows missing either G or S.
+    The fixture blanks four of thirty G values to check filtering before counting.
     """
     from src.vis import bivar
 
@@ -2341,10 +2223,7 @@ def test_dimension_reduction_legend_counts_match_the_app(tmp_path, monkeypatch, 
 
 
 def test_shape_and_opacity_legend_entries_never_carry_counts(tmp_path, monkeypatch):
-    """Only colour groups are counted. The shape/opacity legend entries name a value,
-    not a sample — the app adds them as separate empty traces (helpers.py
-    add_point_legend_traces) that never see format_group_label.
-    """
+    """Only color-group legends show counts; shape and opacity entries name encoding values."""
     df = _encoding_df()
     state = _base_state(
         "2D Feature Distribution",
@@ -2362,11 +2241,7 @@ def test_shape_and_opacity_legend_entries_never_carry_counts(tmp_path, monkeypat
 
 
 def test_export_inlines_the_apps_group_label_helper_rather_than_copying_it():
-    """The "n=" wording lives in one place. export_script.py inlines the app's
-    format_group_label via _extract_source, so re-wording it in src/vis/helpers.py
-    changes both renderers at once; a template that spelled the label out itself
-    would drift the moment the app's wording changed.
-    """
+    """Export inlines format_group_label so count wording is shared with the app."""
     import inspect
     import textwrap
 
@@ -2404,10 +2279,7 @@ def test_show_group_counts_reaches_every_plot_method(method, method_params):
 
 
 def test_show_group_counts_defaults_off_when_not_captured():
-    """Older capture dicts (and uncoloured plots, where the toggle never renders)
-    carry no flag; the script must fall back to the app's own default rather than
-    inventing counts.
-    """
+    """A capture without the count flag uses the app's default of hiding counts."""
     script = generate_script(_base_state(
         "Feature Comparison", categorical_cols=["treatment"], color_by=["treatment"],
         method_params=_feature_comparison_params()))
@@ -2459,20 +2331,18 @@ def test_collapse_by_reaches_the_generated_script():
 
 
 def test_no_collapse_emits_no_constant_and_no_inlined_source():
-    """Off must stay byte-for-byte the old path, so no existing parity check moves."""
+    """With collapse disabled, the script emits no collapse constant or call."""
     script = generate_script(_base_state(
         "Feature Comparison", categorical_cols=["treatment"], color_by=["treatment"],
         method_params=_feature_comparison_params()))
-    # On the emitted CODE, not the bare tokens: the shared bracket template carries a
-    # comment naming COLLAPSE_BY to explain its own nan guard, and a comment is not a
-    # constant. What must not appear is a definition or a call.
+    # Inspect executable code: comments may mention COLLAPSE_BY without defining it.
     assert "COLLAPSE_BY =" not in script
     assert "def collapse_rows" not in script
     assert "collapse_rows(" not in script
 
 
 def test_the_script_inlines_the_apps_collapse_verbatim():
-    """Not a re-implementation: the same source, so the two cannot drift."""
+    """Export inlines the shared collapse function."""
     import inspect
     import textwrap
 
@@ -2483,7 +2353,7 @@ def test_the_script_inlines_the_apps_collapse_verbatim():
 
 
 def test_the_collapsed_points_match_the_app(tmp_path, monkeypatch):
-    """The headline check: same dots, same values, app and script."""
+    """The app and export produce the same replicate points and values."""
     from src.collapse import collapse_rows
 
     df = _replicate_df()
@@ -2521,9 +2391,7 @@ def _app_feature_comparison_fig_collapsed(collapsed, label_col, monkeypatch):
 
 
 def test_the_collapse_runs_after_the_nan_drop(tmp_path, monkeypatch):
-    """`n` must count the cells that actually contributed to the mean, and the mean
-    must be over those cells only. Collapse first and both are wrong -- silently, on
-    a plot that still looks entirely reasonable."""
+    """Drop missing feature rows before collapse so means and contributor counts use the same cells."""
     df = _replicate_df()
     df.loc[df["cell_id"] == "D1_c0", "feature_a"] = np.nan
     survivors = df[(df["dish"] == "D1") & df["feature_a"].notna()]["feature_a"]
@@ -2548,18 +2416,16 @@ def test_the_collapse_runs_before_the_log(tmp_path, monkeypatch):
 
 
 def test_the_encoding_maps_are_built_on_the_collapsed_frame(tmp_path, monkeypatch):
-    """_build_visual_encoding must run AFTER the collapse -- otherwise the colour and
-    count maps describe cells while the points are replicates."""
+    """Build color and count maps after collapse so they describe replicates."""
     ns = _run_script(tmp_path, _collapse_state(), _replicate_df(), monkeypatch)
     counts = ns["df"].groupby("_color_group").size().to_dict()
     assert counts == {"ctrl": 3, "drug": 3}
 
 
 def test_a_hand_edited_collapse_explains_a_channel_it_has_to_switch_off(tmp_path, monkeypatch, capsys):
-    """The app resolves the decoration channels before capture, so this guard is a
-    no-op on generated state. It is here for the "standalone, EDITABLE script"
-    promise: someone who sets COLLAPSE_BY by hand gets a printed reason rather than a
-    KeyError out of df[SHAPE_BY].unique()."""
+    """Manually edited scripts explain when collapse removes a decoration column.
+    The app normally resolves these controls before capture.
+    """
     state = _base_state(
         "Feature Comparison", categorical_cols=["treatment", "dish", "day"],
         color_by=["treatment"], shape_by="image_name",
@@ -2574,8 +2440,7 @@ def test_a_hand_edited_collapse_explains_a_channel_it_has_to_switch_off(tmp_path
 
 
 def test_a_decoration_coarser_than_the_replicate_still_applies(tmp_path, monkeypatch):
-    """`day` is one value per dish, so a collapsed dot can carry it -- the case that
-    makes Shape by worth keeping on offer at all."""
+    """A day constant within each dish remains available as a point decoration."""
     state = _base_state(
         "Feature Comparison", categorical_cols=["treatment", "dish", "day"],
         color_by=["treatment"], shape_by="day",
@@ -2592,10 +2457,10 @@ def test_a_collapsed_script_compiles_and_runs(tmp_path, monkeypatch):
 
 
 def _thin_group_df(seed=23):
-    """`ctrl` has one dish, `drug` has three -- so collapsing by dish leaves the CONTROL
-    group with a single point. Control rather than treatment on purpose: Glass's delta
-    divides by the control group's spread alone, so only this way is it undefined for
-    both statistics rather than just Cohen's d."""
+    """A single-dish control group leaves both effect sizes undefined.
+    Glass's delta uses control spread only, so a single treatment replicate would
+    not exercise both guards.
+    """
     rng = np.random.default_rng(seed)
     rows = []
     for dish, treatment in [("D1", "ctrl"), ("D2", "drug"), ("D3", "drug"), ("D4", "drug")]:
@@ -2608,11 +2473,9 @@ def _thin_group_df(seed=23):
 
 @pytest.mark.parametrize("method", ["Glass's Delta", "Absolute Cohen's d"])
 def test_an_undefined_effect_size_draws_nothing_in_the_script_either(tmp_path, monkeypatch, method):
-    """The app's guard is POSITIVE (`draw if abs(es) >= threshold`) so a nan falls
-    through it; the script's was NEGATIVE (`skip if abs(es) < threshold`), and
-    `abs(nan) < t` is *also* False -- so the two are opposites everywhere except nan,
-    where both are False and the script drew a bracket reading "Δ=nan" that the app
-    never showed. Collapse by makes this routine: one dish in a treatment is one point."""
+    """NaN effect sizes produce no brackets. The condition abs(es) >= threshold
+    excludes NaN; skipping only when abs(es) < threshold would not.
+    """
     state = _base_state(
         "Feature Comparison", categorical_cols=["treatment", "dish"],
         color_by=["treatment"],

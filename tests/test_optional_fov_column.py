@@ -34,11 +34,7 @@ def test_a_blank_fov_name_is_not_added_as_a_categorical(monkeypatch):
 
 
 def test_a_repeat_in_the_stored_list_is_returned_once(monkeypatch):
-    """get_features keeps every categorical that matches by name, so a repeat puts the
-    column into columns_to_keep twice and every later df[col] hands back a DataFrame
-    instead of a Series. The extraction branch dedups against two free-text fields; this
-    one dedups the stored list itself, which an older profile can hold a repeat in.
-    """
+    """Repeated configured categoricals are deduplicated so df[col] remains a Series."""
     monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
     monkeypatch.setattr(acw, "_get_profile_config",
                         _profile(categorical_cols=["treatment", "well", "treatment"],
@@ -48,10 +44,7 @@ def test_a_repeat_in_the_stored_list_is_returned_once(monkeypatch):
 
 
 def test_reading_the_categoricals_does_not_write_to_the_profile(monkeypatch):
-    """The platform columns are added to the *frame* at plot time, never to the profile.
-    Appending them to the stored list is invisible only while every call re-parses the
-    config; a memoised read would carry them into the next Save.
-    """
+    """Reading categorical columns leaves the stored profile list unchanged."""
     stored = {"categorical_cols": ["treatment"], "fov_name_col": ""}
     monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
     monkeypatch.setattr(acw, "_get_profile_config", lambda *a, **k: stored)
@@ -64,8 +57,7 @@ def test_a_numeric_fov_column_is_a_label_not_a_duplicated_feature(monkeypatch):
     monkeypatch.setattr(dataset_io, "get_unique_row_id_col", lambda *a, **k: "row")
     monkeypatch.setattr(dataset_io, "get_fov_name_col_analysis", lambda *a, **k: "well")
 
-    # Derive cats from the accessor under test, not by hand, so this test actually
-    # exercises the line added to get_categorical_cols_analysis.
+    # Use the accessor's categorical list to exercise FOV deduplication end to end.
     monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
     monkeypatch.setattr(acw, "_get_profile_config",
                         _profile(categorical_cols=[], fov_name_col="well"))
@@ -97,7 +89,7 @@ def test_get_features_keeps_a_fov_less_frame(monkeypatch):
 
 
 def test_get_features_keeps_a_present_fov_column_exactly_once(monkeypatch):
-    """Guards against a future change reintroducing a duplicated FOV column."""
+    """The FOV column is retained exactly once."""
     monkeypatch.setattr(dataset_io, "get_unique_row_id_col", lambda *a, **k: "cell_id")
     df = _no_fov_frame()
     df["image_name"] = ["f1", "f2"]
@@ -141,8 +133,7 @@ def test_a_fov_column_blank_in_every_row_is_dropped_and_named():
 
 
 def test_the_fov_column_is_stringified_even_if_the_caller_omits_it():
-    """check_and_fix_df is inlined into standalone scripts, where the caller is a
-    baked literal -- so it guarantees this itself rather than trusting the list."""
+    """The export-inlined loader deduplicates categorical names independently of config accessors."""
     df = pd.DataFrame({"cell_id": ["a", "b"], "well": [1, 2], "feat": [1.0, 2.0]})
     fixed, _warning, _error = dataset_io.check_and_fix_df(df, [], "cell_id", "well")
     assert fixed["well"].tolist() == ["1", "2"]
@@ -157,7 +148,7 @@ def test_a_blank_configured_fov_name_creates_no_column():
 
 
 def test_an_all_empty_fov_column_is_dropped_before_it_is_resolved():
-    """Why the effective column is resolved *after* check_and_fix_df, not before."""
+    """Resolve the effective FOV after normalization removes all-empty columns."""
     df = pd.DataFrame({"cell_id": ["a", "b"], "image_name": [None, None],
                        "feat": [1.0, 2.0]})
     # Before: the configured name is present, so a naive check would say it exists.
@@ -197,13 +188,8 @@ def test_load_table_warns_when_the_configured_fov_column_is_absent(monkeypatch):
 
 
 def test_user_table_branch_stays_silent_about_a_missing_fov_column(monkeypatch):
-    """A user-table profile's fov_name_col can be a stale extraction default the
-    table never had -- resolve_effective_fov_col already turns that into a silent
-    None, and the branch must not warn about it on every load.
-
-    Through read_table + interpret_table, which is the branch: load_table composes the
-    extraction branch and nothing else, so `use_data_extraction=False` no longer reaches
-    this warning through it.
+    """A user table silently ignores a configured FOV name absent from its columns.
+    Exercise read_table and interpret_table, the user-table path through review.
     """
     from tests.test_table_formats import _uploaded_file
 
@@ -300,7 +286,7 @@ def test_point_traces_build_without_a_customdata_column():
 
 
 def test_the_point_plots_render_without_a_fov_column():
-    """All four hover sites dereferenced df[fov_name_col] unconditionally."""
+    """Every plot omits FOV hover references when no FOV column is resolved."""
     from src.vis.bivar import feature_2d_distribution_plot
     from src.vis.univar import feature_comparison_plot
 
@@ -315,9 +301,8 @@ def test_the_point_plots_render_without_a_fov_column():
         df, unique_row_id_col="cell_id", fov_name_col=None,
         selected_var="Lifetime fit_ch1: T1", color_by=["treatment"])
     assert fig is not None
-    # Plotly renders a stray %{customdata} silently as a literal token, so a fig that
-    # merely built is not enough -- a dangling FOV hover reference would pass that and
-    # still be wrong.
+    # Plotly displays dangling customdata references literally, so inspect hover
+    # templates as well as checking that each figure builds.
     for trace in fig.data:
         assert trace.customdata is None
         hovertemplate = trace.hovertemplate or ""
@@ -356,10 +341,7 @@ def test_the_generated_script_bakes_a_none_fov_column():
 
 
 def test_fresh_visit_shows_phasor_plot(monkeypatch):
-    """State 2 (method-gate-fix.md): a fresh visit, nothing uploaded, extraction
-    branch. No frame is loaded yet, so Phasor Plot is shown -- there is no
-    config-intent fallback for it, and pre-load it is simply shown. The
-    univariate list is pinned too, so a method cannot quietly reappear."""
+    """Before upload, extraction analysis offers Phasor Plot and the expected univariate methods."""
     from streamlit.testing.v1 import AppTest
 
     monkeypatch.setattr(acw, "get_fov_name_col_analysis",
@@ -374,13 +356,11 @@ def test_fresh_visit_shows_phasor_plot(monkeypatch):
     at.radio[0].set_value("### **Bivariate**")
     at.run(timeout=90)
     assert not at.exception
-    assert "Phasor Plot" in at.radio[1].options  # state 2
+    assert "Phasor Plot" in at.radio[1].options
 
 
 def test_phasor_hides_when_loaded_feature_groups_lack_a_complete_gs_pair(monkeypatch):
-    """State 6: a loaded frame whose fit-free group has G but not S leaves no
-    complete harmonic, so Phasor Plot hides -- this is the accepted outcome for
-    essentially every user-provided dataset (decision A1 in method-gate-fix.md)."""
+    """A loaded frame with G but no matching S hides Phasor Plot."""
     from streamlit.testing.v1 import AppTest
 
     df = pd.DataFrame({
@@ -406,8 +386,7 @@ def test_phasor_hides_when_loaded_feature_groups_lack_a_complete_gs_pair(monkeyp
 
 
 def test_phasor_shows_when_loaded_feature_groups_have_a_complete_gs_pair(monkeypatch):
-    """State 7: a loaded frame with a complete G/S pair for harmonic 1 -- the
-    channel is plottable, so Phasor Plot shows."""
+    """A complete G/S pair for one harmonic makes the channel plottable."""
     from streamlit.testing.v1 import AppTest
 
     df = pd.DataFrame({
@@ -434,11 +413,7 @@ def test_phasor_shows_when_loaded_feature_groups_have_a_complete_gs_pair(monkeyp
 
 
 def test_transition_rerun_fires_once_and_then_settles(monkeypatch):
-    """State 8: from a transitioning state (a loaded frame with no complete phasor
-    G/S pair, so the gate flips on the very first run), the check must fire
-    st.rerun() at most once. Running the already-settled script again must not
-    call it again -- a loop here hangs the live app, so it must be measured, not
-    reasoned about."""
+    """A change in phasor availability triggers at most one rerun; settled state triggers none."""
     import streamlit as st
     from streamlit.testing.v1 import AppTest
 
@@ -468,9 +443,7 @@ def test_transition_rerun_fires_once_and_then_settles(monkeypatch):
 
 
 def test_extraction_happy_path_causes_no_rerun(monkeypatch):
-    """State 9: a complete phasor G/S pair is a normal fit-free result, so the
-    gate's pre-load default and the resolved value agree from the very first run,
-    and st.rerun() must never fire. The FOV column still resolves for hover."""
+    """A complete G/S pair matches the preload default, needs no rerun, and retains FOV hover."""
     import streamlit as st
     from streamlit.testing.v1 import AppTest
 

@@ -1,10 +1,6 @@
-"""The version string the app displays, and the environments it resolves in.
-
-The label is decoration, so most of the contract is negative: get_app_version()
-must never raise, never hang and never return an empty string -- not when git is
-missing, not in a tagless shallow clone, not in a bundle built by an older spec
-that wrote no stamp. It must also stay importable with no streamlit, because
-Flim-Playground.spec imports it during a build.
+"""The displayed version is nonempty and resolves without raising or hanging.
+Resolution supports missing git, tagless checkouts, and unstamped bundles. The module
+also imports without Streamlit so PyInstaller can use it at build time.
 """
 import subprocess
 import sys
@@ -23,8 +19,7 @@ _ROOT = Path(__file__).resolve().parents[1]
 
 @pytest.fixture(autouse=True)
 def _clear_version_cache():
-    # lru_cache is process-wide, so a value cached by one test would otherwise
-    # leak into the next one -- and into any AppTest in the same session.
+    # Clear the process-wide cache between tests and later AppTests.
     get_app_version.cache_clear()
     yield
     get_app_version.cache_clear()
@@ -33,14 +28,13 @@ def _clear_version_cache():
 def test_frozen_bundle_reads_the_build_stamp(tmp_path, monkeypatch):
     (tmp_path / version_mod.STAMP_NAME).write_text("1.11.2\n", encoding="utf-8")
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
-    # The stamp must outrank the env var: a user with APP_VERSION exported in
-    # their shell must never override what their installed app reports.
+    # A bundle stamp takes precedence over a shell APP_VERSION override.
     monkeypatch.setenv("APP_VERSION", "9.9.9-env-must-not-win")
     assert get_app_version() == "1.11.2"
 
 
 def test_frozen_bundle_without_a_stamp_falls_back_quietly(tmp_path, monkeypatch):
-    # A bundle built by an older spec has no stamp. Must not raise.
+    # An unstamped bundle still resolves a version.
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
     monkeypatch.delenv("APP_VERSION", raising=False)
     monkeypatch.setattr(version_mod, "_git", lambda *a: None)
@@ -82,11 +76,7 @@ def test_git_failures_fall_back_without_raising(monkeypatch, boom):
 
 
 def test_tagless_clone_reports_the_commit(monkeypatch):
-    """`git describe` exits 128 with no tags; `rev-parse` still gives a sha.
-
-    This is the Streamlit Cloud / shallow-clone path: a labelled commit still
-    identifies a build, which is the entire point of the feature.
-    """
+    """A tagless checkout falls back from git describe to the commit SHA."""
     monkeypatch.delattr(sys, "_MEIPASS", raising=False)
     monkeypatch.delenv("APP_VERSION", raising=False)
 
@@ -105,22 +95,14 @@ def test_git_outside_a_repo_returns_none(tmp_path, monkeypatch):
 
 
 def test_git_never_answers_from_an_ancestor_repo(monkeypatch):
-    """git searches parent dirs, so the upward walk must be blocked.
-
-    `src/` is not a repository but its parent is, and a bare
-    `git -C src describe` happily returns the parent's tag. A stampless app
-    unpacked anywhere inside a user's checkout would otherwise report THAT
-    repo's version -- wrong but plausible, which is worse than 0.0.0-dev and
-    defeats the purpose of shipping a version at all.
-    """
+    """Block git from borrowing a parent repository's version for an unpacked app."""
     monkeypatch.setattr(version_mod, "_ROOT", _ROOT / "src")
     assert (_ROOT / ".git").exists(), "precondition: the parent really is a repo"
     assert version_mod._git("describe", "--tags", "--dirty") is None
 
 
 def test_stampless_frozen_app_inside_a_repo_falls_back(tmp_path, monkeypatch):
-    """The end-to-end form of the above: a bundle with no stamp, sitting in a
-    repo, must say 0.0.0-dev rather than borrow the surrounding version."""
+    """An unstamped bundle inside a repository reports 0.0.0-dev."""
     monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)  # no stamp
     monkeypatch.delenv("APP_VERSION", raising=False)
     monkeypatch.setattr(version_mod, "_ROOT", _ROOT / "src")
@@ -143,11 +125,7 @@ def test_label_prefixes_a_real_version_but_not_a_dev_marker(monkeypatch):
 
 
 def test_module_resolves_a_version_with_no_streamlit_imported():
-    """Flim-Playground.spec imports this at build time; it must stay lean.
-
-    Also guards the export side, which may never inline a streamlit-dependent
-    helper into the standalone script it generates.
-    """
+    """The version module imports at build time and in standalone exports without Streamlit."""
     code = (
         "import sys, src.version as v; "
         "assert 'streamlit' not in sys.modules, sorted(sys.modules); "

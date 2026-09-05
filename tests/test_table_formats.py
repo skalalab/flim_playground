@@ -204,7 +204,7 @@ def test_drop_unnamed_columns_keeps_the_named_ones():
 
 
 def test_drop_unnamed_columns_leaves_an_entirely_unnamed_frame_intact():
-    """Emptying it would turn a header problem into a baffling "no data"."""
+    """Keep an all-unnamed frame intact so diagnostics can report missing headers."""
     df = pd.DataFrame({"Unnamed: 0": ["a"], "Unnamed: 1": ["b"]})
     assert list(drop_unnamed_columns(df).columns) == ["Unnamed: 0", "Unnamed: 1"]
 
@@ -290,7 +290,7 @@ def test_a_header_repeated_in_the_file_is_renamed_by_pandas_and_left_alone():
 
 
 def test_the_header_cell_advice_rides_only_on_the_files_that_can_cause_it():
-    """A text file cannot get here -- read_csv de-duplicates -- so it is not lectured."""
+    """Text readers deduplicate headers, so spreadsheet collision advice is omitted."""
     df = pd.DataFrame([[1.0, 2.0]], columns=["x", "x"])
     _warning, error = _diagnose_table(df, {"duplicate_names": {"x": [1, 2]}}, "plate.csv")
     assert "both named 'x'" in error
@@ -519,14 +519,14 @@ def _xlsx_bytes():
 
 
 def test_a_workbook_named_csv_is_named_not_left_to_a_unicode_error():
-    """Without this it surfaced as: UnicodeDecodeError ... byte 0xd7."""
+    """Binary workbook content under a text suffix reports the filename/content mismatch."""
     error = _name_content_mismatch(FakeUpload(_xlsx_bytes(), "export.csv"), "export.csv")
     assert "named like a text file" in error and "spreadsheet" in error
     assert ".xlsx" in error
 
 
 def test_a_text_table_named_xlsx_is_named_not_left_to_a_calamine_error():
-    """Without this it surfaced as: CalamineError: Cannot detect file format."""
+    """Text content under a spreadsheet suffix reports the filename/content mismatch."""
     raw = _frame().to_csv(index=False).encode()
     error = _name_content_mismatch(FakeUpload(raw, "export.xlsx"), "export.xlsx")
     assert "named like a spreadsheet" in error and "plain text" in error
@@ -619,19 +619,19 @@ def test_a_ragged_candidate_is_rejected_even_when_it_is_frequent():
 
 
 def test_an_empty_file_is_named_rather_than_raising_pandas_jargon():
-    """A 0-byte .csv used to surface "No columns to parse from file"."""
+    """An empty text file reports missing content."""
     assert "empty" in _name_content_mismatch(FakeUpload(b"", "e.csv"), "e.csv")
 
 
 def test_an_empty_workbook_is_not_misreported_as_plain_text():
-    """0 bytes is not a zip, so the content probe would have called it text."""
+    """An empty workbook reports missing content before format probing."""
     error = _name_content_mismatch(FakeUpload(b"", "e.xlsx"), "e.xlsx")
     assert "empty" in error
     assert "plain text" not in error
 
 
 # --------------------------------------------------------------------------- #
-# 9. The parse stays cached (the 2026-07 load optimisation)
+# 9. Parse caching
 # --------------------------------------------------------------------------- #
 
 def _uploaded_file(raw, name):
@@ -687,9 +687,7 @@ def test_a_probe_that_forgets_to_rewind_would_cost_a_reparse(monkeypatch):
 
 
 def test_a_spreadsheet_and_a_text_file_of_the_same_name_do_not_collide(monkeypatch):
-    """Text suffixes now share one rule, but a spreadsheet takes a different
-    branch entirely — so `suffix` still has to be part of the cache key.
-    """
+    """Suffix remains part of the cache key because text and spreadsheet readers differ."""
     calls = _count_parses(monkeypatch)
     raw = _frame().to_csv(index=False).encode()
     _read_table_cached(_uploaded_file(raw, "d.csv"), ".csv")
@@ -744,8 +742,7 @@ def test_a_comment_line_above_the_header_is_named():
     df, meta = _read(FakeUpload(raw, "plate.tsv"))
     _warning, error = _diagnose_table(df, meta, "plate.tsv")
     assert "title or comment line" in error
-    # Row 1 is the comment, so the first disagreement is the real header on row 2 —
-    # which points straight at the line that should not be there.
+    # Physical line numbering includes the comment, so the misplaced header is row 2.
     assert "row 2 has 3 fields where row 1 has 1" in error
 
 
@@ -759,9 +756,7 @@ def test_a_table_with_no_separator_at_all_is_left_to_the_semantic_layer():
 
 
 def test_a_colon_separated_file_is_named_by_the_same_consistency_rule():
-    """Colon is recognised, never parsed on. Without this the file fell through to
-    "cell_id column is missing" — about a file whose first column *is* cell_id.
-    """
+    """A consistent colon separator is recognized as unsupported and reported clearly."""
     raw = b"cell_id:treatment:value\na:ctrl:1\nb:drug:2\n"
     df, meta = _read(FakeUpload(raw, "plate.csv"))
     assert meta["unusable_delimiter"] == "colon"
@@ -913,8 +908,8 @@ def test_the_decimal_hint_survives_a_missing_row_id_column(monkeypatch):
 
     assert (df, groups, complete, delimiter) == (None, None, False, ";")
     shown = " ".join(rendered)
-    assert "cell_id column is missing" in shown          # the error it was getting
-    assert "1,5" in shown and "full stop" in shown       # and why, appended to it
+    assert "cell_id column is missing" in shown          # Name the missing identifier.
+    assert "1,5" in shown and "full stop" in shown       # Also explain the decimal format.
 
 
 def test_load_table_hands_back_the_separator_it_actually_read(monkeypatch):

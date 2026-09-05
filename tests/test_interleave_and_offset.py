@@ -1,11 +1,5 @@
-"""Regression guards for two reproducibility/clarity fixes.
-
-1. add_interleaved_points_trace seeded its shuffle only when a caller passed
-   random_seed (no caller did), and it seeded the GLOBAL random module. Result:
-   plot point draw-order differed run-to-run and the call perturbed global RNG
-   state. Fix: a local RNG seeded by default.
-2. get_offset's docstring/variable name said "median" but it computes the mean.
-   Doc-only fix; behavior (mean of last 10% of bins) must be unchanged.
+"""Point interleaving uses a deterministic local RNG without changing global state.
+Offset estimation remains the mean of the last 10% of decay bins.
 """
 import random
 import sys
@@ -71,5 +65,5 @@ def test_get_offset_is_mean_of_last_10_percent():
     curve = rng.poisson(50, size=200).astype(float)
     expected = np.mean(curve[int(200 * 0.9):])  # mean of last 10% of bins
     assert get_offset(curve) == pytest.approx(expected)
-    # And it is NOT the median (guards against an accidental np.median "fix").
+    # Distinguish the expected mean from the median.
     assert get_offset(curve) != pytest.approx(np.median(curve[180:]))

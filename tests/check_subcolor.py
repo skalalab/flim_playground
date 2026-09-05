@@ -1,17 +1,6 @@
-"""Contract for subcolor.
+"""Check one consistent subcolor and legend entry per nested value across the figure.
 
-Colour is mapped GLOBALLY: every distinct value of the nested column gets one colour for
-the whole figure. That is what makes the colour mean the value -- a value appearing in
-several colour groups is automatically the same colour in each, so its single bare legend
-entry is true everywhere.
-
-An earlier version economised colours by reusing palette slots across groups, which
-needed a conflict graph, a shared-versus-local legend split and a "Shared" heading to
-stay honest about what a reused colour meant. That only pays when the column has more
-distinct values than colour can carry; at the handful this encoding is used with it cost
-complexity and bought nothing, so it is gone. These checks pin the simpler rule.
-
-    python tests/check_subcolor.py
+Run: python tests/check_subcolor.py
 """
 import os
 import pathlib
@@ -63,9 +52,7 @@ check("no two values share a colour", len(set(colour.values())) == len(distinct)
 check("a value in several groups has one colour", colour["S1"] and colour["S2"])
 check("values sharing a group differ",
       all(len({colour[v] for v in vs}) == len(vs) for _g, vs in mixed))
-# The map's KEY ORDER is load-bearing now that callers iterate it to decide which values
-# to draw: it must be the figure's values in natural-sort order, because that is the order
-# traces are emitted in and the order the legend reads.
+# Map keys determine trace and legend order, so require natural sorting.
 check("keys are the figure's values in natural-sort order",
       list(colour) == natural_tuple_sort(distinct), list(colour))
 
@@ -77,10 +64,7 @@ check("plotly returns rgba strings",
 check("mpl returns plain rgb tuples",
       all(isinstance(c, tuple) and len(c) == 3 for c in mpl_colour.values()),
       list(mpl_colour.values())[:1])
-# The two engines must not merely be well-formed, they must AGREE: one function serves
-# both so the exported Matplotlib figure's colours are the screen's, and nothing else
-# checks that. The plotly side rounds to bytes, so compare each channel to within half a
-# byte -- round(), not int(), is exactly what keeps it inside that tolerance.
+# Compare app/export RGB channels within half a byte to allow Plotly rounding.
 check("both engines name the same values", set(plotly_colour) == set(mpl_colour))
 _off = []
 for value, rgba in plotly_colour.items():

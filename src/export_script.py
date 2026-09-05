@@ -1,13 +1,7 @@
-"""
-Script generator for exporting FLIM Playground analyses as self-contained Python scripts.
+"""Export analyses as standalone Matplotlib scripts with editable settings.
 
-Each generated script uses Matplotlib for plotting, references the data file by path,
-and includes all filters, parameters, and analysis logic as editable constants.
-
-Architecture: Uses inspect.getsource() to extract computation functions from the actual
-codebase modules (helpers.py, classify.py, tuned_threshold_classifier.py) so algorithm
-changes are automatically reflected in exported scripts. Only Matplotlib-specific rendering
-code (which has no Plotly equivalent in the codebase) is written as string templates.
+Inline shared computation helpers with inspect.getsource() for app/export parity.
+String templates supply the Matplotlib rendering and script orchestration.
 """
 import inspect
 import re
@@ -60,33 +54,19 @@ def _extract_source(*funcs_or_classes, strip_src_imports=True) -> str:
     for obj in funcs_or_classes:
         src = inspect.getsource(obj)
         src = textwrap.dedent(src)
-        # Drop any leading decorators captured with the source (e.g. the app's
-        # @st.cache_data). Caching is a Streamlit-only optimization; the
-        # standalone script imports no streamlit, so leaving the decorator in
-        # would reference an undefined `st`. The extracted function runs once,
-        # so it needs no cache anyway.
+        # Standalone scripts have no Streamlit runtime for decorators such as cache_data.
         src = re.sub(r"\A(?:@[^\n]*\n)+", "", src)
         if strip_src_imports:
-            # Indented too: an import inside a function body survives textwrap.dedent
-            # with its leading whitespace, and would ImportError in the standalone
-            # script (create_subcolor_map imports the palette this way).
+            # Remove function-local project imports too; their dependencies are inlined.
             src = re.sub(r"^[ \t]*from src\..*$", "", src, flags=re.MULTILINE)
         parts.append(src.strip())
     return "\n\n".join(parts) + "\n"
 
 
 def _extract_module_source(module) -> str:
-    """Inline a whole module verbatim, for a dependency too large to name per function.
+    """Inline a module with its imports, constants, and internal dependencies.
 
-    _extract_source names one function at a time and resolves no transitive
-    dependencies, which does not scale to a module whose functions call each other a
-    dozen ways (src/vis/subcolor_palette). Taking the module whole also carries its
-    top-level imports and constants across, so the inlined copy needs no per-function
-    import boilerplate and runs the same code as the app.
-
-    Two things are dropped: ``from __future__`` (legal only as a file's first statement,
-    so a SyntaxError once inlined mid-script) and the module docstring (a stray
-    expression here, describing a module the reader of this script cannot open).
+    Drop future imports, which cannot occur mid-script, and the module docstring.
     """
     src = inspect.getsource(module)
     src = re.sub(r"^from __future__ import .*$\n?", "", src, flags=re.MULTILINE)
@@ -127,15 +107,11 @@ def scatter_with_encodings(ax, x, y, color, label, point_size,
                            shape_vals=None, shape_map=None,
                            opacity_vals=None, opacity_map=None,
                            base_alpha=0.7, linewidths=0.3, zorder=2):
-    """Scatter one color group's points, sub-grouped by shape value.
+    """Scatter one color group's points, grouped by shape.
 
-    Matplotlib cannot vary marker style within a single scatter call, so each shape
-    becomes its own call. Opacity is NOT split that way: it goes in as a per-point
-    alpha array, mirroring the app's per-point opacity (helpers.add_interleaved_points_trace
-    and univar.feature_comparison_plot). Splitting it would draw one opacity group
-    wholly over another, and since create_opacity_mapping raises alpha with sort order
-    the most opaque group would always land on top — a paint order the screen does not
-    have. Only the first non-empty sub-group carries the legend label.
+    Matplotlib needs one call per marker shape. Apply opacity as a per-point alpha
+    array to avoid layering by opacity level. Only the first nonempty shape group
+    carries the legend label.
     """
     import numpy as np
     x = np.asarray(x, dtype=float)
@@ -300,11 +276,7 @@ def _build_preamble(state: dict) -> str:
     imports = "\n".join(base_imports + sorted(set(extra)))
     return (
         f"{_EXPORT_SCRIPT_CITATION}\n"
-        # The version is baked in as a LITERAL, resolved here in the app. Never
-        # inline the resolver itself: an inlined `git describe` would run in
-        # whatever directory the user happens to run the script from months
-        # later and report *their* cwd's version as FLIM Playground's. The
-        # right parity is "this artifact records the app that produced it".
+        # Record the generating app's version, independent of where the script later runs.
         f'"""\nAuto-generated by FLIM Playground {get_app_version()} \u2014 {method}\nDate: {ts}\n"""\n{imports}\n'
     )
 
@@ -326,26 +298,15 @@ def _build_config_section(state: dict) -> str:
         f"COLOR_BY = {state.get('color_by', [])!r}",
         f"SHAPE_BY = {state.get('shape_by')!r}",
         f"OPACITY_BY = {state.get('opacity_by')!r}",
-        # Blank when unset, never a guessed column name: blank makes the script invent
-        # row numbers, while a name it guessed would make check_and_fix_df demand a
-        # column the data file may not have.
+        # Keep a blank configured ID so the script generates its own row numbers.
         f"UNIQUE_ROW_ID_COL = {state.get('unique_row_id_col', '')!r}",
         f"FOV_NAME_COL = {state.get('fov_name_col')!r}",
         f"CATEGORICAL_COLS = {state.get('categorical_cols', [])!r}",
-        # Not a column the script analyses -- the prune below drops them, and on the
-        # user-table branch they are the columns the review table marked Ignore. They
-        # are here to complete the coercion skip set: the app skips them so a dismissed
-        # column is not converted on its way out, and a script that omitted them would
-        # print a conversion warning the app suppressed.
+        # Skip numeric coercion of ignored columns before pruning them, matching the app.
         f"IGNORED_COLS = {state.get('ignored_cols', [])!r}",
     ]
 
-    # The column universe the app analyses. get_features() (src/dataset_io.py) keeps
-    # the row id, every present configured categorical (the FOV column among them)
-    # and every recognised numerical feature, dropping the rest; anything the app
-    # never saw must not reappear in this script's derived-data CSVs either. Captured
-    # from the loaded frame rather than re-derived, because re-deriving needs
-    # config.toml / analysis_config.toml and this script has to stand alone.
+    # Capture the app's retained columns so derived exports match without config files.
     analysis_columns = state.get("analysis_columns")
     if analysis_columns:
         lines.append("ANALYSIS_COLUMNS = [")
@@ -423,12 +384,9 @@ def _build_config_section(state: dict) -> str:
 
 
 def _build_read_call(filename: str, delimiter: str = ",") -> str:
-    """The one read line, matching the branch src.dataset_io._read_table_cached took.
+    """Build a read call matching dataset_io._read_table_cached's parser and options.
 
-    App<->export parity includes *how the file is opened*: an exported script that
-    read a workbook with read_csv would fail on the very file the app just plotted.
-    The parameters differ per branch and are not interchangeable — see the
-    _read_table_cached docstring for why index_col/low_memory cannot be shared.
+    Keep CSV-only index_col/low_memory settings out of the spreadsheet branch.
     """
     from src.dataset_io import SPREADSHEET_SUFFIXES, suffix_of_name
 
@@ -440,9 +398,7 @@ def _build_read_call(filename: str, delimiter: str = ",") -> str:
                 '# them so a numeric header is a str everywhere downstream — the categorical\n'
                 '# lookup and every df[name] access assume it.\n'
                 'df.columns = [str(col) for col in df.columns]')
-    # Every other name is read as delimited text. The separator is the app's own
-    # answer, baked in: the script must not re-run detection and reach a different
-    # one than the plot it reproduces.
+    # Delimited text reuses the app's detected separator.
     return (f"SEPARATOR = {delimiter!r}  # the separator the app detected\n"
             "df = pd.read_csv(DATA_PATH, index_col=False, sep=SEPARATOR, low_memory=False)")
 
@@ -485,18 +441,12 @@ if _error_msg:
 # Same as the app: a blank UNIQUE_ROW_ID_COL means the table has no identifier of its
 # own, so one is invented here under the same name the app invented.
 df, ROW_ID_COL = resolve_row_id_col(df, UNIQUE_ROW_ID_COL)
-# ROW_ID_COL, not UNIQUE_ROW_ID_COL: an invented identifier is a column of digit
-# strings, and left out of this skip set it would coerce to numbers and stop being one.
-# Same set the app builds in get_features(), IGNORED_COLS included: a column the user
-# dismissed is not converted on its way to being discarded, so nothing is reported
-# about it here that the app did not report there.
+# Skip coercion of resolved IDs, categoricals, and ignored columns, matching the app.
 df, _coerce_warning = coerce_majority_numeric_cols(
     df, set([ROW_ID_COL] + list(CATEGORICAL_COLS) + list(IGNORED_COLS)))
 _warning_msg += _coerce_warning
 if ANALYSIS_COLUMNS is not None:
-    # Same prune the app applies in get_features() — see ANALYSIS_COLUMNS above.
-    # Missing columns are skipped rather than raising, so the script still runs on a
-    # file that lost a column; anything dropped here was never part of the analysis.
+    # Retain captured analysis columns that are present in this file.
     _missing = [col for col in ANALYSIS_COLUMNS if col not in df.columns]
     if _missing:
         print("Warning: analysed column(s) missing from the data file: " + ", ".join(_missing))
@@ -529,9 +479,7 @@ def _build_visual_encoding(state: dict, overlap_point: bool = True) -> str:
         tuple_natural_key,
     )
 
-    # Inlined from src/vis/helpers.py. tuple_natural_key comes along because
-    # natural_tuple_sort depends on it; format_group_label is called below with
-    # engine='mpl' so the "n=" wording and line break match the screen.
+    # Include natural-sort dependencies and shared legend wording in Matplotlib format.
     helpers_src = _extract_source(natural_key, tuple_natural_key, natural_tuple_sort,
                                   create_opacity_mapping, format_group_label)
     # Extract Matplotlib-adapted color/shape maps and scatter helpers from this module
@@ -784,24 +732,11 @@ ax.legend(fontsize=LEGEND_SIZE)
 
 
 def _build_collapse(state: dict) -> str:
-    """The NaN drop, the optional collapse, and the log transform -- emitted BEFORE
-    _build_visual_encoding.
+    """Emit feature NaN removal, optional collapse, then log transformation.
 
-    Order is the whole point. The collapse must run *after* the SELECTED_VAR NaN drop,
-    so `n` counts the cells that actually contributed to the mean, and *before* the
-    encoding block, which builds `_color_group`, `color_groups` and the colour/shape/
-    opacity maps -- those must describe replicates, not cells. Log last, because the app
-    logs inside feature_comparison_plot, i.e. after the page has collapsed: log10(mean),
-    never mean(log10).
-
-    Hoisting the NaN drop out of the FC template also closes a latent divergence: the
-    export used to build color_groups from the pre-drop frame while the app builds it
-    from the post-drop one, so a colour group that is all-NaN in the feature got an x
-    slot in the script and none in the app.
-
-    Plain concatenation rather than an f-string: the emitted guards below interpolate
-    into their own f-strings, and doubling every brace through two layers is exactly
-    where these templates break.
+    Run before _build_visual_encoding so groups and encodings describe the retained
+    rows or replicates. Logging after collapse gives log10(mean), matching the app.
+    Plain string concatenation preserves the generated f-strings' braces.
     """
     from src.collapse import collapse_rows
 
@@ -811,10 +746,7 @@ df = df[df[SELECTED_VAR].notna()]
     if not state.get("method_params", {}).get("collapse_by"):
         return header + _LOG_Y_BLOCK
 
-    # The three guards are no-ops on captured state -- the app resolved each channel to
-    # None before the export ran. They are here for the "standalone, EDITABLE script"
-    # promise: someone who hand-edits COLLAPSE_BY gets a printed reason instead of a
-    # KeyError out of df[SHAPE_BY].unique() in the encoding block below.
+    # Revalidate decoration channels if the user edits COLLAPSE_BY in the script.
     return header + """
 # Collapse to one point per replicate (extracted from FLIM Playground source)
 """ + _extract_source(collapse_rows) + """
@@ -859,16 +791,9 @@ def _build_feature_comparison(state: dict) -> str:
         interleave_point_batches,
     )
 
-    # _density_at_points is what the app calls for the sina jitter (src/vis/univar.py
-    # feature_comparison_plot); inlining it keeps the jitter numerically identical rather
-    # than merely similar. _estimate_density_1d comes along because _density_at_points
-    # delegates to it, and because sharing it gives degenerate groups (constant or
-    # single-point) the same zero-density fallback and so the same uniform jitter.
-    # The palette module goes in whole and first, so its constants and memo exist before
-    # anything calls in. Extracted here rather than in _build_visual_encoding, which feeds
-    # all seven method builders and would gain dead code and an undefined SUBCOLOR_BY.
-    # _sorted_levels must be named because create_subcolor_map calls it and
-    # _extract_source resolves no transitive dependencies.
+    # Inline the app's density helpers for identical sina jitter and degenerate-data
+    # handling. Include the palette module before its callers and name _sorted_levels
+    # explicitly: _extract_source does not resolve transitive dependencies.
     subcolor_src = _extract_module_source(subcolor_palette) + "\n" + _extract_source(
         _palette_rgb, _sorted_levels, interleave_point_batches, create_subcolor_map,
     )
@@ -924,9 +849,7 @@ for sec_i, sec_group in enumerate(ordered_separate_groups):
         sec_color_groups = ordered_color_groups
 
     if sec_i > 0:
-        # Gap between sections, matching the app's section_spacing = 0.5
-        # (src/vis/univar.py). The divider goes at the centre of that gap: the previous
-        # position is pos - 1 and the next section starts at pos + 0.5, so pos - 0.25.
+        # Match the app's 0.5-unit section gap, with its divider at the midpoint.
         section_boundaries.append(pos - 0.25)
         pos += 0.5
 
@@ -934,10 +857,7 @@ for sec_i, sec_group in enumerate(ordered_separate_groups):
     for cg in sec_color_groups:
         key = (sec_group, cg) if sec_group is not None else cg
         x_positions[key] = pos
-        # Tick label is the group alone, as in the app (univar.py x_tick_labels_actual,
-        # which likewise blanks the placeholder group used when nothing is coloured by).
-        # Folding the section name into every tick made labels collide once a section
-        # held more than ~3 groups; the section name gets one centred header instead.
+        # Use group names for ticks and a separate centered header for each section.
         x_labels.append("" if cg == "all_data" else cg)
         tick_positions.append(pos)
         pos += 1
@@ -946,15 +866,10 @@ for sec_i, sec_group in enumerate(ordered_separate_groups):
 
 fig, ax = plt.subplots(figsize=(max(10, len(tick_positions) * 1.2), 6))
 
-# --- Plot points (Sina jitter) ---
-# Counted once over the whole NaN-filtered frame, not per section: the app builds
-# group_counts the same way (univar.py feature_comparison_plot), so a colour group
-# that appears in several separate_by sections shows its total in the one legend entry.
+# Count groups across all sections of the retained frame for shared legend entries.
 group_counts = df.groupby("_color_group").size().to_dict()
-# Subcolor takes the colour channel away from the colour group: colour comes to
-# mean the nested value itself, one colour per distinct value across the whole figure, so
-# a value appearing in several groups wears the same colour in each. Positions, tick
-# labels, the box overlay and every statistic stay at the colour-group level either way.
+# Subcolor identifies nested values across the figure; x positions, boxes, and
+# statistics continue to describe comparison groups.
 subcolor_of = create_subcolor_map(
     df, SUBCOLOR_BY, "_color_group", ordered_color_groups, engine='mpl', colormap=COLORMAP)
 subcolor_counts = {{}}
@@ -975,12 +890,8 @@ for sec_group in ordered_separate_groups:
         group_df = sec_df[sec_df["_color_group"] == cg]
         y_data = group_df[SELECTED_VAR].values
 
-        # KDE-based jitter (Sina plot), fitted once per (section, colour group) as the app
-        # does — never per (colour, shape, opacity) subgroup, which would re-estimate each
-        # density over a fraction of the rows and move every point when shape_by or
-        # opacity_by is set. _density_at_points rather than evaluating the KDE at its own
-        # training points, which is O(n^2); it returns zeros below 2 points, and the norm_d
-        # fallback below turns those into uniform jitter.
+        # Fit jitter once per section/color group so decoration choices cannot move points.
+        # Grid-based density evaluation avoids quadratic work; degenerate groups use uniform jitter.
         densities = _density_at_points(y_data)
         if len(densities) > 0 and np.max(densities) > 0:
             norm_d = densities / np.max(densities)
@@ -1001,25 +912,17 @@ for sec_group in ordered_separate_groups:
                                    linewidths=0.5)
             legend_entries.add(cg)
         else:
-            # Slice the x/y already jittered above; the KDE and rng(42) belong to the
-            # colour group, so every point keeps the same x it has without matching.
-            # One legend entry per value, covering every group it appears in.
+            # Reuse group-level jitter and give each subcolor value one figure-wide legend entry.
             _subcolor_vals = group_df[SUBCOLOR_BY].fillna("N/A").astype(str).values
             _shape_vals = group_df[SHAPE_BY].values if SHAPE_BY else None
             _opacity_vals = group_df[OPACITY_BY].values if OPACITY_BY else None
-            # Interleaved, matching the app (univar.py feature_comparison_plot): these
-            # share the colour group's jittered x band, so one trace per value would paint
-            # each entirely over the previous. An absent value contributes no batch, which
-            # also keeps an empty array out of scatter_with_encodings -- it would still
-            # emit that value's legend label.
+            # Interleave subcolor batches to limit occlusion bias, skipping absent values.
             for _value, _mask in interleave_point_batches({{
                     _v: np.flatnonzero(_subcolor_vals == _v) for _v in subcolor_of}}):
                 _label = (format_group_label(_value, subcolor_counts.get(_value),
                                              SHOW_GROUP_COUNTS, engine='mpl')
                           if _value not in legend_entries else None)
-                # .values before indexing: interleave_point_batches returns POSITIONAL
-                # indices, and a Series indexed with an integer array looks up labels
-                # instead, which KeyErrors on any frame whose index is not 0..n-1.
+                # Batch indices are positional, so index arrays instead of Series labels.
                 scatter_with_encodings(ax, x_vals[_mask], y_data[_mask], subcolor_of[_value][:3],
                                        _label, POINT_SIZE,
                                        shape_vals=_shape_vals[_mask] if SHAPE_BY else None, shape_map=shape_map,
@@ -1135,14 +1038,7 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
                     es = glass_delta(g1_data, g2_data, MEAN_OR_MEDIAN)
                 else:
                     es = cohens_d(g1_data, g2_data, MEAN_OR_MEDIAN)
-                # `pd.isna` first, and not merely `abs(es) < THRESHOLD` inverted: the
-                # app's guard is POSITIVE (src/vis/helpers.py, "draw if abs(es) >=
-                # threshold"), so an undefined effect size falls through it and nothing is
-                # drawn. Inverting it to a skip makes the two agree on every ordered value
-                # and DISAGREE on nan, where both comparisons are False -- so this branch
-                # used to fall through and draw a bracket reading "\u0394=nan" that the app
-                # never showed. glass_delta and cohens_d return nan below two points, which
-                # COLLAPSE_BY makes routine.
+                # Skip undefined effects explicitly: NaN fails both threshold comparisons.
                 if pd.isna(es) or abs(es) < EFFECT_SIZE_THRESHOLD:
                     continue
                 txt = f"{{es:.2f}}{{star}}" if star else f"\\u0394={{es:.2f}}"
@@ -1171,9 +1067,7 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
                    [y_bracket_top - bracket_h, y_bracket_top, y_bracket_top, y_bracket_top - bracket_h],
                    color='black', linewidth=1.5, zorder=4)
 
-            # AXIS_LABEL_SIZE: the app writes size=12 on this annotation
-            # (src/vis/helpers.py) but apply_plot_styling() then rewrites every
-            # annotation's size to plot_axis_label_size, so 12 never renders.
+            # Match the font size applied by the app's final styling pass.
             ax.text((x_start + x_end) / 2, y_text_center,
                    txt, ha='center', va='bottom', fontsize=AXIS_LABEL_SIZE, zorder=4)
 
@@ -1197,30 +1091,16 @@ ax.tick_params(axis='y', labelsize=AXIS_LABEL_SIZE - 2)
 add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
 ax.legend(fontsize=LEGEND_SIZE)
 
-# Same tick angle rule as the app (src/vis/univar.py): labels of more than four
-# characters are slanted to 45°, shorter ones stay upright. The app fixes the angle
-# rather than letting Plotly choose per container width, so matching the rule here is
-# what keeps the two figures looking alike.
+# Match the app's tick angles: slant labels longer than four characters.
 if max((len(str(lbl)) for lbl in x_labels), default=0) > 4:
     plt.setp(ax.get_xticklabels(), rotation=45, ha='right', rotation_mode='anchor')
 
-# One bold header per separate_by section, centred over its groups (univar.py
-# separate_sections_info). The header sits directly under the axis line and the tick
-# labels are pushed below it, mirroring the app's xaxis.ticklabelstandoff: the reserved
-# gap is one line of header text at a size set here.
+# Center one bold header over each section and reserve space above the tick labels.
 if section_headers:
-    # 1.6 * the header size is the line plus padding, matching header_slot_px in the app;
-    # the +3.5 is Matplotlib's default x-tick pad, which the app's standoff likewise adds
-    # to Plotly's own default. Points here against the app's pixels, but both are the
-    # same multiple of the font size, so the two figures reserve the same proportion.
+    # Reserve the app's header-height ratio plus Matplotlib's default 3.5-point tick padding.
     ax.tick_params(axis='x', pad=1.6 * AXIS_LABEL_SIZE + 3.5)
     for _header_x, _header_label in section_headers:
-        # AXIS_LABEL_SIZE, not the size univar.py passes: apply_plot_styling() rewrites
-        # every annotation's font size to plot_axis_label_size after the plot is built,
-        # so that is the size the app actually renders these at.
-        # Offset in points below the axes edge, not a fraction of the axes height: the
-        # Save section's tight_layout resizes the axes under these headers, and a
-        # font-size offset survives that resize where a fraction of the height does not.
+        # Use the app's final annotation size. Point-based offsets survive tight_layout resizing.
         ax.annotate(_header_label, xy=(_header_x, 0), xycoords=('data', 'axes fraction'),
                     xytext=(0, -0.25 * AXIS_LABEL_SIZE), textcoords='offset points',
                     ha='center', va='top', fontsize=AXIS_LABEL_SIZE, fontweight='bold')
@@ -1392,9 +1272,7 @@ def _build_phasor_plot(state: dict) -> str:
     kmeans_src = ""
     if state.get("method_params", {}).get("k_means"):
         from src.vis.bivar import _cluster_hull_polygon, phasor_kmeans
-        # _cluster_hull_polygon is shared so clusters with fewer than three UNIQUE
-        # points get the app's fallback circle instead of silently losing their
-        # boundary, and duplicate points can't trip Qhull.
+        # Share hull construction, including fallback circles for fewer than three unique points.
         kmeans_src = ("\n# K-Means clustering and cluster boundaries "
                       "(extracted from FLIM Playground source)\n"
                       + _extract_source(phasor_kmeans, _cluster_hull_polygon))

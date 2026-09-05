@@ -41,9 +41,7 @@ from src.widgets.metadata_widgets import (
 )
 from src.widgets.numeric_extraction_widgets import fov_extraction_widget
 
-# --- Step identity ---------------------------------------------------------
-# Single source of truth for the three workflow steps, used for both the radio
-# and the dispatch below. Selecting a step returns exactly one of these strings.
+# Shared labels for the workflow selector and dispatch.
 STEP_FOV = "FOV Metadata Extraction"
 STEP_NUMERIC = "Numeric Feature Extraction (fitting, phasor, etc.)"
 STEP_CATEGORICAL = "Categorical Feature Extraction (e.g. treatment)"
@@ -53,9 +51,10 @@ STEPS = [STEP_FOV, STEP_NUMERIC, STEP_CATEGORICAL]
 # --- Cross-step context ----------------------------------------------------
 @dataclass
 class ExtractionContext:
-    """Config-derived values that are the same across all three steps, resolved
-    once from the active profile and passed explicitly to the step renderers and
-    helpers (instead of being read from module globals)."""
+    """Config values shared by all workflow steps.
+
+    Resolve once from the active profile and pass to step renderers and helpers.
+    """
     channel_names: dict
     input_types: dict
     imaging_modalities: dict
@@ -78,7 +77,6 @@ def build_context():
     ch_num_components = get_num_components(input_types, channel_names.keys())
     selected_ch_feature_extractors = get_selected_feature_extractors(input_types, channel_names.keys())
     fov_name_col = get_fov_name_col()
-    # get_fit_free_calibration_method returns a 2-tuple (method, standard_lifetime)
     fit_free_calibration_method, fluorescence_lifetime_standard_lifetime = get_fit_free_calibration_method(decay_input_type)
     return ExtractionContext(
         channel_names=channel_names,
@@ -151,10 +149,8 @@ def prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components, c
                 val = fixed_lts.get(t_key)  # None or float
                 fov_df[f"{channel_name}_fixed_{t_key}"] = val
 
-    # Serialize derived-feature definitions into one JSON column, repeated per row
-    # (a global setting, like laser_rate). This bakes the formulas into the
-    # metadata CSV so re-running a saved CSV reproduces the same "Derived: *"
-    # columns regardless of later config edits (see src/derived_features.py).
+    # Repeat the profile's derived formulas on each metadata row so replaying
+    # this CSV uses the same definitions even after the profile changes.
     fov_df["derived_features"] = json.dumps(get_derived_features())
 
     return fov_df
@@ -242,8 +238,7 @@ def render_fov_metadata_step(col1, col2, ctx):
     fluorescence_lifetime_standard_lifetime = ctx.fluorescence_lifetime_standard_lifetime
 
     with col1:
-        # Tell the user (don't auto-reload) if another tab changed the config since
-        # this page loaded, so they can refresh to pick up new channels/extractors.
+        # Notify when another tab changes the config; refreshing loads those changes.
         notify_on_config_change()
         # show decay input type
         if ctx.has_flim:
@@ -254,13 +249,12 @@ def render_fov_metadata_step(col1, col2, ctx):
             with checkbox_cols[index]:
                 has_channel = st.checkbox(f"has {channel_name}", value=True, key=f"has_channel_{channel_key}")
                 if has_channel:
-                    # have a help text to show the planned features to be extracted
                     with st.expander(f"Feature extractors for {channel_name}", expanded=False):
                         st.write(ctx.selected_ch_feature_extractors[channel_key])
                     selected_channels[channel_key] = channel_name
-                    if ctx.ch_num_components[channel_key] != 0 and "prefitted" in ctx.input_types[channel_key]:  # if equals to 0, it means this channel does not have any lifetime fit analysis; only prefitted needs to be specified to get all the files.
+                    if ctx.ch_num_components[channel_key] != 0 and "prefitted" in ctx.input_types[channel_key]:  # Prefitted component count determines required output files.
                         selected_ch_num_components[channel_name] = st.number_input("No. component", value=ctx.ch_num_components[channel_key], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_name}")
-                    elif ctx.ch_num_components[channel_key] != 0:  # do not ask now, will ask later when fitting
+                    elif ctx.ch_num_components[channel_key] != 0:  # Configure raw-data components in the fitting step.
                         selected_ch_num_components[channel_name] = ctx.ch_num_components[channel_key]
         if len(selected_channels) == 0:
             error_msg = "Please check at least one of the channels"
@@ -268,11 +262,10 @@ def render_fov_metadata_step(col1, col2, ctx):
         else:
             if ctx.has_flim:
                 duration, time_bins, laser_rate = lifetime_data_config_widget(ctx.selected_ch_feature_extractors, ctx.decay_input_type)
-            else:  # for later, we will add other imaging modalities and this will ask for those imaging modality specific config
+            else:
                 duration, time_bins, laser_rate = None, None, None
             if laser_rate is None:
                 fit_free_calibration_method = None
-            # laser rate is none means there is no fit free analysis
             if fit_free_calibration_method == "Fluorescence Lifetime Standard":
                 # Fluorescence lifetime standard file is per-channel and collected via suffixes; only lifetime is shared
                 fluorescence_lifetime_standard_lifetime = st.number_input("Fluorescence lifetime standard's lifetime in **ns**", value=fluorescence_lifetime_standard_lifetime, min_value=0.1, max_value=20.0, step=0.1, key="fluorescence_lifetime_standard_lifetime")
@@ -302,7 +295,7 @@ def render_fov_metadata_step(col1, col2, ctx):
                     if laser_rate is not None:
                         fov_df["laser_rate"] = laser_rate
 
-                    # Step 4: Finalize processing ( fluorescence lifetime standard validation moved here)
+                    # Validate channel assignments and standards, then export metadata.
                     error_msg, fov_df = finalize_fov_processing(fov_df, selected_channels, ctx.decay_input_type, ctx.imaging_modalities, duration, time_bins, folder_path, ctx.selected_ch_feature_extractors, fit_free_calibration_method, fluorescence_lifetime_standard_lifetime)
                     if error_msg != "":
                         st.error(f"{error_msg} {sad_emoji}")
@@ -330,7 +323,6 @@ def _load_metadata_df():
 
 def _save_or_download_metadata(metadata_df):
     """Save the augmented metadata back to its known path (button-gated), else offer a download."""
-    # have a download button to download the metadata file
     if st.session_state["last_extracted_metadata_filepath"] is not None:
         download = st.button("Download updated metadata", width='stretch', help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
         if download:
@@ -352,11 +344,11 @@ def _render_shift_controls(metadata_df, metadata_dict):
     decay_input_type = metadata_dict.get("decay_input_type")
     shift_needed = len(metadata_dict["channels_shift"]) > 0
     shifts_are_present = all(f"{ch}_shift" in metadata_df.columns for ch in metadata_dict["channels_shift"])
-    # Defensive reset: if shifts are required but missing, do not allow extraction yet
+    # Required shift columns must exist before extraction can run.
     if shift_needed and not shifts_are_present and st.session_state.get("shift_ready", False):
         st.session_state["shift_ready"] = False
     if shift_needed and not shifts_are_present:
-        # if there are channels to be fitted, show the fitting options: spcimage is already fitted (only for FLIM)
+        # Prefitted inputs do not need fitting options.
         if decay_input_type is not None and "Lifetime fit" in metadata_dict and len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
             st.info("Please specify the following fitting options.")
             metadata_dict = fit_options_widget(metadata_dict)
@@ -470,10 +462,8 @@ def _render_run_extraction(metadata_df, metadata_dict):
     single_cell_features = fov_extraction_widget(metadata_df, metadata_dict)
     if not single_cell_features.empty:
         st.success(f"Fields of view features with ✅ are extracted successfully {happy_emoji}! FOVs with error messages are excluded. The first few rows of the features are shown below.")
-        # fov_extraction_widget re-runs the whole batch on every rerun, so this block
-        # re-renders whenever the user touches a widget (e.g. the download button
-        # below). pop() consumes the flag armed by "Confirm and Start", keeping the
-        # animation to once per confirmed run instead of once per interaction.
+        # Consume the confirmation flag once after features are available; rerenders
+        # of the extraction result must not repeat the celebration.
         if st.session_state.pop("celebrate_extraction", False):
             st.balloons()
         st.write(single_cell_features.head())
@@ -542,9 +532,7 @@ init_session_state()
 st.title("Data Extraction")
 
 ctx = build_context()
-# A blank/unconfigured active profile (e.g. one just created in the Configuration
-# page's sidebar but never saved with "Update Configuration") has no channels.
-# Stop with guidance here instead of crashing downstream on st.columns(0).
+# An unsaved profile can have no channels; stop before creating channel columns.
 if not ctx.channel_names:
     st.warning(
         f"The active configuration profile **'{get_current_profile_name()}'** has not "

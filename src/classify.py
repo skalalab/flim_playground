@@ -36,9 +36,7 @@ def calculate_roc_curve(num_classes, y_test, y_score, classes=None):
         classes = np.unique(y_test)
     y_test_binarized = label_binarize(y_test, classes=classes)
     if num_classes == 2:
-        # For binary classification, use the first class (class at index 0) as the positive class
-        # however, label_binarize marks the second class as positive, so labels need to be inverted
-        # Invert: 1 = first class, 0 = second class -> 0 = first class, 1 = second class
+        # label_binarize marks class 1 positive; invert to plot class 0's ROC.
         y_test_first_class = 1 - y_test_binarized  
         fpr, tpr, _ = roc_curve(y_test_first_class, y_score[:,0])  # Probabilities for the first class
         roc_auc = auc(fpr, tpr)
@@ -71,8 +69,7 @@ def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12, metrics=
         
         # Plot operating point if metrics are provided
         if metrics is not None and 'per_class' in metrics:
-            # For binary, we typically focus on the positive class (index 0 in our logic)
-            # metrics['per_class'] is keyed by class name
+            # Per-class metrics use string keys; this ROC represents class 0.
             pos_class_str = str(positive_class)
             if pos_class_str in metrics['per_class']:
                 cls_metrics = metrics['per_class'][pos_class_str]
@@ -82,8 +79,7 @@ def plot_roc_curve(y_test, y_score, axis_label_size=12, legend_size=12, metrics=
                 
                 threshold_label = ''
                 if threshold_value is not None:
-                    # in tuned_threshold_classifier's _predict_with_thresholds: the prediction of the 2nd class is >= threshold value. 
-                    # since we are plotting the ROC curve for the 1st class, we need to invert the threshold value
+                    # Convert the classifier's class-1 threshold to class-0 probability.
                     threshold_label += f'Threshold ≥ {1 - threshold_value:.2f}'
                 
                 ax.scatter(op_fpr, op_tpr, c='red', s=100, zorder=5, label=threshold_label)
@@ -172,8 +168,7 @@ def plot_feature_importance(classifier, feature_names, axis_label_size=12, bar_l
 
 def calculate_metrics(y_test, y_pred):
     """
-    Calculate comprehensive classification metrics from a single confusion matrix.
-    All metrics are computed manually for efficiency - no sklearn metric functions used.
+    Calculate classification metrics from one shared confusion matrix.
     
     Args:
         y_test: True labels
@@ -352,10 +347,7 @@ def _build_classifier(method, class_weight, classifier_params, random_state):
         params.pop("class_weight", None)
         params.pop("random_state", None)
         params.pop("n_jobs", None)
-        # Trees are independent and each is seeded from random_state, so building them
-        # across cores cannot reorder anything: predict, predict_proba and
-        # feature_importances_ are bit-identical at n_jobs 1, 4, 24 and -1. Verified,
-        # because a fit this expensive silently retrains on every styling rerun.
+        # Fit independently seeded trees across all available cores.
         return RandomForestClassifier(random_state=random_state, class_weight=class_weight,
                                       n_jobs=-1, **params)
     if method == "Gradient Boosting":

@@ -1,16 +1,9 @@
-"""
-Benchmark parallel vs sequential fitting on real FLIM data.
+"""Benchmark sequential and parallel fitting on the T-cell activation example data.
 
-Uses T-cell activation dataset from example_data/:
-  - 342 cells, 200 time bins, real Gaussian IRF
-
-Usage:
+Uses 342 cells, 200 time bins, and a measured IRF. Run manually:
     PYTHONPATH=. uv run python tests/bench_parallel_fit_real.py
     PYTHONPATH=. uv run python tests/bench_parallel_fit_real.py --mode Local --components 1
-
-Named bench_ rather than test_: it has no test functions, so pytest imported it
-and ran nothing. Run it by hand when touching the parallel path; the correctness
-claim it makes is guarded continuously by test_fit_determinism.py.
+Automated correctness coverage lives in test_fit_determinism.py.
 """
 
 import argparse

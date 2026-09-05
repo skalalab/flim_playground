@@ -1,15 +1,6 @@
-"""The two column names Data Extraction cannot run without.
-
-Extraction is FOV-based and id-based. `fov_name_col` is not a label but the column
-extraction *reads* -- `metadata_df[fov_name_col]` in `file_io.py`, the required-column
-check in `parse_metadata_file` -- and `unique_cell_id_col` names the identifier it
-composes per cell as `{fov}_{mask label}`. Neither may be blank.
-
-Blank does not fail loudly, which is why this is checked where the name is typed. An
-empty string is a *name*: `prepare_fov_dataframe` sets `index.name = ""`, `reset_index`
-makes a column literally called `""`, and every in-session lookup then succeeds. The run
-completes and writes a CSV whose first header cell is empty -- which Data Analysis reads
-back as `Unnamed: 0` and `drop_unnamed_columns` deletes, taking the identifier with it.
+"""Extraction requires nonblank FOV and cell-identifier column names.
+An empty identifier header is dropped as unnamed when the exported CSV is read
+back, so the Configuration page blocks saving it.
 """
 import sys
 from pathlib import Path
@@ -26,11 +17,8 @@ _SAVE = "Update Configuration"
 
 @pytest.fixture
 def page(tmp_path, monkeypatch):
-    """A Configuration page on a private config, valid enough to offer its save button.
-
-    A fresh install has no feature extractor selected, which is itself a blocking error,
-    so one is picked here -- otherwise every assertion below would pass against a page
-    that was refusing to save for an entirely different reason.
+    """Use a private config with a selected extractor so column-name validation is
+    the only possible reason for disabling Save.
     """
     from streamlit.testing.v1 import AppTest
 
@@ -54,11 +42,7 @@ def _saveable(at):
     ("FOV column name", "image_name", "holding fields of view"),
 ])
 def test_a_blank_required_column_name_cannot_be_saved(page, label, restored, named):
-    """Spaces count as blank: a name of whitespace is one no column will ever match.
-
-    Restoring it has to clear the block, or the test would pass against a page that
-    simply never offers the button.
-    """
+    """Whitespace names disable Save; restoring a valid name enables it again."""
     _field(page, label).set_value("   ").run(timeout=90)
 
     assert not _saveable(page), "a blank name is still saveable"

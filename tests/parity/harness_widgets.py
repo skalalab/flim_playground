@@ -1,17 +1,7 @@
-"""Patch Streamlit input widgets so app plot functions run headless and take the
-same branch the exported script hard-codes.
+"""Patch Streamlit widgets for headless app-vs-export parity checks.
 
-Several plot functions in src/vis/ render their own widgets mid-plot (the GMM
-hyperparameters, the k-means checkbox, the histogram bin width, the 2D marginal
-type). Outside `streamlit run` those return None, so the app path would diverge
-from the export for reasons that have nothing to do with parity.
-
-Default behaviour returns each widget's OWN default (the `value` kwarg, or
-`options[index]`), which is the state the app is in right after first render —
-exactly what the export-state capture in pages/data_analysis.py assumes when the
-matching session-state key is absent. `overrides` keyed by widget LABEL flips
-individual widgets (e.g. turning the GMM checkbox on). Labels must match the app
-source exactly, including capitalisation ('Marginal Plot Type', not '... plot ...').
+Resolve inputs from label overrides, session state, or widget defaults so plots
+take the requested branches. Override labels must match the app's spelling and case.
 """
 import streamlit as st
 
@@ -34,13 +24,8 @@ def _cols(spec=2, **kw):
 def patch_streamlit(overrides=None):
     """Patch the input widgets.
 
-    Resolution order per widget, matching real Streamlit closely enough to drive the
-    app's own widget functions:
-      1. `overrides[label]` — the harness forcing a specific control
-      2. `st.session_state[key]` — a value the caller seeded, exactly as the app's
-         `_collect_*` helpers read it back (this is what makes it possible to drive
-         `filters_widget()` headlessly)
-      3. the widget's own default (`value=` / `options[index]` / `default=`)
+    Resolve each input in order: overrides[label], st.session_state[key], then
+    the widget's value, selected option, or default selection.
     """
     ov = overrides or {}
 

@@ -189,8 +189,7 @@ def test_the_dropped_channel_note_spans_both_of_its_columns(name):
     note = dropped_channel_note("shape", name, "__cell_line__")
 
     assert code_span(name) in note and code_span("__cell_line__") in note
-    # Its own **Shape by** is deliberate -- it names the control to go and change -- so
-    # only what is left after that must be free of loose markup.
+    # Preserve the intentional Shape by emphasis; inspect only the interpolated content.
     prose = _prose(note).replace("**Shape by**", "")
     assert not set(prose) & set("*_[]`"), prose
 
