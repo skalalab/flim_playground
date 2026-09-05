@@ -91,12 +91,12 @@ def test_feature_histogram_does_not(page):
     assert "Collapse by" not in _labels(at)
 
 
-def test_the_2d_distribution_does_not(page):
+def test_the_2d_distribution_offers_collapse_by(page):
     at = page()
     at.radio[0].set_value("### **Bivariate**")
     at.run(timeout=90)
     assert not at.exception
-    assert "Collapse by" not in _labels(at)
+    assert "Collapse by" in _labels(at)
 
 
 # ---------------------------------------------------------------------------

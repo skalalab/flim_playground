@@ -208,6 +208,7 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
         mp = {
             "selected_x": sx,
             "selected_y": sy,
+            "collapse_by": extra_params.get("collapse_by"),
             "log_x": st.session_state.get(f"log_x_2d_{sx}_{sy}", False) if sx and sy else False,
             "log_y": st.session_state.get(f"log_y_2d_{sx}_{sy}", False) if sx and sy else False,
             "marginal_plot_type": st.session_state.get(f"marginal_plot_type_selector_{sx}_{sy}", "gaussian fit") if sx and sy else "gaussian fit",
@@ -424,40 +425,48 @@ with col2:
         separate_by_available = method in ["Feature Comparison"]
         # Feature Comparison preserves group identity on the x axis when subcolor is used.
         subcolor_available = method in ["Feature Comparison"]
-        # Collapse averages replicate measurements within each comparison group.
-        collapse_available = method in ["Feature Comparison"]
+        # Collapse averages replicate measurements within each color group.
+        collapse_available = method in ["Feature Comparison", "2D Feature Distribution"]
         fig = None
         # check if the df is empty after filtering
         if not filtered_df.empty:
             color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by = visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=color_based, point_based=point_based, separate_by_available=separate_by_available, subcolor_available=subcolor_available, collapse_available=collapse_available)
             # Keep any notices about channels dropped by collapse beside their controls.
             collapse_note = st.container()
+
+            # Use complete observations for means, counts, and every downstream model.
+            selected_columns = []
             if method in univar_methods and selected_var != "Select":
-                # drop rows with NaN values in the selected_var column
-                filtered_df = filtered_df[filtered_df[selected_var].notna()]
+                selected_columns = [selected_var]
+            elif method == "2D Feature Distribution" and selected_x != "Select" and selected_y != "Select":
+                selected_columns = [selected_x, selected_y]
+            if selected_columns:
+                filtered_df = filtered_df.dropna(subset=selected_columns)
+
+            plot_df = filtered_df
+            plot_row_id_col, plot_row_id_label = unique_row_id_col, row_id_label
+            plot_fov_name_col = fov_name_col
+            if collapse_by and selected_columns and not plot_df.empty:
+                plot_df, plot_row_id_col, _varied = collapse_rows(
+                    filtered_df, collapse_by, [*color_by, separate_by],
+                    unique_row_id_col)
+                plot_row_id_label = collapse_by
+                # Collapse drops metadata that varies within a replicate group.
+                plot_fov_name_col = resolve_effective_fov_col(plot_df, fov_name_col)
+                _channels, _dropped = drop_varying_channels(
+                    {"shape": shape_by, "opacity": opacity_by,
+                     "subcolor": subcolor_by}, _varied)
+                shape_by = _channels["shape"]
+                opacity_by = _channels["opacity"]
+                subcolor_by = _channels["subcolor"]
+                with collapse_note:
+                    for _role, _col in _dropped.items():
+                        st.caption(dropped_channel_note(_role, collapse_by, _col))
+
+            if method in univar_methods and selected_var != "Select":
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        # Collapse nonmissing measurements per replicate and x-axis group.
-                        plot_df = filtered_df
-                        plot_row_id_col, plot_row_id_label = unique_row_id_col, row_id_label
-                        plot_fov_name_col = fov_name_col
-                        if collapse_by:
-                            plot_df, plot_row_id_col, _varied = collapse_rows(
-                                filtered_df, collapse_by, [*color_by, separate_by],
-                                unique_row_id_col)
-                            plot_row_id_label = collapse_by
-                            # Collapse drops FOV metadata that varies within a replicate group.
-                            plot_fov_name_col = resolve_effective_fov_col(plot_df, fov_name_col)
-                            _channels, _dropped = drop_varying_channels(
-                                {"shape": shape_by, "opacity": opacity_by,
-                                 "subcolor": subcolor_by}, _varied)
-                            shape_by = _channels["shape"]
-                            opacity_by = _channels["opacity"]
-                            subcolor_by = _channels["subcolor"]
-                            with collapse_note:
-                                for _role, _col in _dropped.items():
-                                    st.caption(dropped_channel_note(_role, collapse_by, _col))
                         # Share saved group-order keys with the controls below the plot.
                         session_key_sep, session_key_cmp = get_visual_group_keys(plot_df, selected_var, color_by, separate_by)
 
@@ -497,10 +506,8 @@ with col2:
                     st.write(f"No data available after removing rows with missing values {sad_emoji}")
             elif method in bivar_methods:
                 if "2D" in method and selected_x != "Select" and selected_y != "Select":
-                    # drop rows with NaN values in the selected_x and selected_y columns
-                    filtered_df = filtered_df[filtered_df[selected_x].notna() & filtered_df[selected_y].notna()]
                     if len(filtered_df) > 0:
-                        fig, table_md, gmm_df = feature_2d_distribution_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_x=selected_x, selected_y=selected_y, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap, row_id_label=row_id_label)
+                        fig, table_md, gmm_df = feature_2d_distribution_plot(plot_df, unique_row_id_col=plot_row_id_col, fov_name_col=plot_fov_name_col, selected_x=selected_x, selected_y=selected_y, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap, row_id_label=plot_row_id_label)
                         data_export_ready = True
                     else:
                         st.write(f"No data available after removing rows with missing values {sad_emoji}")
@@ -628,6 +635,7 @@ with col2:
                         if "2D" in method:
                             _extra["selected_x"] = selected_x
                             _extra["selected_y"] = selected_y
+                            _extra["collapse_by"] = collapse_by
                         elif method == "Phasor Plot":
                             _extra["selected_channel"] = selected_channel
                             _extra["phasor_harmonic"] = selected_harmonic

@@ -220,9 +220,13 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
             color_multiselect_label(merged_point_encoding, point_mode == "subcolor"),
             available_for_color,
             key=COLOR_BY_KEY,
-            help="Groups compared along the x axis. These groups set the color too, "
+            help=("Groups compared along the x axis. These groups set the color too, "
                  "unless Point encoding is set to Subcolor — then that column sets the "
-                 "color and these only set the x positions.",
+                 "color and these only set the x positions."
+                 if merged_point_encoding else
+                 "Groups that share a color. Statistical models are calculated "
+                 "within each color group after any Collapse by aggregation."
+                 if collapse_available else "Groups that share a color."),
         )
 
     # Subcolor requires an active grouping, including after this run's multiselect change.
@@ -236,11 +240,16 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
         with cols[at["collapse"]]:
             collapse_by = _pruned_selectbox(
                 "Collapse by", available_for_collapse, COLLAPSE_BY_KEY,
-                help="One point per value of this column, inside each x group, holding "
+                help=("One point per value of this column, inside each x group, holding "
                      "the MEAN of the cells it covers -- so the box, the mean line and "
                      "every statistic describe replicates (dishes, patients, images) "
                      "rather than cells. Pair it with Subcolor by on the same column to "
-                     "trace one replicate across every group.",
+                     "trace one replicate across every group."
+                     if merged_point_encoding else
+                     "One point per value of this column within each color group, "
+                     "holding the MEAN X and Y of cells with both measurements. "
+                     "Marginal distributions, 2D GMM, Pearson r, and regression "
+                     "use these replicate points. Log transforms apply after averaging."),
             )
 
     if "opacity" in at:

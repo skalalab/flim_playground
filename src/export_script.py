@@ -317,11 +317,11 @@ def _build_config_section(state: dict) -> str:
 
     if method in ("Feature Comparison", "Feature Histogram"):
         lines.append(f"SELECTED_VAR = {mp.get('selected_var')!r}")
+    if method in ("Feature Comparison", "2D Feature Distribution") and mp.get("collapse_by"):
+        lines.append(f"COLLAPSE_BY = {mp['collapse_by']!r}  # one point per replicate within each plot group, holding the MEAN of its cells")
     if method == "Feature Comparison":
         lines.append(f"SEPARATE_BY = {state.get('separate_by')!r}")
         lines.append(f"SUBCOLOR_BY = {state.get('subcolor_by')!r}")
-        if mp.get("collapse_by"):
-            lines.append(f"COLLAPSE_BY = {mp['collapse_by']!r}  # one point per value, per x group, holding the MEAN of its cells")
         lines.append(f"EFFECT_SIZE_METHOD = {mp.get('effect_size_method', 'None')!r}")
         lines.append(f"MEAN_OR_MEDIAN = {mp.get('mean_or_median')!r}")
         lines.append(f"STATISTICAL_TEST = {mp.get('statistical_test', 'None')!r}")
@@ -740,33 +740,41 @@ def _build_collapse(state: dict) -> str:
     """
     from src.collapse import collapse_rows
 
-    header = """
+    if state["method"] == "2D Feature Distribution":
+        header = """
+df = df[df[SELECTED_X].notna() & df[SELECTED_Y].notna()]
+"""
+        slot_cols = "COLOR_BY"
+        channels = ("SHAPE_BY", "OPACITY_BY")
+        log_block = _LOG_2D_BLOCK
+    else:
+        header = """
 df = df[df[SELECTED_VAR].notna()]
 """
+        slot_cols = "[*COLOR_BY, SEPARATE_BY]"
+        channels = ("SHAPE_BY", "OPACITY_BY", "SUBCOLOR_BY")
+        log_block = _LOG_Y_BLOCK
     if not state.get("method_params", {}).get("collapse_by"):
-        return header + _LOG_Y_BLOCK
+        return header + log_block
 
     # Revalidate decoration channels if the user edits COLLAPSE_BY in the script.
+    channel_pairs = ", ".join(f'("{name}", {name})' for name in channels)
     return header + """
 # Collapse to one point per replicate (extracted from FLIM Playground source)
-""" + _extract_source(collapse_rows) + """
+""" + _extract_source(collapse_rows) + f"""
 
 df, _label_col, _varied = collapse_rows(
-    df, COLLAPSE_BY, [*COLOR_BY, SEPARATE_BY], ROW_ID_COL)
-for _channel, _name in (("SHAPE_BY", SHAPE_BY), ("OPACITY_BY", OPACITY_BY),
-                        ("SUBCOLOR_BY", SUBCOLOR_BY)):
+    df, COLLAPSE_BY, {slot_cols}, ROW_ID_COL)
+for _channel, _name in ({channel_pairs}):
     if _name in _varied:
         print("NOTE: " + _channel + " is off -- one " + str(COLLAPSE_BY)
               + " point covers several " + str(_name)
               + " values, so it cannot be further divided.")
-SHAPE_BY = None if SHAPE_BY in _varied else SHAPE_BY
-OPACITY_BY = None if OPACITY_BY in _varied else OPACITY_BY
-SUBCOLOR_BY = None if SUBCOLOR_BY in _varied else SUBCOLOR_BY
-""" + _LOG_Y_BLOCK
+""" + "".join(f"{name} = None if {name} in _varied else {name}\n"
+              for name in channels) + log_block
 
 
-# Shared by both branches of _build_collapse, and moved here out of the Feature
-# Comparison template so the collapse can sit between the NaN drop and the log.
+# Apply each method's log transforms after optional replicate aggregation.
 _LOG_Y_BLOCK = """
 if LOG_Y:
     if (df[SELECTED_VAR] < 0).any():
@@ -774,6 +782,22 @@ if LOG_Y:
     else:
         df = df.copy()
         df[SELECTED_VAR] = np.log10(df[SELECTED_VAR] + 1e-6)
+"""
+
+
+_LOG_2D_BLOCK = """
+if LOG_X:
+    if (df[SELECTED_X] < 0).any():
+        print(f"WARNING: Cannot apply log to {SELECTED_X}: contains negative values.")
+    else:
+        df = df.copy()
+        df[SELECTED_X] = np.log10(df[SELECTED_X] + 1e-6)
+if LOG_Y:
+    if (df[SELECTED_Y] < 0).any():
+        print(f"WARNING: Cannot apply log to {SELECTED_Y}: contains negative values.")
+    else:
+        df = df.copy()
+        df[SELECTED_Y] = np.log10(df[SELECTED_Y] + 1e-6)
 """
 
 
@@ -1111,26 +1135,11 @@ def _build_2d_distribution(state: dict) -> str:
     from src.vis.helpers import _find_best_gmm
     gmm_src = _extract_source(_find_best_gmm) if state.get("method_params", {}).get("fit_gmm_2d") else ""
 
-    return _build_visual_encoding(state) + f"""
+    return _build_collapse(state) + _build_visual_encoding(state) + f"""
 # ============================================================
 # 2D Feature Distribution
 # ============================================================
 {gmm_src}
-
-df = df[df[SELECTED_X].notna() & df[SELECTED_Y].notna()]
-
-if LOG_X:
-    if (df[SELECTED_X] < 0).any():
-        print(f"WARNING: Cannot apply log to {{SELECTED_X}}: contains negative values.")
-    else:
-        df = df.copy()
-        df[SELECTED_X] = np.log10(df[SELECTED_X] + 1e-6)
-if LOG_Y:
-    if (df[SELECTED_Y] < 0).any():
-        print(f"WARNING: Cannot apply log to {{SELECTED_Y}}: contains negative values.")
-    else:
-        df = df.copy()
-        df[SELECTED_Y] = np.log10(df[SELECTED_Y] + 1e-6)
 
 # Create figure with marginal axes
 if MARGINAL_PLOT_TYPE != 'none':
@@ -1228,9 +1237,8 @@ if FIT_GMM_2D:
 
     for g in color_groups:
         gdf = df[df["_color_group"] == g].dropna(subset=[SELECTED_X, SELECTED_Y])
-        # >=3 points (safety floor the app lacks) and non-constant in both axes
-        # (the app's nunique<2 guard).
-        if len(gdf) < 3 or gdf[SELECTED_X].nunique() < 2 or gdf[SELECTED_Y].nunique() < 2:
+        # Match the app's minimum sample count and non-constant axes.
+        if len(gdf) < 2 or gdf[SELECTED_X].nunique() < 2 or gdf[SELECTED_Y].nunique() < 2:
             continue
         X_gmm = gdf[[SELECTED_X, SELECTED_Y]].values
         best_gmm = _find_best_gmm(X_gmm, max_components=GMM_MAX_COMPONENTS,

@@ -540,7 +540,7 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
 
     Args:
         data (np.ndarray): Input data (1D or 2D).
-        max_components (int): Maximum number of components to try.
+        max_components (int): Maximum number of components to try, capped at the sample count.
         min_weight_threshold (float): Minimum weight for a component to be considered valid.
         random_state (int): Random state for GMM initialization.
 
@@ -554,6 +554,10 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
     else:
         raise ValueError("Input data must be 1D or 2D.")
 
+    n_samples = len(data_reshaped)
+    if n_samples < 2:
+        return None
+
     best_gmm = None
     lowest_bic = np.inf
 
@@ -562,7 +566,7 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
     from threadpoolctl import threadpool_limits
 
     with threadpool_limits(1):
-        for k in range(1, max_components + 1):
+        for k in range(1, min(max_components, n_samples) + 1):
             gmm = GaussianMixture(n_components=k, random_state=random_state)
             gmm.fit(data_reshaped)
             bic = gmm.bic(data_reshaped)
