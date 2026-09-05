@@ -9,17 +9,18 @@ from sklearn.metrics import r2_score
 from sklearn.preprocessing import StandardScaler
 
 from src.feature_labels import format_feature_label
-from src.widgets.analysis_widget_state import number_input_default
 from src.widgets.gmm_tables import gmm_component_table, gmm_tables_html
-from src.widgets.visualization_widgets import gmm_hyperParams_widget
+from src.widgets.visualization_widgets import gmm_hyperParams_widget, phasor_clustering_widget
 
 from .helpers import (
     _find_best_gmm,
     add_interleaved_points_trace,
+    format_group_label,
     get_context_theme_color,
     get_point_visual_mappings,
     hover_field,
     log_negative_error,
+    natural_tuple_sort,
 )
 
 
@@ -485,8 +486,12 @@ def _cluster_hull_polygon(pts):
     """
     uniq = np.unique(np.asarray(pts, dtype=float), axis=0)
     if uniq.shape[0] >= 3:
-        hull = ConvexHull(uniq)
-        return uniq[hull.vertices]
+        from scipy.spatial import QhullError
+        try:
+            hull = ConvexHull(uniq)
+            return uniq[hull.vertices]
+        except QhullError:
+            pass  # Collinear points have no polygon; use the same circle fallback.
     center = uniq.mean(axis=0)
     r = max(np.linalg.norm(uniq - center, axis=1).max(initial=0.0), 0.01)
     theta = np.linspace(0, 2 * np.pi, 80)
@@ -583,8 +588,151 @@ def phasor_kmeans(X_raw, n_clusters, random_state=42):
     return kmeans.labels_, centers_raw
 
 
-def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, colormap="tab10", f=0.08, harmonic=1, row_id_label="ID"):
+def _phasor_panel_rows(df, separate_by=None, color_by=None):
+    """Ordered positional memberships, shared verbatim with script export."""
+    if separate_by is None:
+        return [(None, np.arange(len(df)))]
+    if not isinstance(separate_by, str) or separate_by not in df.columns:
+        raise ValueError("Separate by must be one categorical column present in the data.")
+    colors = [color_by] if isinstance(color_by, str) else list(color_by or [])
+    if separate_by in colors:
+        raise ValueError("Separate by cannot also be used for Color by.")
+    values = df[separate_by].astype(str).where(df[separate_by].notna(), "N/A")
+    return [(level, np.flatnonzero(values.to_numpy() == level))
+            for level in natural_tuple_sort(values.unique())]
 
+
+def _phasor_fit_groups(df, g_col, s_col, group_col, color_groups, panels,
+                       n_clusters, separate_by=None):
+    """Fit local populations without losing row identity or altering raw G/S.
+
+    Positional assignments also work with duplicate dataframe indices or row IDs.
+    This computation is embedded into standalone scripts with phasor_kmeans.
+    """
+    fits, notices = [], []
+    assignments = np.full(len(df), None, dtype=object)
+    for panel_index, (level, panel_rows) in enumerate(panels):
+        for color_group in color_groups:
+            positions = panel_rows[df.iloc[panel_rows][group_col].to_numpy() == color_group]
+            if not len(positions):
+                continue
+            coords = df.iloc[positions][[g_col, s_col]].to_numpy(copy=True)
+            prefix = f"{separate_by}={level} | " if separate_by else ""
+            if len(np.unique(coords, axis=0)) < n_clusters:
+                notices.append(f"Skipping K-Means for {prefix}{color_group}: "
+                               f"fewer than {n_clusters} distinct G/S observations.")
+                continue
+            labels, centers = phasor_kmeans(coords, n_clusters)
+            assignments[positions] = [f"{prefix}{color_group}_group{label + 1}"
+                                      for label in labels]
+            fits.append(dict(panel=panel_index, color_group=color_group,
+                             positions=positions, labels=labels, centers=centers))
+    return fits, assignments, notices
+
+
+def select_phasor_category(fig, category=None):
+    """Select prepared traces without refitting models or changing the G/S axes.
+
+    Apply to a fresh copy of the base figure before shared plot styling adds
+    legend swatches. Category controls can then rerun just the display fragment.
+    """
+    meta = fig.layout.meta
+    if not isinstance(meta, dict) or not meta.get("phasor_categories"):
+        return fig
+    categories = meta["phasor_categories"]
+    category = category if category in categories else categories[0]
+    for trace in fig.data:
+        trace_meta = trace.meta
+        if not isinstance(trace_meta, dict) or "phasor_role" not in trace_meta:
+            continue
+        active = trace_meta["category"] == category
+        role = trace_meta["phasor_role"]
+        trace.visible = not active if role == "context" else active
+        trace.showlegend = active and role == "points" and trace_meta["legend"]
+    fig.update_layout(meta={**meta, "phasor_category": category},
+                      legend_uirevision=f"{meta['phasor_separate_by']}:{category}")
+    return fig
+
+
+def _compose_phasor_categories(base, df, panels, separate_by, row_id_col, fits,
+                              g_col, s_col, theme_color, color_map, point_cls,
+                              show_counts):
+    """Prepare category foregrounds and context on one full-size set of axes."""
+    fig = go.Figure(layout=base.layout)
+    fig.update_xaxes(domain=[0, 1], anchor="y", scaleanchor="y", scaleratio=1,
+                     constrain="domain")
+    fig.update_yaxes(domain=[0, 1], anchor="x", constrain="domain")
+    for trace in base.data:
+        if trace.text is None and not trace.showlegend:
+            fig.add_trace(trace)  # One copy of the semicircle and lifetime references.
+    # Context always lies beneath the selected category's encoded points/overlays.
+    for level, positions in panels:
+        fig.add_trace(point_cls(
+            x=df.iloc[positions][g_col].to_numpy(), y=df.iloc[positions][s_col].to_numpy(),
+            mode="markers", marker=dict(color="#b8b8b8", opacity=.18, symbol="circle", size=3),
+            showlegend=False, hoverinfo="skip",
+            meta=dict(phasor_role="context", category=level)))
+    for index, (level, positions) in enumerate(panels):
+        batches, counts = [], {}
+        for trace in base.data:
+            if trace.text is None:
+                continue
+            row_positions = np.asarray(trace.text, dtype=int)
+            keep = np.isin(row_positions, positions)
+            if not keep.any():
+                continue
+            counts[trace.legendgroup] = counts.get(trace.legendgroup, 0) + int(keep.sum())
+            batches.append((trace, row_positions, keep))
+        seen_colors = set()
+        for trace, row_positions, keep in batches:
+            spec = trace.to_plotly_json()
+            spec.pop("type")
+            for field in ("x", "y", "customdata"):
+                value = getattr(trace, field)
+                if value is not None:
+                    spec[field] = np.asarray(value)[keep]
+            spec["text"] = df.iloc[row_positions[keep]][row_id_col].to_numpy()
+            for field in ("symbol", "opacity"):
+                spec["marker"][field] = np.asarray(getattr(trace.marker, field))[keep]
+            group = trace.legendgroup
+            spec.update(name=format_group_label(group, counts[group], show_counts),
+                        xaxis="x", yaxis="y", showlegend=False,
+                        meta=dict(phasor_role="points", category=level,
+                                  legend=group not in seen_colors))
+            seen_colors.add(group)
+            fig.add_trace(type(trace)(**spec))
+        overlay = go.Figure()
+        for fit in fits:
+            if fit["panel"] != index:
+                continue
+            group_df = df.iloc[fit["positions"]].copy()
+            group_df["k_means_cluster"] = fit["labels"]
+            start = len(overlay.data)
+            _plot_convex_hull(overlay, group_df, g_col, s_col, theme_color,
+                              polygon_color=color_map[fit["color_group"]],
+                              centers_raw=fit["centers"], scatter_cls=point_cls)
+            for trace in overlay.data[start:]:
+                trace.update(xaxis="x", yaxis="y", legendgroup=str(fit["color_group"]),
+                             meta=dict(phasor_role="fit", category=level))
+                fig.add_trace(trace)
+    # Shape/opacity swatches retain the global mappings when a category changes.
+    for trace in base.data:
+        if trace.text is None and trace.showlegend:
+            fig.add_trace(trace)
+    plot_height = .6 / 1.1
+    fig.update_layout(height=round(1000 * plot_height + 90),
+                      margin=dict(l=30, r=10, t=50, b=40),
+                      legend=dict(orientation="v", yref="paper", y=1, yanchor="auto",
+                                  xref="paper", x=1.02, xanchor="left", groupclick="togglegroup"),
+                      uirevision=f"phasor:{separate_by}:{g_col}:{s_col}",
+                      meta={"phasor_subplot_layout": {"plot_height": plot_height},
+                            "phasor_categories": [level for level, _ in panels],
+                            "phasor_separate_by": separate_by})
+    return select_phasor_category(fig)
+
+
+def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, colormap="tab10", f=0.08, harmonic=1, row_id_label="ID", separate_by: str | None = None, k_means=None, k_means_clusters=2):
+    color_by = [color_by] if isinstance(color_by, str) else list(color_by or [])
     # Get theme color once at the start for all theme-aware elements
     theme_color = get_context_theme_color()
 
@@ -602,7 +750,16 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         s_feature = f"{feature_prefix}S(2nd)"
 
     # drop rows with NaN values in the g_feature and s_feature columns
-    df = df[df[g_feature].notna() & df[s_feature].notna()]
+    df = df[df[g_feature].notna() & df[s_feature].notna()].copy()
+    panels = _phasor_panel_rows(df, separate_by, color_by)
+    if df.empty:
+        raise ValueError("No complete G/S observations remain for Phasor Plot.")
+    # Keep metadata in the returned data, normalizing only the rendering copy.
+    original_df = df.copy()
+    if separate_by:
+        for column in dict.fromkeys([*color_by, shape_by, opacity_by]):
+            if column:
+                df[column] = df[column].astype(str).where(df[column].notna(), "N/A")
 
     fig.update_layout(
         title=dict(text=f'{selected_channel} {harmonic_str} Harmonic Phasor', font=dict(size=20, family='Arial', color=theme_color)),
@@ -634,6 +791,14 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
 
     # plot the phasor coordinates
     GROUP_COL_NAME = 'unique_color_group'
+    while GROUP_COL_NAME in df.columns:
+        GROUP_COL_NAME += "_"
+    point_id_col = unique_row_id_col
+    if separate_by:
+        point_id_col = "__phasor_position__"
+        while point_id_col in df.columns:
+            point_id_col += "_"
+        df[point_id_col] = np.arange(len(df))
     # Use the unified helper for color, shape, opacity
     grouped, color_map, shape_map, opacity_map, group_keys = get_point_visual_mappings(
         df,
@@ -644,14 +809,10 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         overlap_point=True,
         colormap=colormap
     )
-    col1, col2 = st.columns(2)
-    with col1:
-        st.write("")
-        st.write("")
-        k_means = st.checkbox("Perform K-Means clustering", value=False, key=f"k_means_phasor_{selected_channel}")
-    if k_means:
-        with col2:
-            k_means_clusters = st.number_input("Number of clusters", value=number_input_default(st.session_state, f"k_means_clusters_phasor_{selected_channel}", 2), min_value=1, max_value=8, step=1, key=f"k_means_clusters_phasor_{selected_channel}")
+    # The analysis page renders these controls in its display fragment so a
+    # category switch only changes trace visibility. Direct callers keep the UI.
+    if k_means is None:
+        k_means, k_means_clusters = phasor_clustering_widget(selected_channel)
 
     # Convert grouped iterator to list so we can iterate multiple times
     grouped_list = list(grouped)
@@ -664,7 +825,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         shape_map=shape_map,
         opacity_map=opacity_map,
         axis_labels=[g_feature, s_feature],
-        text_col=unique_row_id_col,
+        text_col=point_id_col,
         customdata_col=fov_name_col,
         # Label identifiers because they may be generated row numbers.
         hovertemplate=hover_field(row_id_label, "%{text}"),
@@ -672,9 +833,24 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
     )
 
 
-    # --- K-Means clustering per color group (not per shape/opacity) ---
+    # --- K-Means clustering per panel and color group, never per decoration ---
     if k_means:
-        for color_group in color_map.keys():
+        fits, assignments, notices = _phasor_fit_groups(
+            df, g_feature, s_feature, GROUP_COL_NAME, list(color_map), panels,
+            k_means_clusters, separate_by)
+        for notice in notices:
+            st.warning(notice)
+        original_df["k_means_cluster"] = assignments
+    else:
+        fits = []
+    if separate_by:
+        return (_compose_phasor_categories(fig, original_df, panels, separate_by, unique_row_id_col,
+                                          fits, g_feature, s_feature, theme_color, color_map, point_cls,
+                                          st.session_state.get("plot_show_group_counts", False)),
+                original_df)
+    if k_means:
+        for fit in fits:
+            color_group = fit["color_group"]
             # Filter data for this color group using the helper column
             group_df = df[df[GROUP_COL_NAME] == color_group]
 
@@ -682,8 +858,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
                 continue
 
             # cluster on a standardized copy — raw G,S stay untouched
-            X_raw = group_df[[g_feature, s_feature]].to_numpy(copy=True)
-            labels, centers_raw = phasor_kmeans(X_raw, k_means_clusters)
+            labels, centers_raw = fit["labels"], fit["centers"]
 
             # plot the convex hull
             # Create a temporary dataframe with cluster labels for plotting

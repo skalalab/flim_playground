@@ -2,6 +2,79 @@
 import streamlit as st
 
 
+def phasor_chart(fig, *, key):
+    """Size the full-width Phasor category view using native chart margins.
+
+    Plotly's scaleanchor/constrain settings retain physical G/S aspect in
+    fullscreen. Normal chart height follows the available plotting width.
+    """
+    meta = fig.layout.meta
+    if not isinstance(meta, dict) or not meta.get("phasor_subplot_layout"):
+        st.plotly_chart(fig, width="stretch", key=key)
+        return
+    st.html("""
+        <style>
+        .st-key-phasor_subplot_plot [data-testid="stElementContainer"] { min-height: 0; }
+        </style>
+        <script>
+        (() => {
+            window._flimPhasorCleanup?.();
+            let graph, observedRoot, frame;
+            let mounted = false, disposed = false;
+            const update = () => {
+                const root = document.querySelector('.st-key-phasor_subplot_plot');
+                if (!root && mounted) { cleanup(); return; }
+                mounted ||= !!root;
+                const next = root?.querySelector('.js-plotly-plot');
+                if (next !== graph || root !== observedRoot) {
+                    graph?.removeListener?.('plotly_afterplot', schedule);
+                    resizeObserver.disconnect();
+                    graph = next?.on ? next : undefined;
+                    observedRoot = root;
+                    graph?.on('plotly_afterplot', schedule);
+                    if (root) resizeObserver.observe(root);
+                    if (graph) {
+                        resizeObserver.observe(graph);
+                        const fullscreen = graph.closest('[data-testid="stFullScreenFrame"]');
+                        if (fullscreen) resizeObserver.observe(fullscreen);
+                    }
+                }
+                const layout = graph?._fullLayout;
+                const ratio = layout?.meta?.phasor_subplot_layout?.plot_height;
+                if (!layout?._size || !Number.isFinite(ratio) || ratio <= 0) return;
+                const fullscreen = graph.closest('[data-testid="stFullScreenFrame"]');
+                if (fullscreen && getComputedStyle(fullscreen).position === 'fixed') return;
+                const {w, t, b} = layout._size;
+                if (w <= 0) return;
+                const container = graph.closest('[data-testid="stElementContainer"]');
+                const height = `${Math.round(w * ratio + t + b)}px`;
+                if (container && container.style.height !== height) container.style.height = height;
+            };
+            const schedule = () => {
+                if (disposed) return;
+                cancelAnimationFrame(frame);
+                frame = requestAnimationFrame(update);
+            };
+            const resizeObserver = new ResizeObserver(schedule);
+            const observer = new MutationObserver(schedule);
+            const cleanup = () => {
+                disposed = true;
+                observer.disconnect();
+                resizeObserver.disconnect();
+                cancelAnimationFrame(frame);
+                graph?.removeListener?.('plotly_afterplot', schedule);
+                if (window._flimPhasorCleanup === cleanup) delete window._flimPhasorCleanup;
+            };
+            observer.observe(document.body, {childList: true, subtree: true});
+            window._flimPhasorCleanup = cleanup;
+            schedule();
+        })();
+        </script>
+    """, unsafe_allow_javascript=True)
+    with st.container(key="phasor_subplot_plot"):
+        st.plotly_chart(fig, width="stretch", height="stretch", key=key)
+
+
 def square_2d_plot(fig, *, key):
     """Keep the main axes square after resizing, styling, and legend changes.
 

@@ -87,15 +87,24 @@ def compare_points(tag, fig, ax, main_axis_only=False, known_gap=False, detail="
             detail if not same else "", known_gap=known_gap)
 
 
-def _alphas_app(fig, main_axis_only=False):
-    """Per-point alpha on the app side: one trace's marker.opacity, held by all its points."""
+def _alphas_app(fig, main_axis_only=False, include_color_alpha=False):
+    """Per-point marker opacity, optionally including DR's translucent color."""
     vals = []
     for t in app_point_traces(fig, main_axis_only=main_axis_only):
         opacity = getattr(getattr(t, "marker", None), "opacity", None)
         count = len(t.x) if t.x is not None else 0
         if not count:
             continue
-        vals.extend(list(opacity) if np.ndim(opacity) else [1.0 if opacity is None else opacity] * count)
+        point_opacity = (list(opacity) if np.ndim(opacity)
+                         else [1.0 if opacity is None else opacity] * count)
+        if include_color_alpha:
+            # DR uses one rgba color per trace. Plotly multiplies its alpha by
+            # marker.opacity; Matplotlib stores that product in each facecolor.
+            color = t.marker.color
+            if isinstance(color, str) and color.startswith("rgba("):
+                color_alpha = float(color.rstrip(")").rsplit(",", 1)[1])
+                point_opacity = np.asarray(point_opacity) * color_alpha
+        vals.extend(point_opacity)
     return np.sort(np.asarray(vals, float))
 
 
@@ -111,13 +120,16 @@ def _alphas_exp(ax):
     return np.sort(np.asarray(vals, float))
 
 
-def compare_alphas(tag, fig, ax, main_axis_only=False):
+def compare_alphas(tag, fig, ax, main_axis_only=False, include_color_alpha=False):
     """The opacity channel, point by point.
 
     Compare Plotly's per-trace marker.opacity with Matplotlib's per-point alpha
-    arrays as multisets, because the renderers use different paint orders.
+    arrays as multisets, because the renderers use different paint orders. DR
+    additionally includes color alpha to compare the effective rendered opacity.
     """
-    app, exp = _alphas_app(fig, main_axis_only=main_axis_only), _alphas_exp(ax)
+    app = _alphas_app(fig, main_axis_only=main_axis_only,
+                     include_color_alpha=include_color_alpha)
+    exp = _alphas_exp(ax)
     same = app.shape == exp.shape and np.allclose(app, exp, atol=1e-9)
     R.check(f"{tag}: per-point opacity ({len(app)} points)", same,
             "" if same else f"app={np.unique(app)[:5]} exp={np.unique(exp)[:5]}")
@@ -413,7 +425,8 @@ def case(runner, tag, ctrl, points=True, colors=False, main_axis_only=False,
         compare_points(tag, fig, ax, main_axis_only=main_axis_only,
                        exclude_names=exclude_names)
         if ctrl.get("opacity_by"):
-            compare_alphas(tag, fig, ax, main_axis_only=main_axis_only)
+            compare_alphas(tag, fig, ax, main_axis_only=main_axis_only,
+                           include_color_alpha=state["method"] == "Dimension Reduction")
     compare_styling(tag, state, ax)
     if colors:
         compare_colors(tag, fig, ax)

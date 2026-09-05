@@ -377,9 +377,11 @@ def _build_config_section(state: dict) -> str:
         if mp.get("fit_gmm_2d"):
             lines.append("SAVE_DERIVED_DATA = False  # True → also write 2D_gmm_data.csv (the app's download button)")
     elif method == "Phasor Plot":
+        lines.append(f"SEPARATE_BY = {state.get('separate_by')!r}")
         lines.append(f"PHASOR_CHANNEL = {mp.get('selected_channel')!r}")
         lines.append(f"PHASOR_HARMONIC = {mp.get('phasor_harmonic', 1)!r}")
         lines.append(f"PHASOR_F = {mp.get('phasor_f', 0.08)!r}")
+        lines.append(f"PHASOR_CATEGORY = {mp.get('phasor_category')!r}")
         lines.append(f"K_MEANS = {mp.get('k_means', False)!r}")
         lines.append(f"K_MEANS_CLUSTERS = {mp.get('k_means_clusters', 2)!r}")
         if mp.get("k_means"):
@@ -548,7 +550,8 @@ def _build_footer(state: dict) -> str:
     if method == "Classification":
         return ""
     fname = method.lower().replace(" ", "_")
-    layout = "" if method == "Dimension Reduction" else "plt.tight_layout()"
+    separated_phasor = method == "Phasor Plot" and state.get("separate_by") is not None
+    layout = "" if method == "Dimension Reduction" or separated_phasor else "plt.tight_layout()"
     return f"""
 # ============================================================
 # Save & Show
@@ -1301,6 +1304,236 @@ ax_main.legend(fontsize=LEGEND_SIZE)
 
 
 def _build_phasor_plot(state: dict) -> str:
+    if state.get("separate_by") is not None:
+        return _build_separated_phasor_plot(state)
+    return _build_unseparated_phasor_plot(state)
+
+
+def _build_separated_phasor_plot(state: dict) -> str:
+    """Build one full-size Phasor category view with gray context points."""
+    from src.vis.bivar import _phasor_panel_rows
+
+    helper_functions = [_phasor_panel_rows]
+    if state.get("method_params", {}).get("k_means"):
+        from src.vis.bivar import (
+            _cluster_hull_polygon,
+            _phasor_fit_groups,
+            phasor_kmeans,
+        )
+
+        helper_functions.extend(
+            [phasor_kmeans, _phasor_fit_groups, _cluster_hull_polygon]
+        )
+    helper_src = _extract_source(*helper_functions)
+
+    # Coordinate filtering deliberately precedes visual-map and panel construction.
+    # This keeps every grouping, count, and derived-data row scoped to plotted points.
+    preparation = f"""
+# ============================================================
+# Phasor panel helpers (extracted from FLIM Playground source)
+# ============================================================
+{helper_src}
+
+harmonic_label = "1st" if PHASOR_HARMONIC == 1 else "2nd"
+g_col = f"Lifetime fit free_{{PHASOR_CHANNEL}}: G({{harmonic_label}})"
+s_col = f"Lifetime fit free_{{PHASOR_CHANNEL}}: S({{harmonic_label}})"
+if g_col not in df.columns or s_col not in df.columns:
+    raise SystemExit(f"ERROR: Columns {{g_col}} and/or {{s_col}} not found in data.")
+
+# Panel membership, visual mappings, legend counts, clustering, and the optional
+# CSV all use exactly the observations visible in the Phasor figure.
+df = df[df[g_col].notna() & df[s_col].notna()].copy()
+PHASOR_GROUP_COLUMN = "_color_group"
+while PHASOR_GROUP_COLUMN in df.columns:
+    PHASOR_GROUP_COLUMN += "_"
+"""
+
+    return preparation + _build_visual_encoding(
+        state, group_column_expr="PHASOR_GROUP_COLUMN"
+    ) + """
+# ============================================================
+# Separated Phasor Plot
+# ============================================================
+phasor_panels = _phasor_panel_rows(df, SEPARATE_BY, COLOR_BY)
+panel_levels = [level for level, _positions in phasor_panels]
+phasor_category = PHASOR_CATEGORY
+if panel_levels and phasor_category not in panel_levels:
+    phasor_category = panel_levels[0]
+elif not panel_levels:
+    phasor_category = None
+active_panel_index = (
+    panel_levels.index(phasor_category) if phasor_category is not None else None
+)
+active_positions = (
+    phasor_panels[active_panel_index][1]
+    if active_panel_index is not None else np.array([], dtype=int)
+)
+
+fig, ax = plt.subplots(figsize=(10, 6))
+
+
+def draw_phasor_background(panel_ax):
+    # Universal semicircle: G = 1/(1+u^2), S = u/(1+u^2)
+    u = np.linspace(0, 100, 5000)
+    panel_ax.plot(1.0 / (1.0 + u**2), u / (1.0 + u**2),
+                  'k-', linewidth=1.5, zorder=1)
+
+    w = 2 * np.pi * PHASOR_F * PHASOR_HARMONIC
+    for tau in [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
+        wt = w * tau
+        g_marker = 1.0 / (1.0 + wt**2)
+        s_marker = wt / (1.0 + wt**2)
+        panel_ax.plot(g_marker, s_marker, 'ko', markersize=5, zorder=3)
+        if tau in (0.5, 1, 2, 3, 4, 5):
+            panel_ax.annotate(
+                f"{tau} ns", (g_marker, s_marker), textcoords="offset points",
+                xytext=(5, 5), fontsize=AXIS_LABEL_SIZE, zorder=3,
+            )
+
+    panel_ax.axhline(y=0, color='gray', linewidth=0.5)
+    panel_ax.axvline(x=0, color='gray', linewidth=0.5)
+    freq_text = f"f = {PHASOR_F * PHASOR_HARMONIC * 1000} MHz"
+    if PHASOR_HARMONIC != 1:
+        freq_text += f"\\n({PHASOR_HARMONIC} x {PHASOR_F * 1000} MHz)"
+    panel_ax.text(0.8, 0.5, freq_text, fontsize=AXIS_LABEL_SIZE,
+                  ha='left', va='center')
+
+
+draw_phasor_background(ax)
+active_df = df.iloc[active_positions]
+if len(active_positions) < len(df):
+    other_positions = np.setdiff1d(
+        np.arange(len(df)), active_positions, assume_unique=True
+    )
+    other_df = df.iloc[other_positions]
+    ax.scatter(
+        other_df[g_col], other_df[s_col], color='#b8b8b8', alpha=0.18,
+        s=max(1, POINT_SIZE - 2) ** 2, edgecolors='none', linewidths=0,
+        label='_nolegend_', zorder=0,
+    )
+
+active_group_counts = active_df[PHASOR_GROUP_COLUMN].value_counts().to_dict()
+for color_group in color_groups:
+    group_df = active_df[active_df[PHASOR_GROUP_COLUMN] == color_group]
+    if group_df.empty:
+        continue
+    point_opacity_map = {
+        key: alpha * color_map[color_group][3]
+        for key, alpha in opacity_map.items()
+    }
+    scatter_with_encodings(
+        ax, group_df[g_col], group_df[s_col], color_map[color_group][:3],
+        format_group_label(
+            color_group, active_group_counts[color_group], SHOW_GROUP_COUNTS,
+            engine='mpl',
+        ),
+        POINT_SIZE ** 2,
+        shape_vals=group_df[SHAPE_BY] if SHAPE_BY else None,
+        shape_map=shape_map,
+        opacity_vals=group_df[OPACITY_BY] if OPACITY_BY else None,
+        opacity_map=point_opacity_map,
+        base_alpha=BASE_ALPHA,
+    )
+
+add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
+
+if K_MEANS:
+    phasor_fits, phasor_assignments, phasor_notices = _phasor_fit_groups(
+        df, g_col, s_col, PHASOR_GROUP_COLUMN, color_groups, phasor_panels,
+        K_MEANS_CLUSTERS, separate_by=SEPARATE_BY,
+    )
+    df["k_means_cluster"] = phasor_assignments
+    for notice in phasor_notices:
+        print(notice)
+
+    for fit in phasor_fits:
+        if fit["panel"] != active_panel_index:
+            continue
+        coords = df.iloc[fit["positions"]][[g_col, s_col]].to_numpy()
+        labels = fit["labels"]
+        centers = fit["centers"]
+        group_color = color_map[fit["color_group"]][:3]
+        for cluster_index in range(K_MEANS_CLUSTERS):
+            cluster_points = coords[labels == cluster_index]
+            if len(cluster_points):
+                polygon = _cluster_hull_polygon(cluster_points)
+                ax.plot(
+                    np.r_[polygon[:, 0], polygon[0, 0]],
+                    np.r_[polygon[:, 1], polygon[0, 1]],
+                    color=group_color, linewidth=1.5, zorder=1,
+                )
+            ax.plot(
+                centers[cluster_index, 0], centers[cluster_index, 1], 'x',
+                color=group_color, markersize=12, markeredgewidth=2, zorder=4,
+            )
+
+    if SAVE_DERIVED_DATA:
+        df.drop(columns=[PHASOR_GROUP_COLUMN]).to_csv(
+            "kmeans_clustered_data.csv", index=False
+        )
+        print("K-Means clustered data saved to kmeans_clustered_data.csv")
+
+ax.set_xlabel("g", fontsize=AXIS_LABEL_SIZE)
+ax.set_ylabel("s", fontsize=AXIS_LABEL_SIZE)
+ax.set_title(
+    f"{PHASOR_CHANNEL} {harmonic_label} Harmonic Phasor",
+    fontsize=AXIS_LABEL_SIZE,
+)
+ax.set_xlim(-0.05, 1.05)
+ax.set_ylim(-0.05, 0.55)
+ax.set_aspect('equal')
+ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
+
+category_label = None
+if phasor_category is not None:
+    category_label = ax.text(
+        0, 0, f"{SEPARATE_BY}: {phasor_category}", transform=fig.transFigure,
+        ha='center', va='top', fontsize=AXIS_LABEL_SIZE,
+        fontweight='bold', clip_on=False,
+    )
+    category_label.set_in_layout(False)
+
+legend_handles, legend_labels = ax.get_legend_handles_labels()
+if legend_handles:
+    ax.legend(
+        legend_handles, legend_labels, fontsize=LEGEND_SIZE,
+        loc='upper left', ncol=1, frameon=False,
+        bbox_to_anchor=(1.02, 1), borderaxespad=0,
+    )
+
+# Reserve rendered space below the g label for the active category.
+fig.canvas.draw()
+renderer = fig.canvas.get_renderer()
+category_height = (
+    category_label.get_window_extent(renderer).height if category_label is not None else 0
+)
+layout_bottom = (category_height + 0.30 * fig.dpi) / fig.bbox.height
+for _ in range(4):
+    fig.tight_layout(rect=(0, layout_bottom, 1, 1))
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    if category_label is None:
+        break
+    xlabel_box = ax.xaxis.label.get_window_extent(renderer)
+    axes_box = ax.get_position()
+    category_label.set_position((
+        axes_box.x0 + axes_box.width / 2,
+        (xlabel_box.y0 - 0.15 * fig.dpi) / fig.bbox.height,
+    ))
+    fig.canvas.draw()
+    category_box = category_label.get_window_extent(renderer)
+    shortfall = 0.15 * fig.dpi - category_box.y0
+    if shortfall <= 0:
+        break
+    layout_bottom += shortfall / fig.bbox.height
+if category_label is not None:
+    # Manual positioning kept this out of tight_layout; include it in the final
+    # bbox_inches='tight' calculation so long category names are not clipped.
+    category_label.set_in_layout(True)
+"""
+
+
+def _build_unseparated_phasor_plot(state: dict) -> str:
     # Rendering is Matplotlib-specific; the K-Means clustering is extracted from
     # the app (src/vis/bivar.py) so both run the identical computation.
     kmeans_src = ""
@@ -1516,20 +1749,20 @@ else:
 
 all_rows = np.ones(len(df), dtype=bool)
 # The global overview fixes batch order; each small map only selects membership.
-point_batches = (dimension_interleaved_indices(
+point_batches = dimension_interleaved_indices(
     df, DR_GROUP_COLUMN, color_groups, SHAPE_BY, shape_map, OPACITY_BY, opacity_map)
-    if SEPARATE_BY else [(group, np.flatnonzero(df[DR_GROUP_COLUMN].eq(group)))
-                        for group in color_groups])
 group_counts = df[DR_GROUP_COLUMN].value_counts().to_dict()
 for panel_ax, membership, is_overview in [
         (ax, all_rows, True),
         *[(facet_ax, panel["mask"], False)
           for facet_ax, panel in zip(facet_axes, facet_layout["panels"])]]:
     panel_point_size = POINT_SIZE if is_overview else max(1, POINT_SIZE - 2)
+    # The app's point-size control is a diameter; Matplotlib scatter uses area.
+    panel_point_area = panel_point_size ** 2
     if not is_overview and (~membership).any():
         background = df.loc[~membership]
         panel_ax.scatter(background[DR_X_COLUMN], background[DR_Y_COLUMN],
-                         color='#b8b8b8', alpha=0.25, s=panel_point_size,
+                         color='#b8b8b8', alpha=0.25, s=panel_point_area,
                          edgecolors='none', linewidths=0, zorder=1)
     labeled_groups = set()
     for g, global_indices in point_batches:
@@ -1543,9 +1776,8 @@ for panel_ax, membership, is_overview in [
         # effective per-point alpha while keeping the legend's opacity map raw.
         point_opacity_map = {key: alpha * color_map[g][3]
                              for key, alpha in opacity_map.items()}
-        scatter = scatter_dimension_batch if SEPARATE_BY else scatter_with_encodings
-        scatter(
-            panel_ax, gdf[DR_X_COLUMN], gdf[DR_Y_COLUMN], color_map[g][:3], label, panel_point_size,
+        scatter_dimension_batch(
+            panel_ax, gdf[DR_X_COLUMN], gdf[DR_Y_COLUMN], color_map[g][:3], label, panel_point_area,
             shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
             opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None,
             opacity_map=point_opacity_map, base_alpha=BASE_ALPHA)
@@ -1578,17 +1810,30 @@ for facet_ax, panel in zip(facet_axes, facet_layout["panels"]):
 ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel(ylabel, fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
-add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
+add_encoding_legend_entries(ax, shape_map, opacity_map, LEGEND_SIZE ** 2)
 if SEPARATE_BY:
     legend_y = 0.015
-    legend = ax.legend(fontsize=LEGEND_SIZE, loc='lower left', ncol=5, frameon=False,
-                       bbox_to_anchor=(left_margin / figure_width, legend_y),
-                       bbox_transform=fig.transFigure)
+    def make_dimension_legend(columns):
+        legend = ax.legend(fontsize=LEGEND_SIZE, loc='lower left', ncol=columns, frameon=False,
+                           bbox_to_anchor=(left_margin / figure_width, legend_y),
+                           bbox_transform=fig.transFigure)
+        for handle in legend.legend_handles:
+            handle.set_sizes([LEGEND_SIZE ** 2])
+        return legend
+
+    legend_columns = min(5, len(ax.get_legend_handles_labels()[0]))
+    legend = make_dimension_legend(legend_columns)
     # Measure real text before reserving space: large fonts and short grids can
     # make the legend taller than the initial margin estimate. Grow only the
     # bottom margin, retaining every map's physical size and shared geometry.
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
+    # Wrap long combination labels within the canvas instead of widening the
+    # saved SVG and leaving a large empty region beside the maps.
+    while (legend_columns > 1 and
+           legend.get_window_extent(renderer).x1 > fig.bbox.width - 0.15 * fig.dpi):
+        legend_columns -= 1
+        legend = make_dimension_legend(legend_columns)
     legend_top = legend.get_window_extent(renderer).y1
     title_bottom = ax.xaxis.label.get_window_extent(renderer).y0
     extra_bottom = max(0., (legend_top + 0.15 * fig.dpi - title_bottom)
@@ -1604,7 +1849,10 @@ if SEPARATE_BY:
                 position.width, position.height * old_height / figure_height,
             ])
 else:
-    ax.legend(fontsize=LEGEND_SIZE)
+    legend = ax.legend(fontsize=LEGEND_SIZE, loc='upper left', frameon=False,
+                       bbox_to_anchor=(1.02, 1), borderaxespad=0)
+    for handle in legend.legend_handles:
+        handle.set_sizes([LEGEND_SIZE ** 2])
 """
 
 

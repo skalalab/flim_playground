@@ -117,7 +117,7 @@ def test_one_separator_stacks_retained_natural_levels_in_one_column(tmp_path, mo
         assert _rows(_points(ax, 1)) == _rows(df.loc[~membership, ["_dr_x", "_dr_y"]].values)
         for point, style in _point_styles(ax).items():
             assert style[:2] == overview_styles[point][:2]
-            assert style[2] == (max(1, namespace["POINT_SIZE"] - 2),)
+            np.testing.assert_allclose(np.sqrt(style[2]), max(1, namespace["POINT_SIZE"] - 2))
         assert ax.get_legend_handles_labels()[1] == []
         assert ax.get_legend() is None
         assert ax.get_xlabel() == ax.get_ylabel() == ""
@@ -239,6 +239,71 @@ def test_gray_context_matches_app_styling(tmp_path, monkeypatch):
         np.testing.assert_allclose(context[0].get_facecolors()[0], [184 / 255] * 3 + [.25])
 
 
+@pytest.mark.parametrize("point_size", [1, 7])
+@pytest.mark.parametrize("separate_by", [[], ["row"], ["row", "column"]])
+def test_point_and_legend_diameters_and_label_fonts_match_the_app(
+        tmp_path, monkeypatch, point_size, separate_by):
+    from src.vis.helpers import apply_plot_styling
+    from src.vis.multivar import dimension_reduction_plot
+
+    state = _state(separate_by)
+    state.update(point_size=point_size, axis_label_size=24, legend_size=18)
+    namespace = _run(tmp_path, monkeypatch, state)
+    app = apply_plot_styling(dimension_reduction_plot(
+        _frame().iloc[:6], "id", None, ["feature_a", "feature_b"],
+        colored_by=["color"], shape_by="shape", opacity_by="opacity",
+        method="PCA", separate_by=separate_by), point_size, 24, 18)
+    for index, ax in enumerate(namespace["fig"].axes, 1):
+        axis = "x" if index == 1 else f"x{index}"
+        app_sizes = {trace.marker.size for trace in app.data
+                     if (trace.xaxis or "x") == axis and trace.x is not None
+                     and any(value is not None for value in trace.x)}
+        assert len(app_sizes) == 1
+        app_diameter = next(iter(app_sizes))
+        for collection in ax.collections:
+            if len(collection.get_offsets()):
+                # Plotly sizes are diameters; Matplotlib scatter sizes are areas.
+                np.testing.assert_allclose(np.sqrt(collection.get_sizes()), app_diameter)
+        assert all(text.get_fontsize() == app.layout.legend.font.size for text in ax.texts)
+    legend = namespace["ax"].get_legend()
+    for handle in legend.legend_handles:
+        np.testing.assert_allclose(np.sqrt(handle.get_sizes()), app.layout.legend.font.size)
+    assert namespace["ax"].xaxis.label.get_fontsize() == app.layout.xaxis.title.font.size
+    assert all(annotation.font.size == app.layout.legend.font.size for annotation in app.layout.annotations)
+
+
+def test_long_combination_legend_wraps_within_export_width(tmp_path, monkeypatch):
+    rng = np.random.default_rng(7)
+    frame = pd.DataFrame([
+        {"id": f"cell{r}_{c}", "row": row, "column": column,
+         "feature_a": rng.uniform(1, 10), "feature_b": rng.uniform(1, 10)}
+        for r, row in enumerate(["Helper T cells", "Cytotoxic T cells", "Monocytes", "B cells", "NK cells"])
+        for c, column in enumerate(["Activated", "Quiescent"])
+    ])
+    state = _state(["row", "column"])
+    state.update(categorical_cols=["row", "column"], categorical_filters={},
+                 color_by=["row", "column"], shape_by=None, opacity_by=None,
+                 axis_label_size=24, legend_size=18)
+    namespace = _run(tmp_path, monkeypatch, state, frame)
+    fig, ax = namespace["fig"], namespace["ax"]
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    legend = ax.get_legend()
+    bounds = legend.get_window_extent(renderer)
+    assert bounds.x0 >= 0 and bounds.x1 <= fig.bbox.width
+    assert bounds.y1 + 8 <= ax.xaxis.label.get_window_extent(renderer).y0
+    assert len(legend.get_texts()) == 10
+
+
+def test_overview_legend_sits_outside_the_data_like_the_app(tmp_path, monkeypatch):
+    namespace = _run(tmp_path, monkeypatch, _state())
+    fig, ax = namespace["fig"], namespace["ax"]
+    fig.canvas.draw()
+    bounds = ax.get_legend().get_window_extent(fig.canvas.get_renderer())
+    assert bounds.x0 > ax.get_window_extent().x1
+    assert bounds.y1 == pytest.approx(ax.get_window_extent().y1)
+
+
 def test_all_axes_hide_gridlines_even_when_matplotlib_style_enables_them(tmp_path, monkeypatch):
     monkeypatch.setitem(matplotlib.rcParams, "axes.grid", True)
     namespace = _run(tmp_path, monkeypatch, _state(["row", "column"]))
@@ -311,7 +376,8 @@ def test_generated_coordinates_and_groups_do_not_overwrite_uploaded_categories(t
     assert len(namespace["fig"].axes) == 4
 
 
-def test_faceted_export_preserves_global_interleaved_app_draw_order(tmp_path, monkeypatch):
+@pytest.mark.parametrize("separate_by", [[], ["row"], ["row", "column"]])
+def test_export_preserves_global_interleaved_app_draw_order(tmp_path, monkeypatch, separate_by):
     import streamlit as st
     from src.vis import multivar
 
@@ -320,14 +386,14 @@ def test_faceted_export_preserves_global_interleaved_app_draw_order(tmp_path, mo
         feature_a=lambda df: df["feature_a"] + repeat / 10,
         feature_b=lambda df: df["feature_b"] - repeat / 20,
     ) for repeat in range(4)], ignore_index=True)
-    state = _state(["row"])
+    state = _state(separate_by)
     namespace = _run(tmp_path, monkeypatch, state, frame)
     monkeypatch.setattr(multivar, "get_context_theme_color", lambda: "black")
     monkeypatch.setitem(st.session_state, "plot_show_group_counts", True)
     app = multivar.dimension_reduction_plot(
         frame, "id", None, ["feature_a", "feature_b"],
         colored_by=["color"], shape_by="shape", opacity_by="opacity",
-        method="PCA", separate_by=["row"],
+        method="PCA", separate_by=separate_by,
     )
     coordinate_ids = {
         tuple(np.round([row["_dr_x"], row["_dr_y"]], 7)): row["id"]

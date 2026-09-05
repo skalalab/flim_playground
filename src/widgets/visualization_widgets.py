@@ -40,6 +40,57 @@ COLLAPSE_BY_KEY = "vis_encoding_collapse_by"
 # Dimension Reduction owns its facet layout independently of FC's sections.
 DR_SEPARATE_BY_KEY = "vis_encoding_dr_separate_by"
 DR_FACET_KEYS = (DR_SEPARATE_BY_KEY,)
+PHASOR_SEPARATE_BY_KEY = "vis_encoding_phasor_separate_by"
+PHASOR_CATEGORY_KEY = "vis_encoding_phasor_category"
+_PHASOR_CATEGORY_COLUMN_KEY = "vis_encoding_phasor_category_column"
+_PHASOR_LAST_CATEGORY_KEY = "vis_encoding_phasor_last_category"
+SEPARATION_KEYS = (*DR_FACET_KEYS, PHASOR_SEPARATE_BY_KEY, PHASOR_CATEGORY_KEY,
+                   _PHASOR_CATEGORY_COLUMN_KEY, _PHASOR_LAST_CATEGORY_KEY)
+
+
+def _retain_phasor_category():
+    """A single-category view always keeps one category selected."""
+    category = st.session_state.get(PHASOR_CATEGORY_KEY)
+    if category is None:
+        st.session_state[PHASOR_CATEGORY_KEY] = st.session_state.get(_PHASOR_LAST_CATEGORY_KEY)
+    else:
+        st.session_state[_PHASOR_LAST_CATEGORY_KEY] = category
+
+
+def phasor_category_widget(categories, separate_by):
+    """Switch the full-size Phasor view directly below the encoding controls."""
+    if not categories:
+        return None
+    previous_column = st.session_state.get(_PHASOR_CATEGORY_COLUMN_KEY)
+    category = st.session_state.get(PHASOR_CATEGORY_KEY)
+    if previous_column != separate_by or category not in categories:
+        category = categories[0]
+    st.session_state[PHASOR_CATEGORY_KEY] = category
+    st.session_state[_PHASOR_LAST_CATEGORY_KEY] = category
+    st.session_state[_PHASOR_CATEGORY_COLUMN_KEY] = separate_by
+    label = f"{separate_by} category"
+    if len(categories) <= 6:
+        return st.segmented_control(
+            label, categories, selection_mode="single", key=PHASOR_CATEGORY_KEY,
+            on_change=_retain_phasor_category, width="stretch")
+    return st.selectbox(label, categories, key=PHASOR_CATEGORY_KEY,
+                        on_change=_retain_phasor_category)
+
+
+def phasor_clustering_widget(selected_channel):
+    """Render clustering controls independently of category view changes."""
+    enable, count = st.columns(2)
+    with enable:
+        k_means = st.checkbox("Perform K-Means clustering", value=False,
+                              key=f"k_means_phasor_{selected_channel}")
+    k_means_clusters = 2
+    if k_means:
+        with count:
+            key = f"k_means_clusters_phasor_{selected_channel}"
+            k_means_clusters = st.number_input(
+                "Number of clusters", value=number_input_default(st.session_state, key, 2),
+                min_value=1, max_value=8, step=1, key=key)
+    return k_means, k_means_clusters
 
 
 def _pruned_selectbox(label, options, key, **kwargs):
@@ -133,7 +184,7 @@ def _encoding_columns(slots, merged_point_encoding):
 
 def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False, subcolor_available=False, collapse_available=False, separate_by_mode="sections"):
     """Choose visual mappings; separation is a scalar section or ordered facet list."""
-    preserve_analysis_controls(st.session_state, DR_FACET_KEYS)
+    preserve_analysis_controls(st.session_state, SEPARATION_KEYS)
     merged_point_encoding = subcolor_available and point_based
     # Public self-assignment interrupts cleanup while a widget is hidden. Mode
     # survives method changes; standalone opacity remains owned by other methods.
@@ -149,6 +200,10 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     color_by = []
     opacity_by = shape_by = separate_by = subcolor_by = collapse_by = None
     facets = separate_by_mode == "facets"
+    subplots = separate_by_mode == "subplots"
+    if subplots:
+        st.session_state[PHASOR_SEPARATE_BY_KEY] = prune_to_options(
+            st.session_state.get(PHASOR_SEPARATE_BY_KEY), present_categories)
     if facets:
         # Filtering to a single level must not erase a valid layout choice.
         separate_by = []
@@ -160,7 +215,7 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
         pruned = list(dict.fromkeys(prune_to_options(stored, present_categories)))[:2]
         st.session_state[DR_SEPARATE_BY_KEY] = pruned
 
-    if not available_categories and not (facets and present_categories):
+    if not available_categories and not ((facets or subplots) and present_categories):
         return color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by
 
     if not color_based:
@@ -193,6 +248,12 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                          "and the second sets columns. "
                          "All panels share one embedding.",
                 )
+            elif subplots:
+                separate_by = _pruned_selectbox(
+                    "Separate by", present_categories, key=PHASOR_SEPARATE_BY_KEY,
+                    help="View one category at a time in a full-size plot. K-Means fits "
+                         "each category's color groups independently. The separation "
+                         "column cannot also be used for Color by.")
             else:
                 separate_by = _pruned_selectbox(
                     "Separate by", available_categories, key="analysis_control_separate_by")
@@ -214,7 +275,7 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
 
     # Color-grouping columns can also encode shape, subcolor, or opacity.
     # Only FC's section column is excluded from this shared option list.
-    available_for_decoration = available_for_color
+    available_for_decoration = available_categories if subplots else available_for_color
 
     point_mode = "shape"
     if point_based:

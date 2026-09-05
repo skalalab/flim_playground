@@ -14,6 +14,7 @@ FLIM Playground allows you to extract single-cell features from <span title="can
 
 ## 🎡 Playground Construction News
 
+- 🧭 **Phasor category views** — Choose one **Separate by** category, then switch its values directly below the encoding controls in one full-size plot. Other categories remain visible as faint gray context points. Colors stay consistent, while counts and optional K-Means overlays follow the selected category. Python and CSV exports retain the separation.
 - 🗺️ **Dimension Reduction separation grid** — Keep a combined UMAP, PCA, or t-SNE overview beside smaller maps highlighting individual groups. **Separate by** accepts two categorical columns: the first defines rows and the second defines columns. Color, shape, and opacity remain independent, and the Python export reproduces the whole composition in one SVG.
 - 🎨 **Point encoding in one row** — In *Feature Comparison*, use **Opacity | Subcolor | Shape** to choose how one categorical column decorates the points. Switching modes takes one click and keeps the selected column; clearing the column turns that encoding off. Subcolor assigns consistent colours across groups and changes *Color by* to *Group by*. The four controls are *Separate by*, *Color/Group by*, *Collapse by*, and the shared point encoding. Other point plots keep separate shape and opacity controls. Missing data (`N/A`) stays outside the opacity ramp so it can never outrank a real level.
 - ⚡ **Speed & scale** — Point plots switch to WebGL rendering above 5,000 drawn points, so large figures no longer freeze the page on scroll; styling tweaks restyle the existing figure instead of rebuilding it, and the KDE overlay is no longer quadratic in point count. In *Data Extraction*, lifetime curve fitting runs across CPU cores via multiprocessing, and raw-data checks are keyed on the files they actually read, so reassigning one channel no longer re-decodes every later channel's files.
@@ -70,6 +71,33 @@ cached coordinates. Separation settings survive method changes and column review
 a selected separation column remains selected when filtering leaves one value.
 The standalone Python export includes these settings and saves the full view as
 one SVG. This separation grid is available in Dimension Reduction.
+
+## Compare groups in Phasor Plot
+
+Choose one categorical column in **Separate by**, then use the category buttons
+directly below the encoding row to switch between its values in one full-size Phasor view. More
+than six values use a dropdown. Values follow natural order; missing categories
+appear as `N/A`. Clearing Separate by restores the combined plot. The selection
+survives method changes and filtering to one remaining value.
+
+The separation column cannot also be used for **Color by**. Colors, shapes, and
+opacity mappings stay consistent when switching categories, with fixed G/S axes
+and the same lifetime references. Other categories always remain faint gray for
+context. Color-group counts in the right-hand legend and clustering overlays
+describe the selected category. The selector identifies the current category.
+
+When enabled, K-Means fits each **separation value × color group** independently,
+using the selected cluster count. Groups with too few distinct G/S observations
+remain visible and report why clustering was skipped. Cluster numbers belong to
+their own fit; the CSV qualifies them with their category, for example
+`day=Day 1 | ctrl_group1`. Switching categories changes visibility without
+refitting. The Python export reproduces the current category with gray context
+and a category label beneath the plot in one SVG. It can save one combined CSV containing all retained observations
+and their independently fitted cluster labels.
+
+This differs from Dimension Reduction, where separation highlights subsets of
+one globally fitted embedding, and Feature Comparison, where separation creates
+sections and comparisons within each section.
 
 ## Use Your Own Data in Data Analysis
 - Demo uses the [iris dataset](example_data/Data_Analysis/iris.csv) and the [wine quality dataset](example_data/Data_Analysis/wine_quality.csv):

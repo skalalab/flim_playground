@@ -658,8 +658,21 @@ def test_dimension_reduction_script_applies_shape_per_point(tmp_path, monkeypatc
     )
     ns = _run_script(tmp_path, state, df, monkeypatch)
     points = _nonempty_collections(ns["ax"])
-    assert len(points) == 4, f"expected 4 sub-group scatters, got {len(points)}"
-    assert len(_marker_signatures(points)) == 2
+    # Interleaved batches can mix shapes; compare the actual path for every
+    # retained observation rather than requiring one collection per shape.
+    from matplotlib.markers import MarkerStyle
+
+    expected_paths = {}
+    for _, row in ns["df"].iterrows():
+        marker = MarkerStyle(ns["shape_map"][row["cell_line"]])
+        path = marker.get_path().transformed(marker.get_transform())
+        expected_paths[tuple(np.round([row[ns["DR_X_COLUMN"]], row[ns["DR_Y_COLUMN"]]], 7))] = path.vertices
+    observed = 0
+    for collection in points:
+        for position, path in zip(collection.get_offsets(), collection.get_paths()):
+            np.testing.assert_allclose(path.vertices, expected_paths[tuple(np.round(position, 7))])
+            observed += 1
+    assert observed == len(df)
 
 
 def test_feature_comparison_mixed_encoding_groups_split_points(tmp_path, monkeypatch):

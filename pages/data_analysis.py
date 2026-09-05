@@ -20,8 +20,8 @@ from src.dataset_io import (
 from src.emojis import happy_emoji, sad_emoji
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import render_top_menu
-from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
-from src.widgets.plot_layout import dimension_reduction_chart, square_2d_plot
+from src.vis.bivar import feature_2d_distribution_plot, phasor_plot, select_phasor_category
+from src.widgets.plot_layout import dimension_reduction_chart, phasor_chart, square_2d_plot
 from src.vis.helpers import apply_plot_styling, log_negative_error
 from src.vis.multivar import dimension_reduction_plot
 from src.vis.plot_defaults import (
@@ -66,9 +66,11 @@ from src.widgets.selection_widgets import (
     twod_single_feature_select_widget,
 )
 from src.widgets.visualization_widgets import (
-    DR_FACET_KEYS,
+    SEPARATION_KEYS,
     _compute_channel_harmonics,
     get_visual_group_keys,
+    phasor_category_widget,
+    phasor_clustering_widget,
     phasor_params_widget,
     plot_config_widget,
     reorder_x_axis_widget,
@@ -81,7 +83,7 @@ st.set_page_config(layout="wide", page_icon="📊")
 render_top_menu()
 
 # Facet layout remains available through method changes, review and empty filters.
-preserve_analysis_controls(st.session_state, DR_FACET_KEYS)
+preserve_analysis_controls(st.session_state, SEPARATION_KEYS)
 
 # Keep shared styling even when a module has no plot or styling widgets yet.
 if "vis_df" not in st.session_state:
@@ -227,6 +229,7 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
             "selected_channel": ch,
             "phasor_harmonic": extra_params.get("phasor_harmonic"),
             "phasor_f": extra_params.get("phasor_f"),
+            "phasor_category": extra_params.get("phasor_category"),
             "k_means": st.session_state.get(f"k_means_phasor_{ch}", False) if ch else False,
             "k_means_clusters": st.session_state.get(f"k_means_clusters_phasor_{ch}", 2) if ch else 2,
         }
@@ -426,7 +429,7 @@ with col2:
         # Offer encoding controls supported by the selected plot.
         point_based = method not in ["Feature Histogram", "Classification"]
         color_based = method not in [ "Classification"]
-        separate_by_available = method in ["Feature Comparison", "Dimension Reduction"]
+        separate_by_available = method in ["Feature Comparison", "Dimension Reduction", "Phasor Plot"]
         # Feature Comparison preserves group identity on the x axis when subcolor is used.
         subcolor_available = method in ["Feature Comparison"]
         # Collapse averages replicate measurements within each color group.
@@ -438,8 +441,11 @@ with col2:
                 filtered_df, categorical_cols, color_based=color_based,
                 point_based=point_based, separate_by_available=separate_by_available,
                 subcolor_available=subcolor_available, collapse_available=collapse_available,
-                separate_by_mode="facets" if method == "Dimension Reduction" else "sections",
+                separate_by_mode={"Dimension Reduction": "facets", "Phasor Plot": "subplots"}.get(method, "sections"),
             )
+            # Place the Phasor view fragment directly under Separate by/encodings.
+            # Its selector and clustering controls render before the large plot.
+            phasor_display_area = st.container() if method == "Phasor Plot" else None
             # Keep any notices about channels dropped by collapse beside their controls.
             collapse_note = st.container()
 
@@ -527,8 +533,18 @@ with col2:
                         s_col = f"{feature_prefix}S(1st)" if selected_harmonic == 1 else f"{feature_prefix}S(2nd)"
                         if g_col not in filtered_df.columns or s_col not in filtered_df.columns:
                             st.error(f"Required phasor columns ({g_col}, {s_col}) not found in your data. {sad_emoji}")
+                        elif filtered_df[[g_col, s_col]].dropna().empty:
+                            st.info("No complete G/S observations remain after filtering.")
                         else:
-                            fig, kmeans_df = phasor_plot(filtered_df, unique_row_id_col=unique_row_id_col, fov_name_col=fov_name_col, selected_channel=selected_channel, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap, f=f, harmonic=selected_harmonic, row_id_label=row_id_label)
+                            fig, kmeans_df = phasor_plot(
+                                filtered_df, unique_row_id_col=unique_row_id_col,
+                                fov_name_col=fov_name_col, selected_channel=selected_channel,
+                                color_by=color_by, shape_by=shape_by, opacity_by=opacity_by,
+                                colormap=st.session_state.plot_colormap, f=f,
+                                harmonic=selected_harmonic, row_id_label=row_id_label,
+                                separate_by=separate_by,
+                                k_means=st.session_state.get(f"k_means_phasor_{selected_channel}", False),
+                                k_means_clusters=st.session_state.get(f"k_means_clusters_phasor_{selected_channel}", 2))
                             data_export_ready = True
                     else:
                         st.write("Your data does not contain the required features for phasor plot.")
@@ -604,6 +620,9 @@ with col2:
                         st.session_state.plot_colormap,
                         st.session_state.get("plot_show_group_counts", False),
                         st.session_state.plot_axis_label_size,
+                        (st.session_state.get(f"k_means_phasor_{selected_channel}", False),
+                         st.session_state.get(f"k_means_clusters_phasor_{selected_channel}", 2))
+                        if method == "Phasor Plot" else None,
                     )
 
                 _build_params = _plot_build_params()
@@ -612,13 +631,23 @@ with col2:
                 def _render_plot_and_controls(base_fig, build_params):
                     # Styling mutates traces and adds legend entries; copy the base figure
                     # so fragment reruns do not accumulate those changes.
-                    fig = apply_plot_styling(go.Figure(base_fig), st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
+                    fig = go.Figure(base_fig)
+                    phasor_category = None
+                    if method == "Phasor Plot" and separate_by:
+                        phasor_category = phasor_category_widget(
+                            fig.layout.meta["phasor_categories"], separate_by)
+                        select_phasor_category(fig, phasor_category)
+                    if method == "Phasor Plot":
+                        phasor_clustering_widget(selected_channel)
+                    fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
                     if method == "2D Feature Distribution":
                         square_2d_plot(fig, key=f"plot_chart_2d_{method}")
                         if table_md:
                             st.markdown(table_md, unsafe_allow_html=True)
                     elif method == "Dimension Reduction":
                         dimension_reduction_chart(fig, key=f"plot_chart_{method}")
+                    elif method == "Phasor Plot":
+                        phasor_chart(fig, key=f"plot_chart_{method}")
                     else:
                         st.plotly_chart(fig, width='stretch', key=f"plot_chart_{method}")
                     # 1. Data export (if applicable)
@@ -640,7 +669,7 @@ with col2:
                     show_colormap = len(color_by) > 0
                     plot_config_widget(point_based=point_based, show_colormap=show_colormap,
                                        show_count_toggle=show_colormap or (
-                                           method == "Dimension Reduction" and bool(separate_by)))
+                                           method in ("Dimension Reduction", "Phasor Plot") and bool(separate_by)))
 
                     # 3. Export as Python Script
                     _extra = {}
@@ -665,6 +694,7 @@ with col2:
                             _extra["selected_channel"] = selected_channel
                             _extra["phasor_harmonic"] = selected_harmonic
                             _extra["phasor_f"] = f
+                            _extra["phasor_category"] = phasor_category
                     elif method == "Dimension Reduction":
                         _extra["selected_features"] = selected_features
                         _extra["dr_method"] = dr_method
@@ -676,7 +706,11 @@ with col2:
                     if st.session_state.pop("_plot_needs_rebuild", False) or _plot_build_params() != build_params:
                         st.rerun(scope="app")
 
-                _render_plot_and_controls(fig, _build_params)
+                if phasor_display_area is not None:
+                    with phasor_display_area:
+                        _render_plot_and_controls(fig, _build_params)
+                else:
+                    _render_plot_and_controls(fig, _build_params)
 
         else:
             st.markdown(f"<h5 style='text-align: center; color: red'>No data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)
