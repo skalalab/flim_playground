@@ -179,10 +179,9 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
         st.session_state[COLOR_BY_KEY] = pruned_color
     effective_color = pruned_color
 
-    # Grouping columns already identify each x-axis slot. Offer the remaining
-    # categories to shape, subcolor and opacity through one shared option list.
-    available_for_decoration = [cat for cat in available_categories
-                                if cat != separate_by and cat not in effective_color]
+    # Color-grouping columns can also encode shape, subcolor, or opacity.
+    # Only Separate by is excluded from this shared option list.
+    available_for_decoration = available_for_color
 
     point_mode = "shape"
     if point_based:

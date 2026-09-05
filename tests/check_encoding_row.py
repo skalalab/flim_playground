@@ -230,15 +230,17 @@ fake, result = run(state={vw.POINT_MODE_KEY: "subcolor", vw.COLOR_BY_KEY: [],
 check("disabled Subcolor remembers its column without applying it",
       fake.session_state[vw.PICKER_COL_KEY] == "patient_id" and result[4] is None)
 
-print("3. grouping exclusions and Collapse by stay consistent in all modes")
+print("3. color categories can decorate points while Collapse by stays downstream")
 for mode in ("shape", "subcolor", "opacity"):
     label = f"{mode.title()} by"
     state = {vw.POINT_MODE_KEY: mode, "analysis_control_separate_by": "treatment",
              vw.COLOR_BY_KEY: ["experiment"], vw.PICKER_COL_KEY: "dish",
              vw.COLLAPSE_BY_KEY: "dish"}
     fake, result = run(state=state, collapse=True)
-    check(f"{mode}: grouping excludes both grouping columns from decorations",
-          not {"experiment", "treatment"}.intersection(fake.widget_options[label]))
+    check(f"{mode}: color grouping remains available for decoration",
+          "experiment" in fake.widget_options[label])
+    check(f"{mode}: Separate by remains excluded from decoration",
+          "treatment" not in fake.widget_options[label])
     check(f"{mode}: the collapse column remains a decoration option",
           "dish" in fake.widget_options[label])
     check(f"{mode}: collapse leaves grouping choices available",
@@ -247,7 +249,7 @@ for mode in ("shape", "subcolor", "opacity"):
     check(f"{mode}: collapse runs downstream of grouping",
           order_of(fake, "multiselect") < order_of(fake, "selectbox", "Collapse by")
           and not {"experiment", "treatment"}.intersection(fake.widget_options["Collapse by"]))
-    for invalid in ("experiment", "treatment", "removed_column"):
+    for invalid in ("treatment", "removed_column"):
         fake, result = run(state={**state, vw.PICKER_COL_KEY: invalid}, collapse=True)
         check(f"{mode}: invalid {invalid!r} clears safely",
               fake.session_state[vw.PICKER_COL_KEY] is None
@@ -266,8 +268,8 @@ state = {vw.COLOR_BY_KEY: ["experiment"], vw.OPACITY_BY_KEY: "treatment",
 fake, result = run(state=state, match=False)
 check("shape and opacity can both be used", result[1:3] == ("treatment", "patient_id"), result)
 fake, result = run(state={**state, vw.COLOR_BY_KEY: ["treatment"]}, match=False)
-check("a newly grouped opacity column is cleared",
-      result[1] is None and fake.session_state[vw.OPACITY_BY_KEY] is None)
+check("a newly grouped opacity column is preserved",
+      result[1] == "treatment" and fake.session_state[vw.OPACITY_BY_KEY] == "treatment")
 check("a still-valid shape column survives", result[2] == "patient_id")
 
 print(f"\n{len(FAILS)} failure(s)" + (": " + ", ".join(FAILS) if FAILS else ""))

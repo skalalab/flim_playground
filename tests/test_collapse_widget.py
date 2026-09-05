@@ -154,17 +154,19 @@ def test_feature_comparison_has_one_direct_three_way_selector(page):
 
 
 @pytest.mark.parametrize("mode", ["shape", "subcolor", "opacity"])
-def test_a_grouped_column_is_struck_from_every_decoration(page, mode):
-    """Grouping columns cannot decorate points because they are constant within each group.
-    """
-    at = page(**{"vis_encoding_color_by": ["treatment"], "vis_encoding_point_mode": mode})
-    assert "treatment" not in _options(at, f"{mode.title()} by")
+def test_a_color_grouping_column_can_also_encode_points(page, mode):
+    """One category may identify color groups and reinforce them through another encoding."""
+    at = page(**{vw.COLOR_BY_KEY: ["treatment"], vw.POINT_MODE_KEY: mode,
+                 vw.PICKER_COL_KEY: "treatment"})
+    assert "treatment" in _options(at, f"{mode.title()} by")
+    assert at.selectbox(vw.PICKER_COL_KEY).value == "treatment"
 
     at.radio[0].set_value("### **Bivariate**")
     at.run(timeout=90)
     assert not at.exception
-    assert "treatment" not in _options(at, "Shape by")
-    assert "treatment" not in _options(at, "Opacity by")
+    assert "treatment" in _options(at, "Shape by")
+    assert "treatment" in _options(at, "Opacity by")
+    assert at.selectbox(vw.PICKER_COL_KEY).value == "treatment"
 
 
 def _opacity(at):
@@ -284,16 +286,18 @@ def test_opacity_survives_an_unrelated_change_to_color_by(page):
     assert _opacity(at).value == "day"
 
 
-def test_grouping_on_the_held_opacity_column_retires_it(page):
-    """Clear an invalid opacity selection before rendering the keyed widget."""
+@pytest.mark.parametrize("mode", ["shape", "opacity"])
+def test_grouping_on_the_held_point_encoding_column_preserves_it(page, mode):
+    """Adding a point-encoding column to Color by keeps both selections active."""
     at = _bivariate(page)
-    at = _opacity(at).select("day").run(timeout=90)
+    key = vw.PICKER_COL_KEY if mode == "shape" else vw.OPACITY_BY_KEY
+    at = at.selectbox(key).select("day").run(timeout=90)
     at = _colour(at).select("day").run(timeout=90)
 
     assert not at.exception
-    assert "day" not in _options(at, "Opacity by")
-    assert _opacity(at).value is None
-    assert at.session_state[vw.OPACITY_BY_KEY] is None
+    assert "day" in _options(at, f"{mode.title()} by")
+    assert at.selectbox(key).value == "day"
+    assert at.session_state[key] == "day"
 
 
 def test_nothing_is_struck_when_no_column_is_collapsed(page):
@@ -310,7 +314,7 @@ FEATURE_KEY = "_menu_Uncategorized Features"
 
 
 @pytest.mark.parametrize("mode", ["shape", "subcolor", "opacity"])
-@pytest.mark.parametrize("column", ["day", "image_name", None])
+@pytest.mark.parametrize("column", ["day", "treatment", "image_name", None])
 def test_page_exports_only_the_active_valid_decoration(page, monkeypatch, mode, column):
     """Exercise real page capture and generation after its collapse validation."""
     from src import export_script
@@ -330,7 +334,7 @@ def test_page_exports_only_the_active_valid_decoration(page, monkeypatch, mode, 
     assert captured
     state, script = captured[-1]
     expected = {"shape_by": None, "subcolor_by": None, "opacity_by": None}
-    if column == "day":
+    if column in ("day", "treatment"):
         expected[f"{mode}_by"] = column
     assert {key: state[key] for key in expected} == expected
     assert state["method_params"]["collapse_by"] == "dish"
