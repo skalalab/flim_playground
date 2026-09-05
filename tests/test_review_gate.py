@@ -1,12 +1,5 @@
-"""Which screen the gate shows, and when it closes.
-
-The page has no file_uploader accessor, so these call `review_gate` directly. What is
-checkable here is the decision it returns -- open or confirmed, and with which profile --
-which is what the page branches on; the editing itself is driven through the page, in
-`test_review_page.py`.
-
-Run in bare mode: widgets return their defaults, so an unpicked chooser reads as None and
-no button is ever pressed. That is exactly the state a first render is in.
+"""Review-gate decisions in bare mode: widgets return defaults and no buttons are pressed.
+Page interaction is covered in test_review_page.py.
 """
 import re
 import sys
@@ -54,11 +47,8 @@ ROLES = {"cell_id": ROLE_ROW_ID, "treatment": ROLE_CATEGORICAL, "Area": ROLE_NUM
 
 
 def _wide_frame():
-    """Two measurements, so a bulk assignment has something to be bulk about.
-
-    Named off the extraction convention's shared prefix on purpose: `detect_groups` would
-    group these two on its own, which is what makes "the profile already knows them, so
-    nothing is guessed" the state every test below starts from.
+    """Two measurements share a prefix so a saved profile can override their inferred
+    group.
     """
     return pd.DataFrame({
         "cell_id": [1, 2, 3],
@@ -122,10 +112,8 @@ def test_a_different_file_reopens_the_gate(acw):
 
 
 def test_a_confirmed_decision_records_the_configured_row_id(acw):
-    """The **configured** name, which is what the exported script has to re-invent from.
-
-    A blank one means "number the rows", and baking in the resolved name instead would
-    have check_and_fix_df demand a column the data file never had.
+    """Exports need the configured identifier name, including a blank name for generated
+    IDs.
     """
     acw.save_working_copy("pdl1", ROLES, {})
     assert gate.review_gate(_Upload("pdl1_rep2.csv"), _frame()) is not None
@@ -133,11 +121,7 @@ def test_a_confirmed_decision_records_the_configured_row_id(acw):
 
 
 def test_a_new_upload_cannot_inherit_the_last_files_configured_row_id(acw):
-    """It is one of `_STATE_KEYS`, so its lifetime is the uploaded file's.
-
-    Written from the page instead, it was the one `_review_*` key a different file did
-    not clear -- and an export for a table with no identifier would then have named the
-    previous file's column, which this one does not have.
+    """The configured identifier belongs to one upload and must be cleared for the next.
     """
     acw.save_working_copy("pdl1", ROLES, {})
     gate.review_gate(_Upload("pdl1_rep2.csv"), _frame())
@@ -197,13 +181,7 @@ def test_a_profile_just_saved_is_the_one_the_summary_names(acw):
 
 
 def _summary(monkeypatch, decision):
-    """What applied_summary writes, captured.
-
-    Hand-drawn markup rather than st.caption: the <style> keeping the row one line tall
-    has to ride in the same markdown call, so this reads the markdown instead -- and
-    strips it back to what is on screen. Left whole, a padding of `0 0.4rem` answers for
-    the tally when a test asks whether a zero count leaked into it.
-    """
+    """Capture visible summary text after removing CSS and markup."""
     shown = []
     monkeypatch.setattr(gate.st, "markdown", lambda msg, **k: shown.append(msg))
     gate.applied_summary(decision)
@@ -212,12 +190,7 @@ def _summary(monkeypatch, decision):
 
 
 def test_the_summary_names_the_profile_and_tallies_the_roles(acw, monkeypatch):
-    """An exact match renders no gate, so this line is the only thing that says which
-    profile the plots are being drawn under.
-
-    The identifier is not counted: it is one column or none, and a count of it says
-    nothing the two that follow do not. What the line is for is the shape of the data
-    the pickers below are about to be handed.
+    """The summary identifies the applied profile and counts the roles offered to analysis.
     """
     acw.save_working_copy("pdl1", ROLES, {"Area": "morphology"})
     shown = _summary(monkeypatch, gate.review_gate(_Upload("pdl1_rep2.csv"), _frame()))
@@ -256,9 +229,9 @@ def test_the_summary_reports_the_name_a_save_just_gave(acw, monkeypatch):
 
 
 def test_the_profile_in_use_is_the_matched_one_not_the_last_saved(acw):
-    """`current_profile` follows the last *write*, so on an exact match it can name a
-    profile this file never matched -- which is why every "in use" surface reads
-    _applied_profile instead, and why an auto-apply leaves current_profile alone."""
+    """An exact match uses the matched profile while current_profile follows the last
+    write.
+    """
     acw.save_working_copy("pdl1", ROLES, {})
     acw.save_working_copy("iris", {"Sepal length": ROLE_NUMERICAL}, {})
     assert gate.st.session_state.current_profile == "iris"
@@ -309,7 +282,8 @@ def test_reopening_an_exact_match_asks_no_question(acw):
     gate.review_gate(_Upload("rep2.csv"), _frame())            # auto-applied, no gate
     gate.reopen_gate()
 
-    assert gate.review_gate(_Upload("rep2.csv"), _frame()) is None       # gate is open
+    assert gate.review_gate(_Upload("rep2.csv"), _frame()) is None
+    assert gate.st.session_state._review_confirmed is False
     assert gate.st.session_state._review_reopened is True
     assert gate.st.session_state._review_chooser is False
 
@@ -345,19 +319,15 @@ def test_the_unpicked_chooser_names_no_button_that_is_not_on_screen(acw, monkeyp
     assert "Use this" not in text and "Save" not in text
 
 
-def test_a_profile_whose_roles_no_longer_work_opens_the_table_instead_of_applying(acw):
-    """Auto-apply is not unconditional: it applies *roles*, and roles can stop fitting.
-
-    The profile remembers that cell_id is the identifier and never whether it holds
-    anything, so this export -- same headers, blank identifier -- is still an exact
-    match. Applying it silently sent the file to interpret_table to fail there, with no
-    table ever shown and nothing on screen but an error. The gate now asks the same
-    question before it steps aside, so the file lands in the table that can fix it.
+@pytest.mark.parametrize("ids", [[None, None, None], [1, "1", "a"]])
+def test_a_profile_whose_roles_no_longer_work_opens_the_table_instead_of_applying(acw, ids):
+    """Matching headers cannot auto-apply a profile whose identifier is blank or non-
+    unique.
     """
     acw.save_working_copy("pdl1", ROLES, {})
-    blank = _frame().assign(cell_id=[None, None, None])
+    invalid = _frame().assign(cell_id=ids)
 
-    assert gate.review_gate(_Upload("rep2.csv"), blank) is None          # opened, not applied
+    assert gate.review_gate(_Upload("rep2.csv"), invalid) is None        # opened, not applied
     assert gate.st.session_state._review_roles["cell_id"] == ROLE_ROW_ID  # on pdl1's roles
     assert gate.st.session_state._review_source == "pdl1"                 # ... and bound to it
     assert gate.st.session_state._review_chooser is False                 # nothing to choose
@@ -377,12 +347,7 @@ def _delete(name):
 
 
 def test_deleting_the_profile_in_force_orphans_the_working_copy(acw, monkeypatch):
-    """`Save as` from Auto-detect leaves the two source keys disagreeing, and the *applied*
-    one is the profile. Testing only `_review_source` matched nothing here, so the row left
-    the list while the table stayed open offering `Save to foo & use` over a profile that
-    no longer existed -- and its Cancel reloaded that name as an empty config, auto-detected
-    the roles and confirmed them to the plots without a save.
-    """
+    """Deleting a profile applied through Save as clears its working-copy binding."""
     monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
     gate.review_gate(_Upload("flowers.csv"), _frame())          # opens, nothing picked
     gate._load_working_copy(_frame(), gate.AUTO_DETECT)
@@ -390,7 +355,7 @@ def test_deleting_the_profile_in_force_orphans_the_working_copy(acw, monkeypatch
     gate.st.session_state._review_saved_as = "foo"
     gate.st.session_state._review_reopened = True
     gate.st.session_state._review_chooser = False
-    # The state the bug lived in: the pick and the save name disagree.
+    # Save as keeps Auto-detect as the source and binds the applied profile separately.
     assert gate.st.session_state._review_source == gate.AUTO_DETECT
     assert gate._applied_profile() == "foo"
 
@@ -400,8 +365,7 @@ def test_deleting_the_profile_in_force_orphans_the_working_copy(acw, monkeypatch
     assert "_review_saved_as" not in gate.st.session_state
     assert "_review_roles" not in gate.st.session_state
     assert gate._applied_profile() is None
-    # Both of these are what the screen reads: no write target, and no Cancel to confirm
-    # an unsaved frame with.
+    # Clear both the write target and the previous decision used by Cancel.
     assert gate.exit_actions(gate._applied_profile(),
                              gate.st.session_state.get("_review_reopened", False)) == [
         ("save_as_new", None)]
@@ -427,9 +391,8 @@ def test_deleting_a_different_profile_leaves_the_working_copy_alone(acw, monkeyp
 # --------------------------------------------------------------------- feature groups
 
 def test_a_group_the_file_cannot_fill_comes_back_with_the_working_copy(acw):
-    """An empty group is a name the user chose, and it only survives a save if it also
-    survives the load. Read off the `{column: group}` mapping -- which has no column to
-    read it from -- and the group is written to disk and then gone on the next upload."""
+    """Reload empty groups from their saved names as well as the column-to-group mapping.
+    """
     acw.save_working_copy("pdl1", ROLES, {"Area": "morphology"},
                           group_names=["morphology", "lifetime"])
     gate._load_working_copy(_frame(), "pdl1")
@@ -460,10 +423,7 @@ def test_a_group_cannot_be_renamed_to_the_ungrouped_marker(acw, monkeypatch):
 
 
 def test_a_group_takes_every_column_the_bar_hands_it(acw, monkeypatch):
-    """The bulk half of the Group column: one destination for N columns.
-
-    Per-row, this is N dropdowns; here it is one call, and the point of the whole change.
-    """
+    """Bulk assignment moves every selected measurement to the destination group."""
     monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
     acw.save_working_copy("pdl1", _WIDE_ROLES, {})
     gate._load_working_copy(_wide_frame(), "pdl1")
@@ -479,13 +439,7 @@ def test_a_group_takes_every_column_the_bar_hands_it(acw, monkeypatch):
 
 
 def test_adding_a_group_makes_it_and_points_the_destination_at_it(acw, monkeypatch):
-    """Create then assign, chained.
-
-    An empty group is a name and nothing else, so it has to reach `_review_group_names`:
-    `_editor` renders every row against `[NO_GROUP] + _review_group_names` and resolves a
-    held value it cannot find to index 0 -- the ungrouped slot. Seeding the destination is
-    what saves the second lookup, and is legal because the bump has just given that
-    selectbox a key it has never had.
+    """Adding a group registers its name and selects it as the bulk-assignment destination.
     """
     monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
     acw.save_working_copy("pdl1", _WIDE_ROLES, {})
@@ -527,9 +481,7 @@ def test_the_bar_can_take_columns_out_of_their_group(acw, monkeypatch):
 
 
 def test_a_name_that_is_already_a_group_is_refused(acw, monkeypatch):
-    """A second group under a live name would duplicate the row dropdown's option, and
-    `index()` resolves a duplicate to the first slot. Merging is Rename's job, where it is
-    asked for; here it is a typo."""
+    """Duplicate group names would create indistinguishable dropdown options."""
     monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
     warned = []
     monkeypatch.setattr(gate.st, "warning", lambda msg, *a, **k: warned.append(msg))
@@ -543,12 +495,7 @@ def test_a_name_that_is_already_a_group_is_refused(acw, monkeypatch):
 
 
 def test_renaming_a_group_onto_another_merges_them(acw, monkeypatch):
-    """The one-action form of "move a whole group", and the reason Rename stopped
-    refusing a name already in use.
-
-    The name list is de-duplicated, because a repeated entry is the `index()` trap
-    `_group_name_error` was extracted to close: every row of the merged group would
-    resolve to the ungrouped slot and silently leave it.
+    """Renaming onto an existing group merges members without duplicating dropdown options.
     """
     monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
     acw.save_working_copy("pdl1", _WIDE_ROLES,
@@ -566,10 +513,7 @@ def test_renaming_a_group_onto_another_merges_them(acw, monkeypatch):
 
 
 def test_a_group_cannot_be_called_uncategorized_either(acw, monkeypatch):
-    """The other spelling of the ungrouped slot.
-
-    A real group by that name would sit in a measurement's dropdown reading exactly like
-    the slot above it -- distinct values, indistinguishable options, silent mis-pick.
+    """The displayed ungrouped label is reserved to keep dropdown options distinguishable.
     """
     monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
     warned = []
@@ -597,9 +541,7 @@ def test_deleting_a_group_drops_its_members_to_uncategorized(acw, monkeypatch):
 
 
 def test_only_a_measurement_can_be_picked(acw):
-    """`_picked_columns` reads the ticks, and the ticks only ever appear on a Numerical
-    row -- but a role changed *this* run leaves a tick behind for one rerun, so the
-    filter is stated here too and not left to the absent widget."""
+    """Ignore stale selection ticks when a row has just lost its Numerical role."""
     acw.save_working_copy("pdl1", _WIDE_ROLES, {})
     frame = _wide_frame()
     gate._load_working_copy(frame, "pdl1")
@@ -624,13 +566,7 @@ def count_config_reads(monkeypatch):
 
 
 def test_the_gate_reads_the_config_once_per_rerun(acw, count_config_reads):
-    """Threaded down the call chain, not memoised.
-
-    `review_gate`, `_chooser`, `_buttons` and `_manage_profiles` each used to reach for
-    the saved profiles on their own -- three uncached parses of every profile, at ~0.14 ms
-    per 60-column profile, on a page Streamlit reruns on every slider drag. A memo is the
-    wrong fix: the gate writes this file from inside a rerun, so a stale list would be a
-    worse bug than a slow one.
+    """Share one config read within a rerun; later reruns must see intervening writes.
     """
     # A near-match, so the gate opens rather than auto-applying: the confirmed path
     # returns above every config read and would score zero without proving anything.

@@ -1,9 +1,5 @@
-"""Collapse by, from the page's side: the picker, the option lists, and the hover.
-
-The pure rules live in `tests/test_collapse.py`; these cover the wiring only --
-which method offers the control, what it takes away from the other channels, what
-the plot is handed once it has run, and the caption that explains a channel the
-collapse had to switch off.
+"""Collapse-control wiring, channel options, plot data, and hover text. Pure collapse rules
+are covered in test_collapse.py.
 """
 import sys
 import warnings
@@ -16,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src import dataset_io
 from src.collapse import collapse_rows
+from src.column_roles import code_span
 from src.widgets import analysis_config_widgets as acw
 from src.widgets import visualization_widgets as vw
 
@@ -106,10 +103,9 @@ def test_the_2d_distribution_does_not(page):
 # ---------------------------------------------------------------------------
 
 def test_collapse_by_is_last_in_the_grouping_chain(page):
-    """Separate by narrows Color by; the two of them narrow Collapse by -- never the
-    reverse. Collapsing is DERIVED from the x layout, so changing the layout may retire a
-    collapse column, but picking a replicate must leave the layout alone. Reading Collapse
-    by first inverted that and silently reset the grouping."""
+    """Grouping constrains Collapse by; selecting a collapse column must not change
+    grouping.
+    """
     at = page(**{vw.COLLAPSE_BY_KEY: "dish", "vis_encoding_color_by": ["treatment"]})
 
     assert "dish" in _options(at, "Separate by")
@@ -128,10 +124,7 @@ def test_grouping_on_the_collapsed_column_retires_the_collapse(page):
 
 
 def test_the_collapse_column_is_still_offered_to_the_decoration_channel(page):
-    """Subcolor by = Collapse by is the SuperPlot -- one colour per replicate, held
-    across every x group -- so striking it there too would remove the feature's most
-    useful pairing. Feature Comparison merges the three decorations into one slot, so
-    there is a single picker to check, named for whichever role is live."""
+    """The collapse column stays available for one decoration per replicate."""
     at = page(**{vw.COLLAPSE_BY_KEY: "dish"})
 
     assert "dish" in _options(at, "Shape by")
@@ -142,11 +135,9 @@ def test_the_collapse_column_is_still_offered_to_the_decoration_channel(page):
 
 
 def test_shape_and_subcolor_share_a_slot_and_opacity_keeps_its_own(page):
-    """Shape and subcolor are both NOMINAL, so either is a sensible encoding for the same
-    column and the toggle between them is a real choice. Opacity is the one ORDINAL
-    channel, so it competes with neither and keeps a column of its own -- on every
-    point-based method, subcolor or no subcolor. Folding all three into one three-way
-    switch was built and reverted: it wrapped to three lines in a column this narrow."""
+    """The shared nominal-encoding picker toggles shape and subcolor; opacity stays
+    independent.
+    """
     at = page()
     assert "Opacity by" in _labels(at) and "Shape by" in _labels(at)
     assert "Subcolor by" not in _labels(at)
@@ -162,9 +153,8 @@ def test_shape_and_subcolor_share_a_slot_and_opacity_keeps_its_own(page):
 
 
 def test_a_grouped_column_is_struck_from_every_decoration(page):
-    """A decoration marks a point INSIDE the slot its grouping put it in, so a column
-    already spent on Separate by or Color by would give every point in a slot the same
-    mark. One rule for all three, and for the plain Shape/Opacity columns elsewhere."""
+    """Grouping columns cannot decorate points because they are constant within each group.
+    """
     at = page(**{"vis_encoding_color_by": ["treatment"]})
     assert "treatment" not in _options(at, "Shape by")
     assert "treatment" not in _options(at, "Opacity by")
@@ -194,11 +184,7 @@ def _bivariate(page):
 
 
 def test_opacity_survives_an_unrelated_change_to_color_by(page):
-    """Striking the grouped columns put Opacity by's options under Color by's control, and
-    an UNKEYED widget is identified by its arguments -- options included -- so grouping on
-    ANY column remounted this picker and silently blanked a pick that was still offered.
-    Feature Comparison never showed it: its opacity role goes through the merged picker,
-    which has been keyed all along."""
+    """Changing grouping options preserves an opacity selection that is still valid."""
     at = _bivariate(page)
     at = _opacity(at).select("day").run(timeout=90)
     assert not at.exception
@@ -211,9 +197,7 @@ def test_opacity_survives_an_unrelated_change_to_color_by(page):
 
 
 def test_grouping_on_the_held_opacity_column_retires_it(page):
-    """The other half of the same bargain: a key makes the pick survive an option list
-    changing, and Streamlit then RAISES on a stored value the widget no longer offers, so
-    the column Color by just claimed has to be pruned out before it renders."""
+    """Clear an invalid opacity selection before rendering the keyed widget."""
     at = _bivariate(page)
     at = _opacity(at).select("day").run(timeout=90)
     at = _colour(at).select("day").run(timeout=90)
@@ -244,8 +228,7 @@ def test_a_decoration_finer_than_the_replicate_is_dropped_and_explained(page):
                  vw.PICKER_COL_KEY: "image_name"})
 
     captions = " ".join(c.value for c in at.caption)
-    # Names the control to go and change, and ends in what to do about it -- "varies
-    # within" was accurate and told nobody anything.
+    # Explain which control was disabled and why the replicate cannot use it.
     assert "**Shape by** is off" in captions
     assert "covers several `image_name` values" in captions
     assert "cannot be further divided" in captions
@@ -281,9 +264,9 @@ def test_the_page_survives_a_slot_left_with_a_single_dot(page):
 # ---------------------------------------------------------------------------
 
 def test_the_hover_names_the_replicate_and_carries_its_count(monkeypatch):
-    """`n` rides inside the identifier's VALUE rather than a second hover line: a
-    second line means 2-D customdata, which would split feature_comparison_plot's
-    FOV template away from bivar's."""
+    """The identifier value includes replicate count while keeping customdata one-
+    dimensional.
+    """
     import contextlib
 
     import streamlit as st
@@ -333,10 +316,7 @@ def test_collapsing_across_fovs_drops_the_fov_hover_line(monkeypatch):
 
 @pytest.mark.parametrize("sizes", [(1, 1), (1, 3), (3, 1)])
 def test_cohens_d_needs_a_degree_of_freedom_in_BOTH_groups(sizes):
-    """The pooled variance weights each group's own var(ddof=1). Guarding only the sum
-    let n1=1, n2=3 through, where the answer was NaN solely because pandas returns NaN
-    from Series.var of one element -- numpy warns instead, and the exported script is
-    where that would print."""
+    """Pooled variance requires at least two samples in each group."""
     import numpy as np
 
     from src.vis.helpers import cohens_d
@@ -362,9 +342,7 @@ def test_glass_delta_needs_one_only_in_the_control_group():
 
 @pytest.mark.parametrize("method", ["Glass's Delta", "Absolute Cohen's d"])
 def test_one_replicate_per_group_yields_no_effect_size_and_no_numpy_warning(method):
-    """Below two points the pooled spread is undefined. Both functions already
-    returned nan by accident, through two numpy RuntimeWarnings that print out of the
-    exported script unexplained; the guards make that explicit and silent."""
+    """Insufficient replicate counts return NaN without emitting numpy warnings."""
     import numpy as np
 
     from src.vis.helpers import _calculate_effect_size
@@ -476,7 +454,8 @@ def test_the_notice_names_its_separate_by_section(monkeypatch):
     warned = _run_annotations(monkeypatch, {"ctrl": 4, "drug": 1}, [("ctrl", "drug")],
                               section_label="MCF7")
 
-    assert "in MCF7" in warned
+    # Section labels come from file values and must display literally in Markdown.
+    assert f"in {code_span('MCF7')}" in warned
 
 
 def test_several_thin_groups_are_named_in_x_axis_order(monkeypatch):

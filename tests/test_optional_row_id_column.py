@@ -1,22 +1,12 @@
-"""The unique row ID is optional, and -- unlike the FOV column -- an absent one is
-invented.
-
-The asymmetry is deliberate. `resolve_effective_fov_col` resolves a missing FOV column
-to None and every plot drops the FOV hover line; but all four point plots index
-`df[text_col]` unconditionally to label their hover, so there is no "no row id" state
-for them to be written against. `resolve_row_id_col` therefore numbers the rows instead,
-and the hover says "ID: 42".
-
-The naming rule for hover follows from what the frame actually is: extraction data is
-always cells, a user table is called whatever the user called it, and an invented row
-number is just "ID". The FOV line follows the same rule -- it reads the FOV column's own
-name, identically in univar and bivar.
+"""Optional identifiers are generated when absent. Hover labels use the configured column
+name, or ID for generated row numbers.
 """
 import sys
 from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -64,16 +54,46 @@ def test_a_named_but_missing_row_id_is_still_an_error():
 
 
 def test_a_repeated_row_id_is_refused_rather_than_repaired():
-    """This used to drop the rows that shared an id, behind a warning.
-
-    The repair changes n silently, and every count, box and p-value after it describes
-    the survivors -- so it is the file that is refused now, not the rows.
+    """Repeated identifiers reject the file without dropping rows and changing the
+    analysis.
     """
     df = _frame()
     df["flower_id"] = ["a", "a", "c", "d"]
     fixed, _warning, error = dataset_io.check_and_fix_df(df, ["species"], "flower_id", None)
     assert fixed is None
     assert "flower_id" in error and "'a' appears 2 times" in error, error
+
+
+@pytest.mark.parametrize("ids", [
+    [1, "1", "c", "d"],
+    [1.5, "1.5", "c", "d"],
+])
+def test_row_ids_that_collide_as_strings_are_refused(ids):
+    df = _frame().assign(flower_id=ids)
+    original = df.copy(deep=True)
+    roles = {"flower_id": "row_id", "Sepal length": "numerical"}
+
+    gate_error = dataset_io.review_blocking_reason(df, roles)
+    fixed, _warning, loader_error = dataset_io.check_and_fix_df(
+        df, ["species"], "flower_id", None)
+
+    assert "appears 2 times" in gate_error, gate_error
+    assert "appears 2 times" in loader_error, loader_error
+    assert fixed is None
+    pd.testing.assert_frame_equal(df, original)
+
+
+def test_unique_mixed_type_row_ids_keep_their_labels():
+    df = _frame().assign(flower_id=[1, "01", "c", "d"])
+    roles = {"flower_id": "row_id", "Sepal length": "numerical"}
+
+    assert dataset_io.review_blocking_reason(df, roles) == ""
+    fixed, _warning, error = dataset_io.check_and_fix_df(
+        df, ["species"], "flower_id", None)
+
+    assert error == ""
+    assert fixed.flower_id.tolist() == ["1", "01", "c", "d"]
+    assert len(fixed) == len(df)
 
 
 def test_a_row_id_blank_in_some_rows_is_refused():
@@ -87,12 +107,8 @@ def test_a_row_id_blank_in_some_rows_is_refused():
 
 
 def test_the_loader_and_the_review_gate_agree_on_what_an_identifier_is():
-    """One rule, stated twice, so the two statements are pinned to each other.
-
-    `check_and_fix_df` is getsource-inlined into exported scripts and must stay
-    import-free, so it cannot call the gate's `_row_id_reason`. That is exactly the shape
-    that drifts: the gate would open a table for a file the loader accepts, or refuse one
-    it would have loaded.
+    """The gate and loader must agree. The export-inlined loader cannot import the gate
+    helper.
     """
     from src.column_roles import ROLE_NUMERICAL, ROLE_ROW_ID
     from src.dataset_io import review_blocking_reason
@@ -176,6 +192,22 @@ def test_get_features_still_reads_the_config_when_no_name_is_passed(monkeypatch)
     assert list(out.columns) == ["flower_id", "species", "Sepal length"]
 
 
+def test_a_column_named_as_both_the_identifier_and_a_categorical_is_kept_once():
+    """Overlapping identifier and categorical settings retain one Series per column for
+    filters.
+    """
+    out, _groups, warning, error = dataset_io.get_features(
+        _frame(), ["species", "flower_id"], use_data_extraction=False,
+        unique_row_id_col="flower_id")
+
+    assert error == ""
+    assert not out.columns.duplicated().any()
+    assert list(out.columns) == ["flower_id", "species", "Sepal length"]
+    # Filters can still use the column, and no data-loss notice is needed.
+    assert out["flower_id"].nunique() > 1
+    assert "not analysed" not in warning
+
+
 # ------------------------------------------------------------------------ load_table
 
 
@@ -191,12 +223,8 @@ IRIS = (b"Sepal length,Sepal width,species\n"
 
 
 def test_load_table_accepts_an_iris_table_with_no_identifier(monkeypatch):
-    """load_table's 5th value is the *resolved* identifier, invented one included.
-
-    A composition property, driven by stubbing the accessor blank: load_table is the
-    extraction branch now, and an extraction config's identifier is never blank. The
-    production route to a nameless table is the review gate, which hands a blank name
-    straight to interpret_table -- covered in test_read_interpret_split.
+    """With a blank configured identifier, load_table returns the generated identifier
+    name.
     """
     from tests.test_table_formats import _uploaded_file
 
@@ -335,9 +363,7 @@ def test_no_fov_column_leaves_the_fov_line_out():
 
 
 def test_a_column_name_carrying_markup_cannot_break_the_hover_line():
-    """Hover templates are rendered as markup and these labels are typed into a config
-    text box, so `a<b` would swallow the rest of the line -- the same failure
-    dataset_io._as_html exists to prevent for reader messages."""
+    """Escape configured column names before including them in HTML hover templates."""
     assert hover_field("a<b", "%{text}") == "<b>a&lt;b:</b> %{text}<br>"
     templates = _hover_templates(_feature_comparison("a<b"))
     assert templates
@@ -368,9 +394,8 @@ def _iris_frame_with_row_numbers():
 
 
 def _run_page(monkeypatch, row_id_col, configured, use_extraction):
-    """Drive pages/data_analysis.py with a loaded frame. AppTest cannot perform a
-    real upload, so load_table is stubbed -- the same technique
-    test_optional_fov_column.py uses for the FOV gates."""
+    """Run the analysis page with load_table stubbed because AppTest cannot upload files.
+    """
     from streamlit.testing.v1 import AppTest
 
     from src.widgets import analysis_config_widgets as acw
@@ -408,9 +433,9 @@ def test_the_page_keeps_a_configured_row_id(monkeypatch):
 
 
 def test_an_exported_script_reinvents_the_row_id_and_runs(tmp_path):
-    """The parity coupling a blank identifier introduces: the script is handed the
-    *configured* name, so it must invent the same column ANALYSIS_COLUMNS names. Every
-    other export fixture hardcodes a real identifier, so nothing else covers this."""
+    """An export with a blank configured identifier must generate the identifier its plot
+    uses.
+    """
     import subprocess
 
     from src.export_script import generate_script
@@ -446,16 +471,8 @@ def test_an_exported_script_reinvents_the_row_id_and_runs(tmp_path):
 # ------------------------------------------------------------------- profile defaults
 
 def test_a_fresh_install_creates_no_analysis_profile_at_all(monkeypatch, tmp_path):
-    """Reading the config must not write one. Saving is the only way a profile is made.
-
-    A profile minted by a read spends one of MAX_PROFILES and needs a clause in
-    `ProfileFit.is_exact` to stop it matching every file, since it knows no columns and
-    two empty sets are equal.
-
-    So no profile is a reachable state, and the accessors have to answer from it: a user
-    table has no designated FOV column and no categoricals of its own -- only the three
-    cluster columns the plots add themselves. Every read below is followed by the
-    file-existence check, because any one of them writing is the bug.
+    """Every accessor supports an absent config without creating a profile or writing a
+    file.
     """
     from src.widgets import analysis_config_widgets as acw
 

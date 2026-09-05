@@ -1,16 +1,14 @@
-"""Synthetic tables for exercising the review-table gate (design spec step 6).
+"""Synthetic tables for exercising the review-table gate.
 
 Each file targets one path through the gate: a role auto-detect rule, an auto-grouping
 rule, a profile-matching outcome, or a reader rejection. Regenerate with
 
-    uv run python tests/make_review_datasets.py            # write tests/review_data/
-    uv run python tests/make_review_datasets.py --report   # ... and print what the
-                                                           # detectors make of each one
+    uv run python tests/make_review_datasets.py
+    uv run python tests/make_review_datasets.py --report
     uv run python tests/make_review_datasets.py --out ~/Downloads/flim_review_data
 
-The output directory is gitignored: this script is the tracked artefact, the tables are
-regenerated from it. Everything is seeded, so a given file is byte-identical run to run
-and a diff in the report means the detectors changed, not the data.
+The default output directory, tests/review_data/, is gitignored. Seeded random values
+keep the generated cases repeatable; --report prints reader and detector results.
 
 The intended sequence for a browser pass is the `pdl1_*` family, in order:
 rep1 auto-detects and is saved as a new profile, rep2 is an exact match that must skip
@@ -85,9 +83,7 @@ def pdl1_frame(n, r, *, notes=True):
     cols.update(_morphology_block(n, r))
     cols["redox_ratio"] = r.beta(4, 4, size=n).round(4)
     if notes:
-        # Free text, one distinct value per row: auto-detect must call it Categorical
-        # (visibly wrong in Preview, one dropdown to Ignore) rather than apply a
-        # cardinality threshold.
+        # Repeated free-text notes remain Categorical until the user changes their role.
         cols["notes"] = [f"acquired {1 + i % 28:02d}/03, operator {'AB'[i % 2]}" for i in range(n)]
     return pd.DataFrame(cols)
 
@@ -119,9 +115,8 @@ def build_pdl1_family(out):
         "pdl1_rep3.csv",
         "rep1 plus a third lifetime component and an integer plate number.",
         "Chooser: pdl1 shows 18 shared, 0 missing, 2 new. nadh_t3_mean joins the "
-        "existing nadh group by name (rule 2). plate is guessed Numerical -- the "
-        "column the user must demote to Categorical, and the reason Ignore/role has "
-        "to be enforced rather than assumed.",
+        "existing nadh group through its saved siblings. plate is guessed Numerical "
+        "and can be changed to Categorical in the review table.",
     ), rep3)
 
     rep4 = rep1.drop(columns=["fad_t2_mean", "fad_a1_mean", "notes"]).copy()
@@ -150,9 +145,9 @@ def build_pdl1_family(out):
     write(out, register(
         "unrelated_iris.csv",
         "A table with nothing in common with pdl1.",
-        "Chooser: pdl1 shows 0 shared, 18 missing, 5 new, and still appears -- ranking "
-        "orders the list, it never filters. No Row ID candidate (every float column is "
-        "refused, species repeats), so rows are numbered.",
+        "No shared columns, so pdl1 is absent from the chooser but remains available "
+        "in Manage profiles. No Row ID candidate: measurements have fractional values "
+        "and species repeats, so rows are numbered.",
     ), iris)
 
 
@@ -162,8 +157,7 @@ def build_identifier_cases(out):
     r = rng()
     n = 300
 
-    # Nothing qualifies: every numeric column is a float or not first, every text
-    # column repeats.
+    # Fractional measurements and repeating text provide no identifier candidate.
     write(out, register(
         "no_row_id.csv",
         "No column can serve as an identifier.",
@@ -195,19 +189,15 @@ def build_identifier_cases(out):
         "duplicate_ids.csv",
         "cell_id repeats once, so it is all-but-distinct.",
         "Auto-detect refuses it as Row ID (uniqueness is required) and calls it "
-        "Numerical. Naming it Row ID by hand exercises check_and_fix_df's warn-and-"
-        "drop path.",
+        "Numerical. Assigning Row ID in the review table must block Save with a "
+        "duplicate-ID error; the loader must also reject it without dropping rows.",
     ), dup)
 
     write(out, register(
         "numeric_id_traps.csv",
-        "Two integer columns that look like identifiers but are not.",
-        "id_float is all-distinct but holds halves -> never Row ID, whole numbers are "
-        "the question asked. npix is all-distinct and whole, and this file carries no "
-        "real identifier, so npix TAKES the role -- the accepted cost of dropping "
-        "position as a signal (it missed wine_id at column 13 of 13). One measurement "
-        "out of the pickers until the dropdown puts it back, visible in the preview "
-        "before any save. Pinned by tests/test_auto_detect_roles.py.",
+        "Distinct fractional and integer measurements without a real identifier.",
+        "id_float holds halves and remains Numerical. npix is unique and whole, so "
+        "it becomes Row ID until corrected in review. See tests/test_auto_detect_roles.py.",
     ), pd.DataFrame({
         "id_float": (np.arange(n) + 0.5),
         "treatment": r.choice(["DMSO", "PD-L1"], size=n),
@@ -235,10 +225,9 @@ def build_grouping_cases(out):
     write(out, register(
         "extraction_style.csv",
         "A colleague's Data Extraction output, analysed through the user-table branch.",
-        "Auto-grouping rule 1 wins: get_feature_groups_data_extraction yields "
-        "'Lifetime fit_ch1', 'Lifetime fit_ch2', 'Intensity morphology_ch1/ch2'. The "
-        "prefix rule must never see this file -- it would cut at the underscore and "
-        "produce a single 'Lifetime fit' group.",
+        "The shared-prefix rule yields 'Lifetime fit' and 'Intensity morphology', "
+        "combining channels at the first underscore. Channel-specific groups can be "
+        "assigned in review and saved in a profile.",
     ), pd.DataFrame(extraction))
 
     flat = dict(base)
@@ -303,8 +292,7 @@ def build_content_cases(out):
         "all_text.csv",
         "Not one numeric column.",
         "The review table's own validation must disable the save button with 'no "
-        "column is Numerical'. Before the gate this failed late, in get_features, as "
-        "'No feature found in the uploaded file'.",
+        "column is Numerical'.",
     ), pd.DataFrame({
         "cell_id": [f"c{i:03d}" for i in range(n)],
         "treatment": r.choice(["DMSO", "PD-L1"], size=n),
@@ -327,10 +315,8 @@ def build_content_cases(out):
     write(out, register(
         "single_column.csv",
         "One genuine column, no separator anywhere in the file.",
-        "The reader passes it through -- how many columns a table needs is "
-        "get_features' question, not _resolve_delimiter's. The gate then blocks it "
-        "for having no Numerical column... or accepts it as one measurement with an "
-        "invented row number. Worth watching which.",
+        "The reader accepts a single column. Review marks intensity Numerical with "
+        "no Row ID, so analysis adds generated row numbers.",
     ), pd.DataFrame({"intensity": r.normal(1000, 120, size=n).round(2)}))
 
 
@@ -448,16 +434,15 @@ def build_pathological_cases(out):
         "wide_200_cols.csv",
         "201 columns, 40 rows.",
         "The review table is 201 rows and every one carries a Preview. Watch that the "
-        "editor stays usable and that a rerun does not take visibly longer -- Preview "
-        "and numeric_column_names both walk the whole frame on every rerun.",
+        "editor stays usable and that editing a row responds promptly.",
     ), pd.DataFrame(wide))
 
     write(out, register(
         "one_row.csv",
         "A header and exactly one data row.",
-        "Every column is trivially all-distinct, so the Row ID rule leans on dtype and "
-        "position alone. Plots of one point must not crash the gate; a category with one "
-        "level reads '(1 level)'.",
+        "cell_id is the first qualifying identifier; Area remains Numerical because "
+        "it has a fractional value. Plots of one point must not crash the gate; the "
+        "category preview reads '(1 level)'.",
     ), pd.DataFrame({"cell_id": [1], "treatment": ["DMSO"], "Area": [412.5]}))
 
     write(out, register(
@@ -512,16 +497,13 @@ class _Upload(io.BytesIO):
 
 
 def report(out):
-    """Print what the app itself makes of each table -- reader, then roles, then groups.
-
-    Uses the wrappers the page calls (dataset_io.detect_roles / detect_groups), not the
-    pure rules underneath them: detect_groups tries the extraction convention first, so
-    calling detect_column_groups here would report a grouping the app never produces.
+    """Report reader diagnostics, roles after the analysis coercion rule, and inferred
+    groups.
     """
+    from src.column_roles import detect_column_groups
     from src.dataset_io import (
         _first_ragged_line,
         _resolve_delimiter,
-        detect_groups,
         detect_roles,
         resolve_row_id_col,
     )
@@ -559,7 +541,7 @@ def report(out):
         df = pd.read_csv(path, sep=delimiter, index_col=False, low_memory=False)
         roles = detect_roles(df)
         numeric = [col for col, role in roles.items() if role == "numerical"]
-        groups = detect_groups(numeric)
+        groups = detect_column_groups(numeric)
         by_role = {}
         for col, role in roles.items():
             by_role.setdefault(role, []).append(col)

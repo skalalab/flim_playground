@@ -1,13 +1,7 @@
-"""Creating, renaming and deleting analysis profiles without the old config panel.
-
-Under the data-driven design a profile is born from a file (`Save as`) rather than
-from a name typed into an empty form, and "start over" is delete. These are the four
-operations the chooser's rows are a thin wrapper around -- the ✏️ and 🗑️ beside each
-profile, on the one screen that lists them.
-"""
+"""Saving, renaming, deleting, and applying analysis profiles."""
 import pytest
 
-from src.column_roles import ROLE_CATEGORICAL, ROLE_NUMERICAL, ROLE_ROW_ID
+from src.column_roles import ROLE_CATEGORICAL, ROLE_IGNORE, ROLE_NUMERICAL, ROLE_ROW_ID
 
 
 @pytest.fixture
@@ -28,7 +22,7 @@ def test_saving_a_working_copy_creates_a_profile_that_knows_exactly_those_column
 
 
 def test_saving_a_working_copy_makes_that_profile_current(acw):
-    """_save_profile_config already sets current_profile, which is what 'creates' means."""
+    """Saving a profile makes it current."""
     acw.save_working_copy("pdl1", ROLES, {})
     assert acw._get_current_profile() == "pdl1"
 
@@ -52,12 +46,7 @@ def test_list_profiles_reports_what_has_been_saved(acw):
 
 
 def test_a_profile_missing_the_newer_keys_is_topped_up_on_read(acw):
-    """The one thing `dataset_config_widget` did, folded into the migration.
-
-    Only a profile written before those keys existed can lack them -- every Save goes
-    through `apply_column_roles`, which writes both. The top-up is a read-time shape
-    guarantee, so it must not write: the file on disk keeps whatever it held until a
-    Save replaces the profile whole.
+    """Reading a legacy profile supplies missing defaults without rewriting the saved file.
     """
     import toml
 
@@ -76,11 +65,7 @@ def test_a_profile_missing_the_newer_keys_is_topped_up_on_read(acw):
 
 
 def test_the_topped_up_categorical_list_is_not_shared_between_profiles(acw):
-    """The top-up seeds a list per profile, never one shared default.
-
-    Shared, a caller that mutated the list it read would hand the next profile
-    someone else's categoricals -- and the accessors hand this list straight out.
-    """
+    """Each migrated profile receives its own categorical list."""
     import toml
 
     acw._ANALYSIS_CONFIG_PATH.write_text(toml.dumps({
@@ -160,14 +145,7 @@ def test_the_profile_cap_is_enforced_by_the_saver(acw):
 
 
 def test_the_at_the_cap_message_names_a_section_that_is_on_screen(acw):
-    """It used to send the user to a 🗑️ "in the list above" -- the chooser's rows.
-
-    That list holds only profiles sharing a column with the file, so for a file sharing
-    none it is empty, and that is exactly the file most likely to be the one hitting the
-    cap: a brand new shape with nowhere to go. The message names the manage section
-    instead, which renders on every opening of the gate, below the button this error
-    appears beside. `MANAGE_LABEL` is shared with the expander that draws it, so a rename
-    of the section cannot leave the sentence pointing at nothing.
+    """The cap error names the always-visible management section and explains overwrite.
     """
     for i in range(acw.MAX_PROFILES):
         acw.save_working_copy(f"p{i}", ROLES, {})
@@ -197,11 +175,8 @@ def test_profile_roles_and_groups_reads_a_named_profile_not_the_current_one(acw)
 
 
 def test_an_empty_group_survives_the_round_trip_it_was_saved_for(acw):
-    """The mapping cannot express it, so the names have to come off the stored keys.
-
-    Read back off `column_groups`' values instead and the group is saved and then lost
-    on the next upload of the same file -- which is apply_column_groups' `group_names`
-    argument doing nothing at all.
+    """Empty groups survive through stored group names, which the column mapping cannot
+    hold.
     """
     acw.save_working_copy("pdl1", ROLES, {"Area": "morphology"},
                           group_names=["morphology", "lifetime"])
@@ -217,6 +192,33 @@ def test_no_profile_may_be_named_the_choosers_own_auto_detect_row(acw):
     acw.save_working_copy("pdl1", ROLES, {})
     assert acw.rename_profile("pdl1", acw.AUTO_DETECT)
     assert acw.list_profiles() == ["pdl1"]
+
+
+def test_a_name_the_config_file_cannot_store_is_refused(acw):
+    """Reject profile names that the TOML serializer cannot read back unchanged."""
+    for name in ("run\\2026", 'PD-L1 "high"', "plate\t2"):
+        assert acw.save_working_copy(name, ROLES, {}), name
+    assert acw.list_profiles() == []
+
+    acw.save_working_copy("pdl1", ROLES, {})
+    assert acw.rename_profile("pdl1", "run\\2026")
+    assert acw.list_profiles() == ["pdl1"]
+
+
+def test_the_refusal_names_the_character_that_caused_it(acw):
+    """Name the invalid character, including invisible tabs."""
+    assert "a backslash" in acw.save_working_copy("run\\2026", ROLES, {})
+    assert "a tab" in acw.save_working_copy("plate\t2", ROLES, {})
+    both = acw.save_working_copy('a\\b"c', ROLES, {})
+    assert "a backslash or a double quote" in both
+
+
+def test_the_names_people_actually_type_still_save(acw):
+    """Supported punctuation and Unicode names survive a save-and-read round trip."""
+    for name in ("run 2.0", "PD-L1 (high)", "anti-PD1", "Wenxuan\'s plate", "ünïcode"):
+        assert acw.save_working_copy(name, ROLES, {}) == "", name
+        # Read the profile using the exact name that saved it.
+        assert acw.profile_known_columns(acw._get_profile_config(name)) == set(ROLES), name
 
 
 def test_working_copy_arguments_carry_the_identifier():
@@ -250,8 +252,51 @@ def test_the_clustering_columns_the_plots_invent_stay_categorical():
     assert {"GMM_group", "2D_GMM_group", "k_means_cluster"} <= set(args["categorical_cols"])
 
 
+@pytest.mark.parametrize("role, is_categorical", [
+    (ROLE_NUMERICAL, False),
+    (ROLE_IGNORE, False),
+    (ROLE_CATEGORICAL, True),
+])
+def test_a_file_column_named_after_a_clustering_one_keeps_the_role_it_was_given(
+        role, is_categorical):
+    """A file column keeps its reviewed role when its name matches a generated cluster
+    column.
+    """
+    from src.widgets.analysis_config_widgets import working_copy_arguments
+
+    args = working_copy_arguments(dict(ROLES, k_means_cluster=role), {})
+    assert ("k_means_cluster" in args["categorical_cols"]) is is_categorical
+    # Names absent from the file remain available for generated clustering labels.
+    assert {"GMM_group", "2D_GMM_group"} <= set(args["categorical_cols"])
+
+
+def test_a_clustering_name_the_file_owns_reaches_the_plots_as_a_measurement():
+    """A numerical file column with a clustering name reaches the plots with numeric
+    values.
+    """
+    import pandas as pd
+
+    from src.dataset_io import interpret_table
+    from src.widgets.analysis_config_widgets import working_copy_arguments
+
+    df = pd.DataFrame({"cell_id": [1, 2, 3, 4],
+                       "treatment": ["ctrl", "ctrl", "drug", "drug"],
+                       "k_means_cluster": [1.5, 2.5, 3.5, 4.5]})
+    roles = {"cell_id": ROLE_ROW_ID, "treatment": ROLE_CATEGORICAL,
+             "k_means_cluster": ROLE_NUMERICAL}
+    args = working_copy_arguments(roles, {})
+
+    out, groups, upload_complete, _ = interpret_table(
+        df, args["categorical_cols"], args["unique_row_id_col"], None,
+        ignored_cols=args["ignored_cols"], feature_groups=args["feature_groups"],
+        use_data_extraction=False)
+
+    assert upload_complete
+    assert "k_means_cluster" in {col for cols in groups.values() for col in cols}
+    assert list(out["k_means_cluster"]) == [1.5, 2.5, 3.5, 4.5]
+
+
 def test_an_ignored_column_reaches_get_features_by_name():
-    from src.column_roles import ROLE_IGNORE
     from src.widgets.analysis_config_widgets import working_copy_arguments
 
     args = working_copy_arguments(dict(ROLES, notes=ROLE_IGNORE), {})

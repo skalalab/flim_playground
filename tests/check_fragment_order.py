@@ -1,11 +1,7 @@
-"""Guard the fragment-escalation ordering.
+"""Check that the plot fragment reruns only after its widgets register.
 
-st.rerun() discards the state of every widget in the fragment that had not yet been
-rendered during the interrupted run — including untouched ones, which fall back to their
-module defaults. So the single escalation must fire only after every widget in the
-fragment has re-registered, and nothing called from inside the fragment may st.rerun()
-on its own. AppTest cannot drive this page (no file_uploader accessor), so the invariant
-is checked on the source.
+An earlier rerun lets Streamlit clean up unrendered widget state. These source
+checks complement the page's AppTest coverage by pinning the escalation order.
 """
 import ast
 import sys

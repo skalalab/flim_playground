@@ -1,22 +1,6 @@
-"""The visual-encoding row: layout, evaluation order, and the "Group by" relabel.
-
-Three things the widget has to get right, none of which any other check covers:
-
-  1. Equal column widths. The channel switch is absorbed inside the third column
-     rather than given a column of its own, so this row must lay out identically to
-     Scatter/Phasor/UMAP, which have no switch at all.
-  2. The third slot is EVALUATED before the Color by multiselect even though it
-     DISPLAYS to its right; the switch inside it is evaluated before that
-     multiselect, and displays above the picker rather than beside it, on the line the
-     drawn label shares. It relies on Streamlit containers being fillable out of order.
-  3. The multiselect relabels to "Group by" in the SAME run the colour channel is
-     taken -- not a run later.
-
-Streamlit is stubbed rather than driven: AppTest cannot reach the analysis page (no
-file_uploader accessor), and bare mode returns widget defaults and ignores
-session_state, which is exactly the state this needs to control.
-
-    python tests/check_encoding_row.py
+"""Visual-encoding layout, evaluation order, labels, and state transitions. A recording
+Streamlit stub checks container placement and keyed selections. Run with: python
+tests/check_encoding_row.py.
 """
 import pathlib
 import re
@@ -54,10 +38,9 @@ class Slot:
 
 
 class FakeStreamlit:
-    def __init__(self, state, answers):
+    def __init__(self, state):
         self.n_cols = None
         self.session_state = state
-        self.answers = answers      # {label: value the widget should return}
         self.events = []            # (kind, label, slot) in EVALUATION order
         self.slots = []             # slot names in CREATION (display) order
         self.slot_kw = {}           # slot name -> the kwargs it was created with
@@ -69,19 +52,14 @@ class FakeStreamlit:
         self.stack = []
 
     def _slot(self, name, **kw):
-        # Parentage and kwargs are recorded because the switch now shares the picker's
-        # top line: "beside, not under" is a claim about which container each was
-        # written into and how that container lays out, which slot order alone cannot
-        # distinguish from the old stacked layout.
+        # Placement checks need container parentage and layout kwargs.
         self.slots.append(name)
         self.slot_kw[name] = kw
         self.slot_parent[name] = self.stack[-1] if self.stack else None
         return Slot(self, name)
 
     def columns(self, spec, **kw):
-        # st.columns takes either a count or a per-column weight list. The widget passes
-        # a count now that every column is equal; accept both so the stub does not quietly
-        # constrain which one it may use.
+        # Streamlit accepts either a count or per-column weights.
         self.n_cols = spec if isinstance(spec, int) else len(spec)
         return [self._slot(f"col{i}") for i in range(self.n_cols)]
 
@@ -89,45 +67,34 @@ class FakeStreamlit:
         return self._slot(f"container{len(self.slots)}", **kw)
 
     def markdown(self, body, **kw):
-        """The widget draws the third picker's label itself so the switch can sit right
-        after it. Tags are stripped because what is checked is the text a user reads,
-        not the styling carrying it."""
-        # A <style> block renders nothing, so its CSS is not text the user reads -- drop
-        # the block whole before stripping tags, or the rule that sizes the switch's label
-        # arrives as part of the label.
+        """Record visible text, excluding HTML tags and CSS."""
         text = re.sub(r"<style\b[^>]*>.*?</style>", "", body, flags=re.S | re.I)
         text = re.sub(r"<[^>]+>", "", text).strip()
         self.events.append(("markdown", text, self.stack[-1] if self.stack else None))
         self.visible.append(text)
 
     def _widget(self, kind, label, key, default, label_visibility="visible"):
-        """Streamlit's keyed-widget contract: for a widget with ``key``, session state
-        already holds what the widget will return before it renders, so a run can never
-        see the two disagree. Modelling that is the point -- letting ``answers`` override
-        a keyed return independently would test a state the real thing cannot reach.
-        ``answers`` therefore only serves the unkeyed pickers (Separate by, Shape by)."""
+        """Keyed widgets read and update session state; unkeyed widgets return their
+        default.
+        """
         where = self.stack[-1] if self.stack else None
         self.events.append((kind, label, where))
         if key is not None:
             self.rendered_keys.add(key)
-        # A collapsed label is still handed to the widget -- screen readers read it, and
-        # the multiselect checks itself against it -- but the user cannot see it, so it
-        # does not count towards "exactly one control named Color by".
+        # Collapsed labels do not count toward visible label uniqueness.
         if label_visibility != "collapsed":
             self.visible.append(label)
         if key is not None:
             value = self.session_state.get(key, default)
             self.session_state[key] = value
             return value
-        return self.answers.get(label, default)
+        return default
 
     def selectbox(self, label, options, index=None, key=None, disabled=False,
                   label_visibility="visible", **kw):
         self.widget_kw[label] = kw
         self.widget_options[label] = list(options)
-        # `disabled` is accepted and ignored on purpose: a disabled selectbox still
-        # returns what it last held, which is why the widget forces subcolor_by to None
-        # separately rather than relying on the flag.
+        # Disabled widgets still return their retained selection.
         value = self._widget("selectbox", label, key, None, label_visibility)
         return value if value in options else None
 
@@ -144,19 +111,12 @@ class FakeStreamlit:
                                  kw.get("label_visibility", "visible")))
 
     def purge_unrendered(self, keys):
-        """Streamlit drops the state of a keyed widget that did not render this run.
-
-        By KEY, which is what Streamlit purges by and the only identity that survives the
-        row's aliasing: the shape/subcolor picker answers to ONE key through two labels and
-        is purged only if neither rendered -- the property that shared key buys -- so a
-        label-based model could not express "not purged" for it at all.
+        """Simulate missing widget state by key, including the picker shared by shape and
+        subcolor.
         """
         for key in keys:
             if key not in self.rendered_keys:
-                # Set to None rather than delete: observed against a live Streamlit,
-                # and it is the stricter of the two -- a restore written as
-                # .get(key, fallback) passes when the key is deleted and fails when it
-                # is None, so the weaker stub would hide that.
+                # None also catches restores that incorrectly rely on dict.get's fallback.
                 self.session_state[key] = None
 
 
@@ -169,8 +129,8 @@ DF = pd.DataFrame({
 CATS = ["experiment", "patient_id", "treatment", "dish"]
 
 
-def run(state=None, answers=None, separate=True, match=True, collapse=False):
-    fake = FakeStreamlit(dict(state or {}), dict(answers or {}))
+def run(state=None, separate=True, match=True, collapse=False):
+    fake = FakeStreamlit(dict(state or {}))
     real = vw.st
     vw.st = fake
     try:
@@ -221,11 +181,7 @@ check("switch evaluated before the picker it labels",
       fake.events)
 label_slot = next(w for k, _lab, w in fake.events if k == "markdown")
 switch_slot = next(w for k, _lab, w in fake.events if k == "toggle")
-# The switch sits immediately after the picker's LABEL, which is a claim about which
-# container each was written into -- not about slot order, which cannot tell this apart
-# from the old stacked layout. The label is drawn by hand into a content-width child of a
-# horizontal row and the switch straight into that same row, also content-width, so the
-# two sit adjacent and left-aligned instead of the switch being pushed to the far edge.
+# The label and switch share a content-width horizontal row.
 check("switch shares one row with the hand-drawn label",
       fake.slot_parent.get(label_slot) == switch_slot,
       f"label in {label_slot} (parent {fake.slot_parent.get(label_slot)}), "
@@ -242,9 +198,7 @@ check("the picker itself is not in that row, so it keeps the full column width",
       fake.slot_parent.get(next(w for k, lab, w in fake.events
                                 if k == "selectbox"
                                 and lab == vw.PICKER_LABELS[True])) != switch_slot)
-# The phrase is STATIC: both channels stay on screen and the knob says which is live.
-# So the halves must not drift with the switch -- a label that changed would be the old
-# relabelling design creeping back, and would leave the phrase reading "color by color by".
+# The phrase stays fixed while the switch selects the active channel.
 drawn = lambda f: next(lab for k, lab, _w in f.events if k == "markdown")
 fake_off, _ = run(state={vw.AS_COLOUR_KEY: False, vw.COLOR_BY_KEY: ["experiment"]})
 for state_name, f in (("switch on", fake), ("switch off", fake_off)):
@@ -255,11 +209,9 @@ for state_name, f in (("switch on", fake), ("switch off", fake_off)):
           f"{[lab for k, lab, _w in f.events if k == 'toggle']}")
 check("the phrase does not change with the switch", drawn(fake) == drawn(fake_off),
       f"{drawn(fake)!r} vs {drawn(fake_off)!r}")
-# Display position, not evaluation order: the switch's slot is last on screen but is
-# evaluated first, and Opacity by is now the one evaluated last.
+# Container position determines display order independently of evaluation order.
 def column_of(f, kind, label=None):
-    """The COLUMN a widget ended up in, walking out through any nested containers --
-    the switch's picker sits inside two of them."""
+    """Find a widget's display column through nested containers."""
     slot = next(w for k, lab, w in f.events
                 if k == kind and (label is None or lab == label))
     while slot is not None and not slot.startswith("col"):
@@ -272,11 +224,7 @@ check("the switch's picker is in the last column, Opacity by in the one before",
       f"opacity {column_of(fake, 'selectbox', 'Opacity by')}")
 
 print("3. exactly one control offers the colour channel")
-# The invariant is about the CLAIM, not the wording. It used to be checkable as "exactly
-# one control is named Color by", but the third slot no longer spells that on screen --
-# it shows a static phrase and lets the knob pick a half. So count claims: the first
-# multiselect claims colour by being named "Color by", and the switch claims it by being
-# on. Exactly one may claim it, or the user cannot tell which control drives the colours.
+# Either the Color by multiselect or the enabled switch controls colour.
 for name, state in {
     "switch off": {vw.AS_COLOUR_KEY: False, vw.COLOR_BY_KEY: ["experiment"]},
     "switch on, nothing picked": {vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: ["experiment"]},
@@ -291,10 +239,7 @@ for name, state in {
           multiselect_claims != switch_claims,
           f"multiselect={'Color by' if multiselect_claims else label_of(fake, 'multiselect')}, "
           f"switch={'on' if switch_claims else 'off'} -- visible {fake.visible}")
-    # What stops the picker colliding with the multiselect is that its label is
-    # COLLAPSED -- `visible` excludes collapsed labels -- with the rename to "Subcolor by"
-    # as belt and braces. So guard the general property rather than that one pair: no two
-    # controls on screen may carry the same name, whichever names they end up with.
+    # Ignore collapsed labels when checking for duplicate visible control names.
     dupes = {lab for lab in fake.visible if fake.visible.count(lab) > 1}
     check(f"{name}: no two visible controls share a name", not dupes,
           f"duplicated {sorted(dupes)} -- {fake.visible}")
@@ -325,20 +270,13 @@ fake, (_c, _o, _s, _sep, subcolor_by, _collapse) = run(
 check("a match column claimed by Group by is pruned away", subcolor_by is None, subcolor_by)
 
 print("5. grouping columns are struck from EVERY decoration")
-# A decoration marks a point inside the slot its grouping put it in, so a column already
-# spent on Separate by or Color by would give every point in a slot the same mark. One
-# rule for all three channels, where it used to apply to subcolor alone.
-# The `answers` mechanism exists for the unkeyed pickers but nothing used it, so
-# separate_by was None in every case above and this exclusion -- the one cross-control
-# rule in the row -- went unchecked.
+# Decorations exclude columns used by either grouping control.
 fake, (color_by, _o, _s, sep, subcolor_by, _collapse) = run(
-    answers={"Separate by": "experiment"},
-    state={vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: ["treatment"],
+    state={"analysis_control_separate_by": "experiment",
+           vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: ["treatment"],
            vw.PICKER_COL_KEY: "patient_id"})
 check("Separate by is returned", sep == "experiment", sep)
-# On the OPTIONS, not on the returned value: the value is whatever was stored, so it can
-# exclude the Separate by column for reasons that have nothing to do with this rule. Only
-# the offered list shows the rule being applied.
+# Inspect offered options; an unselected return value cannot prove exclusion.
 check("a column used by Separate by is not offered as a colour group",
       "experiment" not in fake.widget_options.get("Group by", []),
       fake.widget_options.get("Group by"))
@@ -349,13 +287,10 @@ check("nor is a column Color by is grouping on",
       "treatment" not in fake.widget_options.get(vw.PICKER_LABELS[True], []),
       fake.widget_options.get(vw.PICKER_LABELS[True]))
 
-# The Shape role obeys it too. It used to be the exception -- it was offered every
-# category, on the reasoning that only the colour side competes with Separate by -- but a
-# shape that never varies inside an x slot says nothing either, and having two decorations
-# answer to different rules was the inconsistency this closed.
+# Shape follows the same exclusions as subcolor.
 fake, (_c, _o, shape_by, sep, _m, _collapse) = run(
-    answers={"Separate by": "treatment"},
-    state={vw.AS_COLOUR_KEY: False, vw.COLOR_BY_KEY: ["experiment"],
+    state={"analysis_control_separate_by": "treatment",
+           vw.AS_COLOUR_KEY: False, vw.COLOR_BY_KEY: ["experiment"],
            vw.PICKER_COL_KEY: "treatment"})
 check("the Shape role obeys the same rule",
       "treatment" not in fake.widget_options.get(vw.PICKER_LABELS[False], []),
@@ -366,18 +301,13 @@ check("nor is the colour column offered to it",
       fake.widget_options.get(vw.PICKER_LABELS[False]))
 
 # Opacity, the third: its own column on every point-based method, and the same list.
-fake, _ = run(answers={"Separate by": "treatment"},
-              state={vw.COLOR_BY_KEY: ["experiment"]})
+fake, _ = run(state={"analysis_control_separate_by": "treatment",
+                     vw.COLOR_BY_KEY: ["experiment"]})
 check("Opacity by excludes both as well",
       not {"treatment", "experiment"} & set(fake.widget_options.get("Opacity by", [])),
       fake.widget_options.get("Opacity by"))
 
-# Narrowing that list is what forces Opacity by to be KEYED. An unkeyed widget is
-# identified by its arguments, options included, so a list that moves for a reason having
-# nothing to do with the held column used to remount this picker and blank it -- measured
-# on the live page, with the dropped column still sitting in the list. The key buys the
-# survival; the prune is what it costs, since Streamlit raises on a stored value a keyed
-# widget no longer offers.
+# A changing option list preserves valid keyed selections and clears invalid ones.
 fake, (_c, opacity_by, _s, _sep, _m, _collapse) = run(
     state={vw.COLOR_BY_KEY: ["experiment"], vw.OPACITY_BY_KEY: "treatment"})
 check("a pick survives a change to Color by that does not touch it",
@@ -391,10 +321,7 @@ check("and clears it from session state, so the keyed widget cannot raise on it"
       fake.session_state.get(vw.OPACITY_BY_KEY))
 
 print("6. one selection, shared by both roles")
-# The switch changes which channel the column drives, not which column. So a flip must
-# leave the selection exactly where it was -- and must NOT resurrect whatever that role
-# held on some earlier flip: pick A as shape, flip to subcolor, pick B, flip back, and A
-# must not come back instead of B.
+# Both switch positions use the latest selected column.
 state = {vw.AS_COLOUR_KEY: False, vw.COLOR_BY_KEY: ["experiment"]}
 fake, _ = run(state=state)
 state = dict(fake.session_state)
@@ -412,8 +339,7 @@ fake, (_c, _o, shape_by, _sep, subcolor_by, _collapse) = run(state=state)
 check("and carries back again", shape_by == "treatment", shape_by)
 check("without also driving subcolor", subcolor_by is None, subcolor_by)
 
-# The regression the shared key exists to kill: change the column in one role, and the
-# other role must see the NEW one, not the one it held before.
+# A new subcolor selection must also become the shape selection.
 state = dict(fake.session_state); state[vw.AS_COLOUR_KEY] = True
 state[vw.PICKER_COL_KEY] = "patient_id"         # changed while on subcolor
 fake, (_c, _o, _s, _sep, subcolor_by, _collapse) = run(state=state)
@@ -423,8 +349,7 @@ fake, (_c, _o, shape_by, _sep, _m, _collapse) = run(state=state)
 check("flipping back shows the NEW column, not the old one",
       shape_by == "patient_id", shape_by)
 
-# Two cases where a flip legitimately does clear it, both because the value is not on
-# offer and an explicit key makes that a raise rather than a silent reset.
+# Clear selections that no longer appear in the options.
 state = {vw.AS_COLOUR_KEY: True, vw.COLOR_BY_KEY: ["experiment"],
          vw.PICKER_COL_KEY: "experiment"}
 fake, (_c, _o, _s, _sep, subcolor_by, _collapse) = run(state=state)
@@ -435,18 +360,13 @@ state = {vw.AS_COLOUR_KEY: False, vw.COLOR_BY_KEY: ["experiment"],
          vw.PICKER_COL_KEY: "not_a_column"}
 fake, (_c, _o, shape_by, _sep, _m, _collapse) = run(state=state)
 check("a column that is no longer offered is dropped", shape_by is None, shape_by)
-# On the SESSION STATE, not just the return: the stub filters an unoffered value to None
-# (see selectbox above) exactly where real Streamlit raises, so the returned value alone
-# passes whether or not the widget pruned. The write-back is the observable effect.
+# Check state too: the stub's filtered return alone cannot prove the value was cleared.
 check("and cleared from session state, so the keyed widget cannot raise on it",
       fake.session_state.get(vw.PICKER_COL_KEY) is None,
       fake.session_state.get(vw.PICKER_COL_KEY))
 
 print("7. Collapse by is LAST in the grouping chain")
-# Separate by narrows Color by; the two of them narrow Collapse by. The direction is the
-# point: collapsing is DERIVED from the x layout, so changing the layout may retire a
-# collapse column, but changing the collapse must leave the layout alone -- reading it
-# first inverted that, and picking a replicate silently reset the grouping.
+# Grouping constrains Collapse by; collapsing must leave grouping options intact.
 state = {vw.COLLAPSE_BY_KEY: "dish", vw.AS_COLOUR_KEY: False,
          vw.COLOR_BY_KEY: ["experiment"]}
 fake, (_c, _o, _s, _sep, _sub, collapse_by) = run(state=state, collapse=True)
@@ -462,9 +382,7 @@ check("evaluated AFTER the colour multiselect",
       order_of(fake, "multiselect") < order_of(fake, "selectbox", "Collapse by"),
       fake.events)
 
-# The collapse column is NOT struck from the decorations, in any role: a decoration is
-# well defined on a collapsed dot whenever its column is constant within the collapse
-# group, and the collapse column trivially is. Subcolor by = Collapse by is the SuperPlot.
+# The collapse column remains available to decorate each replicate's point.
 for as_colour, label in ((False, vw.PICKER_LABELS[False]), (True, vw.PICKER_LABELS[True])):
     state = {vw.COLLAPSE_BY_KEY: "dish", vw.AS_COLOUR_KEY: as_colour,
              vw.COLOR_BY_KEY: ["experiment"]}

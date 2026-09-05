@@ -1,19 +1,5 @@
-"""Uploads that are not comma-separated text: spreadsheets and delimited text.
-
-Two things are under test, and they are separate concerns:
-
-  1. `_read_table_cached` reaches the same frame from every supported format —
-     the parse parameters differ per branch and are not interchangeable, so each
-     branch is checked against the CSV branch's own result rather than against a
-     hand-written expectation.
-  2. `_diagnose_table` names the rule a file broke. The supported shape is narrow
-     on purpose (first sheet, header on row 1, one row per data point) and every breach
-     used to land in the same bare "No feature found in the uploaded file", which
-     names neither the rule nor the fix. These assert on the *substance* of the
-     message, since an unhelpful message is exactly the bug being fixed.
-
-Writing .xlsx/.ods needs a writer engine; `calamine` only reads. openpyxl and
-odfpy are dev-only dependencies for that reason and are never shipped or bundled.
+"""Supported table formats produce consistent frames and explain rejected shapes.
+Spreadsheet fixtures use openpyxl and odfpy writer engines.
 """
 import html
 import io
@@ -112,6 +98,21 @@ def test_spreadsheet_header_cells_are_stringified():
     df, _meta = _read(_upload(pd.DataFrame({1: [1, 2], "cell_id": ["a", "b"]}), ".xlsx"))
     assert [type(col) for col in df.columns] == [str, str]
     assert list(df.columns) == ["1", "cell_id"]
+
+
+def test_excel_ids_that_collide_as_strings_are_rejected_before_analysis():
+    frame = pd.DataFrame({"cell_id": [1, "1", "a"], "Area": [0.4, 0.5, 0.6]})
+    df, meta = _read(_upload(frame, ".xlsx"))
+    assert _diagnose_table(df, meta, "table.xlsx")[1] == ""
+    assert df.cell_id.tolist() == [1, "1", "a"]
+
+    reason = dataset_io.review_blocking_reason(
+        df, {"cell_id": "row_id", "Area": "numerical"})
+    fixed, _warning, error = check_and_fix_df(df, [], "cell_id", None)
+
+    assert "appears 2 times" in reason, reason
+    assert "appears 2 times" in error, error
+    assert fixed is None
 
 
 def test_only_the_first_sheet_is_read_and_the_rest_are_reported():
@@ -247,17 +248,62 @@ def test_one_surviving_column_among_empty_ones_is_enough():
     assert error == ""
 
 
+def test_two_columns_of_one_name_are_rejected_rather_than_left_to_crash():
+    """Reject numeric and text headers that collide after stringification, before Series
+    lookups see duplicate columns.
+    """
+    upload = _upload(pd.DataFrame({"cell_id": ["a", "b"], 1: [0.4, 0.5], "1": [9.1, 9.2]}),
+                     ".xlsx")
+    df, meta = _read(upload)
+    assert list(df.columns) == ["cell_id", "1", "1"]
+    assert meta["duplicate_names"] == {"1": [2, 3]}
+
+    _warning, error = _diagnose_table(df, meta, "plate.xlsx")
+    assert "columns 2 and 3" in error and "'1'" in error and "Rename" in error
+    # The advice that makes it findable: on screen the two header cells are identical.
+    assert "cell formatting" in error
+
+
+def test_the_positions_named_are_the_files_own_columns_not_the_surviving_ones():
+    """Counted before the blank columns go, so column 4 of the message is column D."""
+    blank_then_pair = pd.DataFrame([["a", None, 0.4, 9.1]], columns=["cell_id", "", 1, "1"])
+    df, meta = _read(_upload(blank_then_pair, ".xlsx"))
+    assert list(df.columns) == ["cell_id", "1", "1"]     # the blank one was dropped
+    assert meta["duplicate_names"] == {"1": [3, 4]}
+    _warning, error = _diagnose_table(df, meta, "plate.xlsx")
+    assert "columns 3 and 4" in error
+
+
+def test_a_header_repeated_in_the_file_is_renamed_by_pandas_and_left_alone():
+    """Repeated source headers remain usable after pandas gives them distinct names."""
+    text = FakeUpload(b"cell_id,Area,Area\na,1.0,2.0\n", "plate.csv")
+    df, meta = _read(text)
+    assert list(df.columns) == ["cell_id", "Area", "Area.1"]
+    assert meta["duplicate_names"] == {}
+    assert _diagnose_table(df, meta, "plate.csv") == ("", "")
+
+    book = _upload(pd.DataFrame([["a", 1.0, 2.0]], columns=["cell_id", "Area", "Area"]),
+                   ".xlsx")
+    df, meta = _read(book)
+    assert list(df.columns) == ["cell_id", "Area", "Area.1"]
+    assert meta["duplicate_names"] == {}
+
+
+def test_the_header_cell_advice_rides_only_on_the_files_that_can_cause_it():
+    """A text file cannot get here -- read_csv de-duplicates -- so it is not lectured."""
+    df = pd.DataFrame([[1.0, 2.0]], columns=["x", "x"])
+    _warning, error = _diagnose_table(df, {"duplicate_names": {"x": [1, 2]}}, "plate.csv")
+    assert "both named 'x'" in error
+    assert "cell formatting" not in error
+
+
 # --------------------------------------------------------------------------- #
 # 3. Delimiter detection
 # --------------------------------------------------------------------------- #
 
 @pytest.mark.parametrize("delimiter", ["\t", ";", "|", ","])
 def test_delimiter_survives_feature_names_containing_spaces_and_colons(delimiter):
-    """csv.Sniffer picks the space out of "Lifetime fit_ch1: T1" and shreds the row.
-
-    That is why detection tests a fixed candidate set instead of deferring to
-    pandas' sep=None. These are the app's own column names, not a contrived case.
-    """
+    """Spaces and colons inside feature names must not become delimiters."""
     expected = _frame()
     raw = expected.to_csv(index=False, sep=delimiter).encode()
     assert _resolve_delimiter(FakeUpload(raw, "table.txt"))[0] == delimiter
@@ -305,11 +351,8 @@ def test_a_separator_inside_quotes_is_content_not_structure():
 
 
 def test_european_decimals_are_explained_rather_than_rejected():
-    """`1,5;2,3` divides cleanly on ';' — and every measurement is then text.
-
-    The reader has no complaint: this is a well-formed rectangular table with
-    headers. It is layer 2 that finds no features, and the hint rides along on
-    that error to say why.
+    """Semicolon-separated comma decimals parse as text; the no-features error explains
+    why.
     """
     raw = b"cell_id;a;b\nc1;1,5;2,3\nc2;2,5;3,3\n"
     delimiter, viable, _pr, _un = _resolve_delimiter(FakeUpload(raw, "t.csv"))
@@ -323,12 +366,7 @@ def test_european_decimals_are_explained_rather_than_rejected():
 
 
 def test_a_good_table_is_not_lost_to_one_label_column():
-    """"3,4" in a `position` column is a coordinate label, not a decimal.
-
-    Layer 1 used to reject the whole file over it, throwing away three perfectly
-    good float columns. Nothing rejects it now, and the hint does not fire on a
-    frame whose measurements parsed as numbers.
-    """
+    """A comma-separated coordinate label must not reject valid numeric measurements."""
     raw = (b"cell_id;Lifetime fit_ch1: T1;Lifetime fit_ch1: T2;position\n"
            b"c1;1.5;2.5;3,4\nc2;1.6;2.6;5,7\n")
     df, meta = _read(FakeUpload(raw, "plate.csv"))
@@ -342,11 +380,7 @@ def test_a_good_table_is_not_lost_to_one_label_column():
 
 
 def test_a_spreadsheet_gets_the_decimal_advice_too():
-    """The raw-text version of this check never ran on the spreadsheet branch.
-
-    A European CSV re-opened in Excel and saved as .xlsx keeps its numbers as
-    text, so it used to reach "No feature found" with no explanation at all.
-    """
+    """The comma-decimal hint also applies to text numbers stored in spreadsheets."""
     frame = pd.DataFrame({"cell_id": ["c1", "c2"], "a": ["1,5", "1,7"]})
     df, _meta = _read(_upload(frame, ".xlsx"))
     hint = _comma_decimal_hint(df)
@@ -368,11 +402,8 @@ def test_ordinary_full_stop_decimals_pass_under_any_separator():
 
 
 def test_a_thousands_separator_still_matches_but_only_costs_advice():
-    """"1,234" is ambiguous in isolation and matches the pattern.
-
-    That used to reject the file. Now it only appends a sentence to an error the
-    file was getting anyway — such a cell is text to pandas either way and would
-    never have become a feature — so the false positive costs nothing.
+    """Ambiguous comma-separated text adds advice only when the table already has no
+    features.
     """
     raw = b"a;b\n1,234;5\n2,345;6\n"
     df, _meta = _read(FakeUpload(raw, "t.csv"))
@@ -434,10 +465,8 @@ def test_every_advertised_suffix_reaches_a_read_branch():
 
 
 def test_untested_spreadsheet_formats_are_readable_but_not_advertised():
-    """.xlsb/.xls have no real fixture — only xlsx bytes renamed, which proves
-    nothing about the BIFF12 and OLE2 readers. The reader still routes them, so a
-    file arriving by another route is read correctly; the uploader does not offer
-    them. Add a genuine fixture before putting either back in SUPPORTED_SUFFIXES.
+    """The reader routes .xlsb and .xls, but they remain unadvertised until genuine
+    fixtures cover them.
     """
     for suffix in (".xlsb", ".xls"):
         assert suffix in SPREADSHEET_SUFFIXES
@@ -463,10 +492,8 @@ def test_every_row_terminator_parses_with_every_separator(eol, eol_name, sep):
 
 
 def test_a_bare_cr_is_normalised_before_the_rows_are_split():
-    """csv.reader does not treat a bare \\r as a terminator, so _sample_text
-    normalises it — otherwise the whole file would be one row and nothing would
-    split rectangularly. Here the data deliberately holds far more semicolons
-    than the header holds tabs, so a whole-file view would reach the wrong answer.
+    """Normalize bare carriage returns before sampling rows so delimiters are counted per
+    row.
     """
     header = "cell_id\timage_name\tvalue"
     rows = ["a\tf1\t" + ";".join("0" for _ in range(50)) for _ in range(20)]
@@ -531,11 +558,7 @@ def test_the_mismatch_probe_rewinds_what_it_peeked_at():
 # --------------------------------------------------------------------------- #
 
 def test_a_date_column_never_becomes_a_nanosecond_feature():
-    """Excel dates arrive as datetime64; pd.to_numeric would make them 1.7e18.
-
-    The same column in a CSV is text and stays out of the feature list, so
-    converting would also make a workbook disagree with its own CSV export.
-    """
+    """Spreadsheet dates must not turn into numeric nanosecond measurements."""
     df = _frame()
     df["acquired"] = pd.to_datetime(["2024-01-05", "2024-01-06", "2024-01-07"])
     out, _warning = coerce_majority_numeric_cols(df.copy(), {"cell_id", "image_name", "treatment"})
@@ -689,10 +712,7 @@ def test_load_table_itself_is_not_cached():
 # --------------------------------------------------------------------------- #
 
 def test_a_ragged_file_is_named_rather_than_read_as_one_column():
-    """One short row disqualifies every candidate; the comma fallback then makes
-    the whole header line into a single column name, and the user was told
-    "cell_id column is missing" about a file whose first column *is* cell_id.
-    """
+    """Reject inconsistent field counts with a row-format error."""
     raw = b"cell_id\ttrt\tv\nA_1\tdrug\t1\nA_2\tctrl\nA_3\tctrl\t3\n"
     df, meta = _read(FakeUpload(raw, "plate.tsv"))
     assert meta["viable_delimiters"] == () and meta["present_delimiters"] == ("\t",)
@@ -702,12 +722,7 @@ def test_a_ragged_file_is_named_rather_than_read_as_one_column():
 
 
 def test_a_blank_value_is_not_a_ragged_row():
-    """"a\t\tb" is three fields, one of them empty — it loads, as NaN.
-
-    The rejection message used to offer "a row with a missing value" as a cause,
-    which pointed at precisely the case that works. Only a missing or extra
-    *separator* makes a file ragged.
-    """
+    """An empty field preserves the column count and loads as NaN."""
     raw = b"cell_id\ta\tb\nc1\t1\t2\nc2\t\t4\n"
     df, meta = _read(FakeUpload(raw, "plate.tsv"))
     assert meta["viable_delimiters"] == ("\t",)
@@ -775,18 +790,12 @@ def test_a_usable_separator_is_never_overridden_by_the_unusable_check():
 
 
 # ---------------------------------------------------------------------------
-# 11. failures that used to escape as raw pandas jargon
+# 11. readable errors for encoding and row-format failures
 # ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize("offset", range(8))
 def test_a_valid_utf8_file_larger_than_the_sample_is_not_called_cp1252(offset):
-    """A multi-byte character straddling the sample boundary is not an encoding fault.
-
-    Dropping a fixed number of trailing bytes before decoding — the obvious way to
-    forgive the boundary — opens a new one that can itself fall inside a character.
-    That told the owner of an already-UTF-8 file to re-save it as UTF-8, advice
-    that cannot possibly work. It fired on 3 of every 8 byte offsets.
-    """
+    """A multibyte character crossing the sample boundary does not invalidate UTF-8."""
     raw = b"a" * (_SAMPLE_BYTES - 4 - offset) + "\U0001F600".encode() + b"b" * 200
     raw.decode("utf-8")  # the fixture really is valid UTF-8
     assert _name_content_mismatch(FakeUpload(raw, "big.csv"), "big.csv") == ""
@@ -805,10 +814,8 @@ def test_a_genuinely_mis_encoded_file_is_still_caught():
     (b"\xef\xbb\xbf", "a lone BOM"),
 ])
 def test_a_file_with_no_columns_is_named_rather_than_raising(raw, label):
-    """pandas raises EmptyDataError here; the 0-byte guard cannot see these.
-
-    A lone BOM is what Excel writes when an empty sheet is saved as "CSV UTF-8",
-    so this is a real user's real file, not a synthetic edge case.
+    """Whitespace and BOM-only files report missing content instead of raising
+    EmptyDataError.
     """
     assert _name_content_mismatch(FakeUpload(raw, "t.csv"), "t.csv") == ""
     df, meta = _read(FakeUpload(raw, "t.csv"))
@@ -838,10 +845,7 @@ def test_a_row_with_too_many_fields_is_not_blamed_on_quotes():
 
 
 def test_a_short_row_past_the_detection_sample_is_still_rejected():
-    """The sample chooses the separator; the whole file has to keep to it.
-
-    A short row at line 6002 used to load silently, NaN-padded by pandas, while
-    the identical defect at line 3 was a hard rejection.
+    """Validate field counts across the whole file after the sample selects a delimiter.
     """
     body = b"cell_id,a,b\n" + b"".join(b"c%d,1.5,2.5\n" % i for i in range(6000))
     assert len(body) > _SAMPLE_BYTES
@@ -859,12 +863,7 @@ def test_a_clean_file_larger_than_the_sample_still_loads():
 
 @pytest.mark.parametrize("name", ["a<b", "<LOD>", "<i>note</i>", "T1 <2ns", "R&D"])
 def test_a_column_name_cannot_truncate_its_own_warning(name):
-    """Messages carry column names into HTML rendered with unsafe_allow_html.
-
-    A column called "a<b" used to render as just "Warning: a" — the browser ate
-    the rest as a tag. Messages are plain text with "\n" breaks now, and _as_html
-    is the one place they become markup.
-    """
+    """Column names remain literal when a plain-text warning is rendered as HTML."""
     df = pd.DataFrame({"cell_id": ["c1", "c2"], name: [None, None], "a": [1.5, 1.6]})
     _fixed, warning, _error = check_and_fix_df(df, [], "cell_id", "image_name")
     assert "<" not in warning or name in warning       # built as plain text
@@ -883,11 +882,7 @@ def test_an_ordinary_table_records_no_parse_error():
 # ---------------------------------------------------------------------------
 
 def test_pandas_de_duplicates_headers_before_anything_can_warn_about_them():
-    """Locks in why check_and_fix_df has no duplicate-column branch.
-
-    Both readers rename the second occurrence, so df.columns.duplicated() is never
-    true for a file that came through one — in the app or in an exported script.
-    """
+    """Both readers rename repeated source headers before downstream validation."""
     csv_df, _meta = _read(FakeUpload(b"cell_id,T1,T1\nc1,1,9\n", "t.csv"))
     assert list(csv_df.columns) == ["cell_id", "T1", "T1.1"]
 
@@ -897,22 +892,14 @@ def test_pandas_de_duplicates_headers_before_anything_can_warn_about_them():
 
 
 def test_get_features_returns_an_empty_warning_not_none_on_its_error_path():
-    """Every other return in the module uses "" for "nothing to say".
-
-    Returning None here is invisible until a caller concatenates the warning, and
-    then it is a TypeError rather than a message.
-    """
+    """The error path returns a string warning that callers can concatenate."""
     df = pd.DataFrame({"cell_id": ["c1"], "image_name": ["f"], "label": ["alpha"]})
     _df, _groups, warning, error = get_features(df, [], use_data_extraction=True)
     assert error != "" and warning == ""
 
 
 def test_the_decimal_hint_survives_a_missing_row_id_column(monkeypatch):
-    """check_and_fix_df short-circuits on a missing row ID before get_features runs.
-
-    A European file usually has no cell_id either, so a hint computed downstream
-    of that early return would never reach the very files it exists for.
-    """
+    """A missing identifier must not suppress the comma-decimal advice."""
     rendered = []
     monkeypatch.setattr(dataset_io, "get_unique_row_id_col", lambda *a, **k: "cell_id")
     monkeypatch.setattr(dataset_io, "get_fov_name_col_analysis", lambda *a, **k: "image_name")
@@ -951,12 +938,7 @@ def test_load_table_hands_back_the_separator_it_actually_read(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_the_analysis_page_still_runs_and_offers_every_supported_suffix():
-    """Nothing else in the suite executes pages/data_analysis.py.
-
-    The three tests that mention it read its source as text or rebuild its state
-    dict separately, so a changed reader signature — load_table gained a fourth
-    return value — would have surfaced only in a browser. This runs the page.
-    """
+    """The rendered analysis uploader offers every supported suffix."""
     from streamlit.testing.v1 import AppTest
 
     page = Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py"

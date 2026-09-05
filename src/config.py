@@ -6,23 +6,10 @@ import toml
 
 
 def get_persistent_dir() -> Path:
-    """Directory for runtime-writable config, kept OUTSIDE the app payload the
-    user replaces on upgrade so their settings always survive.
+    """Return a writable config directory outside the bundled app payload.
 
-    - **macOS**: sys.executable is
-      ``<dir>/Flim-Playground.app/Contents/MacOS/Flim-Playground``; we walk up
-      out of the bundle to ``<dir>`` so config lands next to the .app. Writing
-      inside ``Contents/`` would hide the file from Finder and break the
-      code-signature seal.
-    - **Linux**: the binary ships in a self-contained folder the user swaps
-      wholesale when upgrading (extract new tarball → ``./install.sh``), so
-      config kept beside it would be lost on every upgrade. Store it in the
-      per-user XDG config dir (``$XDG_CONFIG_HOME`` or ``~/.config``) under
-      ``flim-playground/`` instead — stable across upgrades, never inside the
-      replaced folder.
-    - **Windows**: beside the .exe; the installer preserves it (it refreshes
-      only the ``_internal`` payload, never the config at the install-folder
-      root).
+    Use the directory beside a macOS .app, the XDG config directory under
+    flim-playground on Linux, and the executable's directory otherwise.
     """
     exe = Path(sys.executable)
     if exe.parent.name == "MacOS" and exe.parent.parent.name == "Contents":
@@ -34,17 +21,14 @@ def get_persistent_dir() -> Path:
 
 
 def _get_config_path() -> Path:
-    """Get the config file path, handling both development and bundled app scenarios."""
-    # Check if running as a PyInstaller bundle
+    """Use persistent storage for bundles and the project root for development."""
     if getattr(sys, '_MEIPASS', None):
-        # Running as bundled app - persist config next to the app.
-        # config.toml is no longer bundled; main.py seeds defaults on first run.
+        # main.py seeds defaults when the persistent config is missing.
         return get_persistent_dir() / "config.toml"
     else:
-        # Running in development mode - use config.toml in project root
         return Path(__file__).resolve().parent.parent / "config.toml"
 
-# Absolute path to the project-level config file
+# Resolved once for the current runtime.
 _CONFIG_PATH = _get_config_path()
 
 def load_config(config_path: Path | None = None) -> dict:
@@ -62,18 +46,51 @@ def load_config(config_path: Path | None = None) -> dict:
 def save_config(cfg: dict, config_path: Path | None = None) -> None:
     """Persist *cfg* to disk, overwriting the previous config file."""
     path_to_save = _CONFIG_PATH if config_path is None else config_path
-    # Ensure the parent directory exists (helpful when running tests, etc.)
     path_to_save.parent.mkdir(parents=True, exist_ok=True)
     with path_to_save.open("w", encoding="utf-8") as fh:
         toml.dump(cfg, fh)
 
+def name_survives_round_trip(name: str) -> bool:
+    """Whether the TOML library preserves *name* as a table key through a save/load.
+
+    Profile lookup requires the stored key to match the typed name exactly.
+    Testing the library directly keeps validation aligned with its escaping rules.
+    """
+    try:
+        return list(toml.loads(toml.dumps({name: {}}))) == [name]
+    except (toml.TomlDecodeError, TypeError, ValueError):
+        return False
+
+# Spell out characters that would be hard to see in an error message.
+_UNSTORABLE_CHAR_NAMES = {"\\": "a backslash", '"': "a double quote", "\t": "a tab",
+                          "\n": "a line break", "\r": "a carriage return"}
+
+
+def unstorable_name_error(name: str) -> str:
+    """Explain a profile name's TOML round-trip failure, or return "".
+
+    Shared by extraction and analysis profiles. Test individual characters with
+    the same round trip to identify the cause when possible.
+    """
+    if name_survives_round_trip(name):
+        return ""
+    named = list(dict.fromkeys(
+        _UNSTORABLE_CHAR_NAMES.get(ch) or (f"{ch!r}" if ch.isprintable()
+                                           else "a control character")
+        for ch in dict.fromkeys(name) if not name_survives_round_trip(ch)))
+    if len(named) > 1:
+        culprit = ", ".join(named[:-1]) + " or " + named[-1]
+    else:
+        culprit = named[0] if named else "that character"
+    return (f"A profile name cannot contain {culprit}: the config file stores it as a "
+            "section header and reads that character back escaped, so the profile could "
+            "not be found again under the name you typed and the next save would write a "
+            "second one. Pick another.")
+
 def get_config_mtime(config_path: Path | None = None) -> float:
     """Return the config file's last-modified time, or ``0.0`` if it is missing.
 
-    This is the cross-session change signal: ``save_config`` rewrites the file
-    (bumping its mtime), so an already-open tab can poll this value and notice
-    that another tab edited the configuration. Streamlit-free by design, like the
-    rest of this module.
+    Open tabs can poll this value to detect configuration edits in other sessions.
     """
     path = _CONFIG_PATH if config_path is None else config_path
     try:
@@ -81,20 +98,15 @@ def get_config_mtime(config_path: Path | None = None) -> float:
     except OSError:
         return 0.0
 
-# ---------------------------------------------------------------------------
-# Multi-profile support
-#
-# The extraction config stores named profiles, mirroring analysis_config:
+# Extraction configuration format:
 #   current_profile = "default"
-#   [profiles.<name>]   # a complete flat config lives in here
+#   [profiles.<name>]   # complete extraction settings
 #
-# ``current_profile`` is read from disk, so this module stays Streamlit-free.
-# main.py persists it on every switch/create/delete, before st.rerun(). Do not
-# read the active profile from st.session_state here.
-# ---------------------------------------------------------------------------
+# Read current_profile from disk to keep this module Streamlit-free. main.py
+# persists profile switches, creation, and deletion before rerunning.
 
 def _migrate_extraction_config_to_profiles(cfg: dict) -> dict:
-    """Wrap a legacy flat extraction config under ``profiles.default``.
+    """Wrap a flat extraction config under ``profiles.default``.
 
     Idempotent: a config that already has a ``profiles`` key is returned
     unchanged. An empty dict (missing/unparsable file) is left untouched so the
@@ -105,16 +117,12 @@ def _migrate_extraction_config_to_profiles(cfg: dict) -> dict:
         return cfg
     if not cfg:
         return cfg
-    # Move every existing top-level key into a single "default" profile.
+    # current_profile is metadata, not an extraction setting.
     default_profile = {k: v for k, v in cfg.items() if k != "current_profile"}
     return {"current_profile": "default", "profiles": {"default": default_profile}}
 
 def _load_active_profile_cfg(config_path: Path | None = None) -> dict:
-    """Return the active profile's config sub-dict.
-
-    The sub-dict has the same flat shape as the pre-profile config, so the
-    accessor functions below read it exactly as they read the legacy config.
-    """
+    """Return the active profile's extraction settings, or {} if absent."""
     cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
     current = cfg.get("current_profile", "default")
     return cfg.get("profiles", {}).get(current, {})
@@ -186,17 +194,17 @@ def get_default_file_suffixes(channel_key: str, input_type: str, selected_featur
     file_suffixes = cfg.get(channel_key, {}).get(input_type, {}).get("input_suffixes", {})
     fit_free_calibration = cfg.get(input_type, {}).get("fit_free_calibration", "")
     for file_type in file_suffixes:
-        # Only include Fluorescence Lifetime Standard when fit free uses Fluorescence Lifetime Standard and this channel does fit free
+        # Prefitted lifetime-only extraction does not need the raw decay.
         if file_type == "Decay" and "prefitted" in input_type and len(selected_feature_extractors) == 1 and "Lifetime fit" in selected_feature_extractors:
             continue
         if file_type == "Fluorescence Lifetime Standard" and not (
             "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Fluorescence Lifetime Standard"
         ):
             continue
-        # skip a bunch of things
+        # SPCImage t1 is used only by the lifetime-fit extractor.
         if file_type == "SPCImage t1" and "Lifetime fit" not in selected_feature_extractors:
             continue
-        # skip IRF if no Lifetime extractors OR if prefitted and no fit free extractors
+        # An IRF is needed only for lifetime extraction that uses it for calibration.
         if file_type == "IRF" and (not any("Lifetime" in extractor for extractor in selected_feature_extractors) or 
                                         ("prefitted" in input_type and "Lifetime fit free" not in selected_feature_extractors)):
             continue
@@ -277,19 +285,15 @@ def get_derived_features() -> list:
 
     Each entry is a dict ``{"name": str, "expression": str, "operands": list[str]}``
     where ``expression`` uses positional aliases (A, B, …) mapped to ``operands``.
-    Empty list when the profile defines none — backward-compatible with older
-    configs that lack the key.
+    Return an empty list when the profile defines none.
     """
     return _load_active_profile_cfg().get("derived_features", [])
 
 def set_derived_features(derived_features: list, config_path: Path | None = None) -> None:
     """Persist the active profile's derived-feature list immediately.
 
-    Mirrors the profile create/delete/switch helpers (load → mutate one key →
-    save), so an added/deleted derived feature survives a Streamlit rerun without
-    waiting for the page-level "Update Configuration" save. Only the
-    ``derived_features`` key of the active profile is touched; everything else on
-    disk is preserved.
+    Changes survive reruns without waiting for "Update Configuration". Update
+    only the active profile's ``derived_features`` key, preserving other settings.
     """
     cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
     current = cfg.get("current_profile", "default")

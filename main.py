@@ -24,8 +24,7 @@ def main():
     doc_extraction_url = "https://skalalab.github.io/flim_playground_doc/data_extraction.html"
     doc_analysis_url = "https://skalalab.github.io/flim_playground_doc/data_analysis.html"
 
-    # Load + migrate the extraction config and resolve the active profile so the
-    # profile controls and the page body both read the active profile.
+    # Use the same active profile for the controls and configuration fields.
     from src.config import (
         _migrate_extraction_config_to_profiles,
         create_profile,
@@ -35,22 +34,20 @@ def main():
         load_config,
         save_config,
         set_current_profile,
+        unstorable_name_error,
     )
 
     MAX_PROFILES = 10
     full_cfg = _migrate_extraction_config_to_profiles(load_config())
     active = get_current_profile_name()
 
-    # On a fresh install there is no config.toml yet, so list_profiles() is empty. Fall
-    # back to the active ("default") profile: an empty selectbox returns None and
-    # set_current_profile(None) crashes. The profile is seeded with app defaults below
+    # Keep the selector usable without a config file. Defaults are seeded below
     # and persisted on the first "Update Configuration" click.
     profiles = list_profiles() or [active]
     logo_col, welcome_col, profile_col = st.columns([1.5, 1.8, 3.5], vertical_alignment="center")
     with logo_col:
         st.image(str(logo_file), width="stretch")
     with welcome_col:
-        # Short welcome / orientation, sitting between the logo and the controls.
         st.markdown(
             f"**Welcome 👋 to [FLIM Playground]({doc_github_url})!** {three_happy_emojis}  \n"
             f"[**Data Extraction**]({doc_extraction_url}) pulls single-object features from raw microscopy data.  \n"
@@ -59,7 +56,6 @@ def main():
     with profile_col:
         st.markdown("#### ⚙️ Configuration")
         select_col, create_col = st.columns([1, 1], vertical_alignment="top")
-        # --- Switch profile, with Delete stacked directly below it ---
         with select_col:
             selected_profile = st.selectbox(
                 "Profile",
@@ -71,7 +67,7 @@ def main():
             if selected_profile and selected_profile != active:
                 set_current_profile(selected_profile)  # persist immediately, before rerun
                 st.rerun()
-            # --- Delete profile (never the last one) ---
+            # At least one extraction profile must remain.
             only_one = len(profiles) <= 1
             if st.button(
                 "🗑️ Delete",
@@ -80,11 +76,10 @@ def main():
                 help="Cannot delete the only profile" if only_one else f"Delete profile '{active}'",
             ):
                 delete_profile(active)
-                # The deleted name is no longer a valid option; drop the stored
-                # selection so the switcher falls back to the new active profile.
+                # Reset the selector to the remaining active profile.
                 st.session_state.pop("extraction_profile_selector", None)
                 st.rerun()
-        # --- Create profile (blank; app defaults are seeded on render) ---
+        # New profiles start empty; rendering seeds their defaults.
         with create_col:
             at_max = len(profiles) >= MAX_PROFILES
             with st.form("create_extraction_profile_form", clear_on_submit=True):
@@ -101,17 +96,20 @@ def main():
                 )
                 if create_clicked and new_profile_name:
                     new_profile_name = new_profile_name.strip()
-                    if new_profile_name and new_profile_name not in profiles:
+                    # Profile names must survive TOML serialization unchanged.
+                    unstorable = unstorable_name_error(new_profile_name)
+                    if unstorable:
+                        st.error(f"{unstorable} {sad_emoji}")
+                    elif new_profile_name and new_profile_name not in profiles:
                         create_profile(new_profile_name)
-                        # Reset the switcher so it re-derives from the new active
-                        # profile next run (a stale value would flip us back).
+                        # Reset the selector so its saved value cannot restore
+                        # the previous profile on the next rerun.
                         st.session_state.pop("extraction_profile_selector", None)
                         st.rerun()
                     elif new_profile_name in profiles:
                         st.error(f"'{new_profile_name}' already exists! {sad_emoji}")
 
-    # Point `cfg` at the active profile's sub-dict. The rest of the page edits it
-    # in place; the final "Update Configuration" save persists the whole tree.
+    # Edit the active profile in place; "Update Configuration" saves the whole tree.
     full_cfg.setdefault("profiles", {}).setdefault(active, {})
     cfg = full_cfg["profiles"][active]
     error_msg = ""
@@ -124,7 +122,7 @@ def main():
     if "all_feature_extractors" not in cfg:
         cfg["all_feature_extractors"] = all_feature_extractors
 
-    # Initialization:
+    # Seed missing extraction defaults.
     if "flim_decay_input_types" not in cfg:
         cfg["flim_decay_input_types"] = all_flim_decay_input_types
 
@@ -137,7 +135,7 @@ def main():
     if "flim_decay_input_type" not in cfg:
         cfg["flim_decay_input_type"] = all_flim_decay_input_types[0]
 
-    # currently, the only option for intensity-only is 2D
+    # Intensity-only inputs are two-dimensional.
     intensity_only_input_type = intensity_only_input_types[0]
     cfg["intensity_only_input_type"] = intensity_only_input_type
     if intensity_only_input_type not in cfg:
@@ -145,7 +143,6 @@ def main():
 
     cols = st.columns(4)
 
-    # Ask for the number of channels user needs
     with cols[0]:
         cfg["num_channels"] = st.selectbox("Number of channels", list(range(1, max_num_channels + 1)), index=cfg.get("num_channels", 1) - 1, help="Number of channels you have in your data", key=f"num_channels_{active}")
     with cols[1]:
@@ -158,14 +155,8 @@ def main():
         cfg["flim_decay_input_type"] = flim_decay_input_type
         if flim_decay_input_type not in cfg:
             cfg[flim_decay_input_type] = {}
-        # later add input_type selection for other imaging modalities
-    # Both are required, and stripped rather than trusted: extraction is FOV-based and
-    # id-based, and these name columns it *reads* -- metadata_df[fov_name_col] in file_io,
-    # the identifier fov_extraction composes per cell. Blank does not fail loudly, which
-    # is why it is refused here: an empty string is a *name*, so index.name = "" gives a
-    # column literally called "", every in-session lookup succeeds, and the run writes a
-    # CSV whose first header cell is empty -- which Data Analysis reads back as
-    # "Unnamed: 0" and drops, taking the identifier with it.
+    # Extraction requires both column names. A blank identifier header would be
+    # read as an unnamed column and dropped when the exported table is uploaded.
     with cols[2]:
         cfg["unique_cell_id_col"] = st.text_input("Unique cell identifier column name", value=cfg.get("unique_cell_id_col", "cell_id"), help="Unique cell identifier column name", key=f"unique_cell_id_{active}").strip()
         if not cfg["unique_cell_id_col"]:
@@ -182,7 +173,6 @@ def main():
         laser_rate = st.number_input(f"Laser rate **(GHz)** for {flim_decay_input_type}", value=cfg.get(flim_decay_input_type, {}).get("laser_rate", 0.08), min_value=0.0, max_value=1.0, key=f"laser_rate_{flim_decay_input_type}_{active}")
         cfg[flim_decay_input_type]["laser_rate"] = laser_rate
     with cols[1]:
-        # Get default value from config and find its index
         options = ["IRF", "Fluorescence Lifetime Standard"]
         default_value = cfg.get(flim_decay_input_type, {}).get("fit_free_calibration", "IRF")
         default_index = options.index(default_value) if default_value in options else 0
@@ -192,21 +182,21 @@ def main():
             with cols[3]:
                 st.caption("Provide channel-specific Fluorescence lifetime standard file suffixes below in the File suffixes section.")
             with cols[2]:
-                # get the fluorescence lifetime standard's lifetime (shared across channels)
+                # The standard lifetime is shared across channels.
                 cfg[flim_decay_input_type]["fluorescence_lifetime_standard_lifetime"] = st.number_input("Fluorescence lifetime standard's lifetime **(ns)**", value=cfg.get(flim_decay_input_type, {}).get("fluorescence_lifetime_standard_lifetime", 1.0), min_value=0.1, max_value=20.0, key=f"fluorescence_lifetime_standard_lifetime_{flim_decay_input_type}_{active}")
 
-        # feature extractor initialization
+    # Seed the feature extractors supported by each input type.
     if "available_feature_extractors" not in cfg[flim_decay_input_type]:
         if flim_decay_input_type == "Decay (2D)":
-            # 2D CSVs have no image/mask, so only "Intensity texture" is offered (for
-            # intensity_sum, the decay-curve sum) — morphology needs regionprops on a mask.
+            # 2D decays support intensity_sum through "Intensity texture";
+            # morphology requires an image mask.
             cfg[flim_decay_input_type]["available_feature_extractors"] = ["Lifetime fit", "Lifetime fit free", "Intensity texture"]
         else:
             cfg[flim_decay_input_type]["available_feature_extractors"] = ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture"]
     if "available_feature_extractors" not in cfg[intensity_only_input_type]:
         cfg[intensity_only_input_type]["available_feature_extractors"] = ["Intensity morphology", "Intensity texture"]
 
-    # Profiles seeded before "Intensity texture" was offered for 2D gain it here.
+    # Ensure saved 2D configurations offer intensity_sum extraction.
     d2d = cfg.get("Decay (2D)", {})
     if "available_feature_extractors" in d2d and "Intensity texture" not in d2d["available_feature_extractors"]:
         d2d["available_feature_extractors"].append("Intensity texture")
@@ -216,7 +206,7 @@ def main():
     else:
         imaging_modalities = ["FLIM", "Intensity-only"]
 
-    # init file types for each input type (more inclusive, will exclude some file types later based on the selected feature extractors)
+    # Seed file types; the per-channel controls filter them by selected extractors.
     for input_type in all_flim_decay_input_types + intensity_only_input_types:
         if input_type not in cfg:
             cfg[input_type] = {}
@@ -230,13 +220,9 @@ def main():
             elif input_type == "Intensity (2D)":
                 cfg[input_type]["file_types"] = ["Intensity (2D)", "Mask"]
 
-    # check for duplicate channel names
     channel_names = []
-    # Channels render as side-by-side columns. With more than 4 channels, fold
-    # the first four (typically already set up) into a collapsed group and keep
-    # the newer channels (5+) expanded, so the ones you just added stay in view.
-    # Columns created inside an expander still render inside it when populated
-    # later, so the per-channel body below is unchanged regardless of grouping.
+    # Above four channels, collapse channels 1–4 and keep channels 5+ visible.
+    # Column containers retain their expander placement when populated below.
     n_channels = cfg["num_channels"]
     if n_channels <= 4:
         channel_cols = list(st.columns(n_channels))
@@ -252,13 +238,10 @@ def main():
             channel_key = f"ch{i+1}"
             if channel_key not in cfg:
                 cfg[channel_key] = {}
-            # Restore the saved modality on reload (fall back to the first option
-            # when it isn't selectable, e.g. a saved "Intensity-only" while the
-            # input type is "Decay (2D)", which only offers "FLIM").
+            # Restore the saved modality only if the selected input type supports it.
             saved_modality = cfg[channel_key].get("imaging_modality", imaging_modalities[0])
             modality_index = imaging_modalities.index(saved_modality) if saved_modality in imaging_modalities else 0
             imaging_modality = st.selectbox("Imaging modality", imaging_modalities, index=modality_index, key=f"imaging_modality_{channel_key}_{active}")
-            # get input type for this channel
             cfg[channel_key]["imaging_modality"] = imaging_modality
             if imaging_modality == "FLIM":
                 input_type = flim_decay_input_type
@@ -268,7 +251,6 @@ def main():
             if input_type not in cfg[channel_key]:
                 cfg[channel_key][input_type] = {}
 
-            # get custom channel name
             default_name = cfg[channel_key].get("channel_name", f"Channel {i+1}")
             custom_channel_name = st.text_input(f"Channel {i+1} name", value=default_name, key=f"channel_name_{channel_key}_{active}")
             if custom_channel_name in channel_names:
@@ -277,7 +259,6 @@ def main():
                 continue
             channel_names.append(custom_channel_name)
             cfg[channel_key]["channel_name"] = custom_channel_name
-            # get selected feature extractors for this channel
             available_feature_extractors = cfg[input_type]["available_feature_extractors"]
             selected_feature_extractors = st.multiselect(f"Extract feature types from {custom_channel_name}", available_feature_extractors, default= cfg[channel_key][input_type].get("selected_feature_extractors", []), key=f"{input_type}_{channel_key}_feature_extractors_{active}")
             cfg[channel_key][input_type]["selected_feature_extractors"] = selected_feature_extractors
@@ -286,13 +267,10 @@ def main():
                 st.error(f"{error_msg} {sad_emoji}")
                 continue
 
-            # get the number of components for each channel if Lifetime is in selected feature extractors and fit is in selected modules
             if "Lifetime fit" in selected_feature_extractors:
                 num_components = st.number_input(f"Number of components for {custom_channel_name}", value=cfg[channel_key][input_type].get("num_components", 1), min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis", key=f"num_components_{channel_key}_{input_type}_{active}")
                 cfg[channel_key][input_type]["num_components"] = num_components
-                # Fixed-lifetime defaults (per component). Only meaningful when the
-                # app actually fits the decay — prefitted (SPCImage .asc) channels are
-                # read, not fit, so fixing τ has no effect and the UI is hidden.
+                # Fixed lifetimes apply only to multicomponent fits performed here.
                 if num_components > 1 and "prefitted" not in input_type:
                     if "fixed_lifetimes" not in cfg[channel_key][input_type]:
                         cfg[channel_key][input_type]["fixed_lifetimes"] = {}
@@ -314,9 +292,8 @@ def main():
                             )
                             cfg[channel_key][input_type]["fixed_lifetimes"][t_key] = fixed_val if fixed_val > 0 else None
                 else:
-                    # 1-component: no fixing needed, clear any stale config
+                    # Clear constraints for single-component or prefitted inputs.
                     cfg[channel_key][input_type]["fixed_lifetimes"] = {}
-            # Initialize the input section for this channel if it doesn't exist
             if "input_suffixes" not in cfg[channel_key][input_type]:
                 cfg[channel_key][input_type]["input_suffixes"] = {}
 
@@ -337,7 +314,7 @@ def main():
 
                 cfg[channel_key][input_type]["input_suffixes"][file_type] = st.text_input(f"{file_type}", value=cfg[channel_key][input_type]["input_suffixes"].get(file_type, ""), key=f"{channel_key}_{input_type}_{file_type}_{active}")
 
-            # If using Fluorescence lifetime standard calibration for fit free on this channel, ask for channel-specific Fluorescence lifetime standard file suffix
+            # The standard's file suffix is specific to each channel.
             if "Lifetime fit free" in selected_feature_extractors and fit_free_calibration == "Fluorescence Lifetime Standard":
                 cfg[channel_key][input_type]["input_suffixes"]["Fluorescence Lifetime Standard"] = st.text_input(
                     "Fluorescence lifetime standard file",
@@ -348,20 +325,15 @@ def main():
     if imaging_modality == "FLIM" and flim_decay_input_type == "Decay (2D)":
         cols = st.columns(2)
         with cols[0]:
-            # ask for k_flow duration and time bins
             cfg[flim_decay_input_type]["duration"] = st.number_input(f"{flim_decay_input_type} duration (**ns**)", value=cfg.get(flim_decay_input_type, {}).get("duration", 20.0), min_value=0.0, max_value=100.0, key=f"{flim_decay_input_type}_duration_{active}")
         with cols[1]:
             cfg[flim_decay_input_type]["time_bins"] = st.number_input(f"{flim_decay_input_type} time bins", value=cfg.get(flim_decay_input_type, {}).get("time_bins", 1024), min_value=10, key=f"{flim_decay_input_type}_time_bins_{active}")
 
 
-    # render a multiselect for categorical columns
     categorical_cols = st.multiselect("Categorical columns (type to add more)", cfg.get("categorical_cols", []), default=cfg.get("categorical_cols", []),  accept_new_options=True, key=f"categorical_cols_{active}")
     cfg["categorical_cols"] = categorical_cols
 
-    # Derived features (arithmetic over extracted features) live in their own
-    # widget module, revealed by a checkbox. A checkbox (not st.expander) so the
-    # section description can be a hover "?" help; default it on when the profile
-    # already defines derived features, so those aren't hidden behind an off tick.
+    # Show derived-feature controls by default when the profile defines any.
     from src.widgets.derived_features_widgets import (
         DERIVED_FEATURES_HELP,
         render_derived_features_widget,
@@ -374,23 +346,19 @@ def main():
     ):
         render_derived_features_widget(cfg, active)
 
-    # Check if we should show a success message from previous update
+    # Show the update confirmation once, after the save-triggered rerun.
     if st.session_state.get("config_updated", False):
         st.success(f"Configuration updated! {happy_emoji}")
-        # Clear the flag so message doesn't persist indefinitely
         st.session_state.config_updated = False
 
     if error_msg == "":
         update_config_button = st.button("Update Configuration")
         if update_config_button:
-            # `cfg` is full_cfg["profiles"][active] by reference, so all in-place
-            # edits are already captured; persist the whole profile tree.
+            # cfg references the active profile inside full_cfg.
             save_config(full_cfg)
-            # Set flag to show success message after rerun
             st.session_state.config_updated = True
             st.rerun()
 
-    # Quick links, pinned to the bottom of the page on a single row.
     st.divider()
     st.markdown(
         f"[Documentation]({doc_github_url}) &nbsp;·&nbsp; "

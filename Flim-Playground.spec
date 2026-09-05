@@ -34,23 +34,10 @@ frontend_build_path = os.path.join(sortables_path, 'frontend', 'build')
 if os.path.exists(frontend_build_path):
     datas.append((frontend_build_path, 'streamlit_sortables/frontend/build'))
 
-# Version stamp. ONE resolver for the whole build: src.version.get_app_version
-# is the same function the running app calls, so the nav bar, the Windows .exe
-# resource and the macOS Info.plist cannot disagree. In CI the APP_VERSION env
-# var wins (job level in build.yml: the release tag, or 0.0.0-dev for a manual
-# workflow_dispatch). Locally, with no env var, it falls through to
-# `git describe` in this checkout, so a hand-built app is identifiable
-# (1.11.2-4-gaeeaea1-dirty) instead of an anonymous 0.0.0-dev.
-#
-# The stamp goes into PyInstaller's own work dir -- already gitignored via
-# `build/`, and emptied then recreated before this spec is exec'd (--clean
-# included, PyInstaller/building/build_main.py:1180) -- never into the source
-# tree: a build must not dirty `git status`, and a stale generated file left in
-# src/ would make a developer's `streamlit run` lie about its version forever.
-#
-# MUST stay ABOVE Analysis(): Analysis() normalizes `datas` into a TOC at call
-# time, so appending afterwards is a silent no-op -- the app would ship with no
-# stamp and quietly display the fallback, with nothing in the build log.
+# Use the runtime version resolver for the app stamp and platform metadata.
+# APP_VERSION takes precedence in CI; local builds fall back to git describe.
+# Write the stamp in PyInstaller's work directory to keep generated data out of
+# the source tree. Add it before Analysis(), which snapshots datas when called.
 sys.path.insert(0, SPECPATH)  # so `import src` resolves from any cwd
 from src.version import STAMP_NAME, get_app_version  # noqa: E402 (SPECPATH first)
 
@@ -61,13 +48,8 @@ with open(_version_stamp, 'w', encoding='utf-8') as _fh:
 datas.append((_version_stamp, '.'))
 print(f'*** Flim-Playground version stamp: {_app_version}')
 
-# FILEVERSION and the two macOS plist version keys are all NUMERIC formats, so
-# derive the numeric prefix once, for every platform:
-#   '1.11.2'                  -> (1, 11, 2, 0)
-#   '1.11.2-4-gaeeaea1'       -> (1, 11, 2, 4)   # 4th field = commit count
-#   '0.0.0-dev' / 'dev+abc12' -> (0, 0, 0, 0)
-# The leading-digit guard matters: a tagless checkout resolves to `dev+<sha>`,
-# and scraping digits out of a hex sha would invent a version like 1.0.0.
+# Platform version fields require numbers. Include the commit count as the fourth
+# field when available; ignore tagless dev+<sha> strings to avoid parsing hash digits.
 _nums = [int(n) for n in re.findall(r'\d+', _app_version)][:4] if _app_version[:1].isdigit() else []
 _nums += [0] * (4 - len(_nums))
 _vtuple = tuple(_nums)
@@ -87,19 +69,11 @@ a = Analysis(
 )
 pyz = PYZ(a.pure)
 
-# onedir on all platforms: onefile re-extracted the whole ~450MB bundle to a
-# temp dir on every launch (tens of seconds, worse under antivirus scanning);
-# onedir materializes it once and starts in seconds. Users get
-# Flim-Playground.app on macOS and a Flim-Playground/ folder on Linux (both
-# tarred for download), and the same folder wrapped in a one-file installer on
-# Windows — each with configs saved beside the app.
+# Use onedir to avoid extracting the bundle on each launch. Distribution wraps it
+# as a macOS app, a Linux folder, or a Windows installer.
 
-# Windows .exe version resource, built from the _app_version/_vtuple resolved
-# above. Without this, PyInstaller stamps the default 0.0.0.0 into the file's
-# Properties -> Details (independent of the Inno Setup installer version).
-# Windows-only because the versioninfo module imports pefile, which PyInstaller
-# only installs on Windows -- that is the ONLY reason for this branch, so
-# nothing platform-neutral belongs inside it.
+# Windows file metadata uses the same resolved version. Keep versioninfo imports
+# inside this branch because their pefile dependency is Windows-only.
 version_resource = None
 if sys.platform == 'win32':
     from PyInstaller.utils.win32.versioninfo import (
@@ -156,22 +130,10 @@ coll = COLLECT(
     upx_exclude=[],
     name='Flim-Playground',
 )
-# macOS only (explicit no-op on other platforms): wrap the onedir folder in a
-# .app bundle so Finder launches it without a Terminal window and shows the icon.
-# Both plist version keys are format-constrained -- up to three
-# period-separated integers -- so a raw '1.11.2-4-gaeeaea1-dirty' or
-# '0.0.0-dev' is NOT legal there. The numeric prefix goes into the two
-# constrained keys and the exact string into free-form CFBundleGetInfoString.
-# Nothing is lost: the precise string is the nav bar's job, and the same string
-# sits in Contents/Resources/VERSION.txt.
-#
-# Passing these off-Darwin is safe: BUNDLE.__init__ hits `if not is_darwin:
-# return` before it reads any kwarg (PyInstaller/building/osx.py:49-51), and
-# info_plist is merged OVER PyInstaller's defaults (osx.py:606-608), so the
-# existing keys survive. Note `version=` is not decoration: it *is*
-# CFBundleShortVersionString (osx.py:595) and defaults to '0.0.0' (osx.py:73),
-# which is why every .app so far has reported 0.0.0 in Finder's Get Info.
-_plist_version = '.'.join(str(n) for n in _vtuple[:3])  # '1.11.2' / '0.0.0'
+# BUNDLE wraps the folder as a macOS app and is a no-op on other platforms.
+# Its constrained version keys use three numeric fields; the full version remains
+# in CFBundleGetInfoString and VERSION.txt.
+_plist_version = '.'.join(str(n) for n in _vtuple[:3])
 
 app = BUNDLE(
     coll,

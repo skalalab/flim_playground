@@ -1,24 +1,12 @@
-"""Pure decisions behind the visual-encoding row.
-
-Split out of visualization_widgets.py because Streamlit widgets return their defaults
-in bare mode and AppTest cannot reach the analysis page, so anything left inside the
-widget function can only be checked by hand. These two decisions are the parts with
-real branching, so they live here and get tests.
-"""
+"""Pure decisions and status messages for visual-encoding controls."""
+from src.column_roles import code_span
 
 
 def prune_to_options(stored, options, fallback=None):
-    """``stored`` narrowed to ``options``, so a widget is never handed a value it
-    does not offer.
+    """Restrict a stored scalar or list to the current widget options.
 
-    Streamlit *raises* when session state holds an unoffered value (auto-generated
-    keys reset silently instead, which is why this only became necessary once the
-    controls took explicit keys). ``options`` shrinks whenever a filter collapses a
-    column to a single value -- the encoding row offers only categories with
-    ``nunique() > 1`` -- or when another control claims the column.
-
-    ``fallback`` applies only when a *non-empty* selection prunes to nothing: an
-    already-empty selection is a deliberate state, not damage to repair.
+    An unavailable scalar becomes None. For lists, ``fallback`` replaces a
+    nonempty selection only when every item is removed; an empty list stays empty.
     """
     offered = set(options)
     if isinstance(stored, list):
@@ -30,43 +18,20 @@ def prune_to_options(stored, options, fallback=None):
 
 
 def color_multiselect_label(show_subcolor, as_colour):
-    """``"Group by"`` when the third slot has claimed colour, else ``"Color by"``.
+    """Use "Group by" when the visible subcolor slot is switched to color.
 
-    Depends on the switch alone, deliberately -- not on whether a column has been picked
-    yet. The moment the switch goes on, the third slot is the one offering colour, so
-    gating this on the picker holding something would leave two controls both presenting
-    themselves as the colour channel until one was chosen.
-
-    The cost is that with the switch on and nothing picked, colour still comes from these
-    groups while the label already reads "Group by". That is the intent the switch
-    expresses and it resolves as soon as a column is chosen; two controls claiming one
-    channel never resolves.
-
-    The third slot no longer spells "Color by" on screen -- it shows a static
-    ``Opacity [switch] subcolor by`` phrase and lets the knob say which half is live -- so
-    the two can never collide as identical visible text. What must not collide is the
-    CLAIM: exactly one of this label and the switch offers colour, which is what
-    ``check_encoding_row`` asserts.
+    The switch determines which control offers color, even before a column is picked.
     """
     return "Group by" if (show_subcolor and as_colour) else "Color by"
 
 
 def drop_varying_channels(channels, varied):
-    """Resolve the decoration channels against the columns a collapse dropped.
+    """Disable channels whose columns varied within a collapse group.
 
-    A collapsed dot is a mean over several cells, so a decoration only means anything
-    when its column holds ONE value in every collapse group. ``varied`` is what
-    ``collapse.collapse_rows`` reports it dropped for failing that test, and a channel
-    pointing at such a column has nothing to look up -- not a missing value, but
-    several crushed into one row.
-
-    Resolving it here rather than inside the plot is what keeps the export honest:
-    ``_export_script_button`` captures whatever the page holds, so the generated script
-    receives ``shape_by=None`` already decided and needs no collapse logic of its own.
-
-    Returns ``(kept, dropped)`` -- the same ``{role: column}`` mapping with offenders
-    set to ``None``, and just the offenders, so the caller can say which channel it
-    switched off and why.
+    A collapsed point cannot carry one decoration value for those columns.
+    Resolve this before export captures page state so the app and script agree.
+    Return ``(kept, dropped)``: a role-to-column map with disabled values set to
+    None, and a map containing only the disabled channels.
     """
     varied = set(varied)
     kept = {role: (None if column in varied else column)
@@ -74,3 +39,18 @@ def drop_varying_channels(channels, varied):
     dropped = {role: column for role, column in channels.items()
                if column and column in varied}
     return kept, dropped
+
+
+# Display names for decoration controls.
+_CHANNEL_LABELS = {"shape": "Shape by", "opacity": "Opacity by", "subcolor": "Subcolor by"}
+
+
+def dropped_channel_note(role, collapse_by, column):
+    """Explain why collapse disabled a decoration channel, as Markdown.
+
+    Escape file-provided column names with ``code_span`` while retaining the
+    markup on the control label.
+    """
+    return (f"**{_CHANNEL_LABELS[role]}** is off — one {code_span(collapse_by)} point "
+            f"covers several {code_span(column)} values, so it cannot be further "
+            "divided.")

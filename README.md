@@ -71,17 +71,17 @@ This strips the download-quarantine flag, so the app opens with a normal double-
 **Apple Silicon** (M1 and later):
 
 ```bash
-curl -L -o ~/Downloads/Flim-Playground-mac.tar.gz \
-  https://github.com/skalalab/flim_playground/releases/latest/download/Flim-Playground-mac.tar.gz
-tar -xzf ~/Downloads/Flim-Playground-mac.tar.gz -C ~/Downloads
+curl -fL -o ~/Downloads/Flim-Playground-mac.tar.gz \
+  https://github.com/skalalab/flim_playground/releases/latest/download/Flim-Playground-mac.tar.gz &&
+  tar -xzf ~/Downloads/Flim-Playground-mac.tar.gz -C ~/Downloads
 ```
 
 **Intel Macs:**
 
 ```bash
-curl -L -o ~/Downloads/Flim-Playground-mac-intel.tar.gz \
-  https://github.com/skalalab/flim_playground/releases/latest/download/Flim-Playground-mac-intel.tar.gz
-tar -xzf ~/Downloads/Flim-Playground-mac-intel.tar.gz -C ~/Downloads
+curl -fL -o ~/Downloads/Flim-Playground-mac-intel.tar.gz \
+  https://github.com/skalalab/flim_playground/releases/latest/download/Flim-Playground-mac-intel.tar.gz &&
+  tar -xzf ~/Downloads/Flim-Playground-mac-intel.tar.gz -C ~/Downloads
 ```
 
 Either way you get **Flim-Playground.app** in your Downloads folder — just double-click it. No `xattr`, no pop-ups.
@@ -93,24 +93,24 @@ If you double-clicked first and got blocked with one of the errors below — no 
 ### Upgrading
 Already running an older version? Grab the latest build from the **Releases** tab, then follow the steps for your platform below. Because every download is a fresh, unsigned file, the [security warning](#first-launch-getting-past-the-security-warning) above **reappears for each new version** — clear it the same way each time (on macOS, re-run the `xattr` command on the new download — or use the `curl` upgrade command below, which never triggers the warning in the first place). Your settings — `config.toml` (Data Extraction) and `analysis_config.toml` (Data Analysis, if you have one) — are **not** bundled inside the app, so they carry over. Where they are stored, and what that means when you upgrade, differs by platform:
 
-- **macOS** — the whole upgrade is one paste into **Terminal**, which downloads the new build, removes the old app and unpacks the new one in its place. Use the block for your Mac (unsure which? **Apple menu → About This Mac**); if you keep the app somewhere other than Downloads, adjust all three paths.
+- **macOS** — the whole upgrade is one paste into **Terminal**, which downloads the new build, removes the old app and unpacks the new one in its place. The three steps are chained (`&&`) and `curl` is asked to fail on an HTTP error (`-f`), so a download that does not arrive leaves the app you already have untouched. Use the block for your Mac (unsure which? **Apple menu → About This Mac**); if you keep the app somewhere other than Downloads, adjust all three paths.
 
   **Apple Silicon** (M1 and later):
 
   ```bash
-  curl -L -o ~/Downloads/Flim-Playground-mac.tar.gz \
-    https://github.com/skalalab/flim_playground/releases/latest/download/Flim-Playground-mac.tar.gz
-  rm -rf ~/Downloads/Flim-Playground.app
-  tar -xzf ~/Downloads/Flim-Playground-mac.tar.gz -C ~/Downloads
+  curl -fL -o ~/Downloads/Flim-Playground-mac.tar.gz \
+    https://github.com/skalalab/flim_playground/releases/latest/download/Flim-Playground-mac.tar.gz &&
+    rm -rf ~/Downloads/Flim-Playground.app &&
+    tar -xzf ~/Downloads/Flim-Playground-mac.tar.gz -C ~/Downloads
   ```
 
   **Intel Macs:**
 
   ```bash
-  curl -L -o ~/Downloads/Flim-Playground-mac-intel.tar.gz \
-    https://github.com/skalalab/flim_playground/releases/latest/download/Flim-Playground-mac-intel.tar.gz
-  rm -rf ~/Downloads/Flim-Playground.app
-  tar -xzf ~/Downloads/Flim-Playground-mac-intel.tar.gz -C ~/Downloads
+  curl -fL -o ~/Downloads/Flim-Playground-mac-intel.tar.gz \
+    https://github.com/skalalab/flim_playground/releases/latest/download/Flim-Playground-mac-intel.tar.gz &&
+    rm -rf ~/Downloads/Flim-Playground.app &&
+    tar -xzf ~/Downloads/Flim-Playground-mac-intel.tar.gz -C ~/Downloads
   ```
 
   Because `curl` never sets the download-quarantine flag, **there is no `xattr` step and no security warning** — just double-click the new app. Prefer the browser? Download the tarball from the Releases tab as before, delete the old **Flim-Playground.app**, extract the new one in its place, then re-run the [`xattr` command](#first-launch-getting-past-the-security-warning) on it. Either way your settings are saved in the folder *beside* the app, **outside** the `.app` bundle, so swapping the app never touches them — just keep the two `.toml` files where they are.

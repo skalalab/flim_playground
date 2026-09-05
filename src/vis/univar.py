@@ -6,6 +6,7 @@ import streamlit as st
 
 from src.emojis import sad_emoji
 from src.feature_labels import format_feature_label
+from src.widgets.analysis_widget_state import number_input_default
 from src.widgets.visualization_widgets import (
     comparison_pair_widget,
     gmm_hyperParams_widget,
@@ -112,15 +113,10 @@ def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10", log_
     return fig
 
 def _assign_subpopulation_labels(values, best_gmm, thresholds, color_group):
-    """Label each point with its GMM subpopulation, numbered by ascending-mean rank.
+    """Label GMM subpopulations by ascending mean, matching the component table.
 
-    ``group1`` is always the smallest-mean component, so the labels line up with
-    the component table rendered in ``feature_gmm_plot`` (which is sorted by mean).
-
-    - With intersection ``thresholds`` (ascending), ``np.digitize`` already
-      returns the ascending-mean bucket index, so it is used directly.
-    - Without thresholds, ``best_gmm.predict`` returns *original* component
-      indices, which are remapped to ascending-mean rank.
+    Threshold buckets already have this order; predicted component indices need
+    remapping to their ascending-mean rank.
     """
     values = np.asarray(values)
     if thresholds is not None:
@@ -303,25 +299,17 @@ def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=Fals
 
     return fig, df
 
-# Plotly's automatic box width for these plots. Adjacent groups sit exactly 1.0 apart (x
-# positions are consecutive integers within a section), and the default boxgap and
-# boxgroupgap of 0.3 each give (1 - 0.3) * (1 - 0.3) = 0.49 data units; whiskerwidth
-# defaults to half of that. Both were measured off the rendered SVG box to confirm.
+# Match Plotly's box width for unit-spaced groups: (1 - boxgap) * (1 - boxgroupgap).
+# Both gaps default to 0.3; whiskers span half the box width.
 _BOX_WIDTH = 0.49
 _WHISKER_CAP_WIDTH = _BOX_WIDTH * 0.5
 
 
 def _add_box_outline_above_gl(fig, x, q1, median, q3, lower_fence, upper_fence, mean_val, color):
-    """Redraw a box outline as ``layer="above"`` shapes so it paints over WebGL points.
+    """Redraw box outlines as above-layer shapes over WebGL points.
 
-    Plotly puts the WebGL canvas *above* every SVG cartesian layer -- the points live in
-    div.gl-container, which the DOM places after the svg holding the box -- so once the
-    figure crosses the WebGL threshold no zorder can lift a go.Box over the cloud (its
-    trace only moves between zorder subplots inside that same svg). Shapes declared
-    layer="above" land in g.layer-above, the one group painted on top of the canvas.
-
-    The go.Box trace itself is left untouched, hidden beneath the points, so its hover
-    statistics and legend entry still work.
+    SVG box zorder cannot lift a box over the WebGL canvas. Keep the original box
+    trace for hover statistics and its legend entry.
     """
     half, cap = _BOX_WIDTH / 2, _WHISKER_CAP_WIDTH / 2
     outline = dict(color=color, width=3)
@@ -384,11 +372,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
     plotted = df.dropna(subset=[selected_var])
     group_counts = plotted.groupby(COLOR_GROUP_COL_NAME).size().to_dict()
 
-    # Subcolor takes the colour channel AWAY from the colour group: colour comes
-    # to mean the nested value while x keeps encoding the group. The map is global -- one
-    # colour per distinct value -- so a value appearing in several groups wears one colour
-    # and its single bare legend entry is true everywhere. Positions, tick labels, the box
-    # overlay and every statistic stay at the colour-group level either way.
+    # Subcolor gives each nested value a figure-wide color. X positions, boxes and
+    # statistics continue to describe the comparison groups.
     subcolor_of = create_subcolor_map(
         plotted, subcolor_by, COLOR_GROUP_COL_NAME, list(color_map.keys()), colormap=colormap,
     )
@@ -691,10 +676,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
             ))
 
     if connect_means:
-        # Above the points in BOTH modes. In WebGL the connector is a GL trace added after
-        # them, and GL traces stack in trace order; in SVG it needs an explicit zorder,
-        # since the points carry zorder=1 and it would otherwise default to 0 and hide
-        # under the cloud. Kept below the boxes' zorder=10.
+        # Draw connectors above points: later traces in WebGL, explicit zorder in SVG.
+        # Keep them below the boxes at zorder=10.
         mean_line_kwargs = {} if scatter_cls is go.Scattergl else {'zorder': 2}
         if separate_groups:
             # Create a line for each separate group
@@ -809,11 +792,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         # One bold line plus padding. ticklabelstandoff pushes the group labels this far
         # from the axis, on top of Plotly's own default standoff; the header sits in that gap.
         header_slot_px = round(1.6 * header_font_size)
-        # Pinned rather than left to Plotly, which picks 0/45/90° from a container width
-        # the server cannot know (the chart renders with width='stretch'); the Matplotlib
-        # export (src/export_script.py) can only reproduce an angle decided here. Labels of
-        # up to 4 characters fit upright at any width; longer ones slant. Negative is the
-        # uphill slant, matching the export's rotation=45, ha='right'.
+        # Fix the angle for app/export parity: short labels stay upright; longer labels
+        # slant uphill, matching Matplotlib's rotation=45 with right alignment.
         tick_angle = 0 if longest_tick_label <= 4 else -45
         for section_info in separate_sections_info:
             if section_info['combinations']:  # Only add annotation if section has data
@@ -934,12 +914,12 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
             threshold = 0.0
             threshold_key_suffix = selected_var
             if effect_size_method == "Glass's Delta":
-                threshold = st.number_input("Glass's Delta Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05, 
+                threshold = st.number_input("Glass's Delta Threshold", value=number_input_default(st.session_state, f"glass_delta_thresh_{threshold_key_suffix}", 0.7), min_value=0.0, max_value=3.0, step=0.05,
                                             key=f"glass_delta_thresh_{threshold_key_suffix}")
             elif effect_size_method == "Absolute Cohen's d":
                 threshold = st.number_input(
                     "Absolute Cohen's d threshold",
-                    value=0.5,
+                    value=number_input_default(st.session_state, f"cohens_d_thresh_{threshold_key_suffix}", 0.5),
                     min_value=0.0,
                     max_value=3.0,
                     step=0.1,

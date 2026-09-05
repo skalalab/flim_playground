@@ -1,9 +1,4 @@
-"""The review table's pure half: previews, the working copy, and the rules the editor
-cannot express itself.
-
-Everything here is a plain function over a frame and two dicts, deliberately: the table
-is not an AppTest element, so a rule left inside the widget could only ever be checked by
-hand in a browser.
+"""Pure review-table rules: previews, working-copy construction, roles, and validation.
 """
 import pandas as pd
 import pytest
@@ -13,7 +8,9 @@ from src.column_roles import (
     ROLE_IGNORE,
     ROLE_NUMERICAL,
     ROLE_ROW_ID,
+    UNGROUPED_LABEL,
     column_preview,
+    detect_column_groups,
     enforce_role_invariants,
     row_id_notice,
     validate_roles,
@@ -51,6 +48,51 @@ def test_preview_counts_levels_over_the_whole_column_not_the_shown_value():
     assert column_preview(free_text) == "note 0 (1204 levels)"
 
 
+def test_preview_of_a_boolean_column_is_a_level_count_not_a_range():
+    """Boolean previews show values and level counts, matching their categorical role.
+    """
+    assert column_preview(pd.Series([True, False, True])) == "True (2 levels)"
+
+
+def test_preview_of_a_rescued_column_is_a_range_not_a_level_count():
+    """Numerical previews use the coerced values even when the input column contains text.
+    """
+    values = pd.Series([f"{0.4 + i * 0.001:.3f}" for i in range(199)] + ["n/a"])
+    assert column_preview(values) == "0.400 (200 levels)"          # what the dtype says
+    assert column_preview(values, numeric=True) == "0.4 – 0.598"   # what the analysis reads
+
+
+def test_a_preview_asked_for_a_range_it_cannot_give_falls_back():
+    """Boolean and nonnumeric columns fall back to a categorical preview."""
+    assert column_preview(pd.Series([True, False]), numeric=True) == "True (2 levels)"
+    assert column_preview(pd.Series(["a", "b"]), numeric=True) == "a (2 levels)"
+
+
+# ------------------------------------------------------- reserved ungrouped label
+
+def test_a_guessed_group_named_uncategorized_merges_into_the_ungrouped_slot():
+    """Merge the reserved group label into the ungrouped slot to avoid duplicate options.
+    """
+    df = pd.DataFrame({"cell_id": [1, 2, 3],
+                       "Uncategorized_a": [1.0, 2.0, 3.0],
+                       "Uncategorized_b": [4.0, 5.0, 6.0]})
+    # Raw grouping finds the prefix; the working copy normalizes the reserved label.
+    assert detect_column_groups(["Uncategorized_a", "Uncategorized_b"]) == {
+        "Uncategorized_a": UNGROUPED_LABEL, "Uncategorized_b": UNGROUPED_LABEL}
+
+    _roles, groups, _numeric = build_working_copy(df)
+    assert groups == {}
+
+
+def test_a_stored_group_named_uncategorized_merges_too():
+    """Normalize the reserved group label when reading an older profile."""
+    df = pd.DataFrame({"cell_id": [1, 2, 3], "Area": [1.0, 2.0, 3.0]})
+    _roles, groups, _numeric = build_working_copy(
+        df, profile_roles={"Area": ROLE_NUMERICAL},
+        profile_groups={"Area": UNGROUPED_LABEL})
+    assert groups == {}
+
+
 # ----------------------------------------------------------- enforce_role_invariants
 
 def test_the_column_just_assigned_keeps_the_row_id_and_the_other_is_demoted():
@@ -63,11 +105,8 @@ def test_the_column_just_assigned_keeps_the_row_id_and_the_other_is_demoted():
 
 
 def test_a_field_of_view_column_is_an_ordinary_categorical():
-    """There is no FOV role, so nothing may single such a column out.
-
-    The name is the only thing that says "field of view", and the review table reads
-    dtypes rather than names -- so image_name has to come back Categorical exactly
-    like treatment, and stay there through enforce_role_invariants.
+    """Field-of-view names have the same categorical role and invariants as other text
+    columns.
     """
     frame = pd.DataFrame({"image_name": ["fov1", "fov1", "fov2"],
                           "treatment": ["a", "b", "a"],
@@ -83,11 +122,7 @@ def test_a_field_of_view_column_is_an_ordinary_categorical():
 
 
 def test_a_demoted_measurement_goes_back_to_numerical_not_categorical():
-    """npix held the Row ID; the user just clicked cell_id, so npix is the one demoted.
-
-    Sending it to Categorical would take a measurement out of the analysis -- the same
-    error _is_row_id_candidate is written to avoid.
-    """
+    """A numeric column displaced as Row ID returns to the Numerical role."""
     roles = {"npix": ROLE_ROW_ID, "cell_id": ROLE_ROW_ID}
     roles, _groups, _notices = enforce_role_invariants(
         roles, {}, numeric_cols={"npix", "cell_id"},
@@ -133,12 +168,7 @@ def test_one_numerical_column_is_enough():
 # --------------------------------------------------------------------- row_id_notice
 
 def test_a_table_with_no_row_id_says_what_will_identify_its_rows():
-    """The counterpart of the advice _row_id_reason gives, and of resolve_row_id_col.
-
-    Not a block and not a warning: the role is optional. But the numbering is invented
-    after the gate closes, so this screen is the last place it can be mentioned before it
-    turns up in hover text as a column the file never had.
-    """
+    """The gate explains generated row numbers before the loader adds them."""
     notice = row_id_notice({"treatment": ROLE_CATEGORICAL, "Area": ROLE_NUMERICAL})
     assert "row number" in notice.lower(), notice
 
@@ -183,13 +213,7 @@ def test_a_matched_column_keeps_the_role_the_profile_stored(frame):
 
 
 def test_a_profile_that_calls_the_identifier_a_measurement_is_obeyed():
-    """The answer the user saved outranks the guess, even when the guess is the good one.
-
-    `wine_id` is a whole-number bijection sitting last in the file, so auto-detect would
-    now claim it -- but a profile saved before that said Numerical, and re-guessing over
-    a stored answer would undo the correction the review table exists to record. It stays
-    Numerical until the user changes it on the ✏️ path.
-    """
+    """A saved Numerical role outranks an identifier guess."""
     frame = pd.DataFrame({"alcohol": [9.4, 9.8, 10.1],
                           "quality": [5, 5, 6],
                           "wine_id": [1, 2, 3]})
@@ -202,11 +226,7 @@ def test_a_profile_that_calls_the_identifier_a_measurement_is_obeyed():
 
 
 def test_a_new_column_is_still_guessed_beside_a_profile_that_named_no_identifier():
-    """The other half: a stored answer only speaks for the columns it knows.
-
-    A profile with no Row ID has not ruled one out -- it was saved from a file that had
-    none -- so a genuinely new bijection column is guessed as usual.
-    """
+    """A profile with no Row ID does not prevent a new column from becoming one."""
     frame = pd.DataFrame({"alcohol": [9.4, 9.8, 10.1], "wine_id": [1, 2, 3]})
     roles, _groups, _numeric = build_working_copy(frame, profile_roles={"alcohol": ROLE_NUMERICAL})
     assert roles["wine_id"] == ROLE_ROW_ID
@@ -231,11 +251,7 @@ def test_a_new_column_joins_an_existing_group_by_prefix(frame):
 
 
 def test_a_new_column_follows_its_siblings_into_a_renamed_group(frame):
-    """The rename is the usual correction, so a later sibling must not undo it.
-
-    Without this, nadh_t3_mean lands in a fresh "nadh" beside the name the user chose,
-    and every future sibling does it again.
-    """
+    """New siblings follow the saved group name after a user renames it."""
     profile_roles = {"nadh_t1_mean": ROLE_NUMERICAL, "nadh_t2_mean": ROLE_NUMERICAL}
     profile_groups = {"nadh_t1_mean": "NADH lifetime", "nadh_t2_mean": "NADH lifetime"}
     _roles, groups, _numeric = build_working_copy(
@@ -246,9 +262,7 @@ def test_a_new_column_follows_its_siblings_into_a_renamed_group(frame):
 
 def test_a_sibling_the_profile_knows_attracts_even_when_this_file_lacks_it():
     """The profile is the memory: the renamed group holds no column of *this* file."""
-    # Fractional like a real lifetime: round values would make the frame's only column
-    # a whole-numbered bijection, so auto-detect would call it the identifier and there
-    # would be no measurement left to group.
+    # Fractional values keep this single-column fixture in the Numerical role.
     df = pd.DataFrame({"nadh_t3_mean": [6100.4, 6050.7]})
     profile_roles = {"nadh_t1_mean": ROLE_NUMERICAL}
     profile_groups = {"nadh_t1_mean": "NADH lifetime"}
@@ -258,11 +272,7 @@ def test_a_sibling_the_profile_knows_attracts_even_when_this_file_lacks_it():
 
 
 def test_grouping_never_reconsiders_a_column_the_profile_knows(frame):
-    """nadh_t1_mean was deliberately left ungrouped; its two new siblings must not group it.
-
-    The sharp form of the rule. Since detect_groups follows siblings, re-guessing a
-    *grouped* column would mostly land it back where it already was -- so only a column
-    the user un-grouped can tell whether build_working_copy really held it back.
+    """A deliberately ungrouped saved column stays ungrouped when new siblings arrive.
     """
     profile_roles = {"nadh_t1_mean": ROLE_NUMERICAL}
     _roles, groups, _numeric = build_working_copy(
@@ -320,13 +330,7 @@ def test_a_column_that_is_mostly_text_is_not_numeric():
 
 
 def test_build_working_copy_hands_back_the_same_numeric_set_as_the_accessor():
-    """One coercion pass, two answers.
-
-    The gate's file load used to make two: `build_working_copy` coerced a copy to guess
-    the roles, then `numeric_column_names` coerced another to answer the same question
-    about dtypes. If the returned set ever stopped matching, `enforce_role_invariants`
-    would be reading the frame differently from `detect_column_roles`, one screen apart.
-    """
+    """The working copy and numeric-column accessor agree after coercion."""
     from src.dataset_io import numeric_column_names
 
     frame = pd.DataFrame({
@@ -346,13 +350,7 @@ def test_build_working_copy_hands_back_the_same_numeric_set_as_the_accessor():
 # ---------------------------------------------------- the gate's blocking message
 
 def test_blocking_a_comma_decimal_table_says_why_it_has_no_measurements():
-    """The cause, not just the symptom.
-
-    Before the gate existed this file reached get_features, which failed with the
-    European-decimal hint attached. The review table now blocks first, so it has to
-    carry the hint or the user is told only that nothing is Numerical -- true, and
-    useless, when every measurement in the file is one comma away from being one.
-    """
+    """A gate rejection for comma decimals includes the decimal-format hint."""
     from src.dataset_io import review_blocking_reason
 
     df = pd.DataFrame({"cell_id": [1, 2], "t1": ["480,5", "471,2"]})
@@ -382,11 +380,7 @@ def test_a_table_with_no_numbers_at_all_is_blocked_without_a_decimal_hint():
 
 
 def test_a_new_unique_column_does_not_take_the_row_id_the_profile_already_names(frame):
-    """Only new columns are guessed, and a guess must not outrank a stored answer.
-
-    Both would hold ROLE_ROW_ID, and enforce_role_invariants sees no newcomer to prefer,
-    so it keeps the leftmost -- the guess. cell_id would silently become a category, with
-    a notice fired on entry every time the file is opened.
+    """A newly guessed identifier cannot displace the saved identifier present in the file.
     """
     wider = frame.copy()
     wider.insert(0, "uuid", ["a1", "b2", "c3"])
@@ -396,14 +390,7 @@ def test_a_new_unique_column_does_not_take_the_row_id_the_profile_already_names(
 
 
 def test_the_guess_comes_back_when_the_profiles_identifier_is_not_in_this_file(frame):
-    """The complement of the test above, and the half the guard had wrong.
-
-    A stored role only reaches a column the file actually has, so asking the *profile*
-    whether an identifier exists suppresses the guess for a file that has no identifier
-    to protect. `roi_id` is another pipeline's name for `cell_id` -- which is how a
-    profile comes to be a near-match rather than an exact one in the first place -- and
-    without the guess no column holds Row ID at all: the real identifier is guessed
-    Categorical with one level per row, and the loader renumbers the rows 1..N.
+    """A missing saved identifier does not suppress a valid identifier guess in this file.
     """
     renamed = frame.rename(columns={"cell_id": "roi_id"})
     roles, _groups, _numeric = build_working_copy(
@@ -414,14 +401,8 @@ def test_the_guess_comes_back_when_the_profiles_identifier_is_not_in_this_file(f
 # --------------------------- the gate answers the loader's questions, not just its own
 
 def test_an_empty_row_id_column_is_blocked_at_the_gate_not_two_screens_later():
-    """The failure a saved profile produces on the next batch of files.
-
-    The profile remembers *which column* is the identifier, never whether it holds
-    anything, so a later export that leaves `cell_id` blank still matches the profile
-    exactly and auto-applies. check_and_fix_df then drops the empty column and reports
-    the identifier missing -- with no table on screen, because the match rendered none.
-    Both halves are asserted together: the gate has to reject exactly what the loader
-    would, or the seam reopens.
+    """The gate and loader both reject an empty identifier, even when its headers match a
+    profile.
     """
     from src.dataset_io import check_and_fix_df, review_blocking_reason
 
@@ -434,13 +415,8 @@ def test_an_empty_row_id_column_is_blocked_at_the_gate_not_two_screens_later():
 
 
 def test_a_row_id_that_repeats_is_blocked_where_the_dropdown_is():
-    """An identifier names exactly one row, and this is the screen that can fix it.
-
-    Per-image cell numbering is the ordinary way to hit it: `cell_id` 1..25 repeated in
-    every field of view is unique within an image and nowhere else. The loader refuses
-    such a file too -- it used to *delete* the rows that shared a name, behind a warning
-    -- so both halves are asserted together, as with the empty case: the gate names the
-    cost beside the dropdown, and the loader stops rather than repairing.
+    """The gate and loader both reject repeated identifiers without deleting duplicate
+    rows.
     """
     from src.dataset_io import check_and_fix_df, review_blocking_reason
 
@@ -487,11 +463,7 @@ def test_a_table_with_no_identifier_at_all_is_not_blocked():
 
 
 def test_columns_marked_numerical_that_hold_no_numbers_are_blocked():
-    """validate_roles asks about the *label*; this asks about the data behind it.
-
-    Marking a free-text column Numerical satisfies "at least one column is Numerical"
-    and still leaves get_features with nothing to plot.
-    """
+    """A Numerical label cannot make a text-only column plottable."""
     from src.dataset_io import get_features, review_blocking_reason
 
     df = pd.DataFrame({"cell_id": ["c1", "c2"], "notes": ["ok", "fine"]})

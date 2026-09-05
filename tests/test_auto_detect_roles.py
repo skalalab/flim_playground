@@ -1,11 +1,4 @@
-"""Guessing a role for every column of a file the profile has never seen.
-
-Deliberately threshold-free. Every rule is either a dtype question or a uniqueness
-question, so there is no magic number to tune and no silent drift when data changes
-shape. The guesses it gets wrong are wrong *visibly* -- a free-text column guessed as
-categorical shows its 1204 distinct values in the review table's preview -- and cost
-one dropdown to fix. A cardinality threshold would trade that for failures nobody sees.
-"""
+"""Column roles are inferred from dtype, emptiness, and identifier uniqueness."""
 import sys
 from pathlib import Path
 
@@ -24,8 +17,7 @@ from src.column_roles import (
 
 
 def test_numeric_columns_are_measurements():
-    """`n` repeats on purpose -- an all-distinct whole-number column is an id candidate,
-    which is a different rule, pinned below."""
+    """The repeated integer is ineligible for Row ID and remains numerical."""
     df = pd.DataFrame({"g": ["a", "a", "b"], "feat": [1.5, 2.5, 3.5], "n": [3, 4, 4]})
     roles = detect_column_roles(df)
     assert roles["feat"] == ROLE_NUMERICAL
@@ -46,13 +38,18 @@ def test_an_all_unique_text_column_is_the_row_id():
     assert roles["t"] == ROLE_CATEGORICAL
 
 
-def test_a_fractional_float_is_never_the_row_id():
-    """Nearly every measurement column is all-unique; that must not make it an id.
+def test_an_identifier_must_remain_unique_as_text():
+    df = pd.DataFrame({"cell_id": [1, "1", "c"],
+                       "uuid": ["a", "b", "c"], "feat": [1.5, 2.5, 3.5]})
 
-    A fractional part is what rules a column out, not the float dtype -- 1.1, 1.2, 1.3
-    is a measurement however distinct it is. This is the rule that keeps the 25
-    all-distinct float columns of a real extraction table out of the running.
-    """
+    roles = detect_column_roles(df)
+
+    assert roles["cell_id"] == ROLE_CATEGORICAL
+    assert roles["uuid"] == ROLE_ROW_ID
+
+
+def test_a_fractional_float_is_never_the_row_id():
+    """Distinct fractional measurements are ineligible for Row ID."""
     df = pd.DataFrame({"feat": [1.5, 2.5, 3.5], "t": ["x", "x", "y"]})
     roles = detect_column_roles(df)
     assert roles["feat"] == ROLE_NUMERICAL
@@ -76,12 +73,7 @@ def test_only_one_column_is_given_the_row_id_role():
 
 
 def test_an_identifier_is_found_wherever_it_sits_in_the_file():
-    """Position carries no information, so the rule reads none from it.
-
-    Real files put the identifier last as readily as first -- `wine_id` is column 13
-    of 13, `flower_id` column 6 of 6 -- and a rule that only looked at column 0 missed
-    both while claiming to be a uniqueness rule.
-    """
+    """Identifier detection checks every column, including the last one."""
     df = pd.DataFrame({"feat": [1.5, 2.5, 3.5], "g": ["a", "a", "b"],
                        "wine_id": [1, 2, 3]})
     roles = detect_column_roles(df)
@@ -90,12 +82,8 @@ def test_an_identifier_is_found_wherever_it_sits_in_the_file():
 
 
 def test_an_identifier_qualifies_in_either_dtype():
-    """1, 2, 3 is an identifier whether it is stored as int64 or float64.
-
-    The pair that keeps the rule off the dtype: the int form is the ordinary `cell_id`,
-    and the float form -- 1.0, 2.0, 3.0 -- is what a spreadsheet, or
-    coerce_majority_numeric_cols beside a column that needed a NaN, hands back. Refusing
-    every float would miss exactly the column the coercion had just created.
+    """Whole-number identifiers qualify as integers or floats, including spreadsheet
+    values.
     """
     for values, dtype in (([1, 2, 3], "int64"), ([1.0, 2.0, 3.0], "float64")):
         df = pd.DataFrame({"g": ["a", "a", "b"], "cell_id": values})
@@ -104,11 +92,7 @@ def test_an_identifier_qualifies_in_either_dtype():
 
 
 def test_an_identifier_with_gaps_still_qualifies():
-    """Ids surviving a filter -- 1, 2, 4, 5 -- are as much an identifier as 1, 2, 3, 4.
-
-    Nothing requires the numbering to be a consecutive run: the test is whether the
-    column is a bijection with the rows, not whether it counts them.
-    """
+    """Unique whole-number identifiers need not be consecutive."""
     df = pd.DataFrame({"cell_id": [1, 2, 4, 5], "feat": [1.5, 2.5, 3.5, 4.5]})
     assert detect_column_roles(df)["cell_id"] == ROLE_ROW_ID
 
@@ -120,13 +104,26 @@ def test_a_boolean_column_is_never_the_identifier():
     assert ROLE_ROW_ID not in detect_column_roles(df).values()
 
 
-def test_the_leftmost_qualifying_column_takes_the_role():
-    """Two whole-number bijections: the leftmost wins, the other stays a measurement.
+def test_a_boolean_column_is_a_category_not_a_measurement():
+    """Boolean columns remain categorical despite pandas treating their dtype as numeric.
+    """
+    df = pd.DataFrame({"cell_id": [1, 2, 3], "is_responder": [True, False, True],
+                       "tau": [0.4, 0.5, 0.6]})
+    roles = detect_column_roles(df)
+    assert roles == {"cell_id": ROLE_ROW_ID, "is_responder": ROLE_CATEGORICAL,
+                     "tau": ROLE_NUMERICAL}
 
-    This is the tie-break that carries what the old first-position rule used to enforce
-    as a filter -- an identifier beside an all-distinct integer measurement wins by
-    sitting where identifiers usually sit, rather than by the measurement being refused.
-    Demoting the loser to Categorical would take it out of the analysis.
+
+def test_an_integer_flag_column_is_still_a_measurement():
+    """An integer 0/1 column may be a count, so its values do not make it categorical.
+    """
+    df = pd.DataFrame({"flag": [0, 1, 1, 0], "feat": [1.5, 2.5, 3.5, 4.5]})
+    assert detect_column_roles(df)["flag"] == ROLE_NUMERICAL
+
+
+def test_the_leftmost_qualifying_column_takes_the_role():
+    """The leftmost identifier candidate wins; other numeric candidates remain
+    measurements.
     """
     df = pd.DataFrame({"cell_id": [1, 2, 3], "npix": [7, 8, 9], "feat": [1.5, 2.5, 3.5]})
     roles = detect_column_roles(df)
@@ -135,13 +132,7 @@ def test_the_leftmost_qualifying_column_takes_the_role():
 
 
 def test_a_whole_numbered_measurement_is_claimed_when_nothing_else_qualifies():
-    """The cost of reading no signal but the values, pinned rather than left to be found.
-
-    With no identifier column in the file, an all-distinct whole-numbered measurement
-    takes the role -- `npix` here, a lifetime rounded to whole picoseconds in a real one.
-    One measurement out of the pickers until a dropdown puts it back. Accepted against
-    the alternative, which missed `wine_id` and `flower_id` outright, and visible: the
-    review table shows this guess beside the column's own preview before any save.
+    """A unique integer measurement can become the Row ID; the review table can correct it.
     """
     df = pd.DataFrame({"g": ["a", "a"], "feat": [1.5, 2.5], "npix": [3, 4]})
     assert detect_column_roles(df)["npix"] == ROLE_ROW_ID
@@ -168,13 +159,7 @@ def test_nothing_is_ignored_by_guess_while_it_still_has_values():
 
 
 def test_a_column_with_no_values_at_all_is_ignored():
-    """The one exception, and the reason it is not a real exception.
-
-    A header with nothing under it comes off a CSV as float64 NaN, so the dtype rule
-    reads it as a measurement. check_and_fix_df removes it before get_features sees
-    it either way, so guessing Ignore pre-empts no decision -- it just stops the
-    review table offering an empty column as something to plot.
-    """
+    """An all-NaN column is ignored even when pandas assigns it a numerical dtype."""
     df = pd.DataFrame({"cell_id": ["a", "b"], "notes": [float("nan")] * 2,
                        "feat": [1.0, 2.0]})
     assert df["notes"].dtype == "float64"   # the dtype that made this necessary
@@ -210,10 +195,7 @@ def test_every_column_gets_exactly_one_role():
 # ------------------------------------------- the app's wrapper, with coercion
 
 def test_detect_roles_applies_the_same_1_percent_coercion_the_analysis_does():
-    """A feature column with a stray string is a measurement, not a category.
-
-    dataset_io.detect_roles runs coerce_majority_numeric_cols first, so the guess
-    matches what get_features will actually make of the column.
+    """Role detection applies the analysis coercion rule to mostly numerical text columns.
     """
     vals = [str(i / 2) for i in range(200)]
     vals[0] = "n/a"

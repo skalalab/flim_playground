@@ -1,13 +1,5 @@
-"""The Data Analysis page wired to the gate, driven end to end under AppTest.
-
-The gap these close: the page has no file_uploader accessor, so the other suites call
-`review_gate` in bare mode, where every widget returns its default and nothing is ever
-picked or clicked. Everything past that point -- the working copy reaching the page, a
-role changed in the table, the roles the page then hands to the plots, a rejection after
-the gate closed -- is only reachable here.
-
-The uploader and the reader are replaced, so these exercise the page's own wiring rather
-than file parsing: `read_table` has its own suite.
+"""End-to-end review-gate interaction through AppTest. The uploader and reader are stubbed;
+file parsing is covered separately.
 """
 import sys
 from pathlib import Path
@@ -20,8 +12,9 @@ import toml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src import dataset_io
-from src.column_roles import NO_GROUP
+from src.column_roles import NO_GROUP, code_span
 from src.widgets import analysis_config_widgets as acw
+from src.widgets.filter_widgets import selection_key
 from src.widgets.review_table_widget import (
     AUTO_DETECT,
     GROUP_HELP,
@@ -77,11 +70,7 @@ def _run(profiles=None, current="p", path=None):
 
 
 def _pick(at, value):
-    """Click `value`'s row in the chooser.
-
-    A row is a button labelled "pdl1  —  3 shared · ...", so it is matched by prefix
-    rather than by the whole label. Buttons rather than one radio group because the rows
-    carry their own ✏️ and 🗑️, and Streamlit cannot split a radio across rows.
+    """Click a chooser row by its profile-name prefix, ignoring the displayed match counts.
     """
     for widget in at.button:
         if str(widget.label).startswith(value):
@@ -100,11 +89,8 @@ def _by_key(at, kind, key):
 # --------------------------------------------- no FOV column on the user-table branch
 
 def test_a_user_table_never_has_a_designated_fov_column(page, tmp_path):
-    """There is no FOV role, so nothing on this branch can name one.
-
-    image_name is present in the fixture and reads as an ordinary categorical. If a
-    designated column ever came back, the four point plots would grow a hover line no
-    role stands behind.
+    """User-table field-of-view columns are ordinary categoricals with no designated hover
+    role.
     """
     at = _run({}, path=tmp_path / "analysis_config.toml")
     at = _pick(at, AUTO_DETECT)
@@ -115,11 +101,7 @@ def test_a_user_table_never_has_a_designated_fov_column(page, tmp_path):
 
 
 def test_a_legacy_profiles_fov_name_never_leaks_into_a_file_that_did_not_match_it(page, tmp_path):
-    """`other` is merely the profile on disk; this file was never matched against it.
-
-    It still carries fov_name_col, being written before the role was dropped. That key
-    is read as one more categorical and never as a designated column, on this profile
-    or any other.
+    """An unmatched legacy profile cannot designate a field-of-view column for this file.
     """
     at = _run({"other": {"fov_name_col": "image_name", "categorical_cols": ["image_name"],
                          "all_numerical_features": ["something_else"]}},
@@ -128,6 +110,157 @@ def test_a_legacy_profiles_fov_name_never_leaks_into_a_file_that_did_not_match_i
     at.session_state._review_confirmed = True
     at.run(timeout=90)
     assert at.session_state.effective_fov_name_col is None
+
+
+def test_the_read_line_spans_the_filename_it_names(page, tmp_path):
+    """A Markdown caption displays the uploaded filename literally."""
+    page["name"] = "*draft*.csv"
+    at = _run({}, path=tmp_path / "analysis_config.toml")
+
+    captions = [str(caption.value) for caption in at.caption]
+    read_line = [text for text in captions if text.startswith("Read ")]
+    assert read_line, captions
+    assert code_span("*draft*.csv") in read_line[0], read_line[0]
+
+
+# ------------------------------------------ a reopening does not reset the page below
+
+
+def _plotting(tmp_path, name="p", measurements=None):
+    """Open an auto-applied profile, select a feature, and narrow the treatment filter.
+    """
+    at = _run({name: {"unique_row_id_col": "cell_id",
+                      "categorical_cols": ["image_name", "treatment"],
+                      "all_numerical_features": measurements or ["Area"], "ignored_cols": []}},
+              current=name, path=tmp_path / "analysis_config.toml")
+    menu = [w for w in at.selectbox if "_menu_" in str(w.key)][0]
+    at = menu.select("Area").run(timeout=90)
+    filter_widget = _by_key(at, "multiselect", selection_key("treatment"))
+    return filter_widget.set_value(["DMSO"]).run(timeout=90)
+
+
+def _configuration(at):
+    """What the user set, as the page holds it."""
+    state = at.session_state.filtered_state
+    return {key: state.get(key) for key in state if "_menu_" in key} | {
+        "filter": state.get(selection_key("treatment")),
+        "color": state.get("vis_encoding_color_by"),
+    }
+
+
+def _pencil(at):
+    return _by_key(at, "button", "review_reopen").click().run(timeout=90)
+
+
+def test_reopening_the_table_does_not_reset_the_plot_configuration(page, tmp_path):
+    """Hidden analysis widgets keep their settings while review owns the screen."""
+    at = _plotting(tmp_path)
+    before = _configuration(at)
+    assert before["filter"] == ["DMSO"], before
+    assert at.get("plotly_chart")
+    assert at.get("download_button")
+
+    at = _pencil(at)
+
+    assert at.session_state._review_confirmed is False
+    assert _configuration(at) == before
+    _assert_review_only(at)
+
+
+def _assert_review_only(at):
+    assert not at.exception, [e.value for e in at.exception]
+    assert not at.get("plotly_chart")
+    assert not at.get("download_button")
+    assert not [w for w in at.selectbox if "_menu_" in str(w.key)]
+    assert not [w for w in at.multiselect if w.key == "vis_encoding_color_by"]
+    assert not [b for b in at.button if b.key == "review_reopen"]
+    assert at.session_state.vis_df is None
+    assert at.session_state.analysis_columns is None
+
+
+def test_profile_names_do_not_make_review_buttons_persistent(page, tmp_path):
+    at = _pencil(_plotting(tmp_path, name="p_multiselect"))
+    for _ in range(2):
+        at.run(timeout=90)
+        _assert_review_only(at)
+        assert not at.error, [e.value for e in at.error]
+
+    at = next(b for b in at.button if str(b.label) == "Cancel").click().run(timeout=90)
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.get("plotly_chart")
+
+
+def test_unsaved_role_changes_keep_the_plot_and_exports_hidden(page, tmp_path):
+    """An export must never combine saved plot settings with unsaved Ignore roles."""
+    at = _pencil(_plotting(tmp_path))
+    gen = at.session_state["_review_editor_gen"]
+
+    at = _by_key(at, "selectbox", f"review_role_{gen}_Area").select("Ignore").run(timeout=90)
+
+    assert at.session_state._review_roles["Area"] == "ignore"
+    _assert_review_only(at)
+
+    at = [b for b in at.button if str(b.label) == "Cancel"][0].click().run(timeout=90)
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.get("plotly_chart")
+    assert at.get("download_button")
+    assert at.session_state._review_roles["Area"] == "numerical"
+
+
+@pytest.mark.parametrize("exit_action", ["Cancel", "Save"])
+@pytest.mark.parametrize("hidden_runs", [0, 2], ids=["immediate", "after-reruns"])
+def test_review_restores_plot_options(
+        page, tmp_path, monkeypatch, exit_action, hidden_runs):
+    from streamlit.elements.lib import policies
+
+    monkeypatch.setattr(policies, "_shown_default_value_warning", False)
+    at = _plotting(tmp_path)
+    separate = next(w for w in at.selectbox if w.label == "Separate by")
+    at = separate.select("image_name").run(timeout=90)
+    comparison_label = "Statistical Comparison between Two Groups"
+    comparison = next(w for w in at.radio if w.label == comparison_label)
+    at = comparison.set_value("Welch's t-test").run(timeout=90)
+    at = next(w for w in at.checkbox if w.label == "Log Y").check().run(timeout=90)
+    at = _by_key(at, "number_input", "plot_point_size").set_value(9).run(timeout=90)
+    before = _configuration(at)
+
+    at = _pencil(at)
+    _assert_review_only(at)
+    for _ in range(hidden_runs):
+        at.run(timeout=90)
+        _assert_review_only(at)
+    button = next(b for b in at.button if (
+        str(b.label) == "Cancel" if exit_action == "Cancel"
+        else str(b.label).startswith("💾 Save to")))
+    monkeypatch.setattr(policies, "_shown_default_value_warning", False)
+    at = button.click().run(timeout=90)
+
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state._review_confirmed is True
+    assert _configuration(at) == before
+    assert next(w for w in at.selectbox if w.label == "Separate by").value == "image_name"
+    assert next(w for w in at.radio if w.label == comparison_label).value == "Welch's t-test"
+    assert next(w for w in at.checkbox if w.label == "Log Y").value is True
+    assert _by_key(at, "number_input", "plot_point_size").value == 9
+    assert not at.warning, [w.value for w in at.warning]
+    assert at.get("plotly_chart")
+    assert at.get("download_button")
+    assert _by_key(at, "button", "review_reopen")
+
+
+def test_saving_new_roles_discards_an_invalid_feature_selection(page, tmp_path):
+    page["frame"] = _frame().assign(Perimeter=[1.5, 2.5, 3.5, 4.5])
+    at = _pencil(_plotting(tmp_path, measurements=["Area", "Perimeter"]))
+    gen = at.session_state["_review_editor_gen"]
+    at = _by_key(at, "selectbox", f"review_role_{gen}_Area").select("Ignore").run(timeout=90)
+    _assert_review_only(at)
+    at = next(b for b in at.button if str(b.label).startswith("💾 Save to")).click().run(timeout=90)
+
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state._review_confirmed is True
+    assert "Area" not in at.session_state.analysis_columns
+    assert "Perimeter" in at.session_state.analysis_columns
+    assert next(w for w in at.selectbox if "_menu_" in str(w.key)).value == "Select"
 
 
 # ------------------------------------------------------------------- the chooser
@@ -149,14 +282,8 @@ def test_a_second_file_does_not_inherit_the_first_files_chooser_pick(page, tmp_p
 # --------------------------------------- a profile whose roles stopped fitting the file
 
 def test_a_matching_profile_that_can_no_longer_load_the_file_opens_the_table(page, tmp_path):
-    """The one question is asked in one place, and that place is the table.
-
-    Same headers, blank identifier: still an exact match, because a profile remembers
-    which column is the identifier and never whether it holds anything. This used to
-    auto-apply, fail in check_and_fix_df, and leave an error on screen with no table
-    behind it. Now the gate asks its own question before stepping aside, so the file
-    lands in the table that can fix it -- with the reason beside the disabled button and
-    no chooser, since only one profile can ever know these columns.
+    """Matching headers with an invalid identifier open review with an explanation and Save
+    disabled.
     """
     config = tmp_path / "analysis_config.toml"
     page["frame"] = _frame().assign(cell_id=[None] * 4)      # blank in every row
@@ -175,11 +302,7 @@ def test_a_matching_profile_that_can_no_longer_load_the_file_opens_the_table(pag
 
 
 def test_the_reopened_table_can_only_write_back_to_the_profile_it_came_from(page, tmp_path):
-    """The rule that keeps two profiles from ever holding the same column set.
-
-    A working copy that came from `pdl1` has one save target, so the table it is
-    edited in cannot mint a second profile over `pdl1`'s own columns. Cancel is the
-    way out that writes nothing, and there is no way out that plots without saving.
+    """A reopened working copy saves to its source profile or cancels without writing.
     """
     config = tmp_path / "analysis_config.toml"
     at = _run({"pdl1": {"unique_row_id_col": "cell_id",
@@ -197,11 +320,7 @@ def test_the_reopened_table_can_only_write_back_to_the_profile_it_came_from(page
 # ------------------------------------------------------------------ the review table
 
 def test_a_role_changed_in_the_table_reaches_the_working_copy(page, tmp_path):
-    """That this is checkable at all is the point of the rows.
-
-    Under `st.data_editor` the editing itself was an AppTest blind spot: every rule was
-    proved on the pure functions and the wiring between them taken on faith.
-    """
+    """A role selection updates the working copy through the rendered row widget."""
     at = _pick(_run({}, path=tmp_path / "analysis_config.toml"), AUTO_DETECT)
     gen = at.session_state["_review_editor_gen"]
     assert at.session_state._review_roles["Area"] == "numerical"
@@ -215,12 +334,7 @@ def _numbering(at):
 
 
 def test_a_table_with_no_row_id_is_told_its_rows_will_be_numbered(page, tmp_path):
-    """The gate is the last screen that can say it.
-
-    Saving with no Row ID is allowed -- the role is optional, and the exit advice offers
-    it -- but the column that replaces it is invented by `resolve_row_id_col` after the
-    gate has closed, so nothing downstream ever announces where those numbers came from.
-    """
+    """Review explains generated row numbers before the loader creates them."""
     at = _pick(_run({}, path=tmp_path / "analysis_config.toml"), AUTO_DETECT)
     gen = at.session_state["_review_editor_gen"]
     assert at.session_state._review_roles["cell_id"] == "row_id"
@@ -231,12 +345,8 @@ def test_a_table_with_no_row_id_is_told_its_rows_will_be_numbered(page, tmp_path
 
 
 def test_a_second_row_id_is_taken_back_and_the_notice_survives_the_rekey(page, tmp_path):
-    """Two identifiers cannot both stand, and the repair has to reach the widget.
-
-    The column just clicked keeps the role; the other is demoted to what it can hold --
-    Numerical here, since demoting a measurement to Categorical would take it out of the
-    analysis. The rows are re-keyed to carry that correction back, so the notice has to
-    outlive the rerun in session state or nothing on screen explains the change.
+    """The newly selected identifier wins, and the demotion notice survives re-keyed row
+    widgets.
     """
     at = _pick(_run({}, path=tmp_path / "analysis_config.toml"), AUTO_DETECT)
     gen = at.session_state["_review_editor_gen"]
@@ -267,11 +377,7 @@ def test_a_group_can_only_be_given_to_a_measurement(page, tmp_path):
 # ------------------------------------------------------- bulk group assignment
 
 def _shape_frame():
-    """Two measurements whose names share no prefix, so auto-grouping leaves them alone.
-
-    `detect_column_groups` would file `nadh_t1`/`nadh_t2` under `nadh` on sight, and a
-    test of *assignment* must not start from a grouping something else made.
-    """
+    """Two measurements with no shared prefix start ungrouped for assignment tests."""
     return pd.DataFrame({
         "cell_id": [1, 2, 3],
         "treatment": ["DMSO", "PD-L1", "DMSO"],
@@ -291,11 +397,8 @@ def _tick(at, col):
 
 
 def test_create_then_assign_puts_two_ticked_rows_in_one_group(page, tmp_path):
-    """The flow the bar is laid out for, left to right, through the real widgets.
-
-    ➕ Add makes the group and lands the destination on it, so Apply needs no second
-    lookup -- and the row dropdown showing "shape" afterwards is what proves the name
-    reached `_review_group_names`, rather than resolving to the ungrouped slot.
+    """Adding a group selects it as the destination; Apply updates both selected row
+    dropdowns.
     """
     at = _fresh_gate(page, tmp_path)
     gen = at.session_state["_review_editor_gen"]
@@ -332,13 +435,7 @@ def test_only_a_measurement_row_offers_a_tick(page, tmp_path):
 
 
 def test_a_tick_survives_a_correction_elsewhere_in_the_table(page, tmp_path):
-    """Why the ticks are keyed to the file and not to the editor.
-
-    Naming a second Row ID makes `enforce_role_invariants` take the first one back, which
-    re-keys every dropdown in the table. A selection made across twelve rows must not go
-    with them -- that is the loss `_FILE_GEN` was split out to prevent for the name boxes,
-    and a half-made selection is the same kind of work in progress.
-    """
+    """Selection ticks survive when a role correction re-keys the editor dropdowns."""
     at = _fresh_gate(page, tmp_path)
     _tick(at, "area").check().run(timeout=90)
     before = at.session_state["_review_editor_gen"]
@@ -350,12 +447,8 @@ def test_a_tick_survives_a_correction_elsewhere_in_the_table(page, tmp_path):
 
 
 def test_a_measurements_ungrouped_slot_is_named_after_where_it_goes(page, tmp_path):
-    """`—` says nothing to a column that has somewhere to fall to.
-
-    Both rows still *hold* `NO_GROUP`: the two spellings are presentation and the value
-    is not, which is why this is a `format_func` and not a second option -- one option
-    list, one stored value, and nothing downstream has to learn a second way to say "no
-    group". (`_group_key` is what makes the `format_func` reach the screen at all.)
+    """Ungrouped labels depend on the role while both dropdowns retain the same NO_GROUP
+    value.
     """
     at = _fresh_gate(page, tmp_path)
     gen = at.session_state["_review_editor_gen"]
@@ -369,16 +462,9 @@ def test_a_measurements_ungrouped_slot_is_named_after_where_it_goes(page, tmp_pa
 
 
 def test_the_group_cell_is_rekeyed_when_the_role_flips(page, tmp_path):
-    """The label has to change with the role, and only a new key can change it.
-
-    A rendered selectbox's option labels are fixed at its key: flipping `format_func` on
-    the next run repaints nothing, so the box that read `Uncategorized` as a measurement
-    went on reading it after the row was demoted to Categorical, and `—` went on showing
-    after a promotion. Measured live on Streamlit 1.54 -- `format_func` alone, then
-    `format_func` with `disabled`, then the key: only the key repainted.
-
-    `AppTest` reports the fresh label either way, which is exactly why this asserts the
-    **key** rather than the text. A test on the text passes on the broken code.
+    """Streamlit fixes option labels at a widget key, so changing roles must re-key the
+    group cell. AppTest reports fresh labels even without a new key; assert the key
+    itself.
     """
     at = _fresh_gate(page, tmp_path)
     gen = at.session_state["_review_editor_gen"]
@@ -403,9 +489,7 @@ def test_the_group_cell_is_rekeyed_when_the_role_flips(page, tmp_path):
 
 
 def test_the_group_section_explains_itself_on_hover_not_on_a_line(page, tmp_path):
-    """Why a feature group exists is worth saying once, and a caption said it on every
-    render of every file. It rides on the heading's tooltip instead: the same words, no
-    line of the page spent on them."""
+    """Group help appears in the heading tooltip without adding a caption."""
     at = _fresh_gate(page, tmp_path, _shape_frame().assign(nadh_t1=[1.0, 2.0, 3.0],
                                                            nadh_t2=[4.0, 5.0, 6.0]))
     assert at.session_state._review_group_names, "expected auto-grouping to make one"
@@ -418,12 +502,8 @@ def test_the_group_section_explains_itself_on_hover_not_on_a_line(page, tmp_path
 
 
 def test_with_no_groups_the_section_stays_and_only_add_is_live(page, tmp_path):
-    """A file whose columns share no prefix gets no groups from auto-grouping -- the
-    flat-name case this section exists for.
-
-    Every control stays on screen; the two that need a group to act on are disabled.
-    Hiding them instead made the whole section vanish on exactly this file, which reads
-    as broken rather than as empty.
+    """An empty group section stays visible with Add enabled and group-dependent controls
+    disabled.
     """
     at = _fresh_gate(page, tmp_path)   # area/perimeter: no shared prefix, so no groups
 
@@ -465,13 +545,7 @@ _PARTIAL = {"unique_row_id_col": "", "categorical_cols": ["treatment", "species"
 
 
 def test_the_profiles_panel_exists_only_inside_the_gate(page, tmp_path):
-    """It came back, but as gate furniture rather than a fixture above the plot.
-
-    The panel was retired because it sat over the plot in every session to offer two
-    controls wanted a handful of times in a profile's life. That objection was about
-    where it lived, not whether it should exist -- so it lives in the gate now, which
-    is open only while a file's roles are being decided.
-    """
+    """Profile management is visible during review and hidden beside the plot."""
     at = _run({"pdl1": _PDL1}, current="pdl1", path=tmp_path / "analysis_config.toml")
     assert not [e for e in at.expander if "Manage saved profiles" in e.label], \
         [e.label for e in at.expander]                       # unpicked: chooser only
@@ -482,10 +556,8 @@ def test_the_profiles_panel_exists_only_inside_the_gate(page, tmp_path):
 
 
 def test_the_chooser_rows_only_pick(page, tmp_path):
-    """Rename and delete left these rows when the zero-shared cutoff arrived.
-
-    A chooser row that carried a \U0001f5d1\ufe0f could only ever offer it for a profile the
-    chooser had decided to list, which is the wrong list for a maintenance control.
+    """Chooser rows select profiles; maintenance controls belong in the complete profile
+    list.
     """
     at = _pick(_run({"pdl1": _PDL1, "partial": _PARTIAL}, current="pdl1",
                     path=tmp_path / "analysis_config.toml"), "pdl1")
@@ -495,9 +567,9 @@ def test_the_chooser_rows_only_pick(page, tmp_path):
 
 
 def test_manage_lists_every_profile_including_one_sharing_no_column(page, tmp_path):
-    """The whole reason it is a separate list. `iris` shares nothing with this file, so
-    the chooser drops it -- and before the split that dropped its \u270f\ufe0f and \U0001f5d1\ufe0f too,
-    leaving a profile that could not be reached from anywhere."""
+    """Management includes profiles excluded from the chooser because they share no
+    columns.
+    """
     at = _pick(_run({"pdl1": _PDL1, "iris": _IRIS}, current="pdl1",
                     path=tmp_path / "analysis_config.toml"), "pdl1")
 
@@ -512,11 +584,8 @@ def test_manage_lists_every_profile_including_one_sharing_no_column(page, tmp_pa
 
 
 def test_manage_is_reachable_on_the_reopen_of_an_exact_match(page, tmp_path):
-    """The case that had no way in at all.
-
-    An exact match renders no gate, and the \u270f\ufe0f reopens one whose chooser is suppressed
-    -- `chooser_is_needed` is False, because the applied profile already describes the
-    file. So the one screen that listed profiles was the one screen this user never saw.
+    """Reopening an exact match exposes profile management even though its chooser is
+    suppressed.
     """
     at = _run({"pdl1": _EXACT, "iris": _IRIS}, current="pdl1",
               path=tmp_path / "analysis_config.toml")
@@ -528,13 +597,7 @@ def test_manage_is_reachable_on_the_reopen_of_an_exact_match(page, tmp_path):
 
 
 def test_a_new_profile_is_named_in_the_row_rather_than_behind_a_popover(page, tmp_path):
-    """Naming a new profile is one gesture, not two.
-
-    Every new file shape has to make this write -- nothing reaches a plot unsaved -- so
-    the box that names it belongs beside the button that uses it, on screen and typed
-    into directly. The row says nothing else: what the name is *for* is the one thing
-    the button already says.
-    """
+    """The new-profile name field is visible beside its Save button."""
     config = tmp_path / "analysis_config.toml"
     at = _pick(_run({}, path=config), AUTO_DETECT)
     gen = at.session_state["_review_file_gen"]
@@ -548,10 +611,67 @@ def test_a_new_profile_is_named_in_the_row_rather_than_behind_a_popover(page, tm
         [str(c.value) for c in at.caption]
 
 
+def _save_as(at, name):
+    """Type `name` into the Save-as box and press whichever button the row is showing."""
+    gen = at.session_state["_review_file_gen"]
+    _by_key(at, "text_input", f"review_save_as_name_{gen}").set_value(name).run(timeout=90)
+    pressed = [b for b in at.button if str(b.key).startswith(f"review_save_as_")
+               and str(b.key).endswith(str(gen))]
+    assert len(pressed) == 1, [b.key for b in at.button]
+    return pressed[0].click().run(timeout=90)
+
+
+def test_saving_over_an_existing_profile_asks_first(page, tmp_path):
+    """The first press arms overwrite; confirmation replaces the existing profile."""
+    config = tmp_path / "analysis_config.toml"
+    at = _pick(_run({"iris": _IRIS}, current="", path=config), AUTO_DETECT)
+    gen = at.session_state["_review_file_gen"]
+
+    at = _save_as(at, "iris")
+    assert acw.profile_known_columns(acw._get_profile_config("iris")) == {"species", "sepal"}
+    assert "_review_saved_as" not in at.session_state, "wrote on the first press"
+    assert at.session_state["_review_overwrite_armed"] == "iris"
+    assert _by_key(at, "button", f"review_save_as_confirm_{gen}").label.startswith("⚠️")
+    assert any("already exists" in str(c.value) for c in at.caption), \
+        [str(c.value) for c in at.caption]
+
+    at = _by_key(at, "button", f"review_save_as_confirm_{gen}").click().run(timeout=90)
+    assert acw.profile_known_columns(acw._get_profile_config("iris")) == set(_frame().columns)
+    assert at.session_state._review_confirmed is True
+
+
+def test_retyping_the_name_is_the_cancel(page, tmp_path):
+    """Changing the name cancels the overwrite confirmation for the previous name."""
+    config = tmp_path / "analysis_config.toml"
+    at = _pick(_run({"iris": _IRIS}, current="", path=config), AUTO_DETECT)
+    gen = at.session_state["_review_file_gen"]
+
+    at = _save_as(at, "iris")
+    assert at.session_state["_review_overwrite_armed"] == "iris"
+
+    at = _save_as(at, "iris-2")   # a free name: the row goes back to offering a plain save
+    assert _by_key(at, "button", f"review_save_as_new_{gen}"), "still armed after a retype"
+    assert acw.profile_known_columns(acw._get_profile_config("iris")) == {"species", "sepal"}
+    assert "iris-2" in acw.list_profiles(), acw.list_profiles()
+
+
+def test_deleting_the_armed_profile_disarms_the_row(page, tmp_path):
+    """Deleting the overwrite target restores the row to creating a new profile."""
+    config = tmp_path / "analysis_config.toml"
+    at = _pick(_run({"iris": _IRIS}, current="", path=config), AUTO_DETECT)
+    gen = at.session_state["_review_file_gen"]
+
+    at = _save_as(at, "iris")
+    assert at.session_state["_review_overwrite_armed"] == "iris"
+
+    at = _by_key(at, "button", "review_arm_delete_iris").click().run(timeout=90)
+    at = _by_key(at, "button", "review_delete_iris").click().run(timeout=90)
+    assert _by_key(at, "button", f"review_save_as_new_{gen}"), \
+        f"row still armed for a deleted profile: {[b.key for b in at.button]}"
+
+
 def test_deleting_the_picked_profile_sends_the_gate_back_to_choosing(page, tmp_path):
-    """The working copy came from a profile that no longer exists, so there is nothing
-    for the table to write back to. Leave the pick standing and the save button offers
-    to write to a profile that is gone."""
+    """Deleting the working copy's source returns the gate to profile selection."""
     config = tmp_path / "analysis_config.toml"
     at = _pick(_run({"pdl1": _PDL1, "iris": _IRIS}, current="pdl1", path=config), "pdl1")
     assert at.session_state._review_source == "pdl1"
@@ -565,13 +685,7 @@ def test_deleting_the_picked_profile_sends_the_gate_back_to_choosing(page, tmp_p
 
 
 def test_deleting_one_profile_leaves_no_row_armed(page, tmp_path):
-    """The bug this confirm replaced a popover to fix.
-
-    A popover keeps its open state in the browser and takes no key, so its identity was
-    its slot: delete the first of two and the survivor slid up into that slot and
-    inherited an *open* confirm -- one click from destroying a profile the user had never
-    named. The armed row is a profile name in session state now, and the delete clears it.
-    """
+    """A surviving profile must not inherit the deleted row's confirmation state."""
     config = tmp_path / "analysis_config.toml"
     at = _pick(_run({"pdl1": _PDL1, "partial": _PARTIAL, "iris": _IRIS},
                     current="pdl1", path=config), "pdl1")
@@ -582,8 +696,7 @@ def test_deleting_one_profile_leaves_no_row_armed(page, tmp_path):
     confirms = {b.key for b in at.button if str(b.key).startswith("review_delete_")}
     assert confirms == {"review_delete_iris", "review_delete_cancel_iris"}, confirms
 
-    # Deleting a profile the working copy did not come from, so the gate stays open and
-    # the surviving rows re-render -- which is where the inherited confirm used to show up.
+    # Deleting an unrelated profile keeps review open while the surviving rows render.
     _by_key(at, "button", "review_delete_iris").click().run(timeout=90)
 
     assert "_review_delete_armed" not in at.session_state
@@ -593,12 +706,8 @@ def test_deleting_one_profile_leaves_no_row_armed(page, tmp_path):
 
 
 def test_deleting_the_applied_profile_on_the_reopen_path_reopens_the_chooser(page, tmp_path):
-    """The case the chooser-visible one does not reach.
-
-    `_review_chooser` is decided once per opening, and on the ✏️ path it is False -- the
-    applied profile describes this file exactly, so there is nothing to choose. Delete that
-    profile and there is: the working copy has nowhere to be written back to, and the screen
-    has to ask again. Left at False the gate rendered a table with no roles behind it.
+    """Deleting the applied profile reopens the suppressed chooser and removes its working
+    copy.
     """
     at = _run({"pdl1": _EXACT, "iris": _IRIS}, current="pdl1",
               path=tmp_path / "analysis_config.toml")
@@ -611,22 +720,11 @@ def test_deleting_the_applied_profile_on_the_reopen_path_reopens_the_chooser(pag
     assert acw.list_profiles() == ["iris"]
     assert at.session_state._review_chooser is True
     assert "_review_source" not in at.session_state
-    # The previous decision was the profile just deleted, so there is nothing to fall back
-    # to. Left standing, Cancel on an auto-detected copy confirmed it straight to the plots
-    # without a save -- the one thing the gate exists to prevent.
+    # Cancel cannot restore the deleted profile's decision.
     assert "_review_reopened" not in at.session_state
 
-    # Read off the tree as it stands, without a clean pass first. The click that deleted
-    # rendered the old screen up to the delete button and then `st.rerun()`, so the tree
-    # mixes two passes -- and `at.run()` replays *every* widget in it, including editor
-    # rows the delete has just discarded, whose state Streamlit has dropped. That is an
-    # `AppTest` limitation, not the app: `at.exception` below is empty, so the run the
-    # delete triggered completed. It appeared when the table grew a tick column, and any
-    # extra stateful widget in `_editor` reproduces it -- nothing to do with the delete.
-    #
-    # Nothing is given up by reading the mixed tree here. Cancel's absence is asserted
-    # above as the fact that causes it (`_review_reopened`, mapped to buttons by
-    # `exit_actions`, which has its own tests), and the pdl1 row is gone from both passes.
+    # Inspect the delete-triggered run directly. An extra AppTest run can replay stale
+    # editor widgets from its mixed tree after Streamlit has discarded their state.
     assert not [e.value for e in at.exception], [e.value for e in at.exception]
     labels = [str(b.label) for b in at.button]
     assert AUTO_DETECT in labels, labels
@@ -678,13 +776,8 @@ def _run_teardown():
 
 
 def test_the_bare_mode_form_mark_is_cleared_off_the_singleton_itself():
-    """The reset every AppTest in this process depends on -- see tests/conftest.py.
-
-    A bare-mode `st.form` has no ScriptRunContext to build a child block against, so it
-    writes its id onto the *main* DeltaGenerator, and the mark outlives the `with`. The
-    next `st.button` anywhere in the process then reads it. Cleared on a copy instead,
-    the singleton would stay marked and a later suite would die inside a form it never
-    rendered.
+    """Bare-mode forms mark Streamlit's main singleton; the fixture must clear that same
+    object for later AppTests.
     """
     from streamlit.delta_generator_singletons import get_default_dg_stack_value
 
@@ -699,11 +792,7 @@ def test_the_bare_mode_form_mark_is_cleared_off_the_singleton_itself():
 
 
 def test_the_reset_degrades_to_a_no_op_when_streamlits_internals_move(monkeypatch):
-    """The import lives in the fixture body so a rename cannot fail *collection*.
-
-    `streamlit.delta_generator_singletons` is private with no API guarantee. Imported at
-    module scope, a renamed symbol takes down every test in the suite with a traceback
-    pointing nowhere near the cause.
+    """The fixture tolerates renamed Streamlit internals without failing test collection.
     """
     monkeypatch.setitem(sys.modules, "streamlit.delta_generator_singletons", None)
 
@@ -711,14 +800,8 @@ def test_the_reset_degrades_to_a_no_op_when_streamlits_internals_move(monkeypatc
 
 
 def test_what_the_reader_says_about_the_file_is_shown_while_the_gate_is_open(page, tmp_path):
-    """The scope warning must not wait behind a Save the user cannot reach.
-
-    read_table returns it; interpret_table used to be the only thing that rendered it,
-    and interpret_table runs only *after* the gate is saved. So a workbook whose table
-    sits on sheet 2 opened the gate on the cover sheet's one junk column, blocked Save
-    with "no column is marked Numerical" -- unfixable, there is no measurement to mark --
-    and withheld the one line that explains it. The two states this pins are the ones
-    that made it invisible: the gate open, and the gate blocked.
+    """Reader warnings remain visible while review is open, including when validation
+    blocks Save.
     """
     page["warning"] = ("Warning: 'book.xlsx' has 2 sheets and only the first one, "
                        "'ReadMe', was read ('Data' skipped).")

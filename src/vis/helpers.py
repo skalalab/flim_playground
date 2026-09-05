@@ -9,8 +9,10 @@ from scipy.optimize import brentq
 from scipy.stats import gaussian_kde, median_abs_deviation, norm, ttest_ind
 from sklearn.mixture import GaussianMixture
 
+from src.column_roles import code_span
 from src.emojis import sad_emoji
 from src.vis.plot_defaults import WEBGL_POINT_THRESHOLD
+from src.widgets.analysis_widget_state import number_input_default
 from src.widgets.visualization_widgets import comparison_pair_widget
 
 
@@ -38,15 +40,10 @@ def get_context_theme_color():
 
 
 def point_trace_class(n_points):
-    """``go.Scattergl`` once a figure draws ``WEBGL_POINT_THRESHOLD`` points, else ``go.Scatter``.
+    """Use Scattergl at WEBGL_POINT_THRESHOLD points, otherwise Scatter.
 
-    SVG costs one ``<path>`` DOM node per point, so a 14k-point figure makes the browser
-    walk and re-rasterise 14k nodes every time the page scrolls. WebGL holds the same
-    points in typed-array buffers and adds no nodes.
-
-    Decide this ONCE per figure from its total point count, never per trace: Plotly paints
-    every WebGL trace beneath every SVG one, so a figure mixing the two would layer its
-    colour groups by renderer rather than by draw order.
+    Choose once per figure to reduce large SVG workloads while keeping point traces
+    in one renderer; mixing SVG and WebGL changes their relative layering.
     """
     return go.Scattergl if n_points >= WEBGL_POINT_THRESHOLD else go.Scatter
 
@@ -373,10 +370,16 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
         thin = [group for group in compare_groups if counts.get(group, 2) < 2]
         thin += [group for group in counts if counts[group] < 2 and group not in thin]
         if thin:
+            # code_span, not bare backticks: both the group names and the section label
+            # are values out of the user's file, and st.warning renders Markdown -- a
+            # level called *ctrl* arrived in italics with the asterisks eaten, naming a
+            # group the data does not contain, and one holding a backtick closed the
+            # span early and mangled the rest of the sentence.
             named = ", ".join(
-                f"`{group}` ({counts[group]} point{'' if counts[group] == 1 else 's'})"
+                f"{code_span(group)} ({counts[group]} point"
+                f"{'' if counts[group] == 1 else 's'})"
                 for group in thin)
-            where = f" in {section_label}" if section_label else ""
+            where = f" in {code_span(section_label)}" if section_label else ""
             asked = []
             if effect_size_method != "None":
                 asked.append("effect size")
@@ -442,8 +445,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
             'text_height_allowance_for_collision_abs': 0.04 * data_range_y
         }
 
-        # Sort pairs for consistent annotation order and simpler collision logic
-        # Sorting key ensures that pairs are processed from left-to-right, and shorter spans before longer ones if they start at the same point.
+        # Process pairs left to right, with shorter spans first when starts coincide.
         if position_map is not None:
             # Use actual positions for sorting when position_map is provided
             sorted_pairs = sorted(selected_pairs,
@@ -460,12 +462,12 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
             threshold = 0.0
             threshold_key_suffix = selected_var
             if effect_size_method == "Glass's Delta":
-                threshold = st.number_input("Glass's Delta Threshold", value=0.7, min_value=0.0, max_value=3.0, step=0.05, 
+                threshold = st.number_input("Glass's Delta Threshold", value=number_input_default(st.session_state, f"glass_delta_thresh_{threshold_key_suffix}", 0.7), min_value=0.0, max_value=3.0, step=0.05,
                                             key=f"glass_delta_thresh_{threshold_key_suffix}")
             elif effect_size_method == "Absolute Cohen's d":
                 threshold = st.number_input(
                     "Absolute Cohen's d threshold",
-                    value=0.5,
+                    value=number_input_default(st.session_state, f"cohens_d_thresh_{threshold_key_suffix}", 0.5),
                     min_value=0.0,
                     max_value=3.0,
                     step=0.1,
@@ -494,17 +496,12 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
                     data_column_name=selected_var,
                     group_column_name_in_df=group_col_name,
                     overall_min_y_val=global_min_y, # Pass global_min_y for fallback
-                    data_range_y=data_range_y, # Pass data_range_y for context if needed inside, though metrics are now absolute
+                    data_range_y=data_range_y,
                     annotation_color=annotation_color,
                     position_map=position_map,
                     star_text=stars,
                     show_effect_size=True
                 )
-
-
-        # No explicit "else" for unsupported methods here as _calculate_effect_size handles the warning,
-        # and effect_size_value would be None, thus skipping annotation.
-
     # If only statistical tests were requested (no effect size), add star-only annotations
     if selected_pairs and effect_size_method == "None" and statistical_test != "None":
         drawn_annotations = []
@@ -541,7 +538,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
 
         for pair in sorted_pairs:
             stars = pair_to_star.get(pair, "")
-            # Skip if both groups empty or no stars and you prefer not to show ns; we'll annotate even if empty string to keep brackets consistent if desired
+            # Keep the bracket even when the comparison has no significance stars.
             _annotate_single_effect_size(
                 fig=fig,
                 pair_strings=pair,
@@ -618,16 +615,7 @@ def tuple_natural_key(tup):
     return tuple(natural_key(str(x)) for x in tup)
 
 def natural_tuple_sort(strings, delimiter='::'):
-    """
-    Sort a list of delimited strings using natural sort for each column.
-    Values must already be strings: check_and_fix_df astype(str)s every categorical column
-    at load, and the callers that group on something else go through dropna/astype(str)
-    first. The split runs before tuple_natural_key, so its str() cannot cover for a
-    non-string here.
-    :param strings: list of strings to sort
-    :param delimiter: delimiter to split columns (default '::')
-    :return: sorted list of strings
-    """
+    """Naturally sort each field of delimited strings; callers must supply strings."""
     return sorted(strings, key=lambda x: tuple_natural_key(x.split(delimiter)))
 
 def _sorted_levels(values):
@@ -635,13 +623,10 @@ def _sorted_levels(values):
     return natural_tuple_sort(values.unique())
 
 def _channel_groups_and_map(df, column, mapper):
-    """Shared body of the shape and opacity channels: their levels, and ``mapper``'s map.
+    """Return nonmissing channel levels and their visual mapping.
 
-    Keep the raw values and the ``dropna()``: these maps' keys are looked up against a
-    ``df.groupby`` on the raw column in ``get_point_visual_mappings``, so each key must
-    equal a real groupby key. Stringifying makes every lookup miss; folding nulls to
-    "N/A" invents a level no group matches, since groupby drops NaN keys. To include
-    nulls, fill the column before the groupby rather than relabelling levels after.
+    Preserve values so map keys match the groupby keys in get_point_visual_mappings.
+    Fill nulls upstream if they should participate in grouping.
     """
     if not column or column not in df.columns:
         return [], None
@@ -659,23 +644,10 @@ def create_shape_groups_and_map(df, shape_by_col):
 def interleave_point_batches(index_by_level, num_batches=15, random_seed=42):
     """Split each level's point indices into batches and cycle through the levels.
 
-    Returns ``[(level, indices), ...]`` in the order the traces should be added.
-
-    Plotly paints later traces over earlier ones, so emitting one trace per level draws
-    each level entirely on top of the previous — in a sina plot, where the levels share
-    one jittered x band, the last level ends up systematically the most visible.
-    Cycling through the levels a batch at a time spreads that bias evenly. All batches
-    of a level keep its legendgroup, so the legend still holds one entry per level.
-
-    Indices are shuffled within a level before batching, so a batch is a sample across
-    the level rather than a contiguous run of rows: contiguous batches would be
-    correlated with whatever the frame happens to be sorted by, which puts the same
-    bias back in a different guise. The shuffle is a fixed-seed permutation of the
-    index array, so it reorders only the paint order — every point keeps the x it was
-    already assigned.
-
-    Batches hold at least ~5 points, matching add_interleaved_points_trace, below which
-    the extra traces cost more than the interleaving buys.
+    Return ``[(level, indices), ...]`` in trace order. Interleaving limits occlusion
+    bias between levels. A seeded shuffle avoids grouping batches by input row order
+    without changing point coordinates. Aim for at least five points per batch to
+    limit trace overhead.
     """
     import math
 
@@ -700,26 +672,13 @@ def interleave_point_batches(index_by_level, num_batches=15, random_seed=42):
 
 def create_subcolor_map(df, subcolor_by, group_col, color_groups, engine="plotly",
                                   colormap="tab10"):
-    """Colour a nested categorical column, one colour per value across the whole figure.
+    """Map nested categorical values to consistent colors across the figure.
 
-    Returns ``{value: colour}``, or None when the channel is off.
+    Return a naturally ordered ``{value: color}`` map, or None when inactive. Nulls
+    become "N/A". Generate a palette for the value count, seeded by the first colormap
+    entry, to avoid cycling into duplicate colors.
 
-    Colour encodes the nested value while the colour group keeps its x position. The map
-    is global -- one colour per distinct value for the whole figure -- so a value in
-    several groups is the same colour in each and one legend entry serves it.
-
-    The keys are in natural-sort order and are the figure's value list, which callers
-    iterate to decide what to draw in a group's x band; a value absent from a group
-    yields an empty mask the batcher skips.
-
-    Colours come from ``make_palette`` seeded by the first entry of ``colormap``, not from
-    the colormap directly: entries are scored composited at the alpha points are drawn
-    with, and generating for the requested count avoids seaborn cycling a qualitative
-    palette past its length into duplicates. Nulls fold to "N/A" (check_and_fix_df in
-    src/dataset_io.py) so those rows still plot.
-
-    ``engine`` follows format_group_label: "plotly" returns "rgba(...)" strings, "mpl"
-    returns (r, g, b) tuples for the exported Matplotlib script.
+    "plotly" returns rgba strings; "mpl" returns RGB tuples for script export.
     """
     from src.vis.subcolor_palette import make_palette_cached
 
@@ -729,21 +688,12 @@ def create_subcolor_map(df, subcolor_by, group_col, color_groups, engine="plotly
 
     values = df[subcolor_by].fillna("N/A").astype(str)
     groups = df[group_col].astype(str)
-    # Restricted to the groups the figure actually draws, not every row in the frame, so
-    # a group filtered out upstream cannot spend a colour nothing displays. Equivalent to
-    # unioning each group's own values, which is how this was written when the per-group
-    # breakdown was also returned.
+    # Allocate colors only to values in groups drawn by the figure.
     in_figure = groups.isin([str(group) for group in color_groups])
-    # Every distinct value in the figure, not per group: that is what makes the colour
-    # mean the value itself, the same one wherever the value appears.
     all_values = _sorted_levels(values[in_figure])
     if not len(all_values):
         return None
-    # alpha=0.7 is not a default worth inheriting silently -- it has to match the
-    # opacity the points are actually drawn at (univar.feature_comparison_plot, and
-    # scatter_with_encodings' base_alpha in the export), because make_palette scores
-    # candidates on how they look composited at that alpha over the background. Passed
-    # explicitly so changing one side shows up as disagreeing with the other.
+    # Score palette colors at the same alpha used by comparison points and script export.
     palette = make_palette_cached(_palette_rgb(colormap, 1)[0], len(all_values), alpha=0.7)
 
     colour_of = {}
@@ -752,12 +702,7 @@ def create_subcolor_map(df, subcolor_by, group_col, color_groups, engine="plotly
         if engine == "mpl":
             colour_of[value] = (red, green, blue)
         else:
-            # round(), not int(): int() truncates, so a channel that should be 31
-            # arrives as 30 whenever the float sits a hair below it -- landing a byte off
-            # the same palette's unrounded floats, which is what the Matplotlib export
-            # draws from. check_subcolor.py pins the two engines against each other.
-            # Opaque here: the points carry their own alpha through marker.opacity, and
-            # baking a second one in would compound with it.
+            # Round RGB bytes to match the exported palette. Marker opacity supplies alpha.
             colour_of[value] = (
                 f"rgba({round(red * 255)}, {round(green * 255)}, {round(blue * 255)}, 1.0)"
             )
@@ -765,18 +710,10 @@ def create_subcolor_map(df, subcolor_by, group_col, color_groups, engine="plotly
     return colour_of
 
 def format_group_label(group, count=None, show_count=False, engine="plotly"):
-    """Legend label for a color group.
+    """Format a color-group legend label with an optional count on a second line.
 
-    When ``show_count`` is enabled and a count is given, the count is placed on a
-    second line below the group name, e.g. "Control" with "n=42" beneath it.
-
-    ``engine`` selects the markup, following ``format_feature_label``
-    (src/feature_labels.py): ``"plotly"`` (the app, default) breaks the line with
-    ``<br>`` and shrinks the count with a relative ``em`` so it tracks the legend font
-    size; ``"mpl"`` (the exported Matplotlib script) uses a plain newline, since
-    Matplotlib legend labels take no markup and cannot mix sizes within one entry.
-    The wording is written once here so the exported legend reads the same as the
-    screen — export_script.py inlines this function rather than reproducing the text.
+    Plotly uses smaller HTML text for the count; Matplotlib uses a plain newline.
+    This function is inlined into exported scripts to keep legend wording consistent.
     """
     label = str(group)
     if show_count and count is not None:
@@ -837,11 +774,8 @@ def get_point_visual_mappings(
         key_positions.append(3)
 
     def ordered_group_iter():
-        # Group once, then walk the Cartesian product and look each combination up, so
-        # the frame is scanned once rather than once per combination (most of which match
-        # no rows). Walking `product` rather than the groupby is what fixes trace, legend
-        # and legendrank order. groupby drops NaN keys, and the shape/opacity/separate key
-        # lists come from `.dropna().unique()`, so a NaN key is never looked up.
+        # Group once, then use the Cartesian product to preserve trace and legend order.
+        # Channel key lists exclude nulls, matching groupby's default null handling.
         groups = {}
         for key, group_df in df.groupby(key_cols, sort=False, observed=True):
             if not isinstance(key, tuple):
@@ -878,9 +812,7 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
         if hasattr(trace, 'name') and trace.name in skip_trace_names:
             continue
         if hasattr(trace, 'marker') and trace.marker:
-            # 'scattergl' as well as 'scatter': point_trace_class swaps in the WebGL trace
-            # above WEBGL_POINT_THRESHOLD, and a gate that named only 'scatter' would walk
-            # straight past those traces and silently leave Point Size doing nothing.
+            # Style both SVG and WebGL point traces.
             if trace.type in ('scatter', 'scattergl') or trace.type == 'box' and trace.marker:
                 trace.marker.size = point_size
 

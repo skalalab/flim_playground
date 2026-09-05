@@ -10,55 +10,26 @@ from src.vis.plot_defaults import (
     DEFAULT_POINT_SIZE,
 )
 from src.widgets.encoding_state import color_multiselect_label, prune_to_options
+from src.widgets.analysis_widget_state import control_default, number_input_default
 
-# Explicit keys. Without them the state of the Color by multiselect lives under an
-# auto-generated ID that includes its label -- so renaming it to "Group by" would wipe
-# the user's selection on every toggle flip.
+# Explicit keys preserve selections when labels or option lists change.
 COLOR_BY_KEY = "vis_encoding_color_by"
 AS_COLOUR_KEY = "vis_encoding_as_colour"
 
-# ONE key for the shape/subcolor picker's column, shared by both of its roles. The switch chooses
-# which channel the column drives; it does not choose a different column, so flipping it
-# leaves the selection alone rather than swapping in whatever that channel held last.
-# Both roles are offered the SAME list now that every decoration excludes the grouping
-# columns, so a flip can no longer retire the column either -- which is what used to
-# happen going shape -> subcolor.
-#
-# One key also avoids any restore machinery: Streamlit purges the state of a widget that
-# stops rendering, and under a shared key one role or the other always renders on a
-# POINT-BASED method. Methods with no point channel (Feature Histogram, Classification)
-# render neither, so leaving for one of those does clear the column.
-#
-# The cost: a column picked as shape on Scatter arrives preselected in Feature
-# Comparison's picker, and vice versa.
+# Shape and subcolor share a selection across point-based methods. Methods without
+# this picker allow Streamlit to clear it through normal widget cleanup.
 PICKER_COL_KEY = "vis_encoding_picker_col"
-
-# Opacity by's own key. It needs one because its options now move with Color by -- every
-# decoration excludes the grouping columns -- and an UNKEYED widget's identity INCLUDES its
-# options: Streamlit sees a different widget and silently remounts it empty. Measured on
-# the live page: Opacity by = day, then add dish to Color by, and the pick blanks with
-# `day` still sitting in the list. The shape/subcolor picker never showed it because it has
-# been keyed since this row took explicit keys.
 OPACITY_BY_KEY = "vis_encoding_opacity_by"
 
-# Collapse by is NOT a visual channel -- it changes what one point IS, by averaging the
-# cells of a replicate into a single row, and must never reach get_point_visual_mappings.
-# It shares this row for layout reasons only, third, so the row reads left to right as:
-# how are dots grouped -> what is a dot -> how do they look.
+# Collapse controls row aggregation and is not passed to get_point_visual_mappings.
 COLLAPSE_BY_KEY = "vis_encoding_collapse_by"
 
 
 def _pruned_selectbox(label, options, key, **kwargs):
-    """A keyed single-select whose stored pick is narrowed to ``options`` first.
+    """Preserve a keyed selection while clearing values absent from current options.
 
-    Every option list in this row MOVES: the row offers only categories with
-    ``nunique() > 1``, so a filter can retire one, and Separate by and Color by claim
-    columns out of the decoration list as they are picked. Two consequences, and the key
-    is what turns the second into the first. Without a key a widget is identified by its
-    arguments, options included, so a list that changes for a reason having nothing to do
-    with the held column remounts the widget and blanks it. With one the pick survives --
-    but Streamlit then RAISES on a stored value the widget no longer offers, so it has to
-    be pruned above the widget, in the same run.
+    Filters and grouping controls change these lists. Prune before rendering so
+    Streamlit never receives a saved value that its selectbox cannot offer.
     """
     stored = st.session_state.get(key)
     pruned = prune_to_options(stored, options)
@@ -69,60 +40,29 @@ def _pruned_selectbox(label, options, key, **kwargs):
 
 
 def _picker_selectbox(label, options, **kwargs):
-    """The shape/subcolor picker, in whichever role the switch has put it. One key for both
-    roles, so the flip re-points the same column rather than swapping in another."""
+    """Select a column shared by the shape and subcolor modes."""
     return _pruned_selectbox(label, options, PICKER_COL_KEY, **kwargs)
 
 
-# The name handed to the shape/subcolor picker WIDGET, keyed on the switch. Its visible label is
-# collapsed in favour of the switch phrase below, so this is what a screen reader reads.
+# Native labels remain available to screen readers when the visible label is custom.
 PICKER_LABELS = {True: "Subcolor by", False: "Shape by"}
 
-# The switch reads as one phrase with the channels either side of it:
-#
-#     Shape [o---] subcolor by     <- shape drives the picker below
-#     Shape [---o] subcolor by     <- subcolor does
-#
-# Static, so both channels stay on screen and the knob alone says which is active. Ends
-# on "by" so it runs into the picker below: "shape/subcolor by <column>". Shape rather
-# than opacity is the partner because shape and colour are both NOMINAL -- either is a
-# sensible encoding for the same column, so the flip is a real choice. Opacity is the one
-# ordinal channel (create_opacity_mapping ranks values on a ramp), so pairing it here
-# would have offered to put an unordered column on an ordered scale.
-#
-# Folding all three decorations into one three-way switch was built and reverted: a radio
-# renders its options at body size against this row's 14px and wrapped to three lines in a
-# column this narrow, and shrinking it with CSS only traded that for an illegible switch.
+# The label reads "Shape [switch] subcolor by" above the column picker.
+# Both modes encode nominal values; opacity has its own ordinal control.
 SWITCH_LEAD = "Shape"
 SWITCH_TRAIL = "subcolor by"
 
 
 def _shape_selectbox(available_categories, **kwargs):
-    """The Shape by picker, shared by the switch's Shape role and every method that has no
-    switch. ``kwargs`` carries ``label_visibility`` where the switch draws the label
-    itself; methods with no switch keep the native one."""
+    """Render the shared picker in shape mode, with optional native-label hiding."""
     return _picker_selectbox(PICKER_LABELS[False], available_categories, **kwargs)
 
 
 def _picker_label(text):
-    """Draw the shape/subcolor picker's label, so the switch can sit after it.
+    """Align the custom label and toggle above their shared picker.
 
-    Streamlit puts a widget's label in the same block as its input, so a switch placed
-    beside the picker lands beside the *input*. Hence the hand-drawn label and the
-    collapsed native one.
-
-    Every number here was measured in a browser and nothing re-checks it, so a Streamlit
-    upgrade drifts it silently:
-
-    * 0.875rem is Streamlit's widget-label size (theme ``fontSizes.sm``). Colour is left
-      to inherit so it follows the active theme.
-    * A toggle's box carries trailing space under the visible switch, so aligning boxes
-      leaves the switch above the label: 7.5px on ``vertical_alignment="center"``, 16.4px
-      on ``"bottom"``. A box padded to the switch's height with ``"top"`` gives 0.5px.
-    * Toggle labels render at body size, 16px against this row's 14px, so the phrase came
-      out in two sizes. The ``st-key-`` rule fixing that is why the switch needs an
-      explicit key, and it rides in this same markdown call because a separate
-      ``<style>`` would be another child of a gapped container and widen the row.
+    Match Streamlit's widget-label font and toggle height. Keep the CSS in the
+    same markdown element to avoid adding a child and gap to the label row.
     """
     st.markdown(
         f"<style>.st-key-{AS_COLOUR_KEY} p{{font-size:0.875rem;line-height:1.6}}</style>"
@@ -143,15 +83,8 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     if not color_based:
         return color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by
 
-    # Equal-width columns, named rather than indexed. Every slot's position shifts when
-    # another is added or gated off, and an off-by-one here swaps two pickers while the
-    # app still runs and still plots -- so the order is declared once and read by name.
-    # The channel switch is absorbed inside the LAST column -- sharing its picker's top
-    # line -- rather than given a column of its own, so this row still lays out identically
-    # on Scatter, Phasor and Dimension Reduction, which have no switch at all. If the column
-    # is too narrow to hold picker and switch side by side the switch wraps underneath,
-    # which is the old layout and still readable; widening that column instead would
-    # misalign every other method.
+    # Named, equal-width slots keep the layout consistent as method-specific controls
+    # appear. The shape/subcolor switch shares the final picker's label row.
     slots = []
     if separate_by_available and point_based:
         slots.append("separate")
@@ -166,24 +99,14 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     # Separate by widget
     if "separate" in at:
         with cols[at["separate"]]:
-            separate_by = st.selectbox("Separate by", available_categories, index=None, placeholder="Choose an option...")
+            separate_by = _pruned_selectbox(
+                "Separate by", available_categories, key="analysis_control_separate_by")
 
     available_for_color = [cat for cat in available_categories if cat != separate_by]
     show_subcolor = subcolor_available and point_based
 
-    # Resolved before the switch's slot, because that slot needs to know whether anything
-    # is grouped by. Independent of every other control, so hoisting it changes nothing
-    # except making it available early. `effective_color` is what the multiselect will
-    # hold once it renders -- always the stored selection, because the first-run default
-    # is SEEDED into state here rather than handed to the multiselect as `default=`.
-    #
-    # Seeding is what `default=` amounted to anyway: under an explicit key the stored
-    # value wins, so the argument only ever decided the run with nothing stored -- the
-    # one this branch covers. Passing both is what Streamlit warns about ("created with
-    # a default value but also had its value set via the Session State API"), and the
-    # pruning below writes this same key in the same run the multiselect renders, so the
-    # warning fires for real: on a filter that retires a chosen column, or on Separate by
-    # claiming it. Same shape as the feature multiselects in selection_widgets.py.
+    # Resolve grouping before the shape/subcolor control. Seed and prune through
+    # session state only, avoiding duplicate-default warnings from the multiselect.
     default_color = [available_for_color[0]] if available_for_color else []
     if COLOR_BY_KEY not in st.session_state:
         st.session_state[COLOR_BY_KEY] = default_color
@@ -194,18 +117,8 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
         st.session_state[COLOR_BY_KEY] = pruned_color
     effective_color = pruned_color
 
-    # The switch's slot is the LAST column, but it is EVALUATED here, before the Color by
-    # multiselect renders -- st.columns hands back containers, so writing into them out of
-    # order still lays them out left to right. That is what lets the multiselect's label
-    # read the switch and picker values from this run. Reading them from session state
-    # instead left "Group by" a run behind whenever the picker changed for a reason other
-    # than a click: pruning dropping the column, the selection being cleared, or the
-    # disabled branch forcing subcolor_by to None.
-
-    # A decoration only marks a point inside the slot its grouping put it in, so a column
-    # already spent on Separate by or Color by has nothing left to say through shape,
-    # opacity or subcolor -- every value in a slot would carry the same mark. ONE list for
-    # all three, which is also why flipping the switch can no longer retire the column.
+    # Grouping columns already identify each x-axis slot. Offer the remaining
+    # categories to shape, subcolor and opacity through one shared option list.
     available_for_decoration = [cat for cat in available_categories
                                 if cat != separate_by and cat not in effective_color]
 
@@ -213,25 +126,8 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     if point_based:
         with cols[at["picker"]]:
             if show_subcolor:
-                # The switch sits immediately after the phrase's first word, on the same
-                # line, with the picker at full width underneath -- see SWITCH_LEAD for
-                # the shape. Both halves take only their own width in a horizontal row,
-                # so the switch lands right after the words rather than out at the far
-                # edge. That is why the label is drawn by hand and the picker's own
-                # collapsed: Streamlit puts a widget's label in the same block as its
-                # input, so a switch set beside the picker is pushed out to wherever the
-                # *input* ends. The picker keeps the whole column width, which the long
-                # column names this row offers need.
-                # gap="xsmall" (0.5rem) rather than the "small" default (1rem): the
-                # switch is meant to read as attached to the label it modifies, and a
-                # full 1rem sets it adrift halfway to the next column.
-                # gap="xxsmall" (0.25rem) reunites the drawn label with its picker.
-                # Streamlit puts a native label and its input in ONE child of the column
-                # with 4px between them; drawing the label separately makes it a second
-                # child, so the column's own 1rem gap opens up and drops the picker below
-                # the ones either side of it -- measured at 12px against a sibling
-                # selectbox. Wrapping both in a container whose gap is 4px restores the
-                # native spacing exactly (0px displacement); gap=None overshoots to -4px.
+                # Evaluate the switch before Color by so its label reflects this run.
+                # Match native label/input spacing while keeping the picker full width.
                 with st.container(gap="xxsmall"):
                     with st.container(horizontal=True, vertical_alignment="top",
                                       gap="xsmall"):
@@ -239,15 +135,6 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                             _picker_label(SWITCH_LEAD)
                         as_colour = st.toggle(
                             SWITCH_TRAIL, key=AS_COLOUR_KEY, width="content",
-                            # Leads with the two states, because that is the question
-                            # someone opens this tooltip to answer. The one fact worth
-                            # the words is that a colour means the VALUE, figure-wide --
-                            # that is what makes the channel useful rather than merely
-                            # colourful, and nothing on screen says it. The mechanism is
-                            # described against "values" and "groups" because this text
-                            # ships to every dataset; the column names appear only behind
-                            # an explicit "e.g.", which reads as an illustration rather
-                            # than as an assumption about what the user's columns are.
                             help="**Off** — the column below sets point shape."
                                  "\n\n**On** — it sets color: each value keeps one "
                                  "color plot-wide, so you can spot it in every group it "
@@ -255,16 +142,13 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                                  "column nested inside the grouping one (e.g. donors "
                                  "within each treatment).",
                         )
-                    # Still named for the channel it drives even though that name is
-                    # collapsed: it is what a screen reader announces, and the switch
-                    # phrase above is decoration to anything that does not render CSS.
+                    # Keep the active channel in the native label for screen readers.
                     if as_colour:
                         subcolor_by = _picker_selectbox(
                             PICKER_LABELS[True], available_for_decoration,
                             disabled=not effective_color, label_visibility="collapsed",
                         )
-                        # A disabled selectbox still returns what it last held, so the
-                        # forcing is not redundant with `disabled` above.
+                        # A disabled selectbox can still return its stored value.
                         if not effective_color:
                             subcolor_by = None
                     else:
@@ -283,24 +167,12 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                  "color and these only set the x positions.",
         )
 
-    # subcolor_by was decided against the stored selection above; re-check it against what
-    # the multiselect actually returned, so clearing every group in this same run does
-    # not leave a subcolor column setting colour for a plot that has no groups to draw.
+    # Subcolor requires an active grouping, including after this run's multiselect change.
     if not color_by:
         subcolor_by = None
 
-    # LAST of the grouping chain, and evaluated after Color by has returned -- Separate by
-    # narrows Color by, and the two of them narrow this. The direction matters: collapsing
-    # is DERIVED from the x layout, so changing the layout retires a collapse column, while
-    # changing the collapse must leave the layout alone. Reading it first and striking its
-    # column from the two above inverted that, and picking a replicate silently reset the
-    # grouping. Excluded because collapsing on a column that also sets the x position puts
-    # exactly one dot in every slot, leaving nothing for a box or a test to describe.
-    #
-    # Shape / Subcolor / Opacity are NOT excluded either way: a decoration is well defined
-    # on a collapsed dot whenever its column is constant within the collapse group, and the
-    # collapse column trivially is -- Subcolor by = Collapse by is the most useful pairing
-    # the feature has, one colour per replicate held across every x group.
+    # Grouping narrows Collapse by, never the reverse. Decoration columns remain
+    # eligible: each survives collapse when constant within the replicate group.
     if "collapse" in at:
         available_for_collapse = [cat for cat in available_for_color if cat not in color_by]
         with cols[at["collapse"]]:
@@ -313,9 +185,6 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                      "trace one replicate across every group.",
             )
 
-    # Opacity has no switch: it is the only ordinal channel, so it shares a column with
-    # nothing. Same option list as the other two decorations, and keyed for the reason
-    # OPACITY_BY_KEY gives.
     if point_based:
         with cols[at["opacity"]]:
             opacity_by = _pruned_selectbox("Opacity by", available_for_decoration,
@@ -325,22 +194,22 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
 
 def umap_hyperParams_widget():
     col1, col2 = st.columns(2)
-    # First number incrementor in the first column
     umap_hyperParams_dict = {}
     with col1:
         n_neighbors = st.number_input(
             "n_neighbors",
-            value=15,  # Initial value
-            step=5,             # Increment/Decrement step
-            format="%d"            # Integer format
+            value=number_input_default(st.session_state, "analysis_control_umap_neighbors", 15),
+            step=5,
+            format="%d",
+            key="analysis_control_umap_neighbors",
         )
         umap_hyperParams_dict["n_neighbors"] = n_neighbors
-    # Second number incrementor in the second column
     with col2:
         min_dist = st.number_input(
             "min_dist",
-            value=0.1,  # Initial value
+            value=number_input_default(st.session_state, "analysis_control_umap_min_dist", 0.1),
             step=0.1,
+            key="analysis_control_umap_min_dist",
         )
         umap_hyperParams_dict["min_dist"] = min_dist
 
@@ -350,10 +219,10 @@ def tsne_hyperParams_widget():
     col1, col2 = st.columns(2)
     tsne_hyperParams_dict = {}
     with col1:
-        perplexity = st.number_input("perplexity", value=15, step=10, min_value=5, max_value=1000)
+        perplexity = st.number_input("perplexity", value=number_input_default(st.session_state, "analysis_control_tsne_perplexity", 15), step=10, min_value=5, max_value=1000, key="analysis_control_tsne_perplexity")
         tsne_hyperParams_dict["perplexity"] = perplexity
     with col2:
-        early_exaggeration = st.number_input("early_exaggeration", value=1, step=1, min_value=1, max_value=15)
+        early_exaggeration = st.number_input("early_exaggeration", value=number_input_default(st.session_state, "analysis_control_tsne_exaggeration", 1), step=1, min_value=1, max_value=15, key="analysis_control_tsne_exaggeration")
         tsne_hyperParams_dict["early_exaggeration"] = early_exaggeration
     return tsne_hyperParams_dict
 
@@ -375,7 +244,7 @@ def comparison_pair_widget(available_pairs):
     selected_labels = st.multiselect(
         "Select comparison pairs",
         pair_labels,
-        default=pair_labels,
+        default=control_default(st.session_state, "compare_pairs", pair_labels),
         key="compare_pairs"
     )
 
@@ -385,27 +254,27 @@ def comparison_pair_widget(available_pairs):
 
 
 def histogram_bin_width_widget(x_data, key=None):
-    # x_data: 1D numpy array of data to be binned (already na dropped)
-    # use np's automatic binning logic by not specifying nbins explicitly in np.histogram
-    # Calculate bins using numpy based on the overall data range
-    _, bin_edges_all = np.histogram(x_data, bins='auto') # Use 'auto' as default
+    """Choose common bin edges for a 1D array with missing values removed."""
+    _, bin_edges_all = np.histogram(x_data, bins='auto')
     nbins = len(bin_edges_all) - 1
     if nbins > 1:
         default_bin_width = bin_edges_all[1] - bin_edges_all[0]
-        # add a widget to adjust the bin_width, use text input to get the bin width
-        # Ensure bin_width is positive to avoid errors in np.arange
         min_val = x_data.min()
         max_val = x_data.max()
         range = max_val - min_val
-        bin_width = st.number_input(label="Bin Width", max_value=range/3, value=default_bin_width, step=range/50, key=key)
+        default_bin_width = min(default_bin_width, range / 3)
+        if key is not None and key in st.session_state:
+            stored_width = st.session_state[key]
+            if stored_width is None or not 0 < stored_width <= range / 3:
+                st.session_state[key] = default_bin_width
+        bin_width = st.number_input(label="Bin Width", max_value=range/3, value=number_input_default(st.session_state, key, default_bin_width), step=range/50, key=key)
         # Add a small epsilon to max_val to ensure the rightmost edge includes the max value
         epsilon = 1e-9
         # Calculate common bin edges based on the user-provided bin_width
         common_bin_edges = np.arange(min_val, max_val + bin_width + epsilon, bin_width)
 
     else:
-        # Constant / near-constant feature: numpy's 'auto' yields a single bin;
-        # fall back to those edges instead of leaving common_bin_edges unbound.
+        # Use numpy's single bin for constant or near-constant data.
         common_bin_edges = bin_edges_all
 
     return common_bin_edges
@@ -413,9 +282,9 @@ def histogram_bin_width_widget(x_data, key=None):
 def gmm_hyperParams_widget():
     col3, col4 = st.columns(2)
     with col3:
-        fit_gmm_max_components = st.slider("Max Components", min_value=2, max_value=5, value=3, step=1, key="fit_gmm_max_components")
+        fit_gmm_max_components = st.slider("Max Components", min_value=2, max_value=5, value=control_default(st.session_state, "fit_gmm_max_components", 3), step=1, key="fit_gmm_max_components")
     with col4:
-        fit_gmm_min_weight_threshold = st.slider("Min Weight Threshold", min_value=0.0, max_value=0.3, value=0.1, step=0.1, key="fit_gmm_min_weight_threshold")
+        fit_gmm_min_weight_threshold = st.slider("Min Weight Threshold", min_value=0.0, max_value=0.3, value=control_default(st.session_state, "fit_gmm_min_weight_threshold", 0.1), step=0.1, key="fit_gmm_min_weight_threshold")
     return fit_gmm_max_components, fit_gmm_min_weight_threshold
 
 def _compute_channel_harmonics(feature_groups_dict):
@@ -446,32 +315,24 @@ def phasor_params_widget(feature_groups_dict):
     channel_harmonics = _compute_channel_harmonics(feature_groups_dict)
 
     if len(channel_harmonics.keys()) > 1:
-        selected_channel = st.selectbox("Channel", channel_harmonics.keys())
+        selected_channel = st.selectbox("Channel", channel_harmonics.keys(), key="analysis_control_phasor_channel")
     elif len(channel_harmonics.keys()) == 1:
         selected_channel = list(channel_harmonics.keys())[0]
     else:
-        # Unreachable from Data Analysis, whose method gate hides Phasor Plot when no
-        # channel has a complete G/S pair. Kept because the empty-dict case still has
-        # to return a well-formed triple.
         st.error(f"No available channels found for phasor plot {sad_emoji}")
         return None, None, None
     if not channel_harmonics.get(selected_channel):
-        # No complete G/S pair for this channel -> nothing to plot. Guard the
-        # otherwise-empty selectbox (which returns None) so f stays defined.
+        # A fit-free channel may have no complete pair even when another is plottable.
         st.error(f"No phasor harmonics available for {selected_channel}: both G and S coordinates are required. {sad_emoji}")
         return None, None, None
-    selected_harmonic = st.selectbox(f"{selected_channel} harmonic No. ", channel_harmonics[selected_channel])
+    selected_harmonic = st.selectbox(f"{selected_channel} harmonic No. ", channel_harmonics[selected_channel], key=f"analysis_control_phasor_harmonic_{selected_channel}")
     f = None
     if selected_channel is not None and selected_harmonic is not None:
-        f = st.number_input("Laser repetition rate (**GHz**)", value=0.08, min_value=0.0, step=0.01)
+        f = st.number_input("Laser repetition rate (**GHz**)", value=number_input_default(st.session_state, "analysis_control_phasor_frequency", 0.08), min_value=0.0, step=0.01, key="analysis_control_phasor_frequency")
     return selected_channel, selected_harmonic, f
 
 def plot_config_widget(point_based=True, show_colormap=False, show_count_toggle=False):
-    """
-    Widgets to change point, axis label font, legend font size, and colormap.
-    Uses key= parameters to write directly to session state — no manual
-    compare-and-rerun needed. Streamlit reruns naturally when the user changes a value.
-    """
+    """Render plot styling controls bound directly to session state."""
     # Determine number of columns based on what widgets to show
     num_cols = 0
     if point_based:
@@ -480,27 +341,8 @@ def plot_config_widget(point_based=True, show_colormap=False, show_count_toggle=
     if show_colormap:
         num_cols += 1
 
-    # Every default is SEEDED into session state rather than handed to its widget as
-    # `value=`/`index=`. Under an explicit key the stored value wins, so those arguments
-    # only ever decided a run with nothing stored -- and passing both is what makes
-    # Streamlit warn ("created with a default value but also had its value set via the
-    # Session State API") on any run that also WRITES the key, which seeding does.
-    #
-    # data_analysis.py seeds these at the page top, which normally lands a run before this
-    # row -- the row renders only once a dataset is loaded. But leaving the page purges
-    # widget state while `vis_df`, a plain session key, survives, so a return visit seeds
-    # and renders in ONE run and the warning fires. Seeding here as well keeps each
-    # default beside the widget that owns it and covers the classification page's call,
-    # which does not run data_analysis.py's block.
-    # Written EVERY run, not just when the key is missing. Streamlit only sends the
-    # frontend a set_value when the widget's value changed during that run; a widget whose
-    # key was seeded on an EARLIER run renders proto.default instead, which for these
-    # widgets is min_value -- so the row read 1/8/8 while the server (and the plot) held
-    # 5/24/24, and the next rerun echoed 1/8/8 back and shrank the plot. The page seeds
-    # these at its top on every run, but the row itself only appears once a plot exists,
-    # so the seed always landed a run early. Re-writing the stored value here puts the
-    # write in the same run as the widget, which is what makes Streamlit push it.
-    # `value=` would fix it too, but only by trading this for the duplication warning.
+    # Reassign on the rendering run so Streamlit sends saved values to remounted
+    # browser widgets. Supplying values through state alone avoids default warnings.
     for state_key, default in (("plot_point_size", DEFAULT_POINT_SIZE),
                                ("plot_axis_label_size", DEFAULT_AXIS_LABEL_FONT_SIZE),
                                ("plot_legend_size", DEFAULT_LEGEND_FONT_SIZE),
@@ -533,9 +375,7 @@ def plot_config_widget(point_based=True, show_colormap=False, show_count_toggle=
             "tab10", "tab20", "colorblind", "Set1", "Set2", "Set3", "Pastel1", "Pastel2",
             "Accent", "viridis", "plasma", "inferno", "magma", "cividis"
         ]
-        # The dropped `index=` carried a fallback for a stored colormap this list does not
-        # offer, and that fallback is still needed: Streamlit RAISES on an unoffered value
-        # under an explicit key, where an out-of-range index would only have been ignored.
+        # Prune a saved palette before rendering the keyed selectbox.
         if st.session_state["plot_colormap"] not in colormap_options:
             st.session_state["plot_colormap"] = colormap_options[0]
         with cols[col_idx]:
@@ -577,13 +417,10 @@ def reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by):
 
     session_key_sep, session_key_cmp = get_visual_group_keys(filtered_df, selected_var, color_by, separate_by)
 
-    # specific to streamlit-sortables: it may not render correctly inside a collapsed expander because of 0 height
-    # We use a checkbox to trigger a rerun and render it only when visible
-    show_order_config = st.checkbox("Reorder X-axis Groups", value=False)
+    # Mount the component only when visible; a collapsed expander gives it zero height.
+    show_order_config = st.checkbox("Reorder X-axis Groups", value=False, key="analysis_control_reorder_groups")
 
     if show_order_config:
-        # Color groups (Compare groups)
-        # Grouping logic
         group_by_cols = color_by if color_by else []
         if not group_by_cols:
             temp_df_groups = ["all_data"]
@@ -592,7 +429,7 @@ def reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by):
 
         cmp_groups = natural_tuple_sort(temp_df_groups, delimiter='::')
 
-        # Merge with existing stored order to preserve relative ordering of known items while adding new ones
+        # Retain the saved relative order and append newly available groups.
         if session_key_cmp in st.session_state:
             stored = st.session_state[session_key_cmp]
             cmp_groups = [g for g in stored if g in cmp_groups] + [g for g in cmp_groups if g not in stored]
@@ -613,8 +450,5 @@ def reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by):
                 st.session_state[session_key_cmp] = new_cmp_order
                 # Increment version to force re-render next time
                 st.session_state[version_key] += 1
-            # A new order is a build-time change, but do not st.rerun() here: this widget
-            # runs inside the plot fragment (pages/data_analysis.py) and the styling
-            # controls render after it, so rerunning now would reset them to their module
-            # defaults. Flag it and let the escalation at the end of the fragment fire.
+            # Defer the rebuild until the fragment's remaining widgets have registered.
             st.session_state["_plot_needs_rebuild"] = True

@@ -18,32 +18,19 @@ from src.config import (
     get_unique_cell_id_col,
     load_config,
     save_config,
+    unstorable_name_error,
 )
 
-# Maximum number of profiles allowed. Every saved profile is read on every rerun: the
-# whole config is parsed uncached to match an upload against all of them, and the chooser
-# draws a row per profile in a page that does not scroll -- so the cap bounds a per-rerun
-# cost and a screenful, not just a file.
-#
-# Measured on 60-column profiles: one parse costs ~0.14 ms per saved profile (0.16 ms at
-# 1 profile, 2.8 ms at 20, linear), and `all_profile_columns` costs the same as
-# `list_profiles` -- assembling the role maps is free beside the TOML parse. The gate
-# threads one read down its whole call chain (`review_gate` -> `_render_gate` ->
-# `_chooser` / `_buttons` / `_manage_profiles`), so it is **one** parse per rerun; the
-# page's own accessors add two more. Deliberately not memoised: the gate writes this
-# file from inside a rerun, so a stale profile list would be a worse bug than a slow one.
+# Bound the profile chooser's size and the cost of reading profiles on each rerun.
 MAX_PROFILES = 20
-# The gate section that renames and deletes profiles. Named here rather than in
-# `review_table_widget`, which draws it, because the at-the-cap message below has to
-# point at it and the import runs the other way.
+# Shared with review_table_widget so validation messages name the visible controls
+# without introducing a circular import.
 MANAGE_LABEL = "Manage saved profiles"
-# The chooser's own row, which stands for "no profile". Named here for the same reason:
-# every write below has to refuse it as a profile name, and the import runs the other way.
+# Reserved chooser label representing no saved profile.
 AUTO_DETECT = "Auto-detect — start a new profile"
 
-# Columns no file contains: the 1D/2D GMM and K-Means plots add them to the frame at plot
-# time. They are categoricals wherever a categorical list is assembled -- that is what
-# keeps get_features from offering a cluster number as a measurement.
+# Clustering plots add these categorical columns. Uploaded columns with the same
+# names retain their reviewed roles in working_copy_arguments.
 _PLATFORM_CATEGORICALS = ("GMM_group", "2D_GMM_group", "k_means_cluster")
 
 
@@ -52,40 +39,24 @@ def _dedup(names):
     return list(dict.fromkeys(name for name in names if name))
 
 def _get_analysis_config_path() -> Path:
-    """Get the analysis config file path, handling both development and bundled app scenarios."""
-    # Check if running as a PyInstaller bundle
+    """Use persistent storage for bundles and the project root for development."""
     if getattr(sys, '_MEIPASS', None):
-        # Running as bundled app - save config in the per-user location
-        # get_persistent_dir() picks (outside the swappable app payload).
-        # analysis_config.toml is not bundled, and nothing seeds it: the file appears
-        # when the user's first Save writes a profile into it.
+        # The first profile save creates this file outside the app payload.
         return get_persistent_dir() / "analysis_config.toml"
     else:
-        # Running in development mode - use analysis_config.toml in project root
         return Path(__file__).resolve().parent.parent.parent / "analysis_config.toml"
 
-# Absolute path to the analysis config file - handles both dev and bundled scenarios
+# Resolved once for the current runtime.
 _ANALYSIS_CONFIG_PATH = _get_analysis_config_path()
 
 def _migrate_old_config_to_profiles(cfg: dict) -> dict:
-    """Bring a config read off disk up to the current shape.
+    """Normalize profile structure in place without writing to disk.
 
-    Two migrations, both idempotent, both applied on every read: a flat config becomes
-    `profiles.default`, and a profile saved before the two keys below existed gets them.
-    **This function never writes** -- it edits the dict the caller just parsed, and reads
-    stop there. Every accessor already tolerates a missing key through a
-    `.get(key, default)`, so the top-up buys a shape guaranteed in one place instead of
-    defended at each reader, at no cost to the file. A *write* path (`_save_profile_config`,
-    `rename_profile`, `delete_profile`) runs this first and then persists, so the shape
-    becomes durable on the next save rather than on a page load.
-
-    Both keys seed **empty**. Every seeded name is a claim about a column the file need
-    not have: a seeded identifier rejects the file outright and a seeded categorical
-    list quietly describes someone else's data.
+    Wrap flat analysis settings in profiles.default and seed missing identifier
+    and categorical keys with empty values. This is idempotent; only an explicit
+    save persists the result. Empty defaults make no assumptions about file columns.
     """
-    # Check if old format exists
     if "profiles" not in cfg and any(key in cfg for key in ["unique_row_id_col", "fov_name_col", "categorical_cols", "feature_groups", "all_numerical_features"]):
-        # Migrate to profile-based format
         profiles = {
             "default": {
                 "unique_row_id_col": cfg.get("unique_row_id_col", ""),
@@ -95,7 +66,6 @@ def _migrate_old_config_to_profiles(cfg: dict) -> dict:
                 "all_numerical_features": cfg.get("all_numerical_features", [])
             }
         }
-        # Remove old keys
         for key in ["unique_row_id_col", "fov_name_col", "categorical_cols", "feature_groups", "all_numerical_features"]:
             cfg.pop(key, None)
         cfg["profiles"] = profiles
@@ -103,28 +73,17 @@ def _migrate_old_config_to_profiles(cfg: dict) -> dict:
 
     for profile_cfg in cfg.get("profiles", {}).values():
         if isinstance(profile_cfg, dict):
-            # A fresh [] per profile, never one shared default: a caller that mutates
-            # the list it read would otherwise push that mutation into every profile.
+            # Each profile needs its own mutable categorical list.
             profile_cfg.setdefault("unique_row_id_col", "")
             profile_cfg.setdefault("categorical_cols", [])
 
     return cfg
 
 def _get_current_profile() -> str:
-    """The profile a Save, a rename or a delete last left in force, or "" for none.
+    """Return the session's current profile name, or "" when none is selected.
 
-    **Reading never creates one**, and must not: saving is the only way a profile is
-    made, `_applied_profile` deliberately does not read this, and `working_copy_arguments`
-    supplies the roles the analysis runs on. A profile minted by a read would not be
-    inert either -- it spends one of MAX_PROFILES, and it knows no columns, so
-    `ProfileFit.is_exact` needs its "shared must be non-empty" clause to stop such a
-    profile claiming every file (two empty sets compare equal). That clause stays: a
-    config written by an older build still holds the empty profile this no longer mints.
-
-    So **no active profile is a reachable state**, and every caller must tolerate "".
-    `_get_profile_config("")` answers `{}`, which every accessor reads through a
-    `.get(key, default)`; and `_save_profile_config` is never reached with it, since the
-    only writes are a validated Save.
+    Initialize from disk once per session without creating a profile. Upload
+    matching and analysis use the working copy, independently of this selection.
     """
     if "current_profile" not in st.session_state:
         cfg = _migrate_old_config_to_profiles(load_config(_ANALYSIS_CONFIG_PATH))
@@ -133,11 +92,7 @@ def _get_current_profile() -> str:
     return st.session_state.current_profile
 
 def _get_profile_config(profile_name: str | None = None) -> dict:
-    """One profile's stored config, or `{}` when there is no such profile.
-
-    Read-only, including for a name the config does not hold: nothing here inserts, so
-    there is one answer to where profiles come from -- `save_working_copy`.
-    """
+    """Read a profile's stored config, returning {} without creating it if absent."""
     if profile_name is None:
         profile_name = _get_current_profile()
 
@@ -164,56 +119,25 @@ def get_unique_row_id_col(use_data_extraction=True):
     return profile_cfg.get("unique_row_id_col", "")
 
 def get_fov_name_col_analysis(use_data_extraction=True):
-    """The designated FOV column, which only the extraction branch has.
+    """Return the extraction FOV column, or "" for a user table.
 
-    A user's table may carry a field-of-view column, but it is an ordinary categorical
-    there -- no role names it, so there is nothing to return and "" is the honest
-    answer. Extraction is the branch that genuinely has one: config.toml names it and
-    extraction always emits it, which is also why the missing-FOV warning fires there
-    and nowhere else.
+    User-table FOV columns use the ordinary Categorical role.
     """
     return get_fov_name_col() if use_data_extraction else ""
-
-# No get_ignored_cols_analysis accessor: an ignored column reaches get_features from the
-# review table's working copy (working_copy_arguments), never from the active profile --
-# the file picks the profile, so the active one need not be the matched one. Extraction
-# data has nothing to dismiss, and load_table leaves ignored_cols unset. The stored key
-# is still read, by profile_column_roles below, as the ROLE_IGNORE half of the role map.
-
 
 def get_categorical_cols_analysis(use_data_extraction=True):
     if use_data_extraction:
         data_extraction_categorical_cols = get_categorical_cols()
         fov_name_col = get_fov_name_col()
-        # De-duplicated, and that is not tidiness. Both names are free text on the Home
-        # page -- fov_name_col a text_input, the categoricals an accept_new_options
-        # multiselect -- so typing "image_name" into both is an easy and reasonable
-        # thing to do. get_features keeps every matching categorical by name, so a
-        # repeat put the column into columns_to_keep twice and df[columns_to_keep]
-        # returned a frame with two identical columns; every later df[fov_col] then
-        # handed back a DataFrame instead of a Series.
+        # Free-text settings may repeat the FOV name. Keep each column once so
+        # downstream df[name] access returns a Series.
         return _dedup(data_extraction_categorical_cols + [fov_name_col]
                       + list(_PLATFORM_CATEGORICALS))
     current_profile = _get_current_profile()
     profile_cfg = _get_profile_config(current_profile)
 
-    # De-duplicated for the same reason as the branch above, against a different source:
-    # here the repeat is already *in* the stored list, from a profile written by the old
-    # free-text categorical multiselect or a hand-edited analysis_config.toml. Blanks go
-    # too, since both identifier fields are optional and "" names no column.
-    #
-    # Assembled into a new list rather than appended to the stored one, which used to
-    # mutate the list inside the parsed profile: harmless only because every call
-    # re-parsed the file, so anything that memoises that read would start accumulating
-    # the platform columns into the profile and write them back on the next Save.
-    #
-    # Legacy only: a profile saved while the FOV role existed stored that column in
-    # fov_name_col as well as categorical_cols, and one migrated from the old flat
-    # config may have it in fov_name_col alone. Folding it in here is what keeps such a
-    # profile knowing the same columns it always did -- profile_column_roles does the
-    # same, and the first Save rewrites the profile without the key.
-    #
-    # _PLATFORM_CATEGORICALS is what the 1D/2D GMM and K-Means plots add to the frame.
+    # Include a stored fov_name_col as categorical for compatibility. Build a new
+    # list, removing repeated and blank names without mutating profile settings.
     return _dedup(list(profile_cfg.get("categorical_cols") or [])
                   + [profile_cfg.get("fov_name_col") or ""]
                   + list(_PLATFORM_CATEGORICALS))
@@ -225,23 +149,17 @@ def get_all_feature_groups():
 
 
 def profile_column_roles(profile_cfg=None):
-    """The profile's columns as `{name: role}`, assembled from the stored lists.
+    """Return `{name: role}` from stored lists, using ROLES precedence for overlaps.
 
-    A view, not the storage format: analysis_config.toml keeps the parallel lists it
-    has always had, so existing profiles load untouched and nothing migrates. This is
-    the shape the review table edits and the shape matching compares.
-
-    Blank identifiers name no column -- both are optional, and "" is a reachable value.
+    Blank names are omitted. The returned view is used by review and matching;
+    the stored profile is unchanged.
     """
     if profile_cfg is None:
         profile_cfg = _get_profile_config(_get_current_profile())
 
     by_role = {
         ROLE_ROW_ID: [profile_cfg.get("unique_row_id_col") or ""],
-        # A stored fov_name_col is read as an ordinary categorical. There is no FOV
-        # role to give it back to, and a profile written before the role was dropped
-        # already lists that column in categorical_cols too -- so this only matters for
-        # one migrated from the old flat config, where it could be in neither.
+        # Support stored FOV names that are absent from categorical_cols.
         ROLE_CATEGORICAL: ((profile_cfg.get("categorical_cols") or [])
                            + [profile_cfg.get("fov_name_col") or ""]),
         ROLE_NUMERICAL: profile_cfg.get("all_numerical_features") or [],
@@ -257,15 +175,10 @@ def profile_column_roles(profile_cfg=None):
 
 
 def apply_column_roles(profile_cfg, roles):
-    """Write a `{name: role}` map back out to the profile's stored lists, in place.
+    """Write `{name: role}` to the profile's role lists in place.
 
-    The inverse of profile_column_roles. No fov_name_col is written: a field-of-view
-    column is an ordinary categorical here and lands in categorical_cols like the rest,
-    which is what stringifies it, fills "N/A" and makes it filterable. Because the whole
-    profile is replaced on Save, a legacy key simply stops existing after the first one.
-
-    An unassigned identifier is blanked rather than left at its old value, or clearing
-    Row ID in the table would silently keep the previous column.
+    FOV columns belong in categorical_cols. Set unique_row_id_col to "" when no
+    Row ID is assigned so clearing that role also clears the stored identifier.
     """
     row_ids = [col for col, role in roles.items() if role == ROLE_ROW_ID]
     cats = [col for col, role in roles.items() if role == ROLE_CATEGORICAL]
@@ -280,13 +193,10 @@ def apply_column_roles(profile_cfg, roles):
 
 
 def profile_roles_and_groups(name):
-    """One named profile as `({column: role}, {column: group}, [group names])`.
+    """Read a named profile as `({column: role}, {column: group}, [group names])`.
 
-    By name rather than "the active profile", because under this design the file picks
-    the profile: the one an upload matched need not be the one that happens to be current.
-
-    The names ride along because the mapping cannot express an empty group, and one read
-    of the config serves all three -- see profile_group_names.
+    The named profile may differ from the current one. Group names are returned
+    separately to preserve empty groups, using the same config read.
     """
     profile_cfg = _get_profile_config(name)
     return (profile_column_roles(profile_cfg), column_groups(profile_cfg),
@@ -294,21 +204,19 @@ def profile_roles_and_groups(name):
 
 
 def working_copy_arguments(roles, groups, group_names=None):
-    """The review table's decision as the arguments interpret_table takes.
+    """Convert the review working copy into interpret_table arguments.
 
-    Everything the analysis used to read from the active profile comes through here
-    instead, which is what makes an unsaved edit take effect and what stops a file
-    matching `pdl1` from taking its groups from whichever profile is current.
-
-    Assembled through apply_column_roles rather than by re-deriving the lists, so the
-    hand-off and a Save can never disagree about what a role means.
+    Convert supplied roles and groups independently of the current profile.
+    Reuse the save serializers so analysis and persistence interpret them alike.
     """
     profile_cfg = {}
     apply_column_roles(profile_cfg, roles)
     apply_column_groups(profile_cfg, groups, group_names=group_names)
     categorical_cols = list(profile_cfg["categorical_cols"])
+    # Reserve plot-generated categoricals only for names absent from the file.
+    # A file column with the same name must retain its reviewed role.
     for col in _PLATFORM_CATEGORICALS:
-        if col not in categorical_cols:
+        if col not in categorical_cols and col not in roles:
             categorical_cols.append(col)
     return {
         "categorical_cols": categorical_cols,
@@ -319,18 +227,13 @@ def working_copy_arguments(roles, groups, group_names=None):
 
 
 def _reserved_name_error(name):
-    """Why no profile may carry this name, or "".
+    """Reject the chooser's reserved label or a name TOML cannot preserve.
 
-    The chooser draws AUTO_DETECT as a row beside the profile names and maps a pick on
-    it to "no profile". A profile holding that name would therefore draw a second row
-    under the same widget key -- which raises, taking the whole gate down with it, so the
-    file could not be opened at all -- and a pick on its own row would auto-detect
-    instead of loading it. Checked on every write rather than in the box that types it:
-    Save as and Rename are separate screens and would otherwise have to agree.
+    Save and Rename share this check to keep profile lookup and chooser keys valid.
     """
     if name == AUTO_DETECT:
         return "That name belongs to the chooser's own Auto-detect row. Pick another."
-    return ""
+    return unstorable_name_error(name)
 
 
 def list_profiles():
@@ -340,15 +243,10 @@ def list_profiles():
 
 
 def save_working_copy(name, roles, groups, group_names=None):
-    """Write the review table's working copy to a profile. Returns "" or why it could not.
+    """Save the working copy as a profile, returning "" or a validation error.
 
-    The only write to disk in the whole upload flow, and the reason the working copy can
-    be edited freely: a profile changes when this is called and at no other moment.
-
-    `P` becomes exactly `F` -- the columns this file did not have are forgotten and the
-    ones it added are recorded -- so the next upload of the same file is an exact match
-    that skips the gate. Keeping a missing column would mean the profile just saved does
-    not describe the file it was saved from.
+    Replace the profile with this file's roles and groups, dropping absent columns
+    and recording new ones. Editing the working copy alone does not write to disk.
     """
     name = (name or "").strip()
     if not name:
@@ -358,13 +256,7 @@ def save_working_copy(name, roles, groups, group_names=None):
         return reserved
     existing = list_profiles()
     if name not in existing and len(existing) >= MAX_PROFILES:
-        # Names only what is on screen, which rules out the chooser's rows: that list
-        # holds candidates and is empty for a file sharing no column with any profile --
-        # exactly the file most likely to be the one hitting the cap. The manage section
-        # renders below the button this error appears beside, on every opening of the
-        # gate, so "below" always holds. Its label is the constant above rather than a
-        # repeated string: the sentence is only true while it names a section that exists
-        # under that name.
+        # The management section lists all profiles, even when none match this file.
         return (f"There are already {MAX_PROFILES} profiles. Type an existing name to "
                 f"save over it, or delete one under **{MANAGE_LABEL}** below.")
     profile_cfg = {}
@@ -405,11 +297,9 @@ def rename_profile(old_name, new_name):
 
 
 def delete_profile(name):
-    """Delete a profile. Returns "" or why it could not.
+    """Delete a profile, returning "" or an error if it does not exist.
 
-    Deleting the last one is allowed, unlike the old panel: a profile no longer has to
-    exist before a file can be loaded, so "start over" is delete and nothing else. What
-    remains is an empty profile, which ProfileFit.is_exact refuses to match any file with.
+    Deleting the last profile leaves no saved profiles and clears current_profile.
     """
     cfg = _migrate_old_config_to_profiles(load_config(_ANALYSIS_CONFIG_PATH))
     profiles = cfg.get("profiles", {})
@@ -417,8 +307,7 @@ def delete_profile(name):
         return f"There is no profile called {code_span(name)}."
     del profiles[name]
     if cfg.get("current_profile") == name:
-        # "" when that was the last one, not the name "default" -- inventing a profile
-        # is exactly what deleting the last one is asking not to happen.
+        # No replacement profile is created when the last one is deleted.
         survivor = next(iter(profiles), "")
         cfg["current_profile"] = survivor
         st.session_state.current_profile = survivor
@@ -427,12 +316,7 @@ def delete_profile(name):
 
 
 def column_groups(profile_cfg=None):
-    """The profile's groups as `{column: group}` -- the review table's Group column.
-
-    The inverse view of the stored `{group: [columns]}`, mirroring what
-    profile_column_roles does for roles. A column in no group is simply absent, as an
-    ungrouped column has always been.
-    """
+    """Invert stored `{group: [columns]}` into `{column: group}`, omitting ungrouped columns."""
     if profile_cfg is None:
         profile_cfg = _get_profile_config(_get_current_profile())
     return {col: group
@@ -441,14 +325,9 @@ def column_groups(profile_cfg=None):
 
 
 def profile_group_names(profile_cfg=None):
-    """The profile's group names, in the stored order, the empty ones included.
+    """Return group names in stored order, including empty groups.
 
-    The stored keys, never the values of `column_groups`' inverted view: a group with no
-    members is invisible in the mapping, so reading the names back off it drops exactly
-    the groups `apply_column_groups`' `group_names` argument exists to keep. An empty
-    group is a name the user chose -- for a group whose columns this file does not have,
-    or one made a moment before the columns to fill it -- and it survives a save only if
-    it also survives the load.
+    Read the stored keys: empty groups are absent from column_groups' inverse map.
     """
     if profile_cfg is None:
         profile_cfg = _get_profile_config(_get_current_profile())
@@ -458,10 +337,8 @@ def profile_group_names(profile_cfg=None):
 def apply_column_groups(profile_cfg, mapping, group_names=None):
     """Write a `{column: group}` map back to the stored `{group: [columns]}`, in place.
 
-    `group_names` carries the groups the user has made but not filled, which the mapping
-    alone cannot express -- a group with no members is invisible in it. Passing the
-    review table's full list is what lets an empty group survive a Save, and it fixes the
-    group order, which is the order the feature pickers show.
+    `group_names` preserves empty groups and their order. Additional names in the
+    mapping follow in first-occurrence order.
     """
     names = list(group_names) if group_names is not None else []
     for group in mapping.values():
@@ -473,27 +350,14 @@ def apply_column_groups(profile_cfg, mapping, group_names=None):
 
 
 def all_profile_columns():
-    """`{profile name: known columns}` for every saved profile.
-
-    What matching compares an uploaded file against. Reads every profile rather than
-    the active one, because the file picks the profile here -- nothing is preselected,
-    so a profile that does not fit simply is not the match and cannot be damaged by
-    an upload that disagrees with it.
-    """
+    """Return `{profile name: known columns}` for matching against all saved profiles."""
     cfg = _migrate_old_config_to_profiles(load_config(_ANALYSIS_CONFIG_PATH))
     return {name: profile_known_columns(profile_cfg)
             for name, profile_cfg in cfg.get("profiles", {}).items()}
 
 
 def profile_known_columns(profile_cfg=None):
-    """Every column this profile has seen -- `P` in the matching rule.
-
-    Includes the ignored ones, which is the entire point: without them a profile
-    saved from a file containing `notes` knows three columns while that same file
-    has four, so re-uploading it would never match.
-    """
+    """Return all known columns, including ignored ones so the same file can match."""
     return set(profile_column_roles(profile_cfg))
-
-
 
 

@@ -46,8 +46,12 @@ from src.widgets.classification_widgets import (
     classifier_hyperparams_widget,
     classifier_options_widget,
 )
-from src.widgets.encoding_state import drop_varying_channels
+from src.widgets.encoding_state import (
+    drop_varying_channels,
+    dropped_channel_note,
+)
 from src.widgets.filter_widgets import filters_widget, selection_key
+from src.widgets.analysis_widget_state import control_default
 from src.widgets.multiselect_modes import ALL_LABEL, chosen_items
 from src.widgets.review_table_widget import (
     applied_summary,
@@ -74,7 +78,7 @@ from src.widgets.visualization_widgets import (
 st.set_page_config(layout="wide", page_icon="📊")
 render_top_menu()
 
-# initialize session_states
+# Initialize plot settings.
 if "vis_df" not in st.session_state:
     st.session_state.vis_df = None
 if "plot_point_size" not in st.session_state:
@@ -91,19 +95,14 @@ if "plot_show_group_counts" not in st.session_state:
 def _collect_categorical_filters(categorical_cols, df):
     """Read categorical filter selections from session state.
 
-    Desugared through the same chosen_items the widget uses, so an "Except:" filter exports
-    as the values it keeps and the script cannot drift from the app. None means no
-    constraint, so the column is left out; an empty selection is not the same thing and
-    exports as isin([]), matching the empty frame the app shows for it.
+    Expand exclusion selections with the widget's chosen_items helper. None means
+    unrestricted; an empty list exports as isin([]), keeping no rows.
     """
     filters = {}
     categories_to_filter = [c for c in categorical_cols if c in df.columns and df[c].nunique() > 1]
     for cat in categories_to_filter:
         sel = st.session_state.get(selection_key(cat), [ALL_LABEL])
         chosen = chosen_items(sel, df[cat].unique().tolist())
-        # `is not None` rather than truthiness: an empty selection means no rows in the
-        # app, so the script has to say isin([]) rather than drop the filter and keep
-        # everything. "Except:" covering a whole column reaches this.
         if chosen is not None:
             filters[cat] = list(chosen)
     return filters
@@ -130,23 +129,14 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
     # Shared state
     state = {
         "csv_filename": uploaded_file.name if uploaded_file else "data.csv",
-        # The separator load_table actually read the file with, baked in rather
-        # than re-detected by the script — see _build_read_call. Re-detecting here
-        # would also re-read the upload on every fragment rerun, and a probe that
-        # failed to rewind would cost a full reparse each time.
+        # Reuse the detected separator without reading the upload again.
         "delimiter": delimiter,
-        # The *configured* name, blank included: the script re-runs resolve_row_id_col
-        # and must invent the same column. Baking in the invented name would have
-        # check_and_fix_df demand a column the data file never had.
-        # ... and on the user-table branch that name lives in the review table's working
-        # copy, which may not be any saved profile's: the file picks the profile, and an
-        # edit takes effect without a Save. Hence the gate's own accessor rather than a
-        # session key read from here -- the gate clears it when a different file arrives.
+        # Export the applied review's configured ID. A blank name lets the script
+        # generate the same row IDs instead of requiring a generated column in the file.
         "unique_row_id_col": configured_row_id()
         if not st.session_state.get("_use_data_extraction", True)
         else get_unique_row_id_col(True),
-        # The effective column, not the configured name: a script for a FOV-less
-        # dataset must not name a column its data file does not have.
+        # Include the configured FOV column only when it exists in the data.
         "fov_name_col": st.session_state.get("effective_fov_name_col"),
         "method": method,
         "categorical_filters": _collect_categorical_filters(categorical_cols, st.session_state.vis_df) if st.session_state.vis_df is not None else {},
@@ -157,13 +147,7 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
         "separate_by": separate_by,
         "subcolor_by": subcolor_by,
         "categorical_cols": list(categorical_cols) if categorical_cols else [],
-        # The columns the review table marked Ignore. They reach the script for one
-        # reason: coerce_majority_numeric_cols takes a *skip* set, and the app puts them
-        # in it so a column the user dismissed is not converted on its way to being
-        # discarded. Left out here, the script converts it, prints a warning about it
-        # that the app suppressed, and -- where ANALYSIS_COLUMNS is not captured -- keeps
-        # it as a numeric column the app's frame never held. Extraction emits nothing to
-        # dismiss, so that branch has none.
+        # Match the app's coercion skip set and removal of ignored columns.
         "ignored_cols": ignored_columns()
         if not st.session_state.get("_use_data_extraction", True)
         else [],
@@ -207,8 +191,6 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
             # "A vs B" labels from comparison_pair_widget; None → all pairs
             "selected_pairs": list(st.session_state["compare_pairs"]) if "compare_pairs" in st.session_state else None,
             "custom_order": custom_order if custom_order else None,
-            # Feature-Comparison-only, so it rides method_params rather than a top-level
-            # state key -- the same path log_y/add_boxplot/connect_means take.
             "collapse_by": extra_params.get("collapse_by"),
         }
     elif method == "Feature Histogram":
@@ -284,12 +266,9 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
 
     _render_export_button(state, method)
 
-multivar_methods = ["Dimension Reduction", "Classification"] #"Align Modalities"]
-# Phasor Plot's availability is decided above the uploader, from a session-state
-# key written below it -- so the gate reads last run's value. It is hidden only
-# when a loaded frame demonstrably lacks what it needs; with no frame loaded yet,
-# it stays shown. The resolve step below recomputes the gate from this run's data
-# and reruns once if it just changed.
+multivar_methods = ["Dimension Reduction", "Classification"]
+# Show Phasor Plot until a loaded frame rules it out. Loading below updates this
+# availability and reruns if the method list needs to change.
 _frame_loaded = st.session_state.get("vis_df") is not None
 _show_phasor = bool(st.session_state.get("phasor_available")) or not _frame_loaded
 univar_methods = ["Feature Comparison", "Feature Histogram"]
@@ -322,18 +301,12 @@ with col1:
         )
     use_data_extraction = st.checkbox("**Use Dataset from Data Extraction**", value=True)
     st.session_state._use_data_extraction = use_data_extraction
-    # The *configured* identifier, which may be blank: load_table below overwrites this
-    # with the one the loaded frame actually has, inventing a row-number column when the
-    # table has none. Kept as the fallback for the failed-upload path, where no plot runs.
+    # Loading resolves a blank configured ID to a generated row-number column.
     configured_row_id_col = get_unique_row_id_col(use_data_extraction)
     unique_row_id_col = configured_row_id_col
-    # What the hover calls the identifier. Extraction data is always cells, so that
-    # branch says "Cell ID"; a user table is called what the user called it, and an
-    # invented row number is just "ID".
+    # Hover labels use the user's column name, or "ID" for generated row numbers.
     row_id_label = "Cell ID" if use_data_extraction else (configured_row_id_col or "ID")
     categorical_cols = get_categorical_cols_analysis(use_data_extraction)
-    # Nothing to say on the user-table branch: the columns come from the file, so there is
-    # no panel to visit first and no order to explain. The help tooltip carries the formats.
     instruction_text = ("Upload the file obtained from [Data Extraction](/data_extraction) directly."
                         if use_data_extraction else "Upload your table")
     uploaded_file = st.file_uploader(
@@ -344,45 +317,35 @@ with col1:
              "or OpenDocument (.ods). The table must be a plain grid: column names on the first "
              "row, one row per data point, and — in a spreadsheet — on the first sheet.",
         type=[suffix.lstrip(".") for suffix in SUPPORTED_SUFFIXES],
-        # Without a key the widget's identity comes from its parameters, and
-        # instruction_text varies with the checkbox above — so a toggle would
-        # remount it and silently drop the user's file.
+        # Keep the upload when switching between extraction data and user tables.
         key="analysis_file_upload",
     )
     decision = None
-    # What the FOV resolution below is measured against. Only the extraction branch has
-    # a designated FOV column; on the user-table branch this is "" and stays "", so
-    # resolve_effective_fov_col returns None and the FOV name is simply left out of
-    # the hover text there.
+    # Only extraction data has a designated FOV column for hover text.
     configured_fov_col = get_fov_name_col_analysis(use_data_extraction)
     try:
         if use_data_extraction:
             df, feature_groups_dict, upload_complete, delimiter, unique_row_id_col = load_table(
                 uploaded_file, categorical_cols)
         else:
-            # Read, then stop: the gate needs the file's own headers in hand *before* any
-            # profile has been applied, which is the whole reason read_table exists apart
-            # from interpret_table.
+            # Review the raw headers and dtypes before interpreting column roles.
             df, feature_groups_dict, upload_complete, delimiter = None, None, False, ","
             if uploaded_file is not None:
                 raw, _read_meta, delimiter, scope_warning, error_msg = read_table(uploaded_file)
                 if error_msg != "":
                     _render_reject(error_msg, scope_warning)
                 else:
-                    # Rendered *here*, at read time, and not left to interpret_table as
-                    # the extraction branch leaves it. The gate now sits between the two
-                    # halves, and interpret_table runs only once the gate has been saved
-                    # -- so a workbook whose table is on sheet 2 opened the gate showing
-                    # the cover sheet's one junk column and "mark at least one
-                    # measurement", while the message that explains it ("only 'ReadMe'
-                    # was read") waited behind a Save that block makes impossible. A
-                    # warning about what was *read* belongs beside the uploader with the
-                    # rejection that shares its column, not after the decision.
+                    # Show sheet-scope warnings before review, including when Save is blocked.
                     _render_warning(scope_warning)
-                    # Rendered into the wide column, where the config panel used to sit;
-                    # interpret_table's own messages stay here beside the uploader.
+                    # Review uses the wide column; loader messages stay beside the upload.
                     with col2:
                         decision = review_gate(uploaded_file, raw)
+                    if decision is None:
+                        # The review screen owns this run. Clear analysis/export data,
+                        # then stop before rendering any analysis controls or plots.
+                        st.session_state.vis_df = None
+                        st.session_state.analysis_columns = None
+                        st.stop()
                     if decision is not None:
                         args = working_copy_arguments(
                             decision["roles"], decision["groups"], decision["group_names"])
@@ -393,28 +356,16 @@ with col1:
                             # column here is an ordinary categorical, named by no role.
                             raw, categorical_cols, args["unique_row_id_col"], configured_fov_col,
                             ignored_cols=args["ignored_cols"], feature_groups=args["feature_groups"],
-                            # Already on screen from the read above; passing it here too
-                            # would print it a second time under the gate's own result.
                             use_data_extraction=False)
-                        # Under interpret_table's own messages rather than in the gate's
-                        # column, because it belongs to the upload: an exact match renders
-                        # no gate at all, so this line is the only thing saying which
-                        # profile the plots below are drawn under -- and, after a reject,
-                        # the only way back to the table that can fix it. Re-uploading is
-                        # no escape: same name, same columns, same fingerprint.
+                        # Identify the applied profile and allow reopening review after a reject.
                         applied_summary(decision)
     except Exception as e:
         st.error(f"Failed to process the uploaded file: {e} {sad_emoji}")
         df, feature_groups_dict, upload_complete, delimiter = None, None, False, ","
     st.session_state.vis_df = df
-    # Snapshot the column universe get_features() pruned to, before any plot adds
-    # derived columns (GMM_group, _color_group, ...). The exported script replays
-    # this same prune so its derived CSVs carry the app's columns, not the raw file's.
+    # Capture the analysis columns before plotting adds derived columns, for export parity.
     st.session_state.analysis_columns = list(df.columns) if df is not None else None
-    # The FOV column the loaded frame actually has, or None (hover text only), and
-    # which channels (if any) carry a complete phasor G/S pair. The Phasor gate above
-    # was built from the previous run's key, so if its availability just changed,
-    # rerun once so the next run builds the method lists from the now-current value.
+    # Resolve hover metadata and phasor availability from the current frame.
     fov_name_col = resolve_effective_fov_col(df, configured_fov_col)
     st.session_state.effective_fov_name_col = fov_name_col
     _channel_harmonics = _compute_channel_harmonics(feature_groups_dict) if feature_groups_dict else {}
@@ -435,11 +386,12 @@ with col1:
                         "Effect size method",
                         ["None", "Glass's Delta", "Absolute Cohen's d"],
                         index=0,
+                        key="analysis_control_effect_size",
                     )
                 with ef_col2:
                     if selected_effect_size_method != "None":
-                        mean_or_median = st.radio("Mean or Median", ["Mean", "Median"])
-                statistical_test = st.radio("Statistical Comparison between Two Groups", ["None", "Independent t-test", "Welch's t-test"], index=0)
+                        mean_or_median = st.radio("Mean or Median", ["Mean", "Median"], key="analysis_control_mean_or_median")
+                statistical_test = st.radio("Statistical Comparison between Two Groups", ["None", "Independent t-test", "Welch's t-test"], index=0, key="analysis_control_statistical_test")
 
         elif method in bivar_methods:
             if "2D" in method:
@@ -449,7 +401,7 @@ with col1:
         elif method in multivar_methods:
             selected_features = multi_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
             if method == "Dimension Reduction":                
-                dr_method = st.radio("Dimension Reduction Method", ["UMAP", "PCA", "t-SNE"], horizontal=True)
+                dr_method = st.radio("Dimension Reduction Method", ["UMAP", "PCA", "t-SNE"], horizontal=True, key="analysis_control_dr_method")
                 if dr_method == "UMAP":
                     hyperParam_dict = umap_hyperParams_widget()
                 elif dr_method == "t-SNE":
@@ -459,35 +411,29 @@ with col1:
             elif method == "Classification":
                 cols = st.columns(2)
                 with cols[0]:
-                    classification_method = st.radio("Classifier", CLASSIFIER_OPTIONS)
+                    classification_method = st.radio("Classifier", CLASSIFIER_OPTIONS, key="analysis_control_classifier")
                 with cols[1]:
-                    splits = st.slider("Train size (proportion of training data)", 0.5, 0.9, 0.7, 0.1)
+                    splits = st.slider("Train size (proportion of training data)", 0.5, 0.9, control_default(st.session_state, "analysis_control_train_size", 0.7), 0.1, key="analysis_control_train_size")
                 st.markdown("**Classifier Hyperparameters**")
                 classifier_params = classifier_hyperparams_widget(classification_method)
 
 with col2:
     if upload_complete:
-        # click_ready: boolean to check if the plot is ready for click events
         data_export_ready = False
         filtered_df = filters_widget(st.session_state.vis_df, categorical_cols)
-        # for visualization that are point-based, provides the options for other visual encoding channels: opacity, shape, and separate by
+        # Offer encoding controls supported by the selected plot.
         point_based = method not in ["Feature Histogram", "Classification"]
         color_based = method not in [ "Classification"]
         separate_by_available = method in ["Feature Comparison"]
-        # Subcolor reads the colour group off the x axis, which only the sina
-        # plot lays out that way; elsewhere the group has nowhere else to be shown.
+        # Feature Comparison preserves group identity on the x axis when subcolor is used.
         subcolor_available = method in ["Feature Comparison"]
-        # Collapse by changes what a point IS, not how it looks, and only the sina plot
-        # has an x slot for the replicates to sit in.
+        # Collapse averages replicate measurements within each comparison group.
         collapse_available = method in ["Feature Comparison"]
         fig = None
         # check if the df is empty after filtering
         if not filtered_df.empty:
             color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by = visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=color_based, point_based=point_based, separate_by_available=separate_by_available, subcolor_available=subcolor_available, collapse_available=collapse_available)
-            # Reserved now, written after the collapse runs: it explains a channel the
-            # collapse had to switch off, so it belongs beside the controls that caused
-            # it rather than under the plot. Empty -- and therefore invisible -- whenever
-            # every chosen decoration survived.
+            # Keep any notices about channels dropped by collapse beside their controls.
             collapse_note = st.container()
             if method in univar_methods and selected_var != "Select":
                 # drop rows with NaN values in the selected_var column
@@ -495,11 +441,7 @@ with col2:
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
                     if method == "Feature Comparison":
-                        # Collapse AFTER the x-axis groups are fixed: the key is the
-                        # replicate column plus whatever sets a point's x slot, so a
-                        # replicate measured in two slots stays one dot in each. Applied
-                        # after the NaN drop above, so the mean covers only the cells that
-                        # actually carry the feature.
+                        # Collapse nonmissing measurements per replicate and x-axis group.
                         plot_df = filtered_df
                         plot_row_id_col, plot_row_id_label = unique_row_id_col, row_id_label
                         plot_fov_name_col = fov_name_col
@@ -508,9 +450,7 @@ with col2:
                                 filtered_df, collapse_by, [*color_by, separate_by],
                                 unique_row_id_col)
                             plot_row_id_label = collapse_by
-                            # Same survival rule, no second branch: the collapse dropped
-                            # the FOV column iff it varied, and this resolves a configured
-                            # name against what the frame now has.
+                            # Collapse drops FOV metadata that varies within a replicate group.
                             plot_fov_name_col = resolve_effective_fov_col(plot_df, fov_name_col)
                             _channels, _dropped = drop_varying_channels(
                                 {"shape": shape_by, "opacity": opacity_by,
@@ -518,22 +458,10 @@ with col2:
                             shape_by = _channels["shape"]
                             opacity_by = _channels["opacity"]
                             subcolor_by = _channels["subcolor"]
-                            # Named for the control the user has to go and change, and
-                            # stated as what the point cannot do: "`dish` varies within
-                            # `cell_line`" is accurate and tells nobody anything -- of
-                            # course it does, that is the data.
-                            _labels = {"shape": "Shape by", "opacity": "Opacity by",
-                                       "subcolor": "Subcolor by"}
                             with collapse_note:
                                 for _role, _col in _dropped.items():
-                                    st.caption(
-                                        f"**{_labels[_role]}** is off — one `{collapse_by}` "
-                                        f"point covers several `{_col}` values, so it "
-                                        f"cannot be further divided.")
-                        # Group order for the reorder controls, which render below the plot
-                        # (reorder_x_axis_widget). The keys are derived from the frame here
-                        # because feature_comparison_plot builds its groups internally and
-                        # cannot be asked for them without being called.
+                                    st.caption(dropped_channel_note(_role, collapse_by, _col))
+                        # Share saved group-order keys with the controls below the plot.
                         session_key_sep, session_key_cmp = get_visual_group_keys(plot_df, selected_var, color_by, separate_by)
 
                         current_custom_order = {}
@@ -550,7 +478,7 @@ with col2:
                         with col_log:
                             log_x = st.checkbox("Log X", value=False, key=f"log_x_hist_{selected_var}")
                         with col_gmm:
-                            apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, help="Fit Gaussian Mixture Models\
+                            apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, key="analysis_control_apply_gmm", help="Fit Gaussian Mixture Models\
                             for each color group on the selected feature with 1 to 5 components (fit on raw distribution, not on the histograms). \
                             Choose the one in which all the components are at least of x% weight and has the lowest BIC score. \
                             The default x% is 10%.")
@@ -643,12 +571,8 @@ with col2:
                                                   classify_classes=df_classify['classes'].unique().tolist())
 
             if fig is not None:
-                # Build-time styling: the colormap is passed into the plot functions, the
-                # group-count toggle becomes part of each trace name, and
-                # feature_comparison_plot sizes its section headers from the axis-label
-                # size. Changing any of the three requires a rebuild, so the fragment
-                # escalates to a full rerun; point size and legend size are applied
-                # afterwards by apply_plot_styling and stay inside the fragment.
+                # Colormap, group counts and section-header sizes require rebuilding the
+                # figure. Point and legend sizes can be restyled within the fragment.
                 def _plot_build_params():
                     return (
                         st.session_state.plot_colormap,
@@ -660,9 +584,8 @@ with col2:
 
                 @st.fragment
                 def _render_plot_and_controls(base_fig, build_params):
-                    # apply_plot_styling mutates the figure in place and appends ghost
-                    # legend traces, so style a copy: the fragment reruns against this same
-                    # base_fig indefinitely. The copy costs ~0.06 s against a ~7 s rebuild.
+                    # Styling mutates traces and adds legend entries; copy the base figure
+                    # so fragment reruns do not accumulate those changes.
                     fig = apply_plot_styling(go.Figure(base_fig), st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
                     if method == "2D Feature Distribution":
                         col2_1, col2_2 = st.columns([1, 1])
@@ -721,11 +644,8 @@ with col2:
                         _extra["hyperParam_dict"] = hyperParam_dict
                     _export_script_button(method, uploaded_file, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by, delimiter=delimiter, **_extra)
 
-                    # Must be last in the fragment: st.rerun() discards the state of every
-                    # widget of this fragment that was not rendered during the interrupted
-                    # run, so escalating before the styling controls register would reset
-                    # them to their module defaults. The cost is one stale paint before the
-                    # rebuild lands.
+                    # Rerun only after all fragment widgets register; an earlier rerun
+                    # lets Streamlit clean up their state and reset their values.
                     if st.session_state.pop("_plot_needs_rebuild", False) or _plot_build_params() != build_params:
                         st.rerun(scope="app")
 
@@ -737,3 +657,8 @@ with col2:
     elif uploaded_file is None and not use_data_extraction:
         st.caption("Upload a dataset to get started. Its columns will be "
                    f"automatically parsed {happy_emoji}")
+
+
+# A closing review may trigger another rerun when method availability changes.
+# Keep settings until every analysis widget has rendered, then resume normal cleanup.
+st.session_state.pop("_review_preserve_controls", None)

@@ -9,6 +9,7 @@ from sklearn.metrics import r2_score
 from sklearn.preprocessing import StandardScaler
 
 from src.feature_labels import format_feature_label
+from src.widgets.analysis_widget_state import number_input_default
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 
 from .helpers import (
@@ -315,10 +316,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
     # Convert grouped iterator to list so we can iterate multiple times
     grouped_list = list(grouped)
 
-    # Add all points using interleaved plotting function
-    # Every label is the column's own name, so the same column reads the same here and
-    # in univar.py. hover_field escapes them; building a line by hand here would let a
-    # column named `a<b` swallow the rest of its line.
+    # Use original column names and escape them with hover_field for Plotly markup.
     hover_lines = [hover_field(row_id_label, "%{text}")]
     if fov_name_col is not None:
         hover_lines.append(hover_field(fov_name_col, "%{customdata}"))
@@ -465,7 +463,6 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         # Configure axes for marginal plots
         xaxis2=dict(domain=[0.9, 1], showgrid=False, zeroline=False, showticklabels=False), # Marginal y-density's x-axis
         yaxis2=dict(domain=[0.9, 1], showgrid=False, zeroline=False, showticklabels=False), # Marginal x-density's y-axis
-        # Removed bargap and barmode as they are for histograms
     )
 
     # remove the column after plotting
@@ -571,10 +568,7 @@ def phasor_kmeans(X_raw, n_clusters, random_state=42):
     into exported analysis scripts via inspect.getsource(), which is also why the
     threadpoolctl import below sits inside the function rather than at module scope.
     """
-    # Pin the OpenMP pool to one thread: two-column phasor coordinates give each thread
-    # too little work to pay for synchronising them across n_init=10 restarts. Centroids
-    # then differ by ~1e-11 from the multi-threaded reduction order, which can only matter
-    # if two restarts tie on inertia; cluster labels are unaffected.
+    # A single OpenMP thread avoids synchronization overhead for two-column coordinates.
     from threadpoolctl import threadpool_limits
 
     scaler = StandardScaler().fit(X_raw)
@@ -653,7 +647,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         k_means = st.checkbox("Perform K-Means clustering", value=False, key=f"k_means_phasor_{selected_channel}")
     if k_means:
         with col2:
-            k_means_clusters = st.number_input("Number of clusters", value=2, min_value=1, max_value=8, step=1, key=f"k_means_clusters_phasor_{selected_channel}")
+            k_means_clusters = st.number_input("Number of clusters", value=number_input_default(st.session_state, f"k_means_clusters_phasor_{selected_channel}", 2), min_value=1, max_value=8, step=1, key=f"k_means_clusters_phasor_{selected_channel}")
 
     # Convert grouped iterator to list so we can iterate multiple times
     grouped_list = list(grouped)

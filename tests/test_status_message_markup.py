@@ -1,18 +1,10 @@
-"""File content in a Markdown-rendered status message.
-
-`st.error`, `st.warning`, `st.info` and `st.toast` render their body as Markdown, and
-these messages interpolate column names, cell values, group names and profile names --
-text the app does not control. A column called `*note*` used to arrive as *note*, italics
-with the asterisks eaten, so the message named a column the file does not contain; a
-repeated value of `__x__` came out as a bold `x`.
-
-The rule is `column_roles.code_span` at every interpolation point, never a blanket escape
-over a finished message: the `**...**` in the at-the-cap message is ours and deliberate,
-and the last test here is what stops a future blanket escape from eating it.
+"""User-supplied names and values remain literal in Markdown status messages. Code spans
+protect interpolated content while deliberate message formatting remains intact.
 """
 import re
 
 import pandas as pd
+import plotly.graph_objects as go
 import pytest
 
 from src.column_roles import (
@@ -24,6 +16,7 @@ from src.column_roles import (
 )
 from src.dataset_io import review_blocking_reason
 from src.widgets import review_table_widget as gate
+from src.widgets.encoding_state import dropped_channel_note
 
 # Names a scientist can plausibly type or export, each carrying Markdown that would
 # change or eat the text around it.
@@ -111,10 +104,8 @@ def test_the_row_id_reason_spans_the_name_in_its_other_two_branches():
 
 
 def test_the_comma_decimal_note_spans_its_column_for_the_gate():
-    """One sentence, two renderers: the gate's Markdown and the reader's plain text.
-
-    `_comma_decimal_hint` is appended to a rejection the reader escapes once through
-    `_as_html`, and to this one, which Streamlit renders as Markdown -- hence `mark`.
+    """The gate formats the shared decimal hint for Markdown; reader warnings use plain
+    text.
     """
     from src.dataset_io import _comma_decimal_hint
 
@@ -173,15 +164,41 @@ def test_the_already_exists_error_spans_the_new_name(acw):
     assert _carries_no_loose_markup(message), message
 
 
+@pytest.mark.parametrize("name", MARKUP_NAMES)
+def test_the_thin_group_warning_spans_its_group_and_its_section(name, monkeypatch):
+    """Group and section labels come from file values and must display literally."""
+    from src.vis import helpers
+
+    captured = []
+    monkeypatch.setattr(helpers.st, "warning", lambda text, **kw: captured.append(text))
+    df = pd.DataFrame({"grp": ["ctrl", "ctrl", name], "Area": [1.0, 2.0, 3.0]})
+
+    helpers._add_effect_size_annotations(
+        go.Figure(), df, "Area", ["ctrl", name], "grp", [("ctrl", name)], "black",
+        selected_pairs=[("ctrl", name)], statistical_test="Independent t-test",
+        section_label=name)
+
+    assert captured, "the thin-group notice did not fire"
+    assert code_span(name) in captured[0]
+    assert _carries_no_loose_markup(captured[0]), captured[0]
+
+
+@pytest.mark.parametrize("name", MARKUP_NAMES)
+def test_the_dropped_channel_note_spans_both_of_its_columns(name):
+    """The collapse note names the replicate column and the one it swallowed."""
+    note = dropped_channel_note("shape", name, "__cell_line__")
+
+    assert code_span(name) in note and code_span("__cell_line__") in note
+    # Its own **Shape by** is deliberate -- it names the control to go and change -- so
+    # only what is left after that must be free of loose markup.
+    prose = _prose(note).replace("**Shape by**", "")
+    assert not set(prose) & set("*_[]`"), prose
+
+
 # --------------------------------------------- the markup that is ours and must survive
 
 def test_the_at_the_cap_message_keeps_its_deliberate_bold(acw):
-    """Why the escaping is at the interpolation points and not over whole messages.
-
-    This one interpolates nothing the user wrote -- a count and our own section label --
-    and its `**...**` is how it points at the panel that fixes the problem. A blanket
-    escape at the render site would turn that into four literal asterisks.
-    """
+    """Escaping user content preserves the message's own bold section label."""
     roles = {"cell_id": ROLE_ROW_ID, "Area": ROLE_NUMERICAL}
     for i in range(acw.MAX_PROFILES):
         acw.save_working_copy(f"p{i}", roles, {})
