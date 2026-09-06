@@ -322,6 +322,41 @@ def test_nothing_is_struck_when_no_column_is_collapsed(page):
 FEATURE_KEY = "_menu_Uncategorized Features"
 
 
+def test_superplot_page_retains_source_and_exports_its_overlay(page, monkeypatch):
+    from src import export_script
+    from src.vis import univar
+
+    frames, states, figures = [], [], []
+    render = univar.feature_comparison_plot
+    generate = export_script.generate_script
+
+    def spy(df, *args, **kwargs):
+        frames.append((df.copy(), kwargs.get("source_df")))
+        figure = render(df, *args, **kwargs)
+        figures.append(figure)
+        return figure
+
+    def capture(state):
+        states.append(state)
+        return generate(state)
+
+    monkeypatch.setattr(univar, "feature_comparison_plot", spy)
+    monkeypatch.setattr(export_script, "generate_script", capture)
+    at = page(**{FEATURE_KEY: FEATURE, vw.COLOR_BY_KEY: ["treatment"],
+                 vw.COLLAPSE_BY_KEY: "dish", vw.POINT_MODE_KEY: "subcolor",
+                 vw.PICKER_COL_KEY: "dish"})
+    overlay = next(box for box in at.selectbox if box.label == "Overlay")
+    assert "SuperPlot" in overlay.options
+    overlay.set_value("SuperPlot").run(timeout=90)
+    assert not at.exception
+    assert len(frames[-1][0]) == 6
+    assert len(frames[-1][1]) == 36
+    assert states[-1]["method_params"]["overlay"] == "SuperPlot"
+    assert states[-1]["method_params"]["collapse_by"] == "dish"
+    assert sum(len(t.y) for t in figures[-1].data if isinstance(t.meta, dict)
+               and t.meta.get("superplot_role") == "observation") == 36
+
+
 @pytest.mark.parametrize("mode", ["shape", "subcolor", "opacity"])
 @pytest.mark.parametrize("column", ["day", "treatment", "image_name", None])
 def test_page_exports_only_the_active_valid_decoration(page, monkeypatch, mode, column):

@@ -24,7 +24,6 @@ from src.vis.univar import feature_comparison_plot
 
 # Enable only overlay checkboxes so data-transform controls cannot alter the fixture.
 OVERLAY_TOGGLES = {
-    "Add boxplot",
     "Connect means",
     "2D Gaussian Mixture Model",
     "Regression line",
@@ -46,6 +45,11 @@ def webgl(monkeypatch):
     monkeypatch.setattr(
         st, "checkbox",
         lambda label, *a, **k: True if label in OVERLAY_TOGGLES else real_checkbox(label, *a, **k),
+    )
+    real_selectbox = st.selectbox
+    monkeypatch.setattr(
+        st, "selectbox",
+        lambda label, *a, **k: "Boxplot" if label == "Overlay" else real_selectbox(label, *a, **k),
     )
     for key, value in (("plot_point_size", 5), ("plot_axis_label_size", 18),
                        ("plot_legend_size", 16)):

@@ -9,6 +9,13 @@ from plotly.subplots import make_subplots
 from src.column_roles import code_span
 from .histogram import histogram_legend_label, prepare_histogram
 from .histogram import _assign_subpopulation_labels as _assign_subpopulation_labels
+from .superplot import (add_superplot_observations, add_superplot_summary,
+                        summarize_superplot, superplot_display_frame)
+from .plot_defaults import (
+    SUPERPLOT_REPLICATE_JITTER_WIDTH,
+    SUPERPLOT_REPLICATE_LINE_WIDTH,
+    SUPERPLOT_REPLICATE_SIZE_SCALE,
+)
 
 from src.feature_labels import format_feature_label
 from src.widgets.analysis_widget_state import number_input_default
@@ -17,6 +24,7 @@ from src.widgets.visualization_widgets import (
     comparison_pair_widget,
     gmm_hyperParams_widget,
     histogram_bin_width_widget,
+    comparison_overlay_widget,
 )
 
 from .helpers import (
@@ -229,30 +237,46 @@ def _add_box_outline_above_gl(fig, x, q1, median, q3, lower_fence, upper_fence, 
                       line=outline, **common)
 
 
-def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None", custom_order=None, subcolor_by=None, row_id_label="ID"):
+def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None", custom_order=None, subcolor_by=None, row_id_label="ID", *, collapse_by=None, source_df=None, source_row_id_col=None, source_row_id_label="ID", source_fov_name_col=None):
 
     # Get theme color once at the start for all theme-aware elements
     theme_color = get_context_theme_color()
     # Pretty FLIM label (Greek notation) reused for hover, title, and y-axis
     pretty_var = format_feature_label(selected_var)
 
-    col1, col2, col3 = st.columns([0.15, 0.2, 0.65])
-    with col1:
+    # Parent columns add margins to their first/last checkbox, even inside this row.
+    st.html("""
+        <style>
+        .st-key-feature_comparison_controls [data-testid="stCheckbox"] {
+            margin-top: 0 !important;
+            margin-bottom: 0 !important;
+        }
+        </style>
+    """)
+    with st.container(key="feature_comparison_controls", horizontal=True,
+                      vertical_alignment="center", gap="medium"):
         log_y = st.checkbox("Log Y", value=False, key=f"log_y_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
-    with col2:
-        add_boxplot = st.checkbox("Add boxplot", value=False, key=f"add_boxplot_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
-    with col3:
+        overlay = comparison_overlay_widget(selected_var, color_by, separate_by, collapse_by)
+        add_boxplot = overlay == "Boxplot"
         connect_means = st.checkbox("Connect means", value=False, key=f"connect_means_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
 
     # Create a working copy to avoid modifying the original dataframe
     df = df.copy()
+    superplot = overlay == "SuperPlot"
+    if superplot:
+        if source_df is None:
+            raise ValueError("SuperPlot requires the original observations before Collapse by.")
+        source_df = source_df.dropna(subset=[selected_var]).copy().reset_index(drop=True)
 
     # Apply log transform if requested (consistent with bivar.py)
     if log_y:
-        if (df[selected_var] < 0).any():
+        if (df[selected_var] < 0).any() or (superplot and (source_df[selected_var] < 0).any()):
             st.error(log_negative_error(selected_var))
+            log_y = False
         else:
             df[selected_var] = np.log10(df[selected_var] + 1e-6)
+            if superplot:
+                source_df[selected_var] = np.log10(source_df[selected_var] + 1e-6)
 
     fig = go.Figure()
     COLOR_GROUP_COL_NAME = 'compare_group'
@@ -420,7 +444,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         y_data = all_y[rows]
         densities = _density_at_points(y_data)
         # Normalize densities to a reasonable jitter width
-        max_jitter = 0.35  # Controls the max horizontal spread
+        # Keep SuperPlot replicate centers within the width of the SEM caps.
+        max_jitter = SUPERPLOT_REPLICATE_JITTER_WIDTH if superplot else 0.35
         if len(densities) > 0 and np.max(densities) > 0:
             norm_densities = densities / np.max(densities)
         else:
@@ -469,7 +494,9 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
             continue
 
         marker_color = color_map[color_group]
-        marker_opacity = opacity_map.get(opacity_group, 0.7) if opacity_map and opacity_group is not None else 0.7
+        default_opacity = 1.0 if superplot else 0.7
+        marker_opacity = (opacity_map.get(opacity_group, default_opacity)
+                          if opacity_map and opacity_group is not None else default_opacity)
         marker_symbol = shape_map.get(shape_group, 'circle') if shape_map and shape_group is not None else 'circle'
 
         # Each row's x was assigned per colour group above; look it up rather than
@@ -501,7 +528,24 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
     # would override colour-group draw order.
     scatter_cls = point_trace_class(
         sum(len(chunk) for bucket in point_buckets.values() for chunk in bucket["y"])
+        + (len(source_df) if superplot else 0)
     )
+
+    display_df = df
+    if superplot:
+        add_superplot_observations(
+            fig, source_df, selected_var, color_by, separate_by, shape_by, opacity_by,
+            subcolor_by, color_map, shape_map, opacity_map, subcolor_of,
+            cell_x_position, scatter_cls, point_size, source_row_id_col,
+            source_row_id_label, source_fov_name_col, pretty_var)
+        summary_cols = [COLOR_GROUP_COL_NAME] + ([separate_by] if separate_by else [])
+        summary = summarize_superplot(plotted, selected_var, summary_cols)
+        display_df = superplot_display_frame(source_df, summary, selected_var, summary_cols)
+        if (summary["count"] < 2).any():
+            st.caption("SEM is unavailable for groups with fewer than two replicates; "
+                       "their mean bars are still shown.")
+        # Draw bars before replicate dots so the caps cannot obscure their centers.
+        add_superplot_summary(fig, summary, separate_by, cell_x_position, scatter_cls, theme_color)
 
     for (separate_group, color_group), bucket in point_buckets.items():
         columns = {name: np.concatenate(chunks)
@@ -513,9 +557,13 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         # symbol and opacity are passed per call rather than baked in here.
         marker_kwargs = dict(size=point_size, line=dict(width=0.5, color='DarkSlateGrey'))
         trace_kwargs = dict(mode='markers', hovertemplate=final_hovertemplate)
+        if superplot:
+            marker_kwargs.update(size=point_size * SUPERPLOT_REPLICATE_SIZE_SCALE,
+                                 line=dict(width=SUPERPLOT_REPLICATE_LINE_WIDTH, color='DarkSlateGrey'))
+            trace_kwargs['meta'] = {"superplot_role": "replicate"}
         if scatter_cls is go.Scatter:
             # Only SVG traces support zorder; WebGL box outlines use above-layer shapes.
-            trace_kwargs['zorder'] = 1
+            trace_kwargs['zorder'] = 2 if superplot else 1
 
         if not subcolor_of:
             # A single-colour group needs one trace with per-point symbol and opacity.
@@ -814,8 +862,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
 
             if selected_pairs:  # Only proceed if user selected some pairs
                 # Calculate global data range ONCE for consistent spacing across all sections
-                global_min_y = df[selected_var].min(skipna=True)
-                global_max_y = df[selected_var].max(skipna=True)
+                global_min_y = display_df[selected_var].min(skipna=True)
+                global_max_y = display_df[selected_var].max(skipna=True)
                 global_data_range = (global_min_y, global_max_y)
 
                 # Apply statistical annotations within each separate section
@@ -860,7 +908,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
                                 threshold=threshold,
                                 statistical_test=statistical_test,
                                 global_data_range=global_data_range,  # Pass global range for consistent spacing
-                                section_label=section_info['group']
+                                section_label=section_info['group'],
+                                display_df=display_df[display_df[separate_by] == section_info['group']]
                             )
         else:
             # Standard statistical annotations when no separate_by
@@ -875,7 +924,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
                 effect_size_method=effect_size_method,
                 mean_or_median=mean_or_median,
                 statistical_test=statistical_test,
-                position_map=x_positions  # Pass position map for correct y-range calculation after reordering
+                position_map=x_positions,  # Keep statistical samples distinct from drawing bounds.
+                display_df=display_df
             )
 
     # Drop the temporary group column if it exists

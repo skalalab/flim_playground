@@ -14,6 +14,12 @@ from src.vis.plot_defaults import (
     DEFAULT_COLORMAP,
     DEFAULT_LEGEND_FONT_SIZE,
     DEFAULT_POINT_SIZE,
+    SUPERPLOT_OBSERVATION_MIN_SIZE,
+    SUPERPLOT_OBSERVATION_OPACITY_SCALE,
+    SUPERPLOT_OBSERVATION_SIZE_SCALE,
+    SUPERPLOT_REPLICATE_JITTER_WIDTH,
+    SUPERPLOT_REPLICATE_LINE_WIDTH,
+    SUPERPLOT_REPLICATE_SIZE_SCALE,
 )
 
 # Prepended to every exported analysis script (same message as README.md # Citation).
@@ -348,7 +354,8 @@ def _build_config_section(state: dict) -> str:
         lines.append(f"MEAN_OR_MEDIAN = {mp.get('mean_or_median')!r}")
         lines.append(f"STATISTICAL_TEST = {mp.get('statistical_test', 'None')!r}")
         lines.append(f"LOG_Y = {mp.get('log_y', False)!r}")
-        lines.append(f"ADD_BOXPLOT = {mp.get('add_boxplot', False)!r}")
+        overlay = mp.get("overlay", "Boxplot" if mp.get("add_boxplot", False) else "None")
+        lines.append(f"OVERLAY = {overlay!r}  # 'None', 'Boxplot', or 'SuperPlot'; SuperPlot requires an export generated with Collapse by")
         lines.append(f"CONNECT_MEANS = {mp.get('connect_means', False)!r}")
         lines.append(f"EFFECT_SIZE_THRESHOLD = {mp.get('effect_size_threshold', 0.0)!r}")
         lines.append(f"SELECTED_PAIRS = {mp.get('selected_pairs')!r}  # None → annotate all pairs; else list of 'group1 vs group2' labels")
@@ -751,7 +758,21 @@ df = df[df[SELECTED_X].notna() & df[SELECTED_Y].notna()].copy()
         log_block = _LOG_2D_BLOCK
     else:
         header = """
-df = df[df[SELECTED_VAR].notna()]
+df = df[df[SELECTED_VAR].notna()].copy()
+"""
+        if state.get("method_params", {}).get("collapse_by"):
+            header += """
+if OVERLAY == "SuperPlot":
+    if not globals().get("COLLAPSE_BY") or COLLAPSE_BY not in df.columns:
+        raise ValueError("SuperPlot requires a valid Collapse by column.")
+    # Keep filtered observations before aggregation, after selected-feature NaN removal.
+    source_df = df.copy()
+"""
+        else:
+            header += """
+if OVERLAY == "SuperPlot":
+    # This export has no collapse logic; adding settings alone would leave cells as primary data.
+    raise ValueError("SuperPlot requires Collapse by. Regenerate this export with Collapse by selected.")
 """
         slot_cols = "[*COLOR_BY, SEPARATE_BY]"
         channels = ("SHAPE_BY", "OPACITY_BY", "SUBCOLOR_BY")
@@ -779,11 +800,15 @@ for _channel, _name in ({channel_pairs}):
 # Apply each method's log transforms after optional replicate aggregation.
 _LOG_Y_BLOCK = """
 if LOG_Y:
-    if (df[SELECTED_VAR] < 0).any():
+    _log_values = source_df[SELECTED_VAR] if OVERLAY == "SuperPlot" else df[SELECTED_VAR]
+    if (_log_values < 0).any():
         print("WARNING: Cannot apply log to " + str(SELECTED_VAR) + ": contains negative values.")
+        LOG_Y = False
     else:
         df = df.copy()
         df[SELECTED_VAR] = np.log10(df[SELECTED_VAR] + 1e-6)
+        if OVERLAY == "SuperPlot":
+            source_df[SELECTED_VAR] = np.log10(source_df[SELECTED_VAR] + 1e-6)
 """
 
 
@@ -805,6 +830,7 @@ if LOG_Y:
 
 def _build_feature_comparison(state: dict) -> str:
     from src.vis import subcolor_palette
+    from src.vis.superplot import summarize_superplot
     from src.vis.helpers import (
         _compute_bracket_position,
         _density_at_points,
@@ -825,7 +851,7 @@ def _build_feature_comparison(state: dict) -> str:
     )
     effect_size_src = _extract_source(
         glass_delta, cohens_d, _compute_bracket_position, _estimate_density_1d,
-        _density_at_points,
+        _density_at_points, summarize_superplot,
     )
 
     return _build_collapse(state) + _build_visual_encoding(state, overlap_point=False) + f"""
@@ -839,6 +865,24 @@ from scipy.stats import gaussian_kde, ttest_ind, median_abs_deviation
 
 # Effect size + bracket positioning functions (extracted from FLIM Playground source)
 {effect_size_src}
+
+# The main frame remains replicate means; observations and SEM ends affect geometry only.
+display_df = df
+if OVERLAY == "SuperPlot":
+    source_df["_color_group"] = (source_df[COLOR_BY].astype(str).agg("::".join, axis=1)
+                                 if COLOR_BY else "all_data")
+    _summary_groups = ([SEPARATE_BY] if SEPARATE_BY else []) + ["_color_group"]
+    superplot_summary_df = summarize_superplot(df, SELECTED_VAR, _summary_groups)
+    _display_frames = [source_df[_summary_groups + [SELECTED_VAR]],
+                       df[_summary_groups + [SELECTED_VAR]]]
+    for _sign in (-1, 1):
+        _endpoints = superplot_summary_df.index.to_frame(index=False)
+        _endpoints[SELECTED_VAR] = (superplot_summary_df["mean"]
+                                  + _sign * superplot_summary_df["sem"].fillna(0)).to_numpy()
+        _display_frames.append(_endpoints)
+    display_df = pd.concat(_display_frames, ignore_index=True)
+    if (superplot_summary_df["count"] == 1).any():
+        print("NOTE: SuperPlot shows the mean only for groups with one replicate; SEM requires at least two.")
 
 # --- Separate_by logic ---
 separate_groups = [None]
@@ -902,62 +946,95 @@ subcolor_counts = {{}}
 if subcolor_of:
     subcolor_counts = df[SUBCOLOR_BY].fillna("N/A").astype(str).value_counts().to_dict()
 legend_entries = set()
-for sec_group in ordered_separate_groups:
-    if sec_group is not None:
-        sec_df = df[df[SEPARATE_BY] == sec_group]
-        sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df["_color_group"].unique()]
-    else:
-        sec_df = df
-        sec_color_groups = ordered_color_groups
-
-    for cg in sec_color_groups:
-        key = (sec_group, cg) if sec_group is not None else cg
-        x_pos = x_positions[key]
-        group_df = sec_df[sec_df["_color_group"] == cg]
-        y_data = group_df[SELECTED_VAR].values
-
-        # Fit jitter once per section/color group so decoration choices cannot move points.
-        # Grid-based density evaluation avoids quadratic work; degenerate groups use uniform jitter.
-        densities = _density_at_points(y_data)
-        if len(densities) > 0 and np.max(densities) > 0:
-            norm_d = densities / np.max(densities)
+# SuperPlot sizes are marker diameters, converted to Matplotlib's area units.
+# Preserve the existing None/Boxplot marker sizing convention.
+primary_point_area = (POINT_SIZE * {SUPERPLOT_REPLICATE_SIZE_SCALE}) ** 2 if OVERLAY == "SuperPlot" else POINT_SIZE
+point_layers = [(df, primary_point_area, 1.0, 2, True)]
+if OVERLAY == "SuperPlot":
+    point_layers.insert(0, (source_df, max({SUPERPLOT_OBSERVATION_MIN_SIZE}, POINT_SIZE * {SUPERPLOT_OBSERVATION_SIZE_SCALE}) ** 2,
+                           {SUPERPLOT_OBSERVATION_OPACITY_SCALE}, 1, False))
+for layer_df, point_area, opacity_scale, layer_zorder, is_primary in point_layers:
+    layer_opacity_map = {{level: alpha * opacity_scale for level, alpha in opacity_map.items()}}
+    layer_alpha = opacity_scale if OVERLAY == "SuperPlot" else 0.7
+    layer_linewidth = ({SUPERPLOT_REPLICATE_LINE_WIDTH} if is_primary else 0) if OVERLAY == "SuperPlot" else 0.5
+    layer_jitter = {SUPERPLOT_REPLICATE_JITTER_WIDTH} if OVERLAY == "SuperPlot" and is_primary else 0.35
+    for sec_group in ordered_separate_groups:
+        if sec_group is not None:
+            sec_df = layer_df[layer_df[SEPARATE_BY] == sec_group]
+            sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df["_color_group"].unique()]
         else:
-            # Degenerate density (a constant column has no KDE): spread points with
-            # uniform jitter so they stay visible instead of stacking into one dot.
-            norm_d = np.ones_like(densities)
-        rng = np.random.default_rng(42)
-        x_vals = x_pos + rng.uniform(-1, 1, len(y_data)) * norm_d * 0.35
+            sec_df = layer_df
+            sec_color_groups = ordered_color_groups
 
-        if not subcolor_of:
-            cg_label = (format_group_label(cg, group_counts.get(cg), SHOW_GROUP_COUNTS, engine='mpl')
-                        if cg not in legend_entries else None)
-            scatter_with_encodings(ax, x_vals, y_data, color_map[cg][:3],
-                                   cg_label, POINT_SIZE,
-                                   shape_vals=group_df[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
-                                   opacity_vals=group_df[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
-                                   linewidths=0.5)
-            legend_entries.add(cg)
-        else:
-            # Reuse group-level jitter and give each subcolor value one figure-wide legend entry.
-            _subcolor_vals = group_df[SUBCOLOR_BY].fillna("N/A").astype(str).values
-            _shape_vals = group_df[SHAPE_BY].values if SHAPE_BY else None
-            _opacity_vals = group_df[OPACITY_BY].values if OPACITY_BY else None
-            # Interleave subcolor batches to limit occlusion bias, skipping absent values.
-            for _value, _mask in interleave_point_batches({{
-                    _v: np.flatnonzero(_subcolor_vals == _v) for _v in subcolor_of}}):
-                _label = (format_group_label(_value, subcolor_counts.get(_value),
-                                             SHOW_GROUP_COUNTS, engine='mpl')
-                          if _value not in legend_entries else None)
-                # Batch indices are positional, so index arrays instead of Series labels.
-                scatter_with_encodings(ax, x_vals[_mask], y_data[_mask], subcolor_of[_value][:3],
-                                       _label, POINT_SIZE,
-                                       shape_vals=_shape_vals[_mask] if SHAPE_BY else None, shape_map=shape_map,
-                                       opacity_vals=_opacity_vals[_mask] if OPACITY_BY else None, opacity_map=opacity_map,
-                                       linewidths=0.5)
-                legend_entries.add(_value)
+        for cg in sec_color_groups:
+            key = (sec_group, cg) if sec_group is not None else cg
+            x_pos = x_positions[key]
+            group_df = sec_df[sec_df["_color_group"] == cg]
+            y_data = group_df[SELECTED_VAR].values
+
+            # Fit independent layer jitter once per section/color group; encodings keep the same positions.
+            # Grid-based density evaluation avoids quadratic work; degenerate groups use uniform jitter.
+            densities = _density_at_points(y_data)
+            if len(densities) > 0 and np.max(densities) > 0:
+                norm_d = densities / np.max(densities)
+            else:
+                # Degenerate density (a constant column has no KDE): spread points with
+                # uniform jitter so they stay visible instead of stacking into one dot.
+                norm_d = np.ones_like(densities)
+            rng = np.random.default_rng(42)
+            x_vals = x_pos + rng.uniform(-1, 1, len(y_data)) * norm_d * layer_jitter
+
+            if not subcolor_of:
+                cg_label = (format_group_label(cg, group_counts.get(cg), SHOW_GROUP_COUNTS, engine='mpl')
+                            if is_primary and cg not in legend_entries else None)
+                scatter_with_encodings(ax, x_vals, y_data, color_map[cg][:3],
+                                       cg_label, point_area,
+                                       shape_vals=group_df[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
+                                       opacity_vals=group_df[OPACITY_BY] if OPACITY_BY else None,
+                                       opacity_map=layer_opacity_map, base_alpha=layer_alpha,
+                                       linewidths=layer_linewidth, zorder=layer_zorder)
+                if is_primary:
+                    legend_entries.add(cg)
+            else:
+                # Reuse group-level jitter and give each subcolor value one figure-wide legend entry.
+                _subcolor_vals = group_df[SUBCOLOR_BY].fillna("N/A").astype(str).values
+                _shape_vals = group_df[SHAPE_BY].values if SHAPE_BY else None
+                _opacity_vals = group_df[OPACITY_BY].values if OPACITY_BY else None
+                # Interleave subcolor batches to limit occlusion bias, skipping absent values.
+                for _value, _mask in interleave_point_batches({{
+                        _v: np.flatnonzero(_subcolor_vals == _v) for _v in subcolor_of}}):
+                    _label = (format_group_label(_value, subcolor_counts.get(_value),
+                                                 SHOW_GROUP_COUNTS, engine='mpl')
+                              if is_primary and _value not in legend_entries else None)
+                    # Batch indices are positional, so index arrays instead of Series labels.
+                    scatter_with_encodings(ax, x_vals[_mask], y_data[_mask], subcolor_of[_value][:3],
+                                           _label, point_area,
+                                           shape_vals=_shape_vals[_mask] if SHAPE_BY else None, shape_map=shape_map,
+                                           opacity_vals=_opacity_vals[_mask] if OPACITY_BY else None,
+                                           opacity_map=layer_opacity_map, base_alpha=layer_alpha,
+                                           linewidths=layer_linewidth, zorder=layer_zorder)
+                    if is_primary:
+                        legend_entries.add(_value)
+
+# --- SuperPlot mean and sample SEM across the replicate points ---
+if OVERLAY == "SuperPlot":
+    for _summary_key, _summary in superplot_summary_df.iterrows():
+        _summary_key = _summary_key if isinstance(_summary_key, tuple) else (_summary_key,)
+        _groups = dict(zip(superplot_summary_df.index.names, _summary_key))
+        _section = _groups[SEPARATE_BY] if SEPARATE_BY else None
+        _color = _groups["_color_group"]
+        _key = (_section, _color) if _section is not None else _color
+        _x = x_positions[_key]
+        _mean, _sem = _summary["mean"], _summary["sem"]
+        ax.plot([_x - 0.2, _x + 0.2], [_mean, _mean], color='black', linewidth=2, zorder=1.5)
+        if np.isfinite(_sem):
+            _low, _high = _mean - _sem, _mean + _sem
+            ax.plot([_x, _x], [_low, _high], color='black', linewidth=2, zorder=1.5)
+            ax.plot([_x - 0.1, _x + 0.1], [_low, _low], color='black', linewidth=2, zorder=1.5)
+            ax.plot([_x - 0.1, _x + 0.1], [_high, _high], color='black', linewidth=2, zorder=1.5)
 
 # --- Boxplot overlay ---
-if ADD_BOXPLOT:
+if OVERLAY == "Boxplot":
     for sec_group in ordered_separate_groups:
         if sec_group is not None:
             sec_df = df[df[SEPARATE_BY] == sec_group]
@@ -1012,9 +1089,11 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
     for sec_group in ordered_separate_groups:
         if sec_group is not None:
             sec_df = df[df[SEPARATE_BY] == sec_group]
+            display_sec_df = display_df[display_df[SEPARATE_BY] == sec_group]
             sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df["_color_group"].unique()]
         else:
             sec_df = df
+            display_sec_df = display_df
             sec_color_groups = ordered_color_groups
 
         if len(sec_color_groups) < 2:
@@ -1027,6 +1106,8 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
                      or f"{{p[1]}} vs {{p[0]}}" in SELECTED_PAIRS]
         # Bracket spacing uses the GLOBAL data range (one scale across all sections), like the app.
         all_y = df[SELECTED_VAR].dropna()
+        if OVERLAY == "SuperPlot":
+            all_y = display_df[SELECTED_VAR].dropna()
         data_range = all_y.max() - all_y.min()
         if data_range == 0:
             data_range = 1.0
@@ -1069,6 +1150,8 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
                     continue
                 txt = f"{{es:.2f}}{{star}}" if star else f"\\u0394={{es:.2f}}"
             else:
+                if not star:
+                    continue
                 txt = star  # statistical test only — star-only annotation
 
             key1 = (sec_group, pair[0]) if sec_group is not None else pair[0]
@@ -1079,7 +1162,7 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
             spanned = [cg for cg in sec_color_groups
                        if x_positions.get((sec_group, cg) if sec_group is not None else cg, -1) >= x_start
                        and x_positions.get((sec_group, cg) if sec_group is not None else cg, -1) <= x_end]
-            region_df = sec_df[sec_df["_color_group"].isin(spanned)]
+            region_df = display_sec_df[display_sec_df["_color_group"].isin(spanned)]
             region_max = region_df[SELECTED_VAR].max() if not region_df.empty else all_y.max()
 
             # Use extracted collision detection function
@@ -1114,7 +1197,7 @@ if SUBCOLOR_BY:
 _full_title = _title_parts[0] + (f" ({{', '.join(_title_parts[1:])}})" if len(_title_parts) > 1 else "")
 ax.set_title(_full_title, fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='y', labelsize=AXIS_LABEL_SIZE - 2)
-add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
+add_encoding_legend_entries(ax, shape_map, opacity_map, primary_point_area)
 ax.legend(fontsize=LEGEND_SIZE)
 
 # Match the app's tick angles: slant labels longer than four characters.

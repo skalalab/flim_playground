@@ -64,18 +64,18 @@ def build_df():
 @contextlib.contextmanager
 def boxplot_on():
     """Enable boxplots in bare-mode Streamlit, which otherwise returns widget defaults."""
-    real = univar.st.checkbox
+    real = univar.st.selectbox
 
-    def fake(label, value=False, key=None, **kwargs):
-        if key and key.startswith("add_boxplot_"):
-            return True
-        return real(label, value=value, key=key, **kwargs)
+    def fake(label, options, key=None, **kwargs):
+        if label == "Overlay":
+            return "Boxplot"
+        return real(label, options, key=key, **kwargs)
 
-    univar.st.checkbox = fake
+    univar.st.selectbox = fake
     try:
         yield
     finally:
-        univar.st.checkbox = real
+        univar.st.selectbox = real
 
 
 def point_xy(fig, precision=9):

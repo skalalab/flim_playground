@@ -223,17 +223,27 @@ def test_missing_unique_id_column_errors_like_the_app(tmp_path, monkeypatch):
 # Statistical-test-only annotations
 # ---------------------------------------------------------------------------
 
-def test_stat_test_only_draws_significance_stars(tmp_path, monkeypatch):
+@pytest.mark.parametrize("statistical_test", ["Independent t-test", "Welch's t-test"])
+@pytest.mark.parametrize("significant", [False, True])
+def test_stat_test_only_draws_brackets_for_significant_pairs(
+    tmp_path, monkeypatch, statistical_test, significant
+):
     df = _grouped_df({"ctrl": 1.0, "drug": 3.0})
+    if not significant:
+        df.loc[df["treatment"] == "drug", "feature_a"] = df.loc[
+            df["treatment"] == "ctrl", "feature_a"].to_numpy()
     state = _base_state(
         "Feature Comparison",
         categorical_cols=["treatment"],
         color_by=["treatment"],
-        method_params=_feature_comparison_params(statistical_test="Welch's t-test"),
+        method_params=_feature_comparison_params(statistical_test=statistical_test),
     )
     ns = _run_script(tmp_path, state, df, monkeypatch)
+    brackets = [line for line in ns["ax"].lines if len(line.get_xdata()) == 4]
     texts = [t.get_text() for t in ns["ax"].texts]
-    assert any("*" in t for t in texts), f"expected significance stars, got {texts}"
+    assert len(brackets) == (1 if significant else 0)
+    assert len(texts) == (1 if significant else 0)
+    assert all(text and set(text) == {"*"} for text in texts)
 
 
 # ---------------------------------------------------------------------------

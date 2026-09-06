@@ -9,7 +9,7 @@ _SETTING_PREFIXES = (
     "analysis_control_", "_menu_", "2d_x_menu_", "2d_y_menu_", "ms_",
     "vis_encoding_", "num_filter_", "add_another_num_filter_",
     "hist_bin_width_", "fit_gmm_", "fit_regression_", "log_x_", "log_y_",
-    "add_boxplot_", "connect_means_", "marginal_plot_type_selector_",
+    "add_boxplot_", "comparison_overlay_", "connect_means_", "marginal_plot_type_selector_",
     "k_means_phasor_", "k_means_clusters_phasor_", "glass_delta_thresh_",
     "cohens_d_thresh_", "clf_", "sort_cmp_",
 )

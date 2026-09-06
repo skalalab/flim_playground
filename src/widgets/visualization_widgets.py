@@ -217,6 +217,26 @@ def _encoding_columns(slots, merged_point_encoding):
                           vertical_alignment="bottom")
 
 
+def comparison_overlay_widget(selected_var, color_by, separate_by, collapse_by):
+    """Reuse the boxplot slot, retaining legacy choices on the first render."""
+    suffix = f"_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}"
+    key = f"comparison_overlay{suffix}"
+    options = ["None", "Boxplot"] + (["SuperPlot"] if collapse_by else [])
+    if key not in st.session_state:
+        st.session_state[key] = "Boxplot" if st.session_state.get(f"add_boxplot{suffix}", False) else "None"
+    if st.session_state[key] not in options:
+        st.session_state[key] = "None"
+    with st.container(horizontal=True, vertical_alignment="center", width="content", gap="small"):
+        st.caption(
+            "Overlay", width="content",
+            help="Boxplot summarizes the main points. Select Collapse by to enable "
+                 "SuperPlot: small original observations behind the replicate means, "
+                 "with mean ± SEM across those replicate means. Statistical comparisons "
+                 "continue to use the main points.")
+        return st.selectbox(
+            "Overlay", options, key=key, label_visibility="collapsed", width=160)
+
+
 def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False, subcolor_available=False, collapse_available=False, separate_by_mode="sections"):
     """Choose visual mappings and grouping independently of point decorations."""
     preserve_analysis_controls(st.session_state, SEPARATION_KEYS)
@@ -261,8 +281,9 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
         pruned = list(dict.fromkeys(prune_to_options(stored, present_categories)))[:2]
         st.session_state[DR_SEPARATE_BY_KEY] = pruned
 
-    if not available_categories and not ((facets or subplots or distribution or histogram)
-                                         and present_categories):
+    retained_collapse = collapse_available and st.session_state.get(COLLAPSE_BY_KEY) in present_categories
+    if not available_categories and not retained_collapse and not ((facets or subplots or distribution or histogram)
+                                                                  and present_categories):
         return color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by
 
     if not color_based:
@@ -317,6 +338,12 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
 
     available_for_color = [cat for cat in available_categories
                            if facets or cat != separate_by]
+    if subcolor_available and retained_collapse:
+        # A one-level filter must not replace a held treatment group with the
+        # still-varying replicate column, which would silently retire collapse.
+        for cat in st.session_state.get(COLOR_BY_KEY, []):
+            if cat in present_categories and cat != separate_by and cat not in available_for_color:
+                available_for_color.append(cat)
 
     if histogram:
         # A still-present color column can become constant after filtering. Keep
@@ -410,7 +437,7 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     # eligible: each survives collapse when constant within the replicate group.
     if "collapse" in at:
         available_for_collapse = [cat for cat in available_for_color if cat not in color_by]
-        if distribution:
+        if distribution or subcolor_available:
             # Filtering to one replicate must not silently revert the view to cells.
             selected_collapse = st.session_state.get(COLLAPSE_BY_KEY)
             if (selected_collapse in present_categories and selected_collapse != separate_by
@@ -429,7 +456,9 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                      "the MEAN of the cells it covers -- so the box, the mean line and "
                      "every statistic describe replicates (dishes, patients, images) "
                      "rather than cells. Pair it with Subcolor by on the same column to "
-                     "trace one replicate across every group."
+                     "trace one replicate across every group. The SuperPlot overlay "
+                     "can show the original observations behind these replicate means "
+                     "and add mean ± SEM bars without changing the statistical unit."
                      if merged_point_encoding else
                      "One point per value of this column within each color group, "
                      "holding the MEAN X and Y of cells with both measurements. "

@@ -206,13 +206,17 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
                     custom_order["compare_groups"] = list(st.session_state[session_key_cmp])
             except Exception:
                 pass
+        overlay = st.session_state.get(
+            f"comparison_overlay{key_suffix}",
+            "Boxplot" if st.session_state.get(f"add_boxplot{key_suffix}", False) else "None")
         mp = {
             "selected_var": sv,
             "effect_size_method": es_method,
             "mean_or_median": extra_params.get("mean_or_median"),
             "statistical_test": extra_params.get("statistical_test", "None"),
             "log_y": st.session_state.get(f"log_y{key_suffix}", False),
-            "add_boxplot": st.session_state.get(f"add_boxplot{key_suffix}", False),
+            "overlay": overlay,
+            "add_boxplot": overlay == "Boxplot",
             "connect_means": st.session_state.get(f"connect_means{key_suffix}", False),
             "effect_size_threshold": get_effect_size_threshold_capture(st.session_state, es_method, sv, separate_by),
             # "A vs B" labels from comparison_pair_widget; None → all pairs
@@ -520,7 +524,17 @@ with col2:
                         if session_key_cmp in st.session_state:
                             current_custom_order['compare_groups'] = st.session_state[session_key_cmp]
 
-                        fig = feature_comparison_plot(plot_df, unique_row_id_col=plot_row_id_col, fov_name_col=plot_fov_name_col, selected_var=selected_var, color_by=color_by, opacity_by=opacity_by, shape_by=shape_by, separate_by=separate_by, colormap=st.session_state.plot_colormap, effect_size_method=selected_effect_size_method, mean_or_median=mean_or_median, statistical_test=statistical_test, custom_order=current_custom_order, subcolor_by=subcolor_by, row_id_label=plot_row_id_label)
+                        fig = feature_comparison_plot(
+                            plot_df, unique_row_id_col=plot_row_id_col,
+                            fov_name_col=plot_fov_name_col, selected_var=selected_var,
+                            color_by=color_by, opacity_by=opacity_by, shape_by=shape_by,
+                            separate_by=separate_by, colormap=st.session_state.plot_colormap,
+                            effect_size_method=selected_effect_size_method,
+                            mean_or_median=mean_or_median, statistical_test=statistical_test,
+                            custom_order=current_custom_order, subcolor_by=subcolor_by,
+                            row_id_label=plot_row_id_label, collapse_by=collapse_by,
+                            source_df=filtered_df, source_row_id_col=unique_row_id_col,
+                            source_row_id_label=row_id_label, source_fov_name_col=fov_name_col)
 
                     elif method == "Feature Histogram":
                         # Log transform and GMM checkboxes on same row

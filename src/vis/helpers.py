@@ -11,7 +11,12 @@ from sklearn.mixture import GaussianMixture
 
 from src.column_roles import code_span
 from src.emojis import sad_emoji
-from src.vis.plot_defaults import WEBGL_POINT_THRESHOLD
+from src.vis.plot_defaults import (
+    SUPERPLOT_OBSERVATION_MIN_SIZE,
+    SUPERPLOT_OBSERVATION_SIZE_SCALE,
+    SUPERPLOT_REPLICATE_SIZE_SCALE,
+    WEBGL_POINT_THRESHOLD,
+)
 from src.widgets.analysis_widget_state import number_input_default
 from src.widgets.visualization_widgets import comparison_pair_widget
 
@@ -318,7 +323,7 @@ def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_g
         align="center"
     )
 
-def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, annotation_color, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None, statistical_test: str = "None", global_data_range=None, section_label=None):
+def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, annotation_color, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None, statistical_test: str = "None", global_data_range=None, section_label=None, display_df=None):
     """
     Adds effect size annotations to the figure.
     Manages selection of pairs, calculation of effect sizes, and calls annotation plotting.
@@ -331,6 +336,8 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
         section_label: Optional separate_by section name, so the thin-group notice below
             can say which section it is talking about (this runs once per section)
     """
+    # Geometry may include observation/summary overlays; samples always come from df.
+    annotation_df = df if display_df is None else display_df
     if not all_possible_pairs:
         return
 
@@ -401,8 +408,8 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
         if global_data_range is not None:
             global_min_y, global_max_y = global_data_range
         else:
-            global_max_y = df[selected_var].max(skipna=True)
-            global_min_y = df[selected_var].min(skipna=True)
+            global_max_y = annotation_df[selected_var].max(skipna=True)
+            global_min_y = annotation_df[selected_var].min(skipna=True)
 
         if pd.isna(global_max_y) or pd.isna(global_min_y) or len(df[selected_var].dropna()) < 2:
             data_range_y = 1  # Default if overall data is all NaN or not enough points
@@ -468,7 +475,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
                     compare_groups_list=compare_groups,
                     drawn_annotations_list=drawn_annotations, # This list is modified in-place
                     positioning_metrics=positioning_metrics,
-                    original_df=df,
+                    original_df=annotation_df,
                     data_column_name=selected_var,
                     group_column_name_in_df=group_col_name,
                     overall_min_y_val=global_min_y, # Pass global_min_y for fallback
@@ -486,8 +493,8 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
         if global_data_range is not None:
             global_min_y, global_max_y = global_data_range
         else:
-            global_max_y = df[selected_var].max(skipna=True)
-            global_min_y = df[selected_var].min(skipna=True)
+            global_max_y = annotation_df[selected_var].max(skipna=True)
+            global_min_y = annotation_df[selected_var].min(skipna=True)
         if pd.isna(global_max_y) or pd.isna(global_min_y) or len(df[selected_var].dropna()) < 2:
             data_range_y = 1
         else:
@@ -514,7 +521,8 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
 
         for pair in sorted_pairs:
             stars = pair_to_star.get(pair, "")
-            # Keep the bracket even when the comparison has no significance stars.
+            if not stars:
+                continue
             _annotate_single_effect_size(
                 fig=fig,
                 pair_strings=pair,
@@ -522,7 +530,7 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
                 compare_groups_list=compare_groups,
                 drawn_annotations_list=drawn_annotations,
                 positioning_metrics=positioning_metrics,
-                original_df=df,
+                original_df=annotation_df,
                 data_column_name=selected_var,
                 group_column_name_in_df=group_col_name,
                 overall_min_y_val=global_min_y,
@@ -843,7 +851,13 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
                 is_context = isinstance(trace.meta, dict) and (
                     trace.meta.get('phasor_role') == 'context'
                     or trace.meta.get('distribution_role') == 'context')
-                trace.marker.size = max(1, point_size - 2) if is_facet or is_context else point_size
+                superplot_role = trace.meta.get('superplot_role') if isinstance(trace.meta, dict) else None
+                trace.marker.size = (max(SUPERPLOT_OBSERVATION_MIN_SIZE,
+                                        point_size * SUPERPLOT_OBSERVATION_SIZE_SCALE)
+                                     if superplot_role == 'observation' else
+                                     point_size * SUPERPLOT_REPLICATE_SIZE_SCALE
+                                     if superplot_role == 'replicate' else
+                                     max(1, point_size - 2) if is_facet or is_context else point_size)
 
     # DR row/column labels share the legend's font control.
     annotation_size = legend_size if dimension_reduction else axis_label_size

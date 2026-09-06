@@ -35,6 +35,42 @@ https://github.com/user-attachments/assets/a01b8a22-1bc3-46f1-aa37-1c3191a6fa1a
 
 https://github.com/user-attachments/assets/7ac6b61f-7bde-45b8-92f5-5dbdb05dde67
 
+## Show cells and replicate means in Feature Comparison
+
+Use the existing controls to build a **SuperPlot**:
+
+| Control | Example selection |
+| --- | --- |
+| Separate by | None, or a category for separate comparison sections |
+| Color / Group by | Treatment |
+| Collapse by | Dish |
+| Point encoding | Subcolor, with Dish selected |
+| Overlay | SuperPlot |
+
+**Collapse by** produces the main points: one arithmetic mean per dish within
+each comparison group and section. **SuperPlot** adds the original filtered
+observations as smaller, fainter points underneath, plus a horizontal mean bar
+and capped SEM error bars across the dish means. Every dish has equal weight,
+regardless of its number of cells. With one dish, its mean remains visible and
+the unavailable SEM is explained.
+
+Subcolor only controls appearance; selecting Dish gives its cells and mean the
+same color. Statistical tests, effect sizes, Connect means, and legend counts
+continue to describe the collapsed points. The original cell dots never increase
+the statistical sample size. The existing independent and Welch's tests remain
+available; matching colors do not select a paired test.
+
+**Overlay** replaces Add boxplot with None, Boxplot, and SuperPlot. None shows
+only the main points; Boxplot summarizes those points. SuperPlot is available
+when Collapse by is selected, and clearing Collapse by switches it off. Existing
+boxplot settings are retained. Point Size adjusts both layers while keeping
+original observations smaller.
+
+Log Y averages cells before transforming the replicate means; original cells
+are transformed individually for display. A negative original value prevents
+the log transform for both SuperPlot layers. Python exports reproduce the
+observations, replicate means, summary bars, and statistics in one SVG.
+
 ## Compare groups in Dimension Reduction
 
 Choose **Separate by** after selecting your features and reduction method:
