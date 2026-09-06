@@ -1,4 +1,3 @@
-import numpy as np
 import streamlit as st
 from streamlit_sortables import sort_items
 
@@ -39,6 +38,9 @@ OPACITY_BY_KEY = "vis_encoding_opacity_by"
 
 # Collapse controls row aggregation and is not passed to get_point_visual_mappings.
 COLLAPSE_BY_KEY = "vis_encoding_collapse_by"
+# Histogram owns its section choice independently of FC and FD.
+HISTOGRAM_SEPARATE_BY_KEY = "vis_encoding_histogram_separate_by"
+HISTOGRAM_BIN_WIDTH_PREFIX = "analysis_control_hist_bin_width_"
 
 # Dimension Reduction owns its facet layout independently of FC's sections.
 DR_SEPARATE_BY_KEY = "vis_encoding_dr_separate_by"
@@ -54,7 +56,8 @@ _FD_LAST_CATEGORY_KEY = "vis_encoding_fd_last_category"
 SEPARATION_KEYS = (*DR_FACET_KEYS, PHASOR_SEPARATE_BY_KEY, PHASOR_CATEGORY_KEY,
                    _PHASOR_CATEGORY_COLUMN_KEY, _PHASOR_LAST_CATEGORY_KEY,
                    FD_SEPARATE_BY_KEY, FD_CATEGORY_KEY, _FD_CATEGORY_COLUMN_KEY,
-                   _FD_LAST_CATEGORY_KEY, FD_POINT_MODE_KEY, _FD_LAST_POINT_MODE_KEY)
+                   _FD_LAST_CATEGORY_KEY, FD_POINT_MODE_KEY, _FD_LAST_POINT_MODE_KEY,
+                   HISTOGRAM_SEPARATE_BY_KEY)
 
 
 def _retain_category(category_key, last_category_key):
@@ -215,8 +218,12 @@ def _encoding_columns(slots, merged_point_encoding):
 
 
 def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=True, point_based=True, separate_by_available=False, subcolor_available=False, collapse_available=False, separate_by_mode="sections"):
-    """Choose visual mappings; separation is a scalar section or ordered facet list."""
+    """Choose visual mappings and grouping independently of point decorations."""
     preserve_analysis_controls(st.session_state, SEPARATION_KEYS)
+    histogram = separate_by_mode == "histogram"
+    point_based = point_based and not histogram
+    # Histogram explores variability among individual units, never replicate means.
+    collapse_available = collapse_available and not histogram
     distribution = separate_by_mode == "distribution"
     merged_point_encoding = point_based and (subcolor_available or distribution)
     # Public self-assignment interrupts cleanup while a widget is hidden. Mode
@@ -228,14 +235,19 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
 
     present_categories = list(dict.fromkeys(
         category for category in categorical_cols if category in filtered_df.columns))
+    category_counts = filtered_df[present_categories].nunique()
+    if histogram:
+        # All missing-value representations belong to one missing category.
+        category_counts += filtered_df[present_categories].isna().any()
     available_categories = [category for category in present_categories
-                            if filtered_df[category].nunique() > 1]
+                            if category_counts[category] > 1]
     color_by = []
     opacity_by = shape_by = separate_by = subcolor_by = collapse_by = None
     facets = separate_by_mode == "facets"
     subplots = separate_by_mode == "subplots"
-    if subplots or distribution:
-        separator_key = FD_SEPARATE_BY_KEY if distribution else PHASOR_SEPARATE_BY_KEY
+    if subplots or distribution or histogram:
+        separator_key = (HISTOGRAM_SEPARATE_BY_KEY if histogram else
+                         FD_SEPARATE_BY_KEY if distribution else PHASOR_SEPARATE_BY_KEY)
         st.session_state[separator_key] = prune_to_options(
             st.session_state.get(separator_key), present_categories)
     if facets:
@@ -249,7 +261,8 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
         pruned = list(dict.fromkeys(prune_to_options(stored, present_categories)))[:2]
         st.session_state[DR_SEPARATE_BY_KEY] = pruned
 
-    if not available_categories and not ((facets or subplots or distribution) and present_categories):
+    if not available_categories and not ((facets or subplots or distribution or histogram)
+                                         and present_categories):
         return color_by, opacity_by, shape_by, separate_by, subcolor_by, collapse_by
 
     if not color_based:
@@ -258,10 +271,10 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     # Feature Comparison and FD have one wider picker slot; other point methods
     # retain independent opacity and shape controls.
     slots = []
-    if separate_by_available and point_based:
+    if separate_by_available:
         slots.append("separate")
     slots.append("color")
-    if collapse_available and point_based:
+    if collapse_available:
         slots.append("collapse")
     if point_based:
         if not merged_point_encoding:
@@ -282,10 +295,15 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                          "and the second sets columns. "
                          "All panels share one embedding.",
                 )
-            elif subplots or distribution:
+            elif subplots or distribution or histogram:
                 separate_by = _pruned_selectbox(
                     "Separate by", present_categories, key=separator_key,
-                    help=("View one category at a time in a full-size plot. Statistical "
+                    help=("Show a separate histogram section for each category. "
+                         "Histograms and GMM fits use individual observations within each "
+                         "category and color group. The separation column cannot also be "
+                         "used for Color by."
+                         if histogram else
+                         "View one category at a time in a full-size plot. Statistical "
                          "models are calculated within each category and color group "
                          "after any Collapse by aggregation. The separation column "
                          "cannot also be used for Color by or Collapse by."
@@ -299,6 +317,14 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
 
     available_for_color = [cat for cat in available_categories
                            if facets or cat != separate_by]
+
+    if histogram:
+        # A still-present color column can become constant after filtering. Keep
+        # the user's grouping instead of choosing a different column by default.
+        held_colors = st.session_state.get(COLOR_BY_KEY, [])
+        available_for_color.extend(cat for cat in present_categories
+                                   if cat in held_colors and cat != separate_by
+                                   and cat not in available_for_color)
 
     # Resolve grouping before the point-encoding control. Seed and prune through
     # session state only, avoiding duplicate-default warnings from the multiselect.
@@ -361,7 +387,10 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
             color_multiselect_label(merged_point_encoding, point_mode == "subcolor"),
             available_for_color,
             key=COLOR_BY_KEY,
-            help=("Groups that share a color. Statistical models are calculated within "
+            help=("Groups that share a color. Histograms and GMM fits use individual "
+                 "observations within each category and color group."
+                 if histogram else
+                 "Groups that share a color. Statistical models are calculated within "
                  "each category and color group after any Collapse by aggregation."
                  if distribution else
                  "Groups compared along the x axis. These groups set the color too, "
@@ -477,31 +506,28 @@ def comparison_pair_widget(available_pairs):
     return selected_pairs
 
 
+def histogram_bin_width_key(selected_var, log_x=False):
+    """Keep raw, log, and legacy widths distinct for arbitrary feature names."""
+    scale = "log10" if log_x else "raw"
+    return f"{HISTOGRAM_BIN_WIDTH_PREFIX}{scale}_{selected_var}"
+
+
 def histogram_bin_width_widget(x_data, key=None):
-    """Choose common bin edges for a 1D array with missing values removed."""
-    _, bin_edges_all = np.histogram(x_data, bins='auto')
-    nbins = len(bin_edges_all) - 1
-    if nbins > 1:
-        default_bin_width = bin_edges_all[1] - bin_edges_all[0]
-        min_val = x_data.min()
-        max_val = x_data.max()
-        range = max_val - min_val
-        default_bin_width = min(default_bin_width, range / 3)
-        if key is not None and key in st.session_state:
-            stored_width = st.session_state[key]
-            if stored_width is None or not 0 < stored_width <= range / 3:
-                st.session_state[key] = default_bin_width
-        bin_width = st.number_input(label="Bin Width", max_value=range/3, value=number_input_default(st.session_state, key, default_bin_width), step=range/50, key=key)
-        # Add a small epsilon to max_val to ensure the rightmost edge includes the max value
-        epsilon = 1e-9
-        # Calculate common bin edges based on the user-provided bin_width
-        common_bin_edges = np.arange(min_val, max_val + bin_width + epsilon, bin_width)
+    """Choose the shared bin width once for all histogram panels."""
+    from src.vis.histogram import histogram_bin_edges, histogram_bin_settings
 
-    else:
-        # Use numpy's single bin for constant or near-constant data.
-        common_bin_edges = bin_edges_all
-
-    return common_bin_edges
+    edges, default_width, max_width = histogram_bin_settings(x_data)
+    if default_width is None:
+        return edges
+    if key is not None and key in st.session_state:
+        stored = st.session_state[key]
+        if stored is None or not 0 < stored <= max_width:
+            st.session_state[key] = default_width
+    width = st.number_input(
+        label="Bin Width", min_value=max_width / 10000, max_value=max_width,
+        value=number_input_default(st.session_state, key, default_width),
+        step=max_width * 3 / 50, format="%.10g", key=key)
+    return histogram_bin_edges(x_data, width)
 
 def gmm_hyperParams_widget():
     col3, col4 = st.columns(2)

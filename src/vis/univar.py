@@ -1,10 +1,15 @@
+import html
 from itertools import combinations
 
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
+from plotly.subplots import make_subplots
 
-from src.emojis import sad_emoji
+from src.column_roles import code_span
+from .histogram import histogram_legend_label, prepare_histogram
+from .histogram import _assign_subpopulation_labels as _assign_subpopulation_labels
+
 from src.feature_labels import format_feature_label
 from src.widgets.analysis_widget_state import number_input_default
 from src.widgets.gmm_tables import gmm_component_table, gmm_tables_html
@@ -17,11 +22,9 @@ from src.widgets.visualization_widgets import (
 from .helpers import (
     _add_effect_size_annotations,
     _density_at_points,
-    _find_best_gmm,
-    _prepare_group_data,
     add_point_legend_traces,
     create_subcolor_map,
-    find_intersection,
+    create_color_map,
     format_group_label,
     get_context_theme_color,
     get_point_visual_mappings,
@@ -32,262 +35,171 @@ from .helpers import (
 )
 
 
-def feature_histogram_plot(df, selected_var, color_by=[], colormap="tab10", log_x=False):
-    GROUP_COL_NAME = 'unique_color_group'
-    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
+def feature_histogram_plot(df, selected_var, color_by=None, colormap="tab10", log_x=False,
+                           separate_by=None):
+    """Count curves in full-width category rows, with one set of bin controls."""
+    from src.widgets.analysis_widget_state import preserve_analysis_controls
+    from src.widgets.visualization_widgets import histogram_bin_width_key
+
+    width_keys = [histogram_bin_width_key(selected_var, scale) for scale in (False, True)]
+    width_key = histogram_bin_width_key(selected_var, log_x)
+    legacy_key = f"hist_bin_width_{selected_var}"
+    if not any(key in st.session_state for key in width_keys) and legacy_key in st.session_state:
+        # The previous shared value belongs to the scale currently on screen.
+        st.session_state[width_key] = st.session_state[legacy_key]
+    preserve_analysis_controls(st.session_state, width_keys)
+    edges = histogram_bin_width_widget(df[selected_var].dropna(), key=width_key)
+    prepared = prepare_histogram(df, selected_var, color_by, separate_by, bin_edges=edges)
+    return _histogram_figure(prepared, colormap, log_x)
+
+
+def feature_gmm_plot(df, selected_var, color_by=None, colormap="tab10", log_x=False,
+                     separate_by=None):
+    """Category-local GMM curves and a positionally labeled analyzed dataframe."""
+    max_components, min_weight = gmm_hyperParams_widget()
+    intersection = st.checkbox(
+        "Use intersection as threshold", value=False, key="intersection_threshold",
+        help="Use intersections between adjacent components as thresholds within each "
+             "category and color group. If unavailable, use the highest posterior probability.")
+    prepared = prepare_histogram(
+        df, selected_var, color_by, separate_by, apply_gmm=True,
+        max_components=max_components, min_weight_threshold=min_weight,
+        intersection_threshold=intersection)
+    return _histogram_figure(prepared, colormap, log_x), prepared["df"]
+
+
+def _histogram_figure(prepared, colormap, log_x):
+    """Render panel legends and serialize optional GMM details for display below."""
+    theme = get_context_theme_color()
+    panels = prepared["panels"]
+    separate_by = prepared["separate_by"]
+    rows = max(1, len(panels))
+    fig = make_subplots(
+        rows=rows, cols=1, shared_xaxes=True, shared_yaxes=True,
+        vertical_spacing=min(0.16, 80 / (300 * rows)) if rows > 1 else 0,
+        subplot_titles=[html.escape(str(p['category']))
+                        for p in panels] if separate_by else None)
+    fig.update_annotations(font_color=theme)
+    colors = create_color_map(prepared["color_groups"], overlap_point=False, colormap=colormap)
     show_counts = st.session_state.get("plot_show_group_counts", False)
-
-    fig = go.Figure()
-
-    bin_edges = histogram_bin_width_widget(df[selected_var], key=f"hist_bin_width_{selected_var}")
-
-    for color_group in unique_color_groups:
-        group_df = df[df[GROUP_COL_NAME] == color_group]
-        x_data = group_df[selected_var].dropna()
-        x_data_skewness = x_data.skew()
-        # Determine skewness interpretation based on rule of thumb
-        if x_data_skewness < -1:
-            direction = "strongly left-skewed"
-        elif -1 <= x_data_skewness < -0.5:
-            direction = "moderately left-skewed"
-        elif -0.5 <= x_data_skewness < -0.25:
-            direction = "approximately symmetric"
-        elif -0.25 <= x_data_skewness <= 0.25:
-            direction = "almost symmetric"
-        elif 0.25 < x_data_skewness <= 0.5:
-            direction = "approximately symmetric"
-        elif 0.5 < x_data_skewness <= 1:
-            direction = "moderately right-skewed"
-        else:  # x_data_skewness > 1
-            direction = "strongly right-skewed"
-
-        # Color the text using the same color as the plot
-        st.markdown(f'<span style="color: {color_map[color_group]}"><strong>{color_group}</strong> skewness: {x_data_skewness:.3f} → {direction}</span>', unsafe_allow_html=True)
-
-        if x_data.empty:
-            continue # Skip empty groups
-        # Calculate histogram counts using the common bin edges derived from bin_width
-        counts, bin_edges = np.histogram(x_data, bins=bin_edges)
-
-        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
-
-        # Add line trace connecting bin centers
-        fig.add_trace(go.Scatter(
-            x=bin_centers,
-            y=counts,
-            mode='lines', # Use lines instead of markers+lines
-            name=format_group_label(color_group, len(x_data), show_counts),
-            line=dict(color=color_map[color_group], width=2),
-            hovertemplate=(
-                f"<b>Group:</b> {color_group}<br>"
-                f"<b>Count:</b> %{{y}}<extra></extra>"
-            )
-        ))
-
-    theme_color = get_context_theme_color()
-    # data is log-transformed upstream (data_analysis.py) when log_x is set; wrap the label to match
-    pretty_var = format_feature_label(selected_var)
-    x_axis_label = f"log₁₀({pretty_var})" if log_x else pretty_var
+    gmm_mode = prepared["apply_gmm"]
+    dash_styles = ["dash", "dot", "dashdot", "longdash", "longdashdot"]
+    summaries = []
+    for row, panel in enumerate(panels, 1):
+        summary = dict(category=panel["category"], groups=[])
+        legend_id = "legend" + (str(row) if row > 1 else "")
+        yaxis = "yaxis" + (str(row) if row > 1 else "")
+        fig.update_layout({legend_id: dict(
+            orientation="v", x=1.02 if gmm_mode else 1, y=fig.layout[yaxis].domain[1],
+            xanchor="left" if gmm_mode else "right", yanchor="top", xref="paper", yref="paper",
+            font=dict(color=theme),
+            bgcolor="rgba(255,255,255,0.85)" if theme == "black" else "rgba(30,30,30,0.85)",
+            groupclick="togglegroup", tracegroupgap=4)})
+        for group in panel["groups"]:
+            color = group["color_group"]
+            rank = prepared["color_groups"].index(color) * 10
+            label = f"{color} GMM" if gmm_mode else color
+            name = html.escape(histogram_legend_label(
+                label, group["count"], group["skewness"], show_counts,
+                show_skewness=not gmm_mode)).replace("\n", "<br>")
+            legend_group = f"{row}:{color}"
+            hover = hover_field("Group", html.escape(str(group["label"]))) + f"n={group['count']}<br>"
+            if not gmm_mode or len(group["pdf"]):
+                fig.add_trace(go.Scatter(
+                    x=group["x"] if gmm_mode else prepared["bin_centers"],
+                    y=group["pdf"] if gmm_mode else group["counts"],
+                    mode="lines+markers" if not gmm_mode and len(prepared["bin_centers"]) == 1 else "lines",
+                    marker=dict(color=colors[color], size=6), name=name,
+                    line=dict(color=colors[color], width=2), legendgroup=legend_group,
+                    legend=legend_id, showlegend=True, legendrank=rank,
+                    hovertemplate=hover + hover_field("Density" if gmm_mode else "Count", "%{y}") + "<extra></extra>"),
+                    row=row, col=1)
+            else:
+                # Sparse fits still contribute their optional local count.
+                fig.add_trace(go.Scatter(
+                    x=[None], y=[None], mode="lines", name=name,
+                    legendgroup=legend_group, legend=legend_id, legendrank=rank,
+                    line=dict(color=colors[color], width=2), showlegend=True,
+                    hoverinfo="skip"), row=row, col=1)
+            component_rows = []
+            if gmm_mode:
+                for component in group["components"]:
+                    component_rank = component["rank"]
+                    component_rows.append((component_rank,
+                                           f"{component['mean']:.2f} ± {component['std']:.2f}",
+                                           f"{component['weight']:.2f}"))
+                    if len(group["components"]) <= 1:
+                        continue
+                    fig.add_trace(go.Scatter(
+                        x=group["x"], y=component["density"], mode="lines",
+                        name=f"{html.escape(str(color))} Component {component_rank}",
+                        legendgroup=legend_group, legend=legend_id,
+                        legendrank=rank + component_rank, showlegend=True,
+                        line=dict(color=colors[color], width=1,
+                                  dash=dash_styles[(component_rank - 1) % len(dash_styles)]),
+                        hovertemplate=hover + f"Component {component_rank}<br>Density: %{{y}}<extra></extra>"),
+                        row=row, col=1)
+                for threshold in group["thresholds"] if group["thresholds"] is not None else []:
+                    fig.add_shape(type="line", x0=threshold, x1=threshold,
+                                  y0=0, y1=max(group["pdf"]),
+                                  line=dict(color=colors[color], width=2, dash="dash"), opacity=0.5,
+                                  row=row, col=1)
+                    if not separate_by:
+                        fig.add_annotation(x=threshold, y=max(group["pdf"]) * 1.05,
+                                           text=f"Threshold ({threshold:.2f})", showarrow=False,
+                                           font=dict(color=theme), row=row, col=1)
+            summary["groups"].append(dict(
+                label=group["label"], count=group["count"], color=colors[color],
+                skewness=float(group["skewness"]) if np.isfinite(group["skewness"]) else None,
+                components=component_rows, h_index=group.get("h_index"),
+                thresholds=list(group["thresholds"]) if group.get("thresholds") is not None else [],
+                notices=group.get("notices", [])))
+        summaries.append(summary)
+    pretty_var = format_feature_label(prepared["selected_var"])
+    x_label = f"log₁₀({pretty_var})" if log_x else pretty_var
+    title = "Gaussian Mixture Model fit" if gmm_mode else "Frequency histogram"
+    suffix = f" by {html.escape(', '.join(prepared['color_by']))}" if prepared["color_by"] else ""
+    fig.update_xaxes(title=dict(text="", font=dict(color=theme)),
+                     tickfont=dict(color=theme), showgrid=False, zeroline=False,
+                     range=prepared["x_range"], visible=False)
+    fig.update_xaxes(title_text=x_label, visible=True, showticklabels=True, row=rows, col=1)
+    y_label = ("Density" if separate_by else "Probability Density") if gmm_mode else "Count"
+    fig.update_yaxes(title=dict(text=y_label, font=dict(color=theme)),
+                     tickfont=dict(color=theme), showgrid=True, zeroline=False,
+                     range=prepared["y_range"])
     fig.update_layout(
-        title=dict(
-            text=f'Frequency histogram of {pretty_var} by {", ".join(color_by)}',
-            font=dict(color=theme_color)
-        ),
-        xaxis=dict(
-            title=dict(text=x_axis_label, font=dict(color=theme_color)),
-            tickfont=dict(color=theme_color),
-            showgrid=False,
-            zeroline=False
-        ),
-        yaxis=dict(
-            title=dict(text='Count', font=dict(color=theme_color)),
-            tickfont=dict(color=theme_color),
-            showgrid=True,
-            zeroline=False
-        ),
-        hovermode='x unified', # Good for comparing counts at specific x-values
-        # hover tooltip styling is applied centrally in apply_plot_styling (theme-aware)
-        margin=dict(l=50, r=20, t=50, b=80)
-    )
-    # remove the column after plotting
-    df.drop(columns=[GROUP_COL_NAME], inplace=True)
+        title=dict(text=f"{title} of {pretty_var}{suffix}", font=dict(color=theme)),
+        height=300 * rows + 130 if separate_by else 450,
+        hovermode="x unified", margin=dict(l=60, r=20, t=80, b=100, autoexpand=True),
+        meta=dict(histogram=True, histogram_summaries=summaries,
+                  histogram_gmm=gmm_mode, histogram_separator=separate_by,
+                  histogram_feature=prepared["selected_var"]))
     return fig
 
-def _assign_subpopulation_labels(values, best_gmm, thresholds, color_group):
-    """Label GMM subpopulations by ascending mean, matching the component table.
 
-    Threshold buckets already have this order; predicted component indices need
-    remapping to their ascending-mean rank.
-    """
-    values = np.asarray(values)
-    if thresholds is not None:
-        ranks = np.digitize(values, bins=thresholds)
-    else:
-        sorted_indices = np.argsort(best_gmm.means_.flatten())
-        rank_of = {int(orig): rank for rank, orig in enumerate(sorted_indices)}
-        ranks = [rank_of[int(c)] for c in best_gmm.predict(values.reshape(-1, 1))]
-    return [f"{color_group}_group{int(r) + 1}" for r in ranks]
+def render_histogram_summaries(fig):
+    """Render optional GMM details separately from the compact panel legends."""
+    meta = fig.layout.meta
+    if not meta["histogram_gmm"]:
+        return
+    for panel in meta["histogram_summaries"]:
+        label = (f"{meta['histogram_separator']}={panel['category']}"
+                 if meta["histogram_separator"] else "All observations")
+        container = st.expander(f"GMM details · {code_span(label)}")
+        with container:
+            tables = []
+            for group in panel["groups"]:
+                for notice in group["notices"]:
+                    st.info(f"{code_span(group['label'])}: {notice}")
+                if group["components"]:
+                    tables.append(gmm_component_table(group["label"], group["components"], [meta["histogram_feature"]]))
+                if group["h_index"] is not None:
+                    st.markdown(f"H-index for {code_span(group['label'])}: **{group['h_index']:.3f}**")
+                for i, threshold in enumerate(group["thresholds"], 1):
+                    st.markdown(f"Threshold for {code_span(group['label'])} between component {i} and {i+1}: **{threshold:.2f}**")
+            if tables:
+                st.markdown(gmm_tables_html(tables), unsafe_allow_html=True)
 
-
-def feature_gmm_plot(df, selected_var, color_by=[], colormap="tab10", log_x=False):
-    h_index_msg = ""    
-    GROUP_COL_NAME = 'unique_color_group'
-    unique_color_groups, color_map = _prepare_group_data(df, color_by, GROUP_COL_NAME, overlap_point=False, colormap=colormap)
-    show_counts = st.session_state.get("plot_show_group_counts", False)
-    fit_gmm_max_components, fit_gmm_min_weight_threshold = gmm_hyperParams_widget()
-    # add the choice to do "intersection thresholding" or "hard assignment"
-    intersection_threshold = st.checkbox("Use intersection as threshold", value=False, key="intersection_threshold", help="If checked, the point where the two Gaussian distributions intersect will be used as the threshold. If not checked, each data will be assigned to the component with the highest posterior probability.")
-    fig = go.Figure()
-    theme_color = get_context_theme_color()
-    # fit a Gaussian Mixture Model (GMM) to each color group
-
-    # Collect tables for two-column display
-    gmm_tables = []
-    for color_group in unique_color_groups:
-        group_df = df[df[GROUP_COL_NAME] == color_group]
-        x_data = group_df[selected_var].dropna()
-
-        if x_data.empty:
-            continue # Skip empty groups
-
-        # --- Fit GMMs with 1 to 3 components ---
-        best_gmm = _find_best_gmm(x_data.values, max_components=fit_gmm_max_components, min_weight_threshold=fit_gmm_min_weight_threshold) # Use x_data.values for 1D
-
-        if best_gmm is None: # if no valid model is found, skip this group
-            st.warning(f"No valid GMM found for group {color_group} with current constraints.")
-            continue
-
-        # use plotly to plot curve of the best gmm
-        x = np.linspace(x_data.min(), x_data.max(), 1000).reshape(-1, 1)
-        logprob = best_gmm.score_samples(x)
-        pdf = np.exp(logprob)
-        responsibilities = best_gmm.predict_proba(x)  # Component weights per point
-        pdf_individual = responsibilities * pdf[:, np.newaxis]  # Individual component densities
-        fig.add_trace(go.Scatter(
-            x=x.flatten(),
-            y=pdf,
-            mode='lines',
-            name=format_group_label(f'{color_group} GMM', len(x_data), show_counts),
-            line=dict(color=color_map[color_group], width=2),
-            hovertemplate=(
-                f"<b>Group:</b> {color_group}<br>"
-            )
-        ))
-        if best_gmm.n_components > 1:
-            pi = best_gmm.weights_
-            mu = best_gmm.means_.flatten()
-            sigma = np.sqrt(best_gmm.covariances_.ravel())
-            gmm_overall_mean = np.sum(pi * mu)
-            # Sort components by ascending mu (mean) values
-            sorted_indices = np.argsort(mu)
-            component_rows = [
-                (rank + 1, f"{mu[i]:.2f} ± {sigma[i]:.2f}", f"{pi[i]:.2f}")
-                for rank, i in enumerate(sorted_indices)
-            ]
-            gmm_tables.append(gmm_component_table(color_group, component_rows, [selected_var]))
-
-            h_index = 0
-            # Calculate standard deviation of component means once before the loop
-            means_std = np.std([best_gmm.means_[j][0] for j in range(best_gmm.n_components)], ddof=1)
-            dash_styles = ['dash', 'dot', 'dashdot', 'longdash', 'longdashdot']
-            for rank, i in enumerate(sorted_indices):
-                fig.add_trace(go.Scatter(
-                    x=x.flatten(),
-                    y=pdf_individual[:, i],
-                    mode='lines',
-                    name=f'{color_group} Component {rank+1}',
-                    line=dict(color=color_map[color_group], width=1, dash=dash_styles[rank % len(dash_styles)]),
-                    hovertemplate=(
-                        f"<b>Group:</b> {color_group}<br>"
-                    )
-                ))
-                # Calculate H-index for this subpopulation
-                # Calculate entropy term for this component
-                entropy_term = -best_gmm.weights_[i] * np.log(best_gmm.weights_[i])
-                # Calculate normalized distance from overall mean
-                distance_term = np.abs(best_gmm.means_[i][0] - gmm_overall_mean) / means_std
-                # Combine terms to get component contribution to H-index
-                h_index += entropy_term * distance_term
-            # Add H-index message
-            h_index_msg += f"H-index for {color_group}: {h_index:.3f}. "
-            data_indices = x_data.index
-            intersection_threshold_possible = intersection_threshold
-            if intersection_threshold:
-                # predict the component membership for each point (intersection thresholding)
-                # find the intersection point of the component distributions
-                # Sort components by mean to ensure that the intersection is calculated between the correct pairs
-                pi, mu, sigma = pi[sorted_indices], mu[sorted_indices], sigma[sorted_indices]
-                thresholds = []
-                for i in range(len(mu) - 1):
-                    try:
-                        t = find_intersection(pi[i], mu[i], sigma[i],
-                              pi[i+1], mu[i+1], sigma[i+1])
-                        thresholds.append(t)
-                    except Exception:
-                        st.error(f"Error finding intersection between {color_group} component {i+1} and component {i+2}: either there is no intersection or there are more than one intersection. {sad_emoji}")
-                        st.warning("Intersection threshold is not possible, so we resort to hard assignment in this group.")
-                        intersection_threshold_possible = False
-                        break
-
-                if intersection_threshold_possible:
-                    thresholds = np.sort(thresholds)
-                    # plot the thresholds
-                    for i, threshold in enumerate(thresholds):
-                     # Replace the alpha value with 0.5
-                        transparent_color = color_map[color_group].replace(color_map[color_group].split(',')[-1], ' 0.5)')
-                        fig.add_shape(type="line",
-                            x0=threshold, y0=0, x1=threshold, y1=max(pdf),
-                            line=dict(color=transparent_color, width=2, dash="dash"),
-                            name=f"{color_group} Threshold", 
-                        )
-                        # Add annotation above the threshold line
-                        fig.add_annotation(
-                            x=threshold, y=max(pdf) * 1.05, text=f"Threshold ({threshold:.2f})", showarrow=False, align="center",
-                            font=dict(color=theme_color)
-                        )
-                        st.markdown(f"Threshold for <span style='color:{color_map[color_group]}'>{color_group}</span> between component {i+1} and component {i+2}: **{threshold:.2f}**", unsafe_allow_html=True)
-
-                    assigned_labels = _assign_subpopulation_labels(x_data.values, best_gmm, thresholds, color_group)
-            if not intersection_threshold_possible:
-                # Hard assignment: each point joins its highest-posterior component,
-                # numbered by ascending-mean rank to match the component table above.
-                assigned_labels = _assign_subpopulation_labels(x_data.values, best_gmm, None, color_group)
-            df.loc[data_indices, "GMM_group"] = assigned_labels
-
-    if gmm_tables:
-        st.markdown(gmm_tables_html(gmm_tables), unsafe_allow_html=True)
-
-    if h_index_msg != "": 
-        st.info(h_index_msg)
-
-    # data is log-transformed upstream (data_analysis.py) when log_x is set; wrap the label to match
-    pretty_var = format_feature_label(selected_var)
-    x_axis_label = f"log₁₀({pretty_var})" if log_x else pretty_var
-    fig.update_layout(
-        title=dict(
-            text=f'Gaussian Mixture Model fit of {pretty_var} by {", ".join(color_by)}',
-            font=dict(color=theme_color)
-        ),
-        xaxis=dict(
-            title=dict(text=x_axis_label, font=dict(color=theme_color)),
-            tickfont=dict(color=theme_color),
-            showgrid=False,
-            zeroline=False
-        ),
-        yaxis=dict(
-            title=dict(text='Probability Density', font=dict(color=theme_color)),
-            tickfont=dict(color=theme_color),
-            showgrid=True,
-            zeroline=False
-        ),
-        # hover tooltip styling is applied centrally in apply_plot_styling (theme-aware)
-        margin=dict(l=50, r=20, t=50, b=80)
-    )
-
-    # remove the column after plotting
-    df.drop(columns=[GROUP_COL_NAME], inplace=True)
-
-    return fig, df
 
 # Match Plotly's box width for unit-spaced groups: (1 - boxgap) * (1 - boxgroupgap).
 # Both gaps default to 0.3; whiskers span half the box width.

@@ -241,9 +241,9 @@ def _build_preamble(state: dict) -> str:
     if method == "Feature Comparison":
         extra.append("from scipy.stats import gaussian_kde, ttest_ind, median_abs_deviation")
     elif method == "Feature Histogram":
-        if mp.get("apply_gmm"):
-            extra += ["from sklearn.mixture import GaussianMixture",
-                      "from scipy.stats import norm", "from scipy.optimize import brentq"]
+        extra += ["from matplotlib.lines import Line2D",
+                  "from sklearn.mixture import GaussianMixture",
+                  "from scipy.stats import norm", "from scipy.optimize import brentq"]
     elif method == "2D Feature Distribution":
         extra.append("from scipy.stats import gaussian_kde")
         if state.get("separate_by") is not None:
@@ -358,14 +358,14 @@ def _build_config_section(state: dict) -> str:
         else:
             lines.append("CUSTOM_ORDER = None  # Set to {'compare_groups': ['group1', 'group2', ...]} to reorder x-axis")
     elif method == "Feature Histogram":
+        lines.append(f"SEPARATE_BY = {state.get('separate_by')!r}  # one full-width row per category")
         lines.append(f"LOG_X = {mp.get('log_x', False)!r}")
         lines.append(f"APPLY_GMM = {mp.get('apply_gmm', False)!r}")
         lines.append(f"INTERSECTION_THRESHOLD = {mp.get('intersection_threshold', False)!r}")
         lines.append(f"BIN_WIDTH = {mp.get('bin_width')!r}  # None → numpy 'auto' bin width")
         lines.append(f"GMM_MAX_COMPONENTS = {mp.get('gmm_max_components', 3)!r}")
         lines.append(f"GMM_MIN_WEIGHT_THRESHOLD = {mp.get('gmm_min_weight_threshold', 0.1)!r}")
-        if mp.get("apply_gmm"):
-            lines.append("SAVE_DERIVED_DATA = False  # True → also write gmm_grouped_data.csv (the app's download button)")
+        lines.append("SAVE_DERIVED_DATA = False  # True → also write gmm_grouped_data.csv when APPLY_GMM is enabled (the app's download button)")
     elif method == "2D Feature Distribution":
         lines.append(f"SEPARATE_BY = {state.get('separate_by')!r}")
         lines.append(f"DISTRIBUTION_CATEGORY = {mp.get('distribution_category')!r}")
@@ -557,6 +557,9 @@ def _build_footer(state: dict) -> str:
     category_view = (method in ("Phasor Plot", "2D Feature Distribution")
                      and state.get("separate_by") is not None)
     layout = "" if method == "Dimension Reduction" or category_view else "plt.tight_layout()"
+    if method == "Feature Histogram":
+        # Preserve constrained layout even if separation is enabled by editing the script.
+        layout = "if not SEPARATE_BY:\n    plt.tight_layout()"
     return f"""
 # ============================================================
 # Save & Show
@@ -574,192 +577,138 @@ print("Figure saved to {fname}.svg")
 # ---------------------------------------------------------------------------
 
 def _build_feature_histogram(state: dict) -> str:
-    from src.vis.helpers import _find_best_gmm, find_intersection
-    from src.vis.univar import _assign_subpopulation_labels
+    """Render every prepared category, sharing calculations with the app."""
+    from src.vis.helpers import (
+        _find_best_gmm, find_intersection,
+        natural_key, natural_tuple_sort, tuple_natural_key,
+    )
+    from src.vis.histogram import (
+        _assign_subpopulation_labels, histogram_bin_edges, histogram_bin_settings,
+        histogram_gmm, histogram_legend_label, histogram_skewness, prepare_histogram,
+    )
 
-    has_gmm = state.get("method_params", {}).get("apply_gmm", False)
-
-    if has_gmm:
-        # _assign_subpopulation_labels is shared with the app so subpopulations are
-        # numbered by ascending-mean rank on both paths (group1 == smallest mean).
-        gmm_src = _extract_source(_find_best_gmm, find_intersection, _assign_subpopulation_labels)
-        return _build_visual_encoding(state, overlap_point=False) + f"""
-# ============================================================
-# Gaussian Mixture Model Fit (extracted from FLIM Playground)
-# ============================================================
-{gmm_src}
-
-df = df[df[SELECTED_VAR].notna()]
-
-if LOG_X:
-    if (df[SELECTED_VAR] < 0).any():
-        print(f"WARNING: Cannot apply log to {{SELECTED_VAR}}: contains negative values.")
-    else:
-        df[SELECTED_VAR] = np.log10(df[SELECTED_VAR] + 1e-6)
-
-fig, ax = plt.subplots(figsize=(10, 6))
-
-# "GMM_group" is created by the .loc assignments below (object dtype, NaN for
-# unassigned rows) — same as the app; pre-seeding it as float would make the
-# string-label assignment a pandas FutureWarning/error.
-
-for g in color_groups:
-    group_mask = df["_color_group"] == g
-    gdata = df.loc[group_mask, SELECTED_VAR].dropna()
-    if len(gdata) < 3:
-        continue
-    gmm = _find_best_gmm(gdata.values, max_components=GMM_MAX_COMPONENTS,
-                         min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD)
-    if gmm is None:
-        print(f"  {{g}}: No valid GMM found with current constraints.")
-        continue
-
-    x_range = np.linspace(gdata.min(), gdata.max(), 1000).reshape(-1, 1)
-    logprob = gmm.score_samples(x_range)
-    pdf = np.exp(logprob)
-    responsibilities = gmm.predict_proba(x_range)
-    pdf_individual = responsibilities * pdf[:, np.newaxis]
-
-    # The " GMM" suffix goes inside the label and the count is the group's non-NaN
-    # size, both as in the app (univar.py feature_gmm_plot, which passes the suffixed
-    # name and len(x_data) to this same helper). Component curves below carry no count,
-    # again matching the app.
-    ax.plot(x_range.flatten(), pdf, color=color_map[g][:3], linewidth=2,
-            label=format_group_label(f"{{g}} GMM", len(gdata), SHOW_GROUP_COUNTS, engine='mpl'))
-
-    pi = gmm.weights_
-    mu = gmm.means_.flatten()
-    sigma = np.sqrt(gmm.covariances_.ravel())
-    sorted_idx = np.argsort(mu)
-
-    print(f"  {{g}}: Best GMM has {{gmm.n_components}} component(s)")
-    print(f"    | Component | Mean     | Std. Dev. | Weight |")
-    print(f"    |-----------|----------|-----------|--------|")
-    for rank, idx in enumerate(sorted_idx):
-        print(f"    | {{rank+1}}         | {{mu[idx]:.4f}} | {{sigma[idx]:.4f}}  | {{pi[idx]:.3f}}  |")
-
-    if gmm.n_components > 1:
-        dash_styles = ['--', ':', '-.', (0, (5, 10)), (0, (3, 5, 1, 5))]
-        gmm_overall_mean = np.sum(pi * mu)
-        means_std = np.std(mu, ddof=1)
-        h_index = 0.0
-
-        for rank, idx in enumerate(sorted_idx):
-            ax.plot(x_range.flatten(), pdf_individual[:, idx],
-                   linestyle=dash_styles[rank % len(dash_styles)],
-                   color=color_map[g][:3], alpha=0.6, linewidth=1.5,
-                   label=f"{{g}} Component {{rank+1}}")
-            entropy_term = -pi[idx] * np.log(pi[idx])
-            distance_term = np.abs(mu[idx] - gmm_overall_mean) / means_std if means_std > 0 else 0
-            h_index += entropy_term * distance_term
-
-        print(f"    H-index: {{h_index:.3f}}")
-
-        pi_sorted, mu_sorted, sigma_sorted = pi[sorted_idx], mu[sorted_idx], sigma[sorted_idx]
-        data_indices = gdata.index
-
-        intersection_ok = INTERSECTION_THRESHOLD
-        thresholds = []
-        if INTERSECTION_THRESHOLD:
-            for i in range(len(mu_sorted) - 1):
-                try:
-                    t = find_intersection(pi_sorted[i], mu_sorted[i], sigma_sorted[i],
-                                          pi_sorted[i+1], mu_sorted[i+1], sigma_sorted[i+1])
-                    thresholds.append(t)
-                except Exception:
-                    print(f"    Warning: No intersection found between components {{i+1}} and {{i+2}}, using hard assignment.")
-                    intersection_ok = False
-                    break
-
-            if intersection_ok:
-                thresholds = np.sort(thresholds)
-                for i, t in enumerate(thresholds):
-                    ax.axvline(x=t, color=color_map[g][:3], linestyle='--', alpha=0.5, linewidth=2)
-                    ax.text(t, ax.get_ylim()[1] * 0.95, f"Threshold: {{t:.2f}}",
-                           ha='center', fontsize=AXIS_LABEL_SIZE, color=color_map[g][:3])
-                    print(f"    Threshold between component {{i+1}} and {{i+2}}: {{t:.4f}}")
-                assigned_labels = _assign_subpopulation_labels(gdata.values, gmm, thresholds, g)
-        if not intersection_ok:
-            assigned_labels = _assign_subpopulation_labels(gdata.values, gmm, None, g)
-
-        df.loc[data_indices, "GMM_group"] = assigned_labels
-    # No else: a single-component group is left unlabeled, matching the app
-    # (univar.py assigns GMM_group only inside the n_components>1 branch).
-
-if SAVE_DERIVED_DATA:
-    df.drop(columns=["_color_group"]).to_csv("gmm_grouped_data.csv", index=False)
-    print("GMM grouped data saved to gmm_grouped_data.csv")
-
-ax.set_xlabel(f"log₁₀({{format_feature_label(SELECTED_VAR, engine='mpl')}})" if LOG_X else format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
-ax.set_ylabel("Probability Density", fontsize=AXIS_LABEL_SIZE)
-ax.set_title(f"Gaussian Mixture Model fit of {{format_feature_label(SELECTED_VAR, engine='mpl')}} by {{', '.join(COLOR_BY)}}", fontsize=AXIS_LABEL_SIZE)
-ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
-ax.legend(fontsize=LEGEND_SIZE)
-"""
-
-    # No GMM — plain histogram
-    return _build_visual_encoding(state, overlap_point=False) + """
+    helpers = [natural_key, tuple_natural_key, natural_tuple_sort,
+               histogram_legend_label, create_color_map, histogram_bin_settings,
+               histogram_bin_edges, histogram_skewness, _find_best_gmm,
+               find_intersection, _assign_subpopulation_labels, histogram_gmm,
+               prepare_histogram]
+    return (_build_collapse(state)
+            + "\n# Shared Histogram preparation (extracted from FLIM Playground)\n"
+            + _extract_source(*helpers) + """
 # ============================================================
 # Feature Histogram
 # ============================================================
-df = df[df[SELECTED_VAR].notna()]
+histogram_data = prepare_histogram(
+    df, SELECTED_VAR, COLOR_BY, SEPARATE_BY, bin_width=BIN_WIDTH,
+    apply_gmm=APPLY_GMM, max_components=GMM_MAX_COMPONENTS,
+    min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD,
+    intersection_threshold=INTERSECTION_THRESHOLD)
+df = histogram_data["df"]
+color_groups = histogram_data["color_groups"]
+color_map = create_color_map(color_groups, COLORMAP, alpha=1.0)
+bin_edges = histogram_data["bin_edges"]
+bin_width = float(bin_edges[1] - bin_edges[0])
+panels = histogram_data["panels"]
+panel_levels = [panel["category"] for panel in panels]
+rows = max(1, len(panels))
+row_height = 4
+if APPLY_GMM:
+    # An outside legend must fit beside its own row even with large legend fonts.
+    legend_rows = max((sum(1 + (len(group["components"]) if len(group["components"]) > 1 else 0)
+                           for group in panel["groups"]) for panel in panels), default=0)
+    row_height = max(row_height, (legend_rows + 2) * LEGEND_SIZE * 1.3 / 72)
+fig, _axes = plt.subplots(
+    rows, 1, squeeze=False, sharex=True, sharey=True,
+    figsize=(10, row_height * rows + 1 if SEPARATE_BY else max(6, row_height + 1)),
+    layout="constrained" if SEPARATE_BY else None)
+histogram_axes = list(_axes[:, 0])
+dash_styles = ['--', ':', '-.', (0, (5, 10)), (0, (3, 5, 1, 5))]
 
-if LOG_X:
-    if (df[SELECTED_VAR] < 0).any():
-        print(f"WARNING: Cannot apply log to {SELECTED_VAR}: contains negative values.")
-    else:
-        df[SELECTED_VAR] = np.log10(df[SELECTED_VAR] + 1e-6)
-
-fig, ax = plt.subplots(figsize=(10, 6))
-
-all_vals = df[SELECTED_VAR].dropna().values
-# Common bin edges shared by all groups, mirroring histogram_bin_width_widget in
-# src/widgets/visualization_widgets.py: a width is used only when numpy's 'auto'
-# yields more than one bin. A constant / near-constant feature falls back to numpy's
-# own single-bin edges, as the app's widget does when it never renders.
-_, _auto_edges = np.histogram(all_vals, bins='auto')
-if len(_auto_edges) - 1 > 1:
-    bin_width = float(BIN_WIDTH) if BIN_WIDTH is not None else (_auto_edges[1] - _auto_edges[0])
-    bin_edges = np.arange(all_vals.min(), all_vals.max() + bin_width + 1e-9, bin_width)
+for ax, panel in zip(histogram_axes, panels):
+    legend_handles = []
+    if SEPARATE_BY:
+        ax.set_title(str(panel['category']), fontsize=AXIS_LABEL_SIZE)
+    for group in panel["groups"]:
+        g = group["color_group"]
+        color = color_map[g][:3]
+        label = f"{g} GMM" if APPLY_GMM else g
+        sk = group["skewness"]
+        legend_label = histogram_legend_label(
+            label, group["count"], sk, SHOW_GROUP_COUNTS, show_skewness=not APPLY_GMM)
+        skew_text = f"{sk:.3f}" if np.isfinite(sk) else "undefined"
+        print(f"  {group['label']} (n={group['count']}): skewness = {skew_text}")
+        if not APPLY_GMM or len(group["pdf"]):
+            line, = ax.plot(
+                group["x"] if APPLY_GMM else histogram_data["bin_centers"],
+                group["pdf"] if APPLY_GMM else group["counts"],
+                color=color, linewidth=2, label=legend_label,
+                marker='o' if not APPLY_GMM and len(histogram_data["bin_centers"]) == 1 else None,
+                markersize=6)
+        else:
+            # Sparse and failed fits retain their local count/skewness legend entry.
+            line = Line2D([], [], color=color, linewidth=2, label=legend_label)
+        legend_handles.append(line)
+        if APPLY_GMM:
+            gmm = group["gmm"]
+            for notice in group["notices"]:
+                print(f"    {group['label']}: {notice}")
+            if gmm is not None:
+                print(f"    Best GMM has {gmm.n_components} component(s)")
+                print("    | Component | Mean     | Std. Dev. | Weight |")
+                print("    |-----------|----------|-----------|--------|")
+            for component in group["components"]:
+                rank = component["rank"]
+                print(f"    | {rank}         | {component['mean']:.4f} | "
+                      f"{component['std']:.4f}  | {component['weight']:.3f}  |")
+                if len(group["components"]) <= 1:
+                    continue
+                line, = ax.plot(
+                    group["x"], component["density"], color=color,
+                    linestyle=dash_styles[(rank - 1) % len(dash_styles)],
+                    alpha=0.6, linewidth=1.5, label=f"{g} Component {rank}")
+                legend_handles.append(line)
+            if group["h_index"] is not None:
+                print(f"    H-index: {group['h_index']:.3f}")
+            thresholds = group["thresholds"]
+            for index, threshold in enumerate(thresholds if thresholds is not None else [], 1):
+                peak = float(max(group["pdf"]))
+                ax.plot([threshold, threshold], [0, peak], color=color,
+                        linestyle='--', alpha=0.5, linewidth=2)
+                if not SEPARATE_BY:
+                    ax.text(threshold, peak * 1.05, f"Threshold: {threshold:.2f}",
+                            ha='center', fontsize=AXIS_LABEL_SIZE, color=color)
+                print(f"    Threshold between component {index} and {index + 1}: {threshold:.4f}")
+    if legend_handles:
+        if APPLY_GMM:
+            ax.legend(handles=legend_handles, loc='upper left', bbox_to_anchor=(1.02, 1),
+                      borderaxespad=0, fontsize=LEGEND_SIZE)
+        else:
+            ax.legend(handles=legend_handles, loc='upper right', fontsize=LEGEND_SIZE)
+pretty_var = format_feature_label(SELECTED_VAR, engine='mpl')
+x_label = f"log₁₀({pretty_var})" if LOG_X else pretty_var
+y_label = ("Density" if SEPARATE_BY else "Probability Density") if APPLY_GMM else "Count"
+title = ("Gaussian Mixture Model fit of " if APPLY_GMM else "Frequency histogram of ") + pretty_var
+if COLOR_BY:
+    title += f" by {', '.join(COLOR_BY)}"
+for ax in histogram_axes:
+    show_x_axis = ax is histogram_axes[-1]
+    ax.set_xlabel(x_label if show_x_axis else "", fontsize=AXIS_LABEL_SIZE)
+    ax.xaxis.set_visible(show_x_axis)
+    ax.spines["bottom"].set_visible(show_x_axis)
+    ax.set_ylabel(y_label, fontsize=AXIS_LABEL_SIZE)
+    ax.set_xlim(histogram_data["x_range"])
+    ax.set_ylim(histogram_data["y_range"])
+    ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2, labelbottom=show_x_axis)
+ax = histogram_axes[0]
+if SEPARATE_BY:
+    fig.suptitle(title, fontsize=AXIS_LABEL_SIZE)
 else:
-    bin_edges = _auto_edges
+    ax.set_title(title, fontsize=AXIS_LABEL_SIZE)
 
-for g in color_groups:
-    gdata = df[df["_color_group"] == g][SELECTED_VAR].dropna().values
-    if len(gdata) == 0:
-        continue
-    counts, edges = np.histogram(gdata, bins=bin_edges)
-    centers = (edges[:-1] + edges[1:]) / 2
-    # len(gdata) is the group's non-NaN size, the count the app shows
-    # (univar.py feature_histogram_plot: format_group_label(g, len(x_data), ...)).
-    ax.plot(centers, counts, color=color_map[g][:3], linewidth=2,
-            label=format_group_label(g, len(gdata), SHOW_GROUP_COUNTS, engine='mpl'))
-
-    # Bias-corrected skewness (pandas .skew()) + the app's 7-way label ladder
-    # (univar.py feature_histogram_plot) — keep both identical to the app.
-    sk = pd.Series(gdata).skew()
-    if sk < -1:
-        desc = "strongly left-skewed"
-    elif sk < -0.5:
-        desc = "moderately left-skewed"
-    elif sk < -0.25:
-        desc = "approximately symmetric"
-    elif sk <= 0.25:
-        desc = "almost symmetric"
-    elif sk <= 0.5:
-        desc = "approximately symmetric"
-    elif sk <= 1:
-        desc = "moderately right-skewed"
-    else:
-        desc = "strongly right-skewed"
-    print(f"  {g}: skewness = {sk:.3f} ({desc})")
-
-ax.set_xlabel(f"log₁₀({format_feature_label(SELECTED_VAR, engine='mpl')})" if LOG_X else format_feature_label(SELECTED_VAR, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
-ax.set_ylabel("Count", fontsize=AXIS_LABEL_SIZE)
-ax.set_title(f"Frequency histogram of {format_feature_label(SELECTED_VAR, engine='mpl')} by {', '.join(COLOR_BY)}", fontsize=AXIS_LABEL_SIZE)
-ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
-ax.legend(fontsize=LEGEND_SIZE)
-"""
+if APPLY_GMM and SAVE_DERIVED_DATA:
+    df.to_csv("gmm_grouped_data.csv", index=False)
+    print("GMM grouped data saved to gmm_grouped_data.csv")
+""")
 
 
 def _build_collapse(state: dict) -> str:
@@ -771,7 +720,23 @@ def _build_collapse(state: dict) -> str:
     """
     from src.collapse import collapse_rows
 
-    if state["method"] == "2D Feature Distribution":
+    if state["method"] == "Feature Histogram":
+        return """
+# Histogram retains individual units to explore their variability and heterogeneity.
+if SEPARATE_BY is not None:
+    if not isinstance(SEPARATE_BY, str) or SEPARATE_BY not in df.columns:
+        raise ValueError("Separate by must be one categorical column present in the data.")
+    if SEPARATE_BY in COLOR_BY:
+        raise ValueError("Separate by cannot also be used for Color by.")
+df = df[df[SELECTED_VAR].notna()].copy()
+if LOG_X:
+    if (df[SELECTED_VAR] < 0).any():
+        print("WARNING: Cannot apply log to " + str(SELECTED_VAR) + ": contains negative values.")
+        LOG_X = False
+    else:
+        df[SELECTED_VAR] = np.log10(df[SELECTED_VAR] + 1e-6)
+"""
+    elif state["method"] == "2D Feature Distribution":
         header = """
 # Validate the editable layout before collapse can remove any metadata columns.
 if SEPARATE_BY is not None:

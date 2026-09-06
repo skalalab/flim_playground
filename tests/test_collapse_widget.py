@@ -82,13 +82,15 @@ def test_feature_comparison_offers_collapse_by(page):
     assert "Collapse by" in _labels(at)
 
 
-def test_feature_histogram_does_not(page):
-    """Not point-based: there is no x slot for the replicates to sit in."""
+def test_feature_histogram_has_no_collapse_or_point_decorations(page):
+    """Histogram preserves individual-unit variability and heterogeneity."""
     at = page()
     at.radio[1].set_value("Feature Histogram")
     at.run(timeout=90)
     assert not at.exception
+    assert "Separate by" in _labels(at)
     assert "Collapse by" not in _labels(at)
+    assert not {"Shape by", "Subcolor by", "Opacity by"}.intersection(_labels(at))
 
 
 def test_the_2d_distribution_offers_collapse_by(page):

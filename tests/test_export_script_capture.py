@@ -1256,8 +1256,8 @@ def _histogram_state(**mp_overrides):
                        color_by=["treatment"], method_params=mp)
 
 
-def test_histogram_skewness_uses_app_seven_way_label(tmp_path, monkeypatch, capsys):
-    """Near-symmetric data uses the app's "almost symmetric" classification."""
+def test_histogram_skewness_is_numeric_without_qualitative_description(tmp_path, monkeypatch, capsys):
+    """Histogram summaries report the measured skew without verbal classifications."""
     rng = np.random.default_rng(40)
     base = rng.uniform(0, 5, 150)
     vals = np.concatenate([5 - base, 5 + base])  # symmetric about 5 -> |skew| ~ 0
@@ -1269,7 +1269,8 @@ def test_histogram_skewness_uses_app_seven_way_label(tmp_path, monkeypatch, caps
     })
     _run_script(tmp_path, _histogram_state(), df, monkeypatch)
     out = capsys.readouterr().out
-    assert "almost symmetric" in out
+    assert "skewness = 0.000" in out or "skewness = -0.000" in out
+    assert "symmetric" not in out and "skewed" not in out
 
 
 def test_histogram_skewness_value_is_bias_corrected(tmp_path, monkeypatch, capsys):
@@ -2178,6 +2179,11 @@ def test_histogram_legend_counts_match_the_app(tmp_path, monkeypatch, show_count
                                        "apply_gmm": False, "bin_width": None})
     ns = _run_script(tmp_path, state, df, monkeypatch)
     assert _export_legend_labels(ns["ax"]) == _app_legend_labels(app_fig)
+    expected = []
+    for group, values in df.groupby("treatment", sort=True)["feature_a"]:
+        count = f" (n={len(values)})" if show_counts else ""
+        expected.append(f"{group}{count}\nskew={values.skew():.3f}")
+    assert _export_legend_labels(ns["ax"]) == expected
 
 
 @pytest.mark.parametrize("show_counts", [True, False])
@@ -2199,6 +2205,9 @@ def test_gmm_legend_counts_sit_inside_the_gmm_suffixed_label(tmp_path, monkeypat
     ns = _run_script(tmp_path, state, df, monkeypatch)
     exported = _export_legend_labels(ns["ax"])
     assert exported == _app_legend_labels(app_fig)
+    count = " (n=50)" if show_counts else ""
+    assert exported[0] == f"ctrl GMM{count}"
+    assert all("skew=" not in label for label in exported)
     components = [label for label in exported if "Component" in label]
     assert components, "expected per-component curves in this fixture"
     assert all("n=" not in label for label in components)
@@ -2312,7 +2321,8 @@ def test_show_group_counts_reaches_every_plot_method(method, method_params):
             method, categorical_cols=["treatment"], color_by=["treatment"],
             show_group_counts=flag, method_params=params))
         assert f"SHOW_GROUP_COUNTS = {flag}" in script
-        assert "format_group_label(" in script
+        helper = "histogram_legend_label(" if method == "Feature Histogram" else "format_group_label("
+        assert helper in script
 
 
 def test_show_group_counts_defaults_off_when_not_captured():

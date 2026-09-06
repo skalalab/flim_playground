@@ -14,6 +14,7 @@ FLIM Playground allows you to extract single-cell features from <span title="can
 
 ## 🎡 Playground Construction News
 
+- 📊 **Feature Histogram category panels** — **Separate by** and **Color by** compare individual-unit distributions in stacked rows with shared scales and colors. Count curves and GMM fits use each category’s own observations to explore variability and distribution heterogeneity. Python export reproduces the complete figure and category-qualified GMM labels.
 - 🔬 **2D Feature Distribution category views** — Use **Separate by** to switch between full-size joint distributions with consistent axes and colors. Marginals, correlations, regression, GMM results, and counts follow the selected category. The four encoding controls are **Separate by**, **Color by**, **Collapse by**, and one **Opacity | Shape** picker. Collapse averages complete X/Y observations within each category, color group, and replicate; exports reproduce the same analysis.
 - 🧭 **Phasor category views** — Choose one **Separate by** category, then switch its values directly below the encoding controls in one full-size plot. Other categories remain visible as faint gray context points. Colors stay consistent, while counts and optional K-Means overlays follow the selected category. Python and CSV exports retain the separation.
 - 🗺️ **Dimension Reduction separation grid** — Keep a combined UMAP, PCA, or t-SNE overview beside smaller maps highlighting individual groups. **Separate by** accepts two categorical columns: the first defines rows and the second defines columns. Color, shape, and opacity remain independent, and the Python export reproduces the whole composition in one SVG.
@@ -129,6 +130,47 @@ The Python export reproduces the selected category and gray context in one SVG.
 The GMM CSV retains all analyzed categories, including collapsed rows when enabled,
 and qualifies component labels by category because component numbers belong to
 their own fit.
+
+## Feature Histogram distributions
+
+Feature Histogram explores variability and distribution heterogeneity among
+individual units, such as cells or ROIs. Each retained row contributes one observation.
+
+**Separate by · Color by** control grouping and layout.
+Separate by creates one full-width row per category, in natural order, including
+`N/A` for missing categories. All rows remain visible with normal page scrolling;
+clearing separation combines the data. Histogram separation settings survive method
+changes, column review, and filtering to one category. Separate by excludes its
+column from Color by.
+
+Count curves share one set of bins calculated from all retained observations.
+Both count and GMM density modes share X ranges, zero-based Y ranges, and colors
+across rows, with aligned panels and only the bottom X axis displayed.
+Each **separation value × color group** has its own counts, skewness,
+GMM fit, component table, thresholds, and H-index. Each panel has a compact legend
+at its upper right. GMM legends sit outside the axes so they do not cover the
+curves. Numeric skewness appears only in count-histogram legends. When **Show group
+counts (n) in legend** is enabled, legends include the local number of individual
+units. Panel titles show only the category value and use the same theme color as
+the axes. GMM details appear in category expanders beneath the figure.
+
+Filters apply first, then rows with missing selected-feature values are removed.
+Log X, when enabled, applies once to each remaining observation before binning and
+model fitting. Raw and Log X views remember their own bin widths; small widths
+display enough significant digits to avoid rounding to zero. Counts and GMM fits
+describe these individual units throughout.
+
+Sparse and constant groups keep their observations and counts. Skewness is reported
+as undefined when there are fewer than three observations or no variation. GMM
+requires at least two distinct observations; unavailable fits produce local notices.
+Single-component fits keep their density curve and leave subpopulation labels
+unassigned. Component ranks always follow ascending means within each fit. If
+intersection thresholding fails, that group uses the highest posterior probability.
+
+The Python export reproduces every panel in one SVG using the same numerical
+preparation as the app. The GMM CSV retains individual rows from all analyzed
+categories. Labels such as `day=Day 2 | ctrl_group1` identify the
+local fit; `group1` is its lowest-mean component, not a shared component across days.
 
 ## Use Your Own Data in Data Analysis
 - Demo uses the [iris dataset](example_data/Data_Analysis/iris.csv) and the [wine quality dataset](example_data/Data_Analysis/wine_quality.csv):

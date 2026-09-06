@@ -782,7 +782,50 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     # Names of traces that should keep their original marker sizes
     skip_trace_names = {'Lifetime Markers'}
     meta = fig.layout.meta
+    theme_color = get_context_theme_color()
     dimension_reduction = isinstance(meta, dict) and 'dimension_reduction_layout' in meta
+    if isinstance(meta, dict) and meta.get('histogram'):
+        panels = meta.get('histogram_summaries', [])
+        legend_heights = []
+        for row in range(len(panels)):
+            legend_id = 'legend' + (str(row + 1) if row else '')
+            entries = [trace for trace in fig.data
+                       if trace.legend == legend_id and trace.showlegend]
+            lines = sum((trace.name or '').count('<br>') + 1 for trace in entries)
+            groups = len({trace.legendgroup for trace in entries})
+            legend_heights.append(lines * (1.4 * legend_size + 2) + groups * 6 + 12)
+        row_height = max(220, max(legend_heights, default=0))
+        bottom_margin = 2 * axis_label_size + 40
+        if meta.get('histogram_separator') and meta.get('histogram_summaries'):
+            # Keep category headings and local legends within their own rows,
+            # including large fonts and fits with several component entries.
+            rows = len(meta['histogram_summaries'])
+            gap = max(80, 2 * axis_label_size + 32)
+            plot_height = rows * row_height + (rows - 1) * gap
+            top_margin = max(80, 2 * axis_label_size + 24)
+            fig.update_layout(height=plot_height + top_margin + bottom_margin,
+                              margin=dict(t=top_margin))
+            for row in range(rows):
+                top = 1 - row * (row_height + gap) / plot_height
+                bottom = top - row_height / plot_height
+                axis = 'yaxis' + (str(row + 1) if row else '')
+                fig.layout[axis].domain = [max(0, bottom), top]
+                fig.layout.annotations[row].y = top
+        else:
+            fig.update_layout(height=max(fig.layout.height or 450,
+                                         row_height + (fig.layout.margin.t or 80) + bottom_margin))
+        fig.update_layout(margin=dict(b=bottom_margin), title_font_color=theme_color)
+        fig.update_xaxes(title_font_color=theme_color, tickfont_color=theme_color)
+        fig.update_yaxes(title_font_color=theme_color, tickfont_color=theme_color)
+        for row in range(len(panels)):
+            suffix = str(row + 1) if row else ''
+            fig.update_layout({'legend' + suffix: dict(
+                x=1.02 if meta.get('histogram_gmm') else 1,
+                xanchor='left' if meta.get('histogram_gmm') else 'right',
+                y=fig.layout['yaxis' + suffix].domain[1],
+                font=dict(size=legend_size, color=theme_color),
+                bgcolor=('rgba(255,255,255,0.85)' if theme_color == 'black'
+                         else 'rgba(30,30,30,0.85)'))})
     if dimension_reduction:
         # Keep method-specific numeric tick widths from changing the frame.
         # The shared font setting determines room for the vertical axis/title.
@@ -804,15 +847,17 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
 
     # DR row/column labels share the legend's font control.
     annotation_size = legend_size if dimension_reduction else axis_label_size
+    if isinstance(meta, dict) and meta.get('histogram_separator'):
+        # Category headings remain compact as the axes grow.
+        annotation_size = min(axis_label_size, 24)
     if fig.layout.annotations:
         for annotation in fig.layout.annotations:
             if annotation.font:
                 annotation.font.size = annotation_size
             else:
                 annotation.font = dict(size=annotation_size)
-
-    # Theme-aware hover tooltips: black-on-white in light mode, white-on-dark in dark.
-    theme_color = get_context_theme_color()
+            if isinstance(meta, dict) and meta.get('histogram'):
+                annotation.font.color = theme_color
 
     # Update layout with axis and legend font sizes
     fig.update_layout(
@@ -834,6 +879,9 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
         )
     )
 
+    fig.update_xaxes(title_font_size=axis_label_size, tickfont_size=axis_label_size-2)
+    fig.update_yaxes(title_font_size=axis_label_size, tickfont_size=axis_label_size-2)
+
     # Replace each color-trace legend entry with a ghost trace whose marker
     # size equals legend_size, and resize any pre-existing ghost legend
     # traces (shape/opacity entries) to match.
@@ -847,6 +895,11 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
         if hasattr(trace, 'name') and trace.name in skip_trace_names:
             continue
         if not getattr(trace, 'showlegend', True):
+            continue
+
+        # Line legends already carry their color and dash pattern. Marker ghosts
+        # would lose both and merge component entries sharing a color group.
+        if trace.mode == 'lines' or isinstance(meta, dict) and meta.get('histogram'):
             continue
 
         x_attr = getattr(trace, 'x', None)

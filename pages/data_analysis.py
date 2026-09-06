@@ -37,6 +37,7 @@ from src.vis.univar import (
     feature_comparison_plot,
     feature_gmm_plot,
     feature_histogram_plot,
+    render_histogram_summaries,
 )
 from src.widgets.analysis_config_widgets import (
     get_categorical_cols_analysis,
@@ -69,10 +70,12 @@ from src.widgets.selection_widgets import (
     twod_single_feature_select_widget,
 )
 from src.widgets.visualization_widgets import (
+    HISTOGRAM_BIN_WIDTH_PREFIX,
     SEPARATION_KEYS,
     _compute_channel_harmonics,
     distribution_category_widget,
     get_visual_group_keys,
+    histogram_bin_width_key,
     phasor_category_widget,
     phasor_clustering_widget,
     phasor_params_widget,
@@ -88,6 +91,9 @@ render_top_menu()
 
 # Facet layout remains available through method changes, review and empty filters.
 preserve_analysis_controls(st.session_state, SEPARATION_KEYS)
+# GMM and other methods hide Bin Width; keep each feature's raw/log choices.
+preserve_analysis_controls(st.session_state, tuple(
+    key for key in st.session_state if key.startswith(HISTOGRAM_BIN_WIDTH_PREFIX)))
 
 # Keep shared styling even when a module has no plot or styling widgets yet.
 if "vis_df" not in st.session_state:
@@ -216,13 +222,16 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
         }
     elif method == "Feature Histogram":
         sv = extra_params.get("selected_var") or st.session_state.get("_fh_selected_var")
+        histogram_log_x = extra_params.get(
+            "log_x", st.session_state.get(f"log_x_hist_{sv}", False) if sv else False)
+        width_key = histogram_bin_width_key(sv, histogram_log_x) if sv else None
+        bin_width = st.session_state.get(width_key) if width_key else None
         mp = {
             "selected_var": sv,
-            "log_x": st.session_state.get(f"log_x_hist_{sv}", False) if sv else False,
+            "log_x": histogram_log_x,
             "apply_gmm": extra_params.get("apply_gmm", False),
             "intersection_threshold": st.session_state.get("intersection_threshold", False),
-            "bin_width": (float(st.session_state[f"hist_bin_width_{sv}"])
-                          if sv and f"hist_bin_width_{sv}" in st.session_state else None),
+            "bin_width": float(bin_width) if bin_width is not None else None,
             "gmm_max_components": int(st.session_state.get("fit_gmm_max_components", 3)),
             "gmm_min_weight_threshold": float(st.session_state.get("fit_gmm_min_weight_threshold", 0.1)),
         }
@@ -448,7 +457,7 @@ with col2:
         # Offer encoding controls supported by the selected plot.
         point_based = method not in ["Feature Histogram", "Classification"]
         color_based = method not in [ "Classification"]
-        separate_by_available = method in ["Feature Comparison", "Dimension Reduction", "Phasor Plot", "2D Feature Distribution"]
+        separate_by_available = method in ["Feature Comparison", "Feature Histogram", "Dimension Reduction", "Phasor Plot", "2D Feature Distribution"]
         # Feature Comparison preserves group identity on the x axis when subcolor is used.
         subcolor_available = method in ["Feature Comparison"]
         # Collapse averages replicate measurements within each color group.
@@ -461,7 +470,8 @@ with col2:
                 point_based=point_based, separate_by_available=separate_by_available,
                 subcolor_available=subcolor_available, collapse_available=collapse_available,
                 separate_by_mode={"Dimension Reduction": "facets", "Phasor Plot": "subplots",
-                                  "2D Feature Distribution": "distribution"}.get(method, "sections"),
+                                  "2D Feature Distribution": "distribution",
+                                  "Feature Histogram": "histogram"}.get(method, "sections"),
             )
             # Keep any notices about channels dropped by collapse beside their controls.
             collapse_note = st.container()
@@ -519,23 +529,24 @@ with col2:
                             log_x = st.checkbox("Log X", value=False, key=f"log_x_hist_{selected_var}")
                         with col_gmm:
                             apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, key="analysis_control_apply_gmm", help="Fit Gaussian Mixture Models\
-                            for each color group on the selected feature with 1 to 5 components (fit on raw distribution, not on the histograms). \
+                            for each separation category and color group on the selected feature with 1 to 5 components (fit on raw distribution, not on the histograms). \
                             Choose the one in which all the components are at least of x% weight and has the lowest BIC score. \
                             The default x% is 10%.")
 
                         # Apply log transform if requested (consistent with bivar.py)
                         if log_x:
                             import numpy as np
-                            if (filtered_df[selected_var] < 0).any():
+                            if (plot_df[selected_var] < 0).any():
                                 st.error(log_negative_error(selected_var))
+                                log_x = False
                             else:
-                                filtered_df = filtered_df.copy()
-                                filtered_df[selected_var] = np.log10(filtered_df[selected_var] + 1e-6)
+                                plot_df = plot_df.copy()
+                                plot_df[selected_var] = np.log10(plot_df[selected_var] + 1e-6)
                         if apply_gmm:
-                            fig, gmm_df = feature_gmm_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x)
+                            fig, gmm_df = feature_gmm_plot(plot_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x, separate_by=separate_by)
                             data_export_ready = True
                         else:
-                            fig = feature_histogram_plot(filtered_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x)
+                            fig = feature_histogram_plot(plot_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x, separate_by=separate_by)
                 else:
                     st.write(f"No data available after removing rows with missing values {sad_emoji}")
             elif method in bivar_methods:
@@ -685,6 +696,8 @@ with col2:
                         phasor_chart(fig, key=f"plot_chart_{method}")
                     else:
                         st.plotly_chart(fig, width='stretch', key=f"plot_chart_{method}")
+                    if method == "Feature Histogram":
+                        render_histogram_summaries(fig)
                     # 1. Data export (if applicable)
                     if data_export_ready:
                         # available for download
@@ -703,7 +716,7 @@ with col2:
                     st.subheader("📊 Plot Styling")
                     show_colormap = len(color_by) > 0
                     plot_config_widget(point_based=point_based, show_colormap=show_colormap,
-                                       show_count_toggle=show_colormap or (
+                                       show_count_toggle=show_colormap or method == "Feature Histogram" or (
                                            method in ("Dimension Reduction", "Phasor Plot", "2D Feature Distribution") and bool(separate_by)))
 
                     # 3. Export as Python Script
@@ -716,6 +729,7 @@ with col2:
                             _extra["statistical_test"] = statistical_test
                             _extra["collapse_by"] = collapse_by
                         elif method == "Feature Histogram":
+                            _extra["log_x"] = log_x
                             try:
                                 _extra["apply_gmm"] = apply_gmm
                             except NameError:
