@@ -368,30 +368,39 @@ def fit_options_widget(metadata_dict):
         existing_fixed = metadata_dict[channel_name].get("fixed_lifetimes", {})
         fixed_lifetimes = {}
         if n_comp > 1:
-            st.write(f"**Fix τ for {channel_name}** *(uncheck to fit freely)*")
-            fix_cols = st.columns(n_comp)
-            for comp_i in range(1, n_comp + 1):
-                t_key = f"t{comp_i}"
-                prev_val = existing_fixed.get(t_key) or 0.0
-                with fix_cols[comp_i - 1]:
-                    do_fix = st.checkbox(
-                        f"Fix τ{comp_i}",
-                        value=(prev_val > 0),
-                        key=f"{channel_name}_fix_t{comp_i}"
-                    )
-                    if do_fix:
-                        fixed_val = st.number_input(
-                            f"τ{comp_i} (ns)",
-                            value=float(prev_val) if prev_val > 0 else 0.4,
-                            min_value=0.001,
-                            max_value=100.0,
-                            step=0.01,
-                            format="%.3f",
-                            key=f"{channel_name}_fixed_val_t{comp_i}"
+            # Live checkbox state overrides the constraints loaded from metadata.
+            has_fixed_lifetime = any(
+                st.session_state.get(
+                    f"{channel_name}_fix_t{comp_i}",
+                    (existing_fixed.get(f"t{comp_i}") or 0.0) > 0,
+                )
+                for comp_i in range(1, n_comp + 1)
+            )
+            with st.expander(f"Advanced: fixed lifetimes ({channel_name})", expanded=has_fixed_lifetime):
+                st.caption("Uncheck a component to fit its lifetime freely.")
+                fix_cols = st.columns(n_comp)
+                for comp_i in range(1, n_comp + 1):
+                    t_key = f"t{comp_i}"
+                    prev_val = existing_fixed.get(t_key) or 0.0
+                    with fix_cols[comp_i - 1]:
+                        do_fix = st.checkbox(
+                            f"Fix τ{comp_i}",
+                            value=(prev_val > 0),
+                            key=f"{channel_name}_fix_t{comp_i}"
                         )
-                        fixed_lifetimes[t_key] = fixed_val
-                    else:
-                        fixed_lifetimes[t_key] = None
+                        if do_fix:
+                            fixed_val = st.number_input(
+                                f"τ{comp_i} (ns)",
+                                value=float(prev_val) if prev_val > 0 else 0.4,
+                                min_value=0.001,
+                                max_value=100.0,
+                                step=0.01,
+                                format="%.3f",
+                                key=f"{channel_name}_fixed_val_t{comp_i}"
+                            )
+                            fixed_lifetimes[t_key] = fixed_val
+                        else:
+                            fixed_lifetimes[t_key] = None
         metadata_dict[channel_name]["fixed_lifetimes"] = fixed_lifetimes
 
     return metadata_dict

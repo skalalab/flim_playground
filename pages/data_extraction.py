@@ -250,7 +250,7 @@ def render_fov_metadata_step(col1, col2, ctx):
                 has_channel = st.checkbox(f"has {channel_name}", value=True, key=f"has_channel_{channel_key}")
                 if has_channel:
                     with st.expander(f"Feature extractors for {channel_name}", expanded=False):
-                        st.write(ctx.selected_ch_feature_extractors[channel_key])
+                        st.write(", ".join(ctx.selected_ch_feature_extractors[channel_key]))
                     selected_channels[channel_key] = channel_name
                     if ctx.ch_num_components[channel_key] != 0 and "prefitted" in ctx.input_types[channel_key]:  # Prefitted component count determines required output files.
                         selected_ch_num_components[channel_name] = st.number_input("No. component", value=ctx.ch_num_components[channel_key], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_name}")

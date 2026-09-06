@@ -36,6 +36,11 @@ def main():
         set_current_profile,
         unstorable_name_error,
     )
+    from src.widgets.extraction_config_widgets import (
+        channel_columns,
+        forget_shared_flim_settings,
+        render_shared_flim_settings,
+    )
 
     MAX_PROFILES = 10
     full_cfg = _migrate_extraction_config_to_profiles(load_config())
@@ -76,13 +81,14 @@ def main():
                 help="Cannot delete the only profile" if only_one else f"Delete profile '{active}'",
             ):
                 delete_profile(active)
+                forget_shared_flim_settings(active)
                 # Reset the selector to the remaining active profile.
                 st.session_state.pop("extraction_profile_selector", None)
                 st.rerun()
         # New profiles start empty; rendering seeds their defaults.
         with create_col:
             at_max = len(profiles) >= MAX_PROFILES
-            with st.form("create_extraction_profile_form", clear_on_submit=True):
+            with st.form("create_extraction_profile_form", clear_on_submit=True, border=False):
                 new_profile_name = st.text_input(
                     "New profile",
                     placeholder="e.g. experiment-B",
@@ -141,49 +147,55 @@ def main():
     if intensity_only_input_type not in cfg:
         cfg[intensity_only_input_type] = {}
 
-    cols = st.columns(4)
+    cols = st.columns(3)
 
     with cols[0]:
         cfg["num_channels"] = st.selectbox("Number of channels", list(range(1, max_num_channels + 1)), index=cfg.get("num_channels", 1) - 1, help="Number of channels you have in your data", key=f"num_channels_{active}")
-    with cols[1]:
-        flim_decay_input_type = st.selectbox("FLIM Decay Input type", cfg["flim_decay_input_types"], index= cfg["flim_decay_input_types"].index(cfg["flim_decay_input_type"]), help=(
-            "How your raw FLIM decay data is stored:\n\n"
-            "- **Decay (3/4D)** — spatially-resolved decays stored as 3D/4D arrays in vendor formats (`.sdt`, `.ptu`), optionally with a channel dimension.\n"
-            "- **Decay (3/4D) pixel-prefitted** — per-pixel pre-fitted SPCImage outputs (`.asc`).\n"
-            "- **Decay (2D)** — a tabular CSV where each row is a cell and each column is a time bin."
-        ), key=f"flim_decay_input_type_{active}")
-        cfg["flim_decay_input_type"] = flim_decay_input_type
-        if flim_decay_input_type not in cfg:
-            cfg[flim_decay_input_type] = {}
     # Extraction requires both column names. A blank identifier header would be
     # read as an unnamed column and dropped when the exported table is uploaded.
-    with cols[2]:
+    with cols[1]:
         cfg["unique_cell_id_col"] = st.text_input("Unique cell identifier column name", value=cfg.get("unique_cell_id_col", "cell_id"), help="Unique cell identifier column name", key=f"unique_cell_id_{active}").strip()
         if not cfg["unique_cell_id_col"]:
             error_msg = "Name the column holding cells."
             st.error(f"{error_msg} {sad_emoji}")
-    with cols[3]:
+    with cols[2]:
         cfg["fov_name_col"] = st.text_input("FOV column name", value=cfg.get("fov_name_col", "image_name"), key=f"fov_name_{active}").strip()
         if not cfg["fov_name_col"]:
             error_msg = "Name the column holding fields of view."
             st.error(f"{error_msg} {sad_emoji}")
 
-    cols = st.columns(4)
-    with cols[0]:
-        laser_rate = st.number_input(f"Laser rate **(GHz)** for {flim_decay_input_type}", value=cfg.get(flim_decay_input_type, {}).get("laser_rate", 0.08), min_value=0.0, max_value=1.0, key=f"laser_rate_{flim_decay_input_type}_{active}")
-        cfg[flim_decay_input_type]["laser_rate"] = laser_rate
-    with cols[1]:
-        options = ["IRF", "Fluorescence Lifetime Standard"]
-        default_value = cfg.get(flim_decay_input_type, {}).get("fit_free_calibration", "IRF")
-        default_index = options.index(default_value) if default_value in options else 0
-        fit_free_calibration = st.radio("Fit free calibration method", options, index=default_index, key=f"fit_free_calibration_{flim_decay_input_type}_{active}")
-        cfg[flim_decay_input_type]["fit_free_calibration"] = fit_free_calibration
-        if fit_free_calibration == "Fluorescence Lifetime Standard":
-            with cols[3]:
-                st.caption("Provide channel-specific Fluorescence lifetime standard file suffixes below in the File suffixes section.")
-            with cols[2]:
-                # The standard lifetime is shared across channels.
-                cfg[flim_decay_input_type]["fluorescence_lifetime_standard_lifetime"] = st.number_input("Fluorescence lifetime standard's lifetime **(ns)**", value=cfg.get(flim_decay_input_type, {}).get("fluorescence_lifetime_standard_lifetime", 1.0), min_value=0.1, max_value=20.0, key=f"fluorescence_lifetime_standard_lifetime_{flim_decay_input_type}_{active}")
+    st.subheader("Channels")
+    n_channels = cfg["num_channels"]
+    channel_cols = channel_columns(n_channels)
+    channel_names = []
+    invalid_channels = set()
+    imaging_modalities = ["FLIM", "Intensity-only"]
+    for i in range(n_channels):
+        with channel_cols[i]:
+            channel_key = f"ch{i+1}"
+            channel_cfg = cfg.setdefault(channel_key, {})
+            default_name = channel_cfg.get("channel_name", f"Channel {i+1}")
+            custom_channel_name = st.text_input(f"Channel {i+1} name", value=default_name, key=f"channel_name_{channel_key}_{active}")
+            saved_modality = channel_cfg.get("imaging_modality", imaging_modalities[0])
+            modality_index = imaging_modalities.index(saved_modality) if saved_modality in imaging_modalities else 0
+            channel_cfg["imaging_modality"] = st.selectbox("Imaging modality", imaging_modalities, index=modality_index, key=f"imaging_modality_{channel_key}_{active}")
+            if custom_channel_name in channel_names:
+                error_msg = "Duplicate channel names found. Please change the names to be unique."
+                st.error(f"{error_msg} {sad_emoji}")
+                invalid_channels.add(channel_key)
+                continue
+            channel_names.append(custom_channel_name)
+            channel_cfg["channel_name"] = custom_channel_name
+
+    modalities = {cfg[f"ch{i+1}"]["imaging_modality"] for i in range(n_channels)}
+    has_flim = "FLIM" in modalities
+    flim_decay_input_type, fit_free_calibration = render_shared_flim_settings(cfg, active, has_flim)
+    if has_flim and "Intensity-only" in modalities and flim_decay_input_type == "Decay (2D)":
+        error_msg = (
+            "This configuration cannot mix 2D FLIM decays with intensity-only channels. "
+            "Choose a 3/4D FLIM input format or change the channel modalities."
+        )
+        st.error(f"{error_msg} {sad_emoji}")
 
     # Seed the feature extractors supported by each input type.
     if "available_feature_extractors" not in cfg[flim_decay_input_type]:
@@ -201,11 +213,6 @@ def main():
     if "available_feature_extractors" in d2d and "Intensity texture" not in d2d["available_feature_extractors"]:
         d2d["available_feature_extractors"].append("Intensity texture")
 
-    if flim_decay_input_type == "Decay (2D)":
-        imaging_modalities = ["FLIM"]
-    else:
-        imaging_modalities = ["FLIM", "Intensity-only"]
-
     # Seed file types; the per-channel controls filter them by selected extractors.
     for input_type in all_flim_decay_input_types + intensity_only_input_types:
         if input_type not in cfg:
@@ -220,29 +227,14 @@ def main():
             elif input_type == "Intensity (2D)":
                 cfg[input_type]["file_types"] = ["Intensity (2D)", "Mask"]
 
-    channel_names = []
-    # Above four channels, collapse channels 1–4 and keep channels 5+ visible.
-    # Column containers retain their expander placement when populated below.
-    n_channels = cfg["num_channels"]
-    if n_channels <= 4:
-        channel_cols = list(st.columns(n_channels))
-    else:
-        with st.expander("Channels 1–4", expanded=False):
-            first_group = st.columns(4)
-        second_label = "Channel 5" if n_channels == 5 else f"Channels 5–{n_channels}"
-        with st.expander(second_label, expanded=True):
-            second_group = st.columns(n_channels - 4)
-        channel_cols = list(first_group) + list(second_group)
+    st.subheader("Extraction settings")
+    channel_cols = channel_columns(n_channels)
     for i in range(n_channels):
         with channel_cols[i]:
             channel_key = f"ch{i+1}"
-            if channel_key not in cfg:
-                cfg[channel_key] = {}
-            # Restore the saved modality only if the selected input type supports it.
-            saved_modality = cfg[channel_key].get("imaging_modality", imaging_modalities[0])
-            modality_index = imaging_modalities.index(saved_modality) if saved_modality in imaging_modalities else 0
-            imaging_modality = st.selectbox("Imaging modality", imaging_modalities, index=modality_index, key=f"imaging_modality_{channel_key}_{active}")
-            cfg[channel_key]["imaging_modality"] = imaging_modality
+            if channel_key in invalid_channels:
+                continue
+            imaging_modality = cfg[channel_key]["imaging_modality"]
             if imaging_modality == "FLIM":
                 input_type = flim_decay_input_type
             elif imaging_modality == "Intensity-only":
@@ -251,14 +243,7 @@ def main():
             if input_type not in cfg[channel_key]:
                 cfg[channel_key][input_type] = {}
 
-            default_name = cfg[channel_key].get("channel_name", f"Channel {i+1}")
-            custom_channel_name = st.text_input(f"Channel {i+1} name", value=default_name, key=f"channel_name_{channel_key}_{active}")
-            if custom_channel_name in channel_names:
-                error_msg = "Duplicate channel names found. Please change the names to be unique."
-                st.error(f"{error_msg} {sad_emoji}")
-                continue
-            channel_names.append(custom_channel_name)
-            cfg[channel_key]["channel_name"] = custom_channel_name
+            custom_channel_name = cfg[channel_key]["channel_name"]
             available_feature_extractors = cfg[input_type]["available_feature_extractors"]
             selected_feature_extractors = st.multiselect(f"Extract feature types from {custom_channel_name}", available_feature_extractors, default= cfg[channel_key][input_type].get("selected_feature_extractors", []), key=f"{input_type}_{channel_key}_feature_extractors_{active}")
             cfg[channel_key][input_type]["selected_feature_extractors"] = selected_feature_extractors
@@ -274,23 +259,33 @@ def main():
                 if num_components > 1 and "prefitted" not in input_type:
                     if "fixed_lifetimes" not in cfg[channel_key][input_type]:
                         cfg[channel_key][input_type]["fixed_lifetimes"] = {}
-                    st.caption("Fix lifetime components (ns) — set 0 to fit freely:")
-                    fix_cols = st.columns(num_components)
-                    for comp_i in range(1, num_components + 1):
-                        t_key = f"t{comp_i}"
-                        existing = cfg[channel_key][input_type]["fixed_lifetimes"].get(t_key, 0.0) or 0.0
-                        with fix_cols[comp_i - 1]:
-                            fixed_val = st.number_input(
-                                f"Fix τ{comp_i} (ns)",
-                                value=float(existing),
-                                min_value=0.0,
-                                max_value=100.0,
-                                step=0.01,
-                                format="%.3f",
-                                key=f"{channel_key}_{input_type}_fixed_t{comp_i}_{active}",
-                                help=f"Set > 0 to fix τ{comp_i} to this value. 0 = free parameter."
-                            )
-                            cfg[channel_key][input_type]["fixed_lifetimes"][t_key] = fixed_val if fixed_val > 0 else None
+                    fixed_lifetimes = cfg[channel_key][input_type]["fixed_lifetimes"]
+                    # Pending widget edits take precedence over the saved values.
+                    has_fixed_lifetime = any(
+                        float(st.session_state.get(
+                            f"{channel_key}_{input_type}_fixed_t{comp_i}_{active}",
+                            fixed_lifetimes.get(f"t{comp_i}", 0.0),
+                        ) or 0.0) > 0
+                        for comp_i in range(1, num_components + 1)
+                    )
+                    with st.expander("Advanced: fixed lifetimes", expanded=has_fixed_lifetime):
+                        st.caption("Fix lifetime components (ns) — set 0 to fit freely:")
+                        fix_cols = st.columns(num_components)
+                        for comp_i in range(1, num_components + 1):
+                            t_key = f"t{comp_i}"
+                            existing = fixed_lifetimes.get(t_key, 0.0) or 0.0
+                            with fix_cols[comp_i - 1]:
+                                fixed_val = st.number_input(
+                                    f"Fix τ{comp_i} (ns)",
+                                    value=float(existing),
+                                    min_value=0.0,
+                                    max_value=100.0,
+                                    step=0.01,
+                                    format="%.3f",
+                                    key=f"{channel_key}_{input_type}_fixed_t{comp_i}_{active}",
+                                    help=f"Set > 0 to fix τ{comp_i} to this value. 0 = free parameter."
+                                )
+                                fixed_lifetimes[t_key] = fixed_val if fixed_val > 0 else None
                 else:
                     # Clear constraints for single-component or prefitted inputs.
                     cfg[channel_key][input_type]["fixed_lifetimes"] = {}
@@ -321,14 +316,6 @@ def main():
                     value=cfg[channel_key][input_type]["input_suffixes"].get("Fluorescence Lifetime Standard", ""),
                     key=f"{channel_key}_{input_type}_FluorescenceLifetimeStandard_{active}"
                 )
-
-    if imaging_modality == "FLIM" and flim_decay_input_type == "Decay (2D)":
-        cols = st.columns(2)
-        with cols[0]:
-            cfg[flim_decay_input_type]["duration"] = st.number_input(f"{flim_decay_input_type} duration (**ns**)", value=cfg.get(flim_decay_input_type, {}).get("duration", 20.0), min_value=0.0, max_value=100.0, key=f"{flim_decay_input_type}_duration_{active}")
-        with cols[1]:
-            cfg[flim_decay_input_type]["time_bins"] = st.number_input(f"{flim_decay_input_type} time bins", value=cfg.get(flim_decay_input_type, {}).get("time_bins", 1024), min_value=10, key=f"{flim_decay_input_type}_time_bins_{active}")
-
 
     categorical_cols = st.multiselect("Categorical columns (type to add more)", cfg.get("categorical_cols", []), default=cfg.get("categorical_cols", []),  accept_new_options=True, key=f"categorical_cols_{active}")
     cfg["categorical_cols"] = categorical_cols
