@@ -7,6 +7,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from src.column_roles import code_span
+from src.export_labels import format_export_group_labels
 from .histogram import histogram_legend_label, prepare_histogram
 from .histogram import _assign_subpopulation_labels as _assign_subpopulation_labels
 from .superplot import (add_superplot_observations, add_superplot_summary,
@@ -93,6 +94,7 @@ def _histogram_figure(prepared, colormap, log_x):
     gmm_mode = prepared["apply_gmm"]
     dash_styles = ["dash", "dot", "dashdot", "longdash", "longdashdot"]
     summaries = []
+    component_tables = []
     for row, panel in enumerate(panels, 1):
         summary = dict(category=panel["category"], groups=[])
         legend_id = "legend" + (str(row) if row > 1 else "")
@@ -131,13 +133,21 @@ def _histogram_figure(prepared, colormap, log_x):
                     hoverinfo="skip"), row=row, col=1)
             component_rows = []
             if gmm_mode:
+                editable_rows = []
                 for component in group["components"]:
                     component_rank = component["rank"]
+                    mean_sd = f"{component['mean']:.2f} ± {component['std']:.2f}"
                     component_rows.append((component_rank,
-                                           f"{component['mean']:.2f} ± {component['std']:.2f}",
+                                           mean_sd,
                                            f"{component['weight']:.2f}"))
                     if len(group["components"]) <= 1:
                         continue
+                    editable_rows.append(dict(
+                        source_label=format_export_group_labels(
+                            [component_rank - 1], color, separate_by=separate_by,
+                            category=panel["category"], color_by=prepared["color_by"])[0],
+                        component=component_rank, x_mean_sd=mean_sd,
+                        weight=float(component["weight"])))
                     fig.add_trace(go.Scatter(
                         x=group["x"], y=component["density"], mode="lines",
                         name=f"{html.escape(str(color))} Component {component_rank}",
@@ -147,6 +157,11 @@ def _histogram_figure(prepared, colormap, log_x):
                                   dash=dash_styles[(component_rank - 1) % len(dash_styles)]),
                         hovertemplate=hover + f"Component {component_rank}<br>Density: %{{y}}<extra></extra>"),
                         row=row, col=1)
+                if editable_rows and group.get("gmm") is not None:
+                    component_tables.append(dict(
+                        category=panel["category"], group=color,
+                        features=[prepared["selected_var"]], rows=editable_rows,
+                        h_index=group["h_index"]))
                 for threshold in group["thresholds"] if group["thresholds"] is not None else []:
                     fig.add_shape(type="line", x0=threshold, x1=threshold,
                                   y0=0, y1=max(group["pdf"]),
@@ -157,7 +172,8 @@ def _histogram_figure(prepared, colormap, log_x):
                                            text=f"Threshold ({threshold:.2f})", showarrow=False,
                                            font=dict(color=theme), row=row, col=1)
             summary["groups"].append(dict(
-                label=group["label"], count=group["count"], color=colors[color],
+                label=group["label"], color_group=color,
+                count=group["count"], color=colors[color],
                 skewness=float(group["skewness"]) if np.isfinite(group["skewness"]) else None,
                 components=component_rows, h_index=group.get("h_index"),
                 thresholds=list(group["thresholds"]) if group.get("thresholds") is not None else [],
@@ -181,32 +197,44 @@ def _histogram_figure(prepared, colormap, log_x):
         hovermode="x unified", margin=dict(l=60, r=20, t=80, b=100, autoexpand=True),
         meta=dict(histogram=True, histogram_summaries=summaries,
                   histogram_gmm=gmm_mode, histogram_separator=separate_by,
-                  histogram_feature=prepared["selected_var"]))
+                  histogram_feature=prepared["selected_var"],
+                  gmm_component_tables=component_tables))
     return fig
 
 
-def render_histogram_summaries(fig):
-    """Render optional GMM details separately from the compact panel legends."""
+def render_histogram_summaries(fig, component_editor=None):
+    """Render category-local GMM details and return optional component name edits."""
     meta = fig.layout.meta
+    value_names = {}
     if not meta["histogram_gmm"]:
-        return
+        return value_names
+    component_tables = {
+        (table["category"], table["group"]): table
+        for table in meta.get("gmm_component_tables", []) if len(table["rows"]) > 1
+    } if component_editor is not None else {}
     for panel in meta["histogram_summaries"]:
-        label = (f"{meta['histogram_separator']}={panel['category']}"
-                 if meta["histogram_separator"] else "All observations")
-        container = st.expander(f"GMM details · {code_span(label)}")
-        with container:
-            tables = []
-            for group in panel["groups"]:
-                for notice in group["notices"]:
-                    st.info(f"{code_span(group['label'])}: {notice}")
-                if group["components"]:
-                    tables.append(gmm_component_table(group["label"], group["components"], [meta["histogram_feature"]]))
-                if group["h_index"] is not None:
-                    st.markdown(f"H-index for {code_span(group['label'])}: **{group['h_index']:.3f}**")
-                for i, threshold in enumerate(group["thresholds"], 1):
-                    st.markdown(f"Threshold for {code_span(group['label'])} between component {i} and {i+1}: **{threshold:.2f}**")
-            if tables:
-                st.markdown(gmm_tables_html(tables), unsafe_allow_html=True)
+        if meta["histogram_separator"]:
+            label = f"{meta['histogram_separator']}={panel['category']}"
+            st.markdown(f"**{code_span(label)}**")
+        tables = []
+        editable_tables = []
+        for group in panel["groups"]:
+            for notice in group["notices"]:
+                st.info(f"{code_span(group['label'])}: {notice}")
+            component_table = component_tables.get((panel["category"], group.get("color_group")))
+            if component_table is not None and len(group["components"]) > 1:
+                editable_tables.append(component_table)
+            elif group["components"]:
+                tables.append(gmm_component_table(
+                    group["label"], group["components"], [meta["histogram_feature"]],
+                    h_index=group["h_index"]))
+            for i, threshold in enumerate(group["thresholds"], 1):
+                st.markdown(f"Threshold for {code_span(group['label'])} between component {i} and {i+1}: **{threshold:.2f}**")
+        if editable_tables:
+            value_names.update(component_editor(editable_tables))
+        if tables:
+            st.markdown(gmm_tables_html(tables), unsafe_allow_html=True)
+    return value_names
 
 
 # Match Plotly's box width for unit-spaced groups: (1 - boxgap) * (1 - boxgroupgap).

@@ -33,6 +33,7 @@ _TABLE_STYLES = """
     white-space: nowrap;
 }
 .flim-gmm-table th:first-child, .flim-gmm-table td:first-child {
+    width: 1%;
     text-align: left;
 }
 @container (max-width: 44rem) {
@@ -44,20 +45,21 @@ _TABLE_STYLES = """
 """
 
 
-def gmm_component_table(group_name, rows, feature_names):
+def gmm_component_table(group_name, rows, feature_names, *, h_index=None):
     """Format rows of (component, mean ± SD per feature, weight) as one table."""
     labels = ["Mean ± SD"] if len(feature_names) == 1 else ["X (mean ± SD)", "Y (mean ± SD)"]
     headers = ''.join(
         f'<th scope="col" title="{escape(str(feature))}">{label}</th>'
         for feature, label in zip(feature_names, labels)
     )
+    fit_label = f" (H-index: {h_index:.3f})" if h_index is not None else ""
     body = ''.join(
         '<tr>' + ''.join(f'<td>{escape(str(value))}</td>' for value in row) + '</tr>'
         for row in rows
     )
     return (
         '<div class="flim-gmm-table"><table>'
-        f'<caption>{escape(str(group_name))} · GMM</caption>'
+        f'<caption>{escape(str(group_name))}{fit_label}</caption>'
         '<thead><tr><th scope="col" title="Component">#</th>'
         + headers + '<th scope="col">Weight</th></tr></thead><tbody>'
         + body + '</tbody></table></div>'

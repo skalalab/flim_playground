@@ -550,7 +550,7 @@ with col2:
                         with col_log:
                             log_x = st.checkbox("Log X", value=False, key=f"log_x_hist_{selected_var}")
                         with col_gmm:
-                            apply_gmm = st.checkbox("Apply Gaussian Mixture Model to the feature distribution", value=False, key="analysis_control_apply_gmm", help="Fit Gaussian Mixture Models\
+                            apply_gmm = st.checkbox("Apply Gaussian Mixture Model", value=False, key="analysis_control_apply_gmm", help="Fit Gaussian Mixture Models\
                             for each separation category and color group on the selected feature with 1 to 5 components (fit on raw distribution, not on the histograms). \
                             Choose the one in which all the components are at least of x% weight and has the lowest BIC score. \
                             The default x% is 10%.")
@@ -709,6 +709,8 @@ with col2:
                     fig = go.Figure(base_fig)
                     phasor_category = None
                     distribution_category = None
+                    component_tables = None
+                    component_table_layout = None
                     display_table = table_md if method == "2D Feature Distribution" else None
                     if method == "2D Feature Distribution":
                         if separate_by:
@@ -716,6 +718,11 @@ with col2:
                                 fig.layout.meta["distribution_categories"], separate_by)
                             select_distribution_category(fig, distribution_category)
                             display_table = fig.layout.meta["distribution_summary"]
+                        meta = fig.layout.meta if isinstance(fig.layout.meta, dict) else {}
+                        if "gmm_component_tables" in meta:
+                            component_tables = [table for table in meta["gmm_component_tables"]
+                                                if table["category"] == distribution_category]
+                            display_table = meta["distribution_statistics"]
                         distribution_controls(selected_x, selected_y)
                     if method == "Phasor Plot" and separate_by:
                         phasor_category = phasor_category_widget(
@@ -733,19 +740,35 @@ with col2:
                     else:
                         st.plotly_chart(fig, width='stretch', key=f"plot_chart_{method}")
                     if method == "Feature Histogram":
-                        render_histogram_summaries(fig)
+                        if data_export_ready and "gmm_component_tables" in fig.layout.meta:
+                            component_tables = fig.layout.meta["gmm_component_tables"]
+
+                            def component_table_layout(editor):
+                                return render_histogram_summaries(fig, component_editor=editor)
+                        else:
+                            render_histogram_summaries(fig)
                     # 1. Data export (if applicable)
                     derived_export, export_names_valid = None, True
                     if data_export_ready:
-                        derived_export, export_names_valid = export_labels_widget(
-                            export_frame, label_column, method=method, context=export_context)
-                        if label_column in export_frame and export_frame[label_column].notna().any():
+                        has_assignments = label_column in export_frame and export_frame[label_column].notna().any()
+                        # Reserve the tables above the shared name/download row.
+                        names_area = st.container()
+                        column_name_area = None
+                        if has_assignments:
+                            column_name_area, download_area = st.columns([3, 2], vertical_alignment="bottom")
+                        with names_area:
+                            derived_export, export_names_valid = export_labels_widget(
+                                export_frame, label_column, method=method, context=export_context,
+                                component_tables=component_tables, component_table_layout=component_table_layout,
+                                column_name_container=column_name_area)
+                        if has_assignments:
                             _, filename, download_label = EXPORT_METHODS[method]
                             csv_data = (apply_export_labels(export_frame, label_column, derived_export).to_csv(index=False)
                                         if export_names_valid else "")
-                            st.download_button(label=download_label, data=csv_data, file_name=filename,
-                                               mime="text/csv", key=f"derived_data_{method}",
-                                               disabled=not export_names_valid)
+                            with download_area:
+                                st.download_button(label=download_label, data=csv_data, file_name=filename,
+                                                   mime="text/csv", key=f"derived_data_{method}",
+                                                   disabled=not export_names_valid)
                     if method == "Feature Comparison":
                         # Widgets for reordering below
                         reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by)

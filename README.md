@@ -14,7 +14,7 @@ FLIM Playground allows you to extract single-cell features from <span title="can
 
 ## 🎡 Playground Construction News
 
-- 🏷️ **Name exported groups** — Histogram GMM and 2D GMM share an **Export labels** panel above their CSV download. Rename the column and each group using prefilled text fields. The Python script captures the same names, and previous annotations are preserved when exporting again.
+- 🏷️ **Name exported groups** — Rename subpopulations in the Histogram GMM and 2D GMM tables. Set the exported column name beside the CSV download button. The Python script captures the same names, and previous annotations are preserved when exporting again.
 - 📊 **Feature Histogram category panels** — **Separate by** and **Color by** compare individual-unit distributions in stacked rows with shared scales and colors. Count curves and GMM fits use each category’s own observations to explore variability and distribution heterogeneity. Python export reproduces the complete figure and category-qualified GMM labels.
 - 🔬 **2D Feature Distribution category views** — Use **Separate by** to switch between full-size joint distributions with consistent axes and colors. Marginals, correlations, regression, GMM results, and counts follow the selected category. The four encoding controls are **Separate by**, **Color by**, **Collapse by**, and one **Opacity | Shape** picker. Collapse averages complete X/Y observations within each category, color group, and replicate; exports reproduce the same analysis.
 - 🧭 **Phasor category views** — Choose one **Separate by** category, then switch its values directly below the encoding controls in one full-size plot. Other categories remain visible as faint gray context points. Colors stay consistent, while counts follow the selected category. Python export retains the separation.
@@ -28,12 +28,20 @@ FLIM Playground allows you to extract single-cell features from <span title="can
 
 ## Name groups before exporting
 
-After fitting GMM in Feature Histogram or 2D Feature Distribution, use **Export labels** above the CSV download to
-name the result column and its categorical values. Current names are prefilled
-in text fields, with each group identified by its generated label.
-Hover over a field's help icon to see its assigned-row feature means on the
-analyzed scale, including any log transformation.
-For separated analyses, the fields include every category.
+After fitting GMM, set **Exported column name** to the left of the CSV download button.
+In **Feature Histogram** and **2D Feature Distribution**, double-click a
+cell in the GMM table's **✎ Name** column to rename that subpopulation. A visible
+hint above the tables explains the double-click action.
+The component number, mean ± SD (X/Y in 2D), and weight remain read-only.
+
+In **Feature Histogram**, editable tables appear two per row within each category,
+with compact statistics columns and more room for names. Fit details stay visible,
+with category headings when **Separate by** is selected. Each table title shows the fit's H-index once, for
+example `ctrl (H-index: 0.490)`; threshold details remain
+alongside the tables. In **2D Feature Distribution**,
+use the category selector when **Separate by** is selected. Names are retained across
+categories and used by both the CSV download and the Python script's CSV output.
+Hover over a mean column header for the analyzed feature and its log scale, if used.
 Default names join selected category values with `::`, followed by the component
 suffix; for example, `0-control::MCF7::high_dose_group1`. With only **Separate by**,
 the name is `0-control_group1`; with neither grouping selected, it is `all_data_group1`.
@@ -208,7 +216,8 @@ at its upper right. GMM legends sit outside the axes so they do not cover the
 curves. Numeric skewness appears only in count-histogram legends. When **Show group
 counts (n) in legend** is enabled, legends include the local number of individual
 units. Panel titles show only the category value and use the same theme color as
-the axes. GMM details appear in category expanders beneath the figure.
+the axes. GMM details remain visible beneath the figure, grouped by category, with
+each fit's H-index included in its component table title.
 
 Filters apply first, then rows with missing selected-feature values are removed.
 Log X, when enabled, applies once to each remaining observation before binning and

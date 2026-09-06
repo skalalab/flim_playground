@@ -1,10 +1,28 @@
 """The real analysis page sends the same editable names to both download paths."""
 from pathlib import Path
+import json
 
 import pandas as pd
 import plotly.graph_objects as go
 import pytest
 from streamlit.testing.v1 import AppTest
+
+
+def _with_component_tables(fig, dimensions=2):
+    meta = {**(fig.layout.meta or {}), "distribution_statistics": "Statistics only",
+        "gmm_component_tables": [{"category": None, "group": "all_data", "features": ["x", "y"][:dimensions],
+            "rows": [{"source_label": f"all_data_group{i}", "component": i,
+                      "x_mean_sd": "1.00 ± 0.20", "y_mean_sd": "3.00 ± 0.30", "weight": .5}
+                     for i in (1, 2)]}]}
+    if dimensions == 1:
+        meta["gmm_component_tables"][0]["h_index"] = .4
+        meta.update(histogram_gmm=True, histogram_feature="x", histogram_separator=None,
+            histogram_summaries=[{"category": None, "groups": [{
+                "label": "all_data", "color_group": "all_data", "notices": [],
+                "components": [(1, "1.00 ± 0.20", "0.50"), (2, "3.00 ± 0.30", "0.50")],
+                "h_index": .4, "thresholds": [2.]}]}])
+    fig.update_layout(meta=meta)
+    return fig
 
 
 @pytest.mark.parametrize("method,legacy", [("Feature Histogram", "GMM_group"),
@@ -38,11 +56,12 @@ def test_page_captures_export_names_and_disables_both_downloads(monkeypatch, met
 
     def model_2d(data, *args, **kwargs):
         fig, result = model(data, *args, **kwargs)
-        return fig, "", result
+        return _with_component_tables(fig), "<table>Original static GMM table</table>", result
 
     def model_histogram(data, *args, **kwargs):
         vw.gmm_hyperParams_widget()
-        return model(data, *args, **kwargs)
+        fig, result = model(data, *args, **kwargs)
+        return _with_component_tables(fig, dimensions=1), result
 
     monkeypatch.setattr(univar, "feature_gmm_plot", model_histogram)
     monkeypatch.setattr(bivar, "feature_2d_distribution_plot", model_2d)
@@ -113,11 +132,15 @@ def grouping_page(monkeypatch):
 
     def model_2d(data, *args, **kwargs):
         fig, result = model(data, *args, **kwargs)
-        return fig, "", result
+        return _with_component_tables(fig), "<table>Original static GMM table</table>", result
+
+    def model_histogram(data, *args, **kwargs):
+        fig, result = model(data, *args, **kwargs)
+        return _with_component_tables(fig, dimensions=1), result
 
     monkeypatch.setattr(univar, "feature_comparison_plot", lambda *a, **k: figure())
     monkeypatch.setattr(univar, "feature_histogram_plot", lambda *a, **k: figure())
-    monkeypatch.setattr(univar, "feature_gmm_plot", model)
+    monkeypatch.setattr(univar, "feature_gmm_plot", model_histogram)
     monkeypatch.setattr(bivar, "feature_2d_distribution_plot", model_2d)
     captured = []
     monkeypatch.setattr(export_script, "generate_script", lambda state: captured.append(state) or "# analysis")
@@ -129,6 +152,71 @@ def grouping_page(monkeypatch):
 
 def _export_column_input(at):
     return next(w for w in at.text_input if w.label == "Exported column name")
+
+
+def _edit_component_names(at, rows):
+    states = at._tree.get_widget_states()
+    states.widgets.add(id=at.dataframe[0].proto.id, string_value=json.dumps({
+        "edited_rows": rows, "added_rows": [], "deleted_rows": []}))
+    at._run(states, timeout=60)
+    assert not at.exception, [e.value for e in at.exception]
+
+
+@pytest.mark.parametrize("dimensions", [1, 2], ids=["1d", "2d"])
+def test_gmm_table_renames_use_shared_export_mapping_and_replace_static_tables(grouping_page, dimensions):
+    at, captured = grouping_page
+    if dimensions == 1:
+        at.session_state.analysis_control_apply_gmm = True
+        at.radio[1].set_value("Feature Histogram").run(timeout=60)
+    else:
+        at.session_state["fit_gmm_2d_x_y"] = True
+        at.radio[0].set_value("### **Bivariate**").run(timeout=60)
+    assert len(at.dataframe) == 1
+    assert not any(w.value == "**Export labels**" for w in at.markdown)
+    assert not any("Original static GMM table" in w.value for w in at.markdown)
+    assert not any("flim-gmm-table" in w.value for w in at.markdown)
+    assert not any(w.label.startswith("New name for") for w in at.text_input)
+    if dimensions == 1:
+        assert not any(w.label.startswith("GMM details") for w in at.expander)
+        assert not any("GMM details" in w.value or "All observations" in w.value for w in at.markdown)
+        assert "H-index" not in at.dataframe[0].value.columns
+        assert any(w.value == "<p><strong>all_data (H-index: 0.400)</strong></p>" for w in at.markdown)
+        assert not any(w.value.startswith("H-index for") for w in at.markdown)
+        assert any("Threshold for" in w.value for w in at.markdown)
+    _edit_component_names(at, {0: {"Name": "Low"}})
+    _edit_component_names(at, {0: {"Name": "Low"}, 1: {"Name": "High"}})
+    assert captured[-1]["derived_export"]["value_names"] == {
+        "all_data_group1": "Low", "all_data_group2": "High"}
+    assert not any(w.proto.disabled for w in at.get("download_button"))
+    _edit_component_names(at, {0: {"Name": " "}, 1: {"Name": "High"}})
+    assert all(w.proto.disabled for w in at.get("download_button"))
+
+
+def test_histogram_single_component_keeps_read_only_details_without_rename_controls(grouping_page, monkeypatch):
+    from src.vis import univar
+
+    def single_component(data, *args, **kwargs):
+        fig = _with_component_tables(go.Figure(), dimensions=1)
+        fig.layout.meta["gmm_component_tables"] = []
+        group = fig.layout.meta["histogram_summaries"][0]["groups"][0]
+        group.update(components=group["components"][:1], h_index=0., thresholds=[])
+        result = data.copy()
+        result[kwargs["label_column"]] = None
+        return fig, result
+
+    monkeypatch.setattr(univar, "feature_gmm_plot", single_component)
+    at, captured = grouping_page
+    at.session_state.analysis_control_apply_gmm = True
+    at.radio[1].set_value("Feature Histogram").run(timeout=60)
+    assert not at.exception, [e.value for e in at.exception]
+    assert not at.dataframe and not at.text_input
+    assert not any(w.label.startswith("GMM details") for w in at.expander)
+    assert any("flim-gmm-table" in w.value for w in at.markdown)
+    assert any("H-index" in w.value for w in at.markdown)
+    assert any("No group labels" in w.value for w in at.info)
+    assert captured[-1]["derived_export"] is None
+    assert len(at.get("download_button")) == 1
+    assert not at.get("download_button")[0].proto.disabled
 
 
 def test_histogram_export_names_survive_classification_hiding_color_by(grouping_page):
@@ -179,6 +267,6 @@ def test_2d_mean_help_uses_effective_scale_when_negative_values_prevent_log(grou
     at.radio[1].set_value("2D Feature Distribution").run(timeout=60)
     assert not at.exception, [e.value for e in at.exception]
     assert at.checkbox(key="log_x_2d_x_y").value
-    help_text = next(w.proto.help for w in at.text_input if w.label.startswith("New name for"))
-    assert "`x`: 1" in help_text
+    help_text = json.loads(at.dataframe[0].proto.columns)["X (mean ± SD)"]["help"]
+    assert help_text == "x"
     assert "log₁₀" not in help_text

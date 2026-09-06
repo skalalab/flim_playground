@@ -380,7 +380,8 @@ def select_distribution_category(fig, category=None):
         trace.showlegend = active and role == 'points' and info.get('legend', False)
     fig.update_layout(
         meta={**meta, 'distribution_category': category,
-              'distribution_summary': meta['distribution_summaries'][category]},
+              'distribution_summary': meta['distribution_summaries'][category],
+              'distribution_statistics': meta['distribution_statistics_summaries'][category]},
         legend_uirevision=f"{meta['distribution_separate_by']}:{category}")
     return fig
 
@@ -484,6 +485,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                 fig.add_trace(trace)
 
     summaries = {}
+    statistics_summaries = {}
+    component_tables = []
     for level, _positions in panels:
         lines, tables = [], []
         for result in results:
@@ -516,11 +519,22 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                 if separate_by:
                     trace.meta = dict(distribution_role='marginal', category=level)
             component_rows = []
+            metadata_rows = []
             for index, component in enumerate(result['components'], 1):
                 mean_x, mean_y = component['mean']
                 covariance, weight = component['covariance'], component['weight']
-                component_rows.append((index, f"{mean_x:.2f} ± {np.sqrt(covariance[0][0]):.2f}",
-                                       f"{mean_y:.2f} ± {np.sqrt(covariance[1][1]):.2f}", f"{weight:.2f}"))
+                x_mean_sd = f"{mean_x:.2f} ± {np.sqrt(covariance[0][0]):.2f}"
+                y_mean_sd = f"{mean_y:.2f} ± {np.sqrt(covariance[1][1]):.2f}"
+                component_rows.append((index, x_mean_sd, y_mean_sd, f"{weight:.2f}"))
+                metadata_rows.append({
+                    'source_label': format_export_group_labels(
+                        [index - 1], group, separate_by=separate_by,
+                        category=level, color_by=color_by)[0],
+                    'component': index,
+                    'x_mean_sd': x_mean_sd,
+                    'y_mean_sd': y_mean_sd,
+                    'weight': float(weight),
+                })
                 start = len(fig.data)
                 _plot_gmm_ellipse(fig, mean_x, mean_y, covariance, color_map[group], group, index,
                                   scatter_cls=point_cls)
@@ -530,8 +544,15 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                         trace.meta = dict(distribution_role='fit', category=level)
             if component_rows:
                 tables.append(gmm_component_table(group, component_rows, [selected_x, selected_y]))
+                component_tables.append({
+                    'category': level,
+                    'group': group,
+                    'features': [selected_x, selected_y],
+                    'rows': metadata_rows,
+                })
             for notice in result['notices']:
                 lines.append(f"\n**{label}:** {notice}")
+        statistics_summaries[level] = '\n'.join(lines)
         if tables:
             lines.append(gmm_tables_html(tables))
         summaries[level] = '\n'.join(lines)
@@ -557,7 +578,9 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
             xaxis=dict(range=x_range), yaxis=dict(range=y_range),
             uirevision=f'distribution:{separate_by}:{selected_x}:{selected_y}:{bool(options.get("log_x"))}:{bool(options.get("log_y"))}',
             meta=dict(distribution_categories=[level for level, _ in panels],
-                      distribution_separate_by=separate_by, distribution_summaries=summaries))
+                      distribution_separate_by=separate_by, distribution_summaries=summaries,
+                      distribution_statistics_summaries=statistics_summaries,
+                      gmm_component_tables=component_tables))
         # Keep density amplitudes comparable as well as measurement coordinates.
         if marginal == 'gaussian fit':
             for marginal_axis, coordinate in [('yaxis2', 'y'), ('xaxis2', 'x')]:
@@ -569,6 +592,9 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         select_distribution_category(fig)
         table_md = fig.layout.meta['distribution_summary']
     else:
+        meta = fig.layout.meta if isinstance(fig.layout.meta, dict) else {}
+        fig.update_layout(meta={**meta, 'gmm_component_tables': component_tables,
+                                'distribution_statistics': statistics_summaries[None]})
         table_md = summaries[None]
     return fig, table_md, result_df
 
