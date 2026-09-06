@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -21,7 +22,7 @@ def test_user_table_branch_lists_the_fov_column_as_categorical(monkeypatch):
     monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
     monkeypatch.setattr(acw, "_get_profile_config",
                         _profile(categorical_cols=["treatment"], fov_name_col="well"))
-    assert "well" in acw.get_categorical_cols_analysis(use_data_extraction=False)
+    assert acw.get_categorical_cols_analysis(use_data_extraction=False) == ["treatment", "well"]
 
 
 def test_a_blank_fov_name_is_not_added_as_a_categorical(monkeypatch):
@@ -30,7 +31,7 @@ def test_a_blank_fov_name_is_not_added_as_a_categorical(monkeypatch):
     monkeypatch.setattr(acw, "_get_profile_config",
                         _profile(categorical_cols=["treatment"], fov_name_col=""))
     cats = acw.get_categorical_cols_analysis(use_data_extraction=False)
-    assert "" not in cats
+    assert cats == ["treatment"]
 
 
 def test_a_repeat_in_the_stored_list_is_returned_once(monkeypatch):
@@ -40,7 +41,22 @@ def test_a_repeat_in_the_stored_list_is_returned_once(monkeypatch):
                         _profile(categorical_cols=["treatment", "well", "treatment"],
                                  fov_name_col="well"))
     cats = acw.get_categorical_cols_analysis(use_data_extraction=False)
-    assert cats == ["treatment", "well", *acw._PLATFORM_CATEGORICALS]
+    assert cats == ["treatment", "well"]
+
+
+@pytest.mark.parametrize("use_data_extraction", [True, False])
+def test_only_explicit_categories_and_fov_are_included(monkeypatch, use_data_extraction):
+    """Export headers have no special role, but explicit category choices are kept."""
+    configured = ["treatment", "GMM_group", "Cell state α", "well", "treatment"]
+    monkeypatch.setattr(acw, "get_categorical_cols", lambda: configured)
+    monkeypatch.setattr(acw, "get_fov_name_col", lambda: "well")
+    monkeypatch.setattr(acw, "_get_current_profile", lambda: "p")
+    monkeypatch.setattr(acw, "_get_profile_config",
+                        _profile(categorical_cols=configured, fov_name_col="well"))
+
+    assert acw.get_categorical_cols_analysis(use_data_extraction) == [
+        "treatment", "GMM_group", "Cell state α", "well"]
+    assert configured == ["treatment", "GMM_group", "Cell state α", "well", "treatment"]
 
 
 def test_reading_the_categoricals_does_not_write_to_the_profile(monkeypatch):

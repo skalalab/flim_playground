@@ -29,10 +29,6 @@ MANAGE_LABEL = "Manage saved profiles"
 # Reserved chooser label representing no saved profile.
 AUTO_DETECT = "Auto-detect — start a new profile"
 
-# Clustering plots add these categorical columns. Uploaded columns with the same
-# names retain their reviewed roles in working_copy_arguments.
-_PLATFORM_CATEGORICALS = ("GMM_group", "2D_GMM_group", "k_means_cluster")
-
 
 def _dedup(names):
     """The names in order, first occurrence kept, blanks dropped."""
@@ -126,21 +122,20 @@ def get_fov_name_col_analysis(use_data_extraction=True):
     return get_fov_name_col() if use_data_extraction else ""
 
 def get_categorical_cols_analysis(use_data_extraction=True):
+    """Return configured categories and FOV, without reserving export column names."""
     if use_data_extraction:
         data_extraction_categorical_cols = get_categorical_cols()
         fov_name_col = get_fov_name_col()
         # Free-text settings may repeat the FOV name. Keep each column once so
         # downstream df[name] access returns a Series.
-        return _dedup(data_extraction_categorical_cols + [fov_name_col]
-                      + list(_PLATFORM_CATEGORICALS))
+        return _dedup(data_extraction_categorical_cols + [fov_name_col])
     current_profile = _get_current_profile()
     profile_cfg = _get_profile_config(current_profile)
 
     # Include a stored fov_name_col as categorical for compatibility. Build a new
     # list, removing repeated and blank names without mutating profile settings.
     return _dedup(list(profile_cfg.get("categorical_cols") or [])
-                  + [profile_cfg.get("fov_name_col") or ""]
-                  + list(_PLATFORM_CATEGORICALS))
+                  + [profile_cfg.get("fov_name_col") or ""])
 
 def get_all_feature_groups():
     current_profile = _get_current_profile()
@@ -212,14 +207,8 @@ def working_copy_arguments(roles, groups, group_names=None):
     profile_cfg = {}
     apply_column_roles(profile_cfg, roles)
     apply_column_groups(profile_cfg, groups, group_names=group_names)
-    categorical_cols = list(profile_cfg["categorical_cols"])
-    # Reserve plot-generated categoricals only for names absent from the file.
-    # A file column with the same name must retain its reviewed role.
-    for col in _PLATFORM_CATEGORICALS:
-        if col not in categorical_cols and col not in roles:
-            categorical_cols.append(col)
     return {
-        "categorical_cols": categorical_cols,
+        "categorical_cols": profile_cfg["categorical_cols"],
         "unique_row_id_col": profile_cfg["unique_row_id_col"],
         "ignored_cols": profile_cfg["ignored_cols"],
         "feature_groups": profile_cfg["feature_groups"],
@@ -359,5 +348,3 @@ def all_profile_columns():
 def profile_known_columns(profile_cfg=None):
     """Return all known columns, including ignored ones so the same file can match."""
     return set(profile_column_roles(profile_cfg))
-
-

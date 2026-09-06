@@ -10,7 +10,7 @@ _SETTING_PREFIXES = (
     "vis_encoding_", "num_filter_", "add_another_num_filter_",
     "hist_bin_width_", "fit_gmm_", "fit_regression_", "log_x_", "log_y_",
     "add_boxplot_", "comparison_overlay_", "connect_means_", "marginal_plot_type_selector_",
-    "k_means_phasor_", "k_means_clusters_phasor_", "glass_delta_thresh_",
+    "glass_delta_thresh_",
     "cohens_d_thresh_", "clf_", "sort_cmp_",
 )
 
@@ -20,6 +20,21 @@ def analysis_control_keys(state):
     return tuple(key for key in state if (
         key in _SETTING_KEYS or key.startswith(_SETTING_PREFIXES)
         or key.endswith("_multiselect")))
+
+
+def derived_fit_control_keys(state):
+    """Retain inputs to exported fits when switching analysis methods.
+
+    Unlike the review-time snapshot, this runs on every page visit. Match only
+    fit and feature controls so review buttons and dataset filters stay outside
+    this module-switch lifecycle.
+    """
+    prefixes = (
+        "_menu_", "2d_x_menu_", "2d_y_menu_", "analysis_control_phasor_",
+        "fit_gmm_", "log_x_hist_", "log_x_2d_", "log_y_2d_",
+    )
+    keys = {"analysis_control_apply_gmm", "intersection_threshold"}
+    return tuple(key for key in state if key in keys or key.startswith(prefixes))
 
 
 def preserve_analysis_controls(state, keys):

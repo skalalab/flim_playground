@@ -1,4 +1,4 @@
-"""Phasor category views share coordinates/encodings and fit local populations."""
+"""Phasor category views share coordinates, encodings, and row identities."""
 import numpy as np
 import pandas as pd
 import pytest
@@ -97,47 +97,13 @@ def test_background_always_shows_only_other_categories(settings):
     assert fig.layout.meta["phasor_category"] == "Day 2"
 
 
-def test_kmeans_fits_each_panel_color_group_and_qualifies_assignments(settings, monkeypatch):
-    monkeypatch.setattr(st, "checkbox", lambda *a, **k: True)
-    calls = []
-    real_fit = bivar.phasor_kmeans
-    def capture(coords, n_clusters):
-        calls.append(coords.copy())
-        return real_fit(coords, n_clusters)
-    monkeypatch.setattr(bivar, "phasor_kmeans", capture)
-    fig, result = plot(frame(), separate_by="day")
-    assert len(calls) == 5
-    for (day, group), rows in result.groupby([result.day.fillna("N/A"), "treatment"], sort=False):
-        expected = rows[[G, S]].to_numpy()
-        assert any(np.array_equal(expected, call) for call in calls)
-        labels, _ = real_fit(expected, 2)
-        assert rows.k_means_cluster.tolist() == [f"day={day} | {group}_group{i + 1}" for i in labels]
-    assert len([t for t in fig.data if t.name == "Centroids"]) == 5
-    assert len([t for t in fig.data if t.name == "Centroids" and t.visible]) == 2
-    fig.update_xaxes(range=[.2,.7])
-    bivar.select_phasor_category(fig, "N/A")
-    assert len(calls) == 5  # View changes do not recompute any models.
-    assert len([t for t in fig.data if t.name == "Centroids" and t.visible]) == 1
-    assert list(fig.layout.xaxis.range) == [.2,.7]
-
-
-def test_small_and_duplicate_groups_keep_points_without_clustering(settings, monkeypatch):
-    monkeypatch.setattr(st, "checkbox", lambda *a, **k: True)
-    notices = []
-    monkeypatch.setattr(st, "warning", notices.append)
+def test_small_and_duplicate_groups_keep_points(settings):
     data = frame().iloc[:3].copy()
     data[[G, S]] = [.3, .2]
     fig, result = plot(data, separate_by="day")
     assert sum(len(t.text) for t in points(fig, "x")) == 3
-    assert result.k_means_cluster.isna().all()
-    assert len(notices) == 1 and "Day 10" in notices[0] and "ctrl" in notices[0]
+    pd.testing.assert_frame_equal(result, data)
     assert not [t for t in fig.data if t.name == "Centroids"]
-
-
-def test_collinear_hulls_are_finite_and_closed_by_the_renderer():
-    polygon = bivar._cluster_hull_polygon(np.array([[.1,.1], [.2,.2], [.3,.3]]))
-    assert polygon.shape[1] == 2
-    assert np.isfinite(polygon).all()
 
 
 @pytest.mark.parametrize("separate", [["day"], "absent", "treatment"])
@@ -163,12 +129,11 @@ def test_counts_and_legend_follow_active_category(settings):
     assert not any("drug" in name for name in names)
 
 
-def test_overlays_keep_the_webgl_renderer(settings, monkeypatch):
-    monkeypatch.setattr(st, "checkbox", lambda *a, **k: True)
+def test_category_points_keep_the_webgl_renderer(settings, monkeypatch):
     monkeypatch.setattr(helpers, "WEBGL_POINT_THRESHOLD", 0)
     fig, _ = plot(frame(), separate_by="day")
-    overlays = [t for t in fig.data if t.name == "Centroids" or "boundary" in (t.name or "")]
-    assert overlays and all(t.type == "scattergl" for t in overlays)
+    traces = points(fig) + context(fig)
+    assert traces and all(t.type == "scattergl" for t in traces)
 
 
 @pytest.mark.parametrize("color_by", [None, [], "treatment"])
@@ -198,13 +163,13 @@ def test_styling_keeps_context_faint_and_legend_on_right(settings):
     assert styled.layout.legend.x == 1.02 and styled.layout.legend.y == 1
 
 
-def test_explicit_clustering_params_allow_page_to_render_controls_separately(settings, monkeypatch):
+def test_phasor_plot_does_not_render_analysis_controls(settings, monkeypatch):
     def unexpected(*args, **kwargs):
-        raise AssertionError("Clustering widgets must not render while building a prepared figure")
+        raise AssertionError("Analysis widgets must not render while building a prepared figure")
     monkeypatch.setattr(st, "checkbox", unexpected)
-    fig, result = plot(frame(), separate_by="day", k_means=True, k_means_clusters=2)
-    assert result.k_means_cluster.notna().all()
-    assert any(t.name == "Centroids" and t.visible for t in fig.data)
+    fig, result = plot(frame(), separate_by="day")
+    assert "k_means_cluster" not in result
+    assert not any(t.name == "Centroids" for t in fig.data)
 
 
 def test_empty_coordinates_raise_clear_error(settings):
@@ -212,3 +177,39 @@ def test_empty_coordinates_raise_clear_error(settings):
     data[G] = np.nan
     with pytest.raises(ValueError, match="No complete G/S"):
         plot(data, separate_by="day")
+
+
+@pytest.mark.parametrize("separate_by", [None, "day"])
+@pytest.mark.parametrize("color_by", [[], ["treatment"]])
+def test_phasor_hover_preserves_row_identity_fov_and_previous_annotations(settings, separate_by, color_by):
+    data = frame()
+    data.index = [0] * len(data)
+    data.id = "repeated ID"
+    data["fov"] = [f"image{i}" for i in range(len(data))]
+    data["treatment"] = data.treatment.replace("ctrl", "ctrl <A>")
+    data["k_means_cluster"] = "previous labels"
+    fig, result = bivar.phasor_plot(data, "id", "fov", "ch1", color_by=color_by,
+                                   separate_by=separate_by, row_id_label="Cell ID")
+    assert result.k_means_cluster.eq("previous labels").all()
+    assert "k_means_cluster_2" not in result
+    pd.testing.assert_frame_equal(result, data.dropna(subset=[G, S]))
+    rows = {(row[G], row[S]): row for _, row in result.iterrows()}
+    categories = fig.layout.meta["phasor_categories"] if separate_by else [None]
+    for category in categories:
+        bivar.select_phasor_category(fig, category)
+        for trace in points(fig):
+            assert "<b>Cell ID:</b> %{text}" in trace.hovertemplate
+            assert "<b>fov:</b> %{customdata}" in trace.hovertemplate
+            assert "K-Means" not in trace.hovertemplate
+            for x, y, identity, fov in zip(trace.x, trace.y, trace.text, trace.customdata):
+                row = rows[(x, y)]
+                assert (identity, fov) == (row.id, row.fov)
+
+
+@pytest.mark.parametrize("separate_by", [None, "day"])
+def test_category_named_centroids_keeps_point_styling(settings, separate_by):
+    data = frame()
+    data.treatment = data.treatment.replace("ctrl", "Centroids")
+    fig, _ = plot(data, separate_by=separate_by)
+    helpers.apply_plot_styling(fig, 30, 24, 20)
+    assert all(t.marker.size == 30 for t in points(fig))

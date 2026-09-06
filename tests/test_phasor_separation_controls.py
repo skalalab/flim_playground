@@ -111,6 +111,9 @@ def test_analysis_page_passes_separator_to_plot_and_export(monkeypatch):
     at = AppTest.from_file(page).run(timeout=90)
     at.radio[0].set_value("### **Bivariate**").run(timeout=90)
     at.radio[1].set_value("Phasor Plot")
+    # Settings from an older session must not revive the removed analysis.
+    at.session_state["k_means_phasor_ch1"] = True
+    at.session_state["k_means_clusters_phasor_ch1"] = 3
     at.session_state[KEY] = "day"
     at.session_state["vis_encoding_color_by"] = ["treatment"]
     at.run(timeout=90)
@@ -122,18 +125,18 @@ def test_analysis_page_passes_separator_to_plot_and_export(monkeypatch):
     assert "day" not in at.multiselect(key="vis_encoding_color_by").options
     elements = list(at)
     keys = [getattr(el, "key", None) for el in elements]
-    assert keys.index(KEY) < keys.index(CATEGORY_KEY) < keys.index("k_means_phasor_ch1")
     chart_index = next(i for i, element in enumerate(elements) if element.type == "plotly_chart")
-    assert keys.index("k_means_phasor_ch1") < chart_index
+    assert keys.index(KEY) < keys.index(CATEGORY_KEY) < chart_index
+    assert not any(w.label == "Perform K-Means clustering" for w in at.checkbox)
+    assert not any(w.label == "Number of clusters" for w in at.number_input)
+    assert not any(w.label == "Exported column name" for w in at.text_input)
+    assert len(at.get("download_button")) == 1  # The ordinary Python plot export.
+    assert "k_means" not in seen["plot"]
+    assert "k_means" not in seen["export"]["method_params"]
     at.button_group(key=CATEGORY_KEY).set_value("D2")
     at.run(timeout=90)
     assert not at.exception, [e.value for e in at.exception]
     assert seen["export"]["method_params"]["phasor_category"] == "D2"
-    at.checkbox(key="k_means_phasor_ch1").check()
-    at.run(timeout=90)
-    assert not at.exception, [e.value for e in at.exception]
-    assert seen["plot"]["k_means"] is True
-    assert seen["export"]["method_params"]["k_means"] is True
 
 
 def category_app():

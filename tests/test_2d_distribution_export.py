@@ -232,7 +232,7 @@ def test_gmm_csv_contains_all_categories_and_qualified_labels_with_only_local_el
     saved = pd.read_csv(tmp_path / "2D_gmm_data.csv", keep_default_na=False)
     assert len(saved) == (36 if collapse else 72)
     assert set(saved["day"]) == {"Day 2", "Day 10", "N/A"}
-    assert all(label.startswith(f"day={day} | {treatment}_group")
+    assert all(label.startswith(f"{day}::{treatment}_group")
                for day, treatment, label in saved[["day", "treatment", "2D_GMM_group"]].itertuples(index=False))
     assert not any(column.startswith("_color_group") for column in saved)
     assert not any(column.startswith("__distribution") for column in saved)

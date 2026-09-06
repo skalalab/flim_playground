@@ -205,6 +205,7 @@ def generate_script(state: dict) -> str:
         _build_config_section(state),
         _build_data_loading(state),
         _build_filters(state),
+        _build_derived_export_helpers(state),
     ]
 
     builders = {
@@ -262,11 +263,6 @@ def _build_preamble(state: dict) -> str:
         if mp.get("fit_gmm_2d"):
             extra += ["from sklearn.mixture import GaussianMixture",
                       "from matplotlib.patches import Ellipse", "from scipy.stats import chi2"]
-    elif method == "Phasor Plot":
-        if mp.get("k_means"):
-            extra += ["from sklearn.cluster import KMeans",
-                      "from sklearn.preprocessing import StandardScaler",
-                      "from scipy.spatial import ConvexHull"]
     elif method == "Dimension Reduction":
         extra.append("from sklearn.preprocessing import StandardScaler")
         dr = mp.get("dr_method", "PCA")
@@ -343,6 +339,11 @@ def _build_config_section(state: dict) -> str:
     else:
         lines.append("ANALYSIS_COLUMNS = None  # not captured — keep every column")
 
+    if method in ("Feature Histogram", "2D Feature Distribution"):
+        lines.append(
+            f"DERIVED_EXPORT = {state.get('derived_export')!r}  # Optional column_name and value_names for derived CSV labels"
+        )
+
     if method in ("Feature Comparison", "Feature Histogram"):
         lines.append(f"SELECTED_VAR = {mp.get('selected_var')!r}")
     if method in ("Feature Comparison", "2D Feature Distribution") and mp.get("collapse_by"):
@@ -393,10 +394,6 @@ def _build_config_section(state: dict) -> str:
         lines.append(f"PHASOR_HARMONIC = {mp.get('phasor_harmonic', 1)!r}")
         lines.append(f"PHASOR_F = {mp.get('phasor_f', 0.08)!r}")
         lines.append(f"PHASOR_CATEGORY = {mp.get('phasor_category')!r}")
-        lines.append(f"K_MEANS = {mp.get('k_means', False)!r}")
-        lines.append(f"K_MEANS_CLUSTERS = {mp.get('k_means_clusters', 2)!r}")
-        if mp.get("k_means"):
-            lines.append("SAVE_DERIVED_DATA = False  # True → also write kmeans_clustered_data.csv (the app's download button)")
     elif method == "Dimension Reduction":
         lines.append(f"SELECTED_FEATURES = {mp.get('selected_features', [])!r}")
         lines.append(f"DR_METHOD = {mp.get('dr_method', 'PCA')!r}")
@@ -503,6 +500,20 @@ def _build_filters(state: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _build_derived_export_helpers(state: dict) -> str:
+    """Share generated labels, name validation and copying with the app."""
+    if state["method"] not in ("Feature Histogram", "2D Feature Distribution"):
+        return ""
+    from src.export_labels import (
+        apply_export_labels, available_label_column, format_export_group_labels,
+        normalize_export_labels,
+    )
+
+    return ("\n# Derived CSV labels (extracted from FLIM Playground source)\n"
+            + _extract_source(format_export_group_labels, available_label_column, normalize_export_labels,
+                              apply_export_labels))
+
+
 def _build_visual_encoding(state: dict, overlap_point: bool = True,
                            group_column_expr: str = '"_color_group"') -> str:
     """Build visual encoding section by extracting real functions."""
@@ -605,11 +616,12 @@ def _build_feature_histogram(state: dict) -> str:
 # ============================================================
 # Feature Histogram
 # ============================================================
+DERIVED_LABEL_COLUMN = available_label_column(df.columns, "GMM_group")
 histogram_data = prepare_histogram(
     df, SELECTED_VAR, COLOR_BY, SEPARATE_BY, bin_width=BIN_WIDTH,
     apply_gmm=APPLY_GMM, max_components=GMM_MAX_COMPONENTS,
     min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD,
-    intersection_threshold=INTERSECTION_THRESHOLD)
+    intersection_threshold=INTERSECTION_THRESHOLD, label_column=DERIVED_LABEL_COLUMN)
 df = histogram_data["df"]
 color_groups = histogram_data["color_groups"]
 color_map = create_color_map(color_groups, COLORMAP, alpha=1.0)
@@ -713,7 +725,8 @@ else:
     ax.set_title(title, fontsize=AXIS_LABEL_SIZE)
 
 if APPLY_GMM and SAVE_DERIVED_DATA:
-    df.to_csv("gmm_grouped_data.csv", index=False)
+    apply_export_labels(df, DERIVED_LABEL_COLUMN, DERIVED_EXPORT).to_csv(
+        "gmm_grouped_data.csv", index=False)
     print("GMM grouped data saved to gmm_grouped_data.csv")
 """)
 
@@ -1223,11 +1236,15 @@ def _build_2d_distribution(state: dict) -> str:
     from src.vis.helpers import _find_best_gmm
     gmm_src = _extract_source(_find_best_gmm) if state.get("method_params", {}).get("fit_gmm_2d") else ""
 
-    return _build_collapse(state) + _build_visual_encoding(state, overlap_point=False) + f"""
+    group_preparation = '\nFD_GROUP_COLUMN = available_label_column(df.columns, "_color_group")\n'
+    return _build_collapse(state) + group_preparation + _build_visual_encoding(
+        state, overlap_point=False, group_column_expr="FD_GROUP_COLUMN"
+    ) + f"""
 # ============================================================
 # 2D Feature Distribution
 # ============================================================
 {gmm_src}
+DERIVED_LABEL_COLUMN = available_label_column(df.columns, "2D_GMM_group")
 
 # Create figure with marginal axes
 if MARGINAL_PLOT_TYPE != 'none':
@@ -1249,7 +1266,7 @@ else:
 
 legend_entries = set()
 for g in color_groups:
-    gdf = df[df["_color_group"] == g]
+    gdf = df[df[FD_GROUP_COLUMN] == g]
     # len(gdf) counts the rows the app's point collector holds for this colour group
     # (helpers.py add_interleaved_points_trace: len(points_by_color[g])). Both sides
     # count after the same X/Y NaN filter — data_analysis.py applies it before calling
@@ -1303,7 +1320,7 @@ for g in color_groups:
 # Pearson r + p is reported per color group unconditionally, matching the app's
 # always-on correlation readout; the regression line + R² stay gated.
 for g in color_groups:
-    gdf = df[df["_color_group"] == g].dropna(subset=[SELECTED_X, SELECTED_Y])
+    gdf = df[df[FD_GROUP_COLUMN] == g].dropna(subset=[SELECTED_X, SELECTED_Y])
     # Skip constant-x or constant-y groups, matching the app's nunique<2 guard.
     if gdf[SELECTED_X].nunique() < 2 or gdf[SELECTED_Y].nunique() < 2:
         continue
@@ -1324,7 +1341,7 @@ if FIT_GMM_2D:
     from scipy.stats import chi2
 
     for g in color_groups:
-        gdf = df[df["_color_group"] == g].dropna(subset=[SELECTED_X, SELECTED_Y])
+        gdf = df[df[FD_GROUP_COLUMN] == g].dropna(subset=[SELECTED_X, SELECTED_Y])
         # Match the app's minimum sample count and non-constant axes.
         if len(gdf) < 2 or gdf[SELECTED_X].nunique() < 2 or gdf[SELECTED_Y].nunique() < 2:
             continue
@@ -1350,10 +1367,14 @@ if FIT_GMM_2D:
 
             # per-point component membership, as the app assigns it
             subpopulation_labels = best_gmm.predict(X_gmm)
-            df.loc[gdf.index, "2D_GMM_group"] = [f"{{g}}_group{{label + 1}}" for label in subpopulation_labels]
+            if DERIVED_LABEL_COLUMN not in df.columns:
+                df[DERIVED_LABEL_COLUMN] = None
+            df.loc[gdf.index, DERIVED_LABEL_COLUMN] = format_export_group_labels(subpopulation_labels, g)
 
     if SAVE_DERIVED_DATA:
-        df.drop(columns=["_color_group"]).to_csv("2D_gmm_data.csv", index=False)
+        apply_export_labels(
+            df.drop(columns=[FD_GROUP_COLUMN]), DERIVED_LABEL_COLUMN, DERIVED_EXPORT
+        ).to_csv("2D_gmm_data.csv", index=False)
         print("2D GMM data saved to 2D_gmm_data.csv")
 
 ax_main.set_xlabel(f"log₁₀({{format_feature_label(SELECTED_X, engine='mpl')}})" if LOG_X else format_feature_label(SELECTED_X, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
@@ -1382,6 +1403,7 @@ def _build_separated_2d_distribution(state: dict) -> str:
     preparation = """
 if df.empty:
     raise ValueError("No complete X/Y observations remain for 2D Feature Distribution.")
+DERIVED_LABEL_COLUMN = available_label_column(df.columns, "2D_GMM_group")
 # Preserve retained metadata for CSV; normalize only the rendering copy.
 distribution_data = df.copy()
 for column in dict.fromkeys([*COLOR_BY, SHAPE_BY, OPACITY_BY]):
@@ -1411,7 +1433,7 @@ distribution_results, distribution_assignments = distribution_fit_groups(
     df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups,
     distribution_panels, separate_by=SEPARATE_BY, fit_regression=FIT_REGRESSION,
     fit_gmm=FIT_GMM_2D, max_components=GMM_MAX_COMPONENTS,
-    min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD,
+    min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD, color_by=COLOR_BY,
 )
 x_range, y_range = distribution_ranges(
     df, SELECTED_X, SELECTED_Y, distribution_results,
@@ -1440,10 +1462,12 @@ for result in distribution_results:
         result["marginals"][axis] = marginal
 
 if FIT_GMM_2D:
-    df["2D_GMM_group"] = distribution_assignments
-    distribution_data["2D_GMM_group"] = distribution_assignments
+    df[DERIVED_LABEL_COLUMN] = distribution_assignments
+    distribution_data[DERIVED_LABEL_COLUMN] = distribution_assignments
     if SAVE_DERIVED_DATA:
-        distribution_data.to_csv("2D_gmm_data.csv", index=False)
+        apply_export_labels(
+            distribution_data, DERIVED_LABEL_COLUMN, DERIVED_EXPORT
+        ).to_csv("2D_gmm_data.csv", index=False)
         print("2D GMM data saved to 2D_gmm_data.csv")
 
 fig = plt.figure(figsize=(10, 10))
@@ -1557,30 +1581,23 @@ ax_main.legend(fontsize=LEGEND_SIZE, loc='upper left', bbox_to_anchor=(1.18, 1),
 
 
 def _build_phasor_plot(state: dict) -> str:
+    from src.export_labels import available_label_column
+
+    grouping_helper = ("\n# Grouping helper (extracted from FLIM Playground source)\n"
+                       + _extract_source(available_label_column))
     if state.get("separate_by") is not None:
-        return _build_separated_phasor_plot(state)
-    return _build_unseparated_phasor_plot(state)
+        return grouping_helper + _build_separated_phasor_plot(state)
+    return grouping_helper + _build_unseparated_phasor_plot(state)
 
 
 def _build_separated_phasor_plot(state: dict) -> str:
     """Build one full-size Phasor category view with gray context points."""
     from src.vis.bivar import category_panel_rows, _phasor_panel_rows
 
-    helper_functions = [category_panel_rows, _phasor_panel_rows]
-    if state.get("method_params", {}).get("k_means"):
-        from src.vis.bivar import (
-            _cluster_hull_polygon,
-            _phasor_fit_groups,
-            phasor_kmeans,
-        )
-
-        helper_functions.extend(
-            [phasor_kmeans, _phasor_fit_groups, _cluster_hull_polygon]
-        )
-    helper_src = _extract_source(*helper_functions)
+    helper_src = _extract_source(category_panel_rows, _phasor_panel_rows)
 
     # Coordinate filtering deliberately precedes visual-map and panel construction.
-    # This keeps every grouping, count, and derived-data row scoped to plotted points.
+    # This keeps every grouping and count scoped to plotted points.
     preparation = f"""
 # ============================================================
 # Phasor panel helpers (extracted from FLIM Playground source)
@@ -1593,12 +1610,10 @@ s_col = f"Lifetime fit free_{{PHASOR_CHANNEL}}: S({{harmonic_label}})"
 if g_col not in df.columns or s_col not in df.columns:
     raise SystemExit(f"ERROR: Columns {{g_col}} and/or {{s_col}} not found in data.")
 
-# Panel membership, visual mappings, legend counts, clustering, and the optional
-# CSV all use exactly the observations visible in the Phasor figure.
+# Panel membership, visual mappings, and legend counts all use exactly the
+# observations visible in the Phasor figure.
 df = df[df[g_col].notna() & df[s_col].notna()].copy()
-PHASOR_GROUP_COLUMN = "_color_group"
-while PHASOR_GROUP_COLUMN in df.columns:
-    PHASOR_GROUP_COLUMN += "_"
+PHASOR_GROUP_COLUMN = available_label_column(df.columns, "_color_group")
 """
 
     return preparation + _build_visual_encoding(
@@ -1690,42 +1705,6 @@ for color_group in color_groups:
 
 add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
 
-if K_MEANS:
-    phasor_fits, phasor_assignments, phasor_notices = _phasor_fit_groups(
-        df, g_col, s_col, PHASOR_GROUP_COLUMN, color_groups, phasor_panels,
-        K_MEANS_CLUSTERS, separate_by=SEPARATE_BY,
-    )
-    df["k_means_cluster"] = phasor_assignments
-    for notice in phasor_notices:
-        print(notice)
-
-    for fit in phasor_fits:
-        if fit["panel"] != active_panel_index:
-            continue
-        coords = df.iloc[fit["positions"]][[g_col, s_col]].to_numpy()
-        labels = fit["labels"]
-        centers = fit["centers"]
-        group_color = color_map[fit["color_group"]][:3]
-        for cluster_index in range(K_MEANS_CLUSTERS):
-            cluster_points = coords[labels == cluster_index]
-            if len(cluster_points):
-                polygon = _cluster_hull_polygon(cluster_points)
-                ax.plot(
-                    np.r_[polygon[:, 0], polygon[0, 0]],
-                    np.r_[polygon[:, 1], polygon[0, 1]],
-                    color=group_color, linewidth=1.5, zorder=1,
-                )
-            ax.plot(
-                centers[cluster_index, 0], centers[cluster_index, 1], 'x',
-                color=group_color, markersize=12, markeredgewidth=2, zorder=4,
-            )
-
-    if SAVE_DERIVED_DATA:
-        df.drop(columns=[PHASOR_GROUP_COLUMN]).to_csv(
-            "kmeans_clustered_data.csv", index=False
-        )
-        print("K-Means clustered data saved to kmeans_clustered_data.csv")
-
 ax.set_xlabel("g", fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("s", fontsize=AXIS_LABEL_SIZE)
 ax.set_title(
@@ -1787,16 +1766,10 @@ if category_label is not None:
 
 
 def _build_unseparated_phasor_plot(state: dict) -> str:
-    # Rendering is Matplotlib-specific; the K-Means clustering is extracted from
-    # the app (src/vis/bivar.py) so both run the identical computation.
-    kmeans_src = ""
-    if state.get("method_params", {}).get("k_means"):
-        from src.vis.bivar import _cluster_hull_polygon, phasor_kmeans
-        # Share hull construction, including fallback circles for fewer than three unique points.
-        kmeans_src = ("\n# K-Means clustering and cluster boundaries "
-                      "(extracted from FLIM Playground source)\n"
-                      + _extract_source(phasor_kmeans, _cluster_hull_polygon))
-    return _build_visual_encoding(state) + kmeans_src + """
+    group_preparation = '\nPHASOR_GROUP_COLUMN = available_label_column(df.columns, "_color_group")\n'
+    return group_preparation + _build_visual_encoding(
+        state, group_column_expr="PHASOR_GROUP_COLUMN"
+    ) + """
 # ============================================================
 # Phasor Plot
 # ============================================================
@@ -1842,11 +1815,11 @@ s_col = f"Lifetime fit free_{PHASOR_CHANNEL}: S({harmonic_label})"
 if g_col not in df.columns or s_col not in df.columns:
     print(f"ERROR: Columns {g_col} and/or {s_col} not found in data.")
 else:
-    keep_cols = [g_col, s_col, "_color_group"] + [col for col in (SHAPE_BY, OPACITY_BY) if col]
+    keep_cols = [g_col, s_col, PHASOR_GROUP_COLUMN] + [col for col in (SHAPE_BY, OPACITY_BY) if col]
     plot_df = df[list(dict.fromkeys(keep_cols))].dropna()
 
     for g in color_groups:
-        gdf = plot_df[plot_df["_color_group"] == g]
+        gdf = plot_df[plot_df[PHASOR_GROUP_COLUMN] == g]
         # Counted on plot_df, after the coordinate dropna. Phasor is the one point plot
         # data_analysis.py hands over unfiltered, but the app drops the missing
         # coordinates itself (bivar.py phasor_plot: df[g_feature].notna() &
@@ -1859,38 +1832,6 @@ else:
                                base_alpha=BASE_ALPHA)
 
     add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
-
-    if K_MEANS:
-        from sklearn.cluster import KMeans
-        from sklearn.preprocessing import StandardScaler
-        from scipy.spatial import ConvexHull
-
-        for g in color_groups:
-            gdf = plot_df[plot_df["_color_group"] == g]
-            if len(gdf) < K_MEANS_CLUSTERS:
-                continue
-            coords = gdf[[g_col, s_col]].values
-            labels, centers = phasor_kmeans(coords, K_MEANS_CLUSTERS)
-            # per-point cluster membership, as the app assigns it
-            df.loc[gdf.index, "k_means_cluster"] = [f"{g}_group{label + 1}" for label in labels]
-
-            # All of a group's hulls/centroids share that group's color
-            # (bivar.py _plot_convex_hull passes the group color), not a per-cluster ramp.
-            group_color = color_map[g][:3]
-            for ci in range(K_MEANS_CLUSTERS):
-                cluster_pts = coords[labels == ci]
-                if len(cluster_pts):
-                    # Shared boundary logic; drawn unfilled and closed, matching the
-                    # app's mode="lines" trace in _plot_convex_hull.
-                    poly = _cluster_hull_polygon(cluster_pts)
-                    ax.plot(np.r_[poly[:, 0], poly[0, 0]], np.r_[poly[:, 1], poly[0, 1]],
-                           color=group_color, linewidth=1.5, zorder=1)
-                ax.plot(centers[ci, 0], centers[ci, 1], 'x',
-                       color=group_color, markersize=12, markeredgewidth=2, zorder=4)
-
-        if SAVE_DERIVED_DATA:
-            df.drop(columns=["_color_group"]).to_csv("kmeans_clustered_data.csv", index=False)
-            print("K-Means clustered data saved to kmeans_clustered_data.csv")
 
 ax.set_xlabel("g", fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("s", fontsize=AXIS_LABEL_SIZE)

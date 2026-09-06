@@ -84,3 +84,36 @@ st.session_state.edges = histogram_bin_width_widget(
     assert not at.warning, [w.value for w in at.warning]
     assert 0 < at.number_input[0].value <= 2.
     assert len(at.session_state.edges) > 1
+
+
+def test_preserving_method_settings_excludes_review_buttons_with_matching_profile_names():
+    def app():
+        import streamlit as st
+        from src.widgets.analysis_widget_state import derived_fit_control_keys, preserve_analysis_controls
+        preserve_analysis_controls(st.session_state, derived_fit_control_keys(st.session_state))
+        st.button("Profile", key="review_pick_example_multiselect")
+
+    at = AppTest.from_function(app).run(timeout=30)
+    at.button[0].click().run(timeout=30)
+    assert not at.exception, [e.value for e in at.exception]
+
+
+@pytest.mark.parametrize("category", ["review_status", "_review_group"])
+def test_review_preserves_filters_whose_column_names_start_with_review(category):
+    controls = f'''
+import pandas as pd
+from src.widgets.filter_widgets import filters_widget
+filters_widget(pd.DataFrame({{{category!r}: ["A", "A", "B", "B"],
+                             "treatment": ["control", "drug", "control", "drug"]}}),
+               [{category!r}, "treatment"])
+'''
+    at = AppTest.from_string(_APP.format(controls=controls)).run(timeout=30)
+    at.multiselect(key=f"{category}_multiselect").set_value(["A"]).run(timeout=30)
+    at.multiselect(key="treatment_multiselect").set_value(["drug"]).run(timeout=30)
+    at.checkbox(key="review_visible").check().run(timeout=30)
+    at.run(timeout=30)
+    at.checkbox(key="review_visible").uncheck().run(timeout=30)
+
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.multiselect(key=f"{category}_multiselect").value == ["A"]
+    assert at.multiselect(key="treatment_multiselect").value == ["drug"]

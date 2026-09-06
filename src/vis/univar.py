@@ -62,7 +62,7 @@ def feature_histogram_plot(df, selected_var, color_by=None, colormap="tab10", lo
 
 
 def feature_gmm_plot(df, selected_var, color_by=None, colormap="tab10", log_x=False,
-                     separate_by=None):
+                     separate_by=None, label_column=None):
     """Category-local GMM curves and a positionally labeled analyzed dataframe."""
     max_components, min_weight = gmm_hyperParams_widget()
     intersection = st.checkbox(
@@ -72,7 +72,7 @@ def feature_gmm_plot(df, selected_var, color_by=None, colormap="tab10", log_x=Fa
     prepared = prepare_histogram(
         df, selected_var, color_by, separate_by, apply_gmm=True,
         max_components=max_components, min_weight_threshold=min_weight,
-        intersection_threshold=intersection)
+        intersection_threshold=intersection, label_column=label_column)
     return _histogram_figure(prepared, colormap, log_x), prepared["df"]
 
 

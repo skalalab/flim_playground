@@ -1,7 +1,6 @@
-"""Standalone Phasor exports preserve app faceting and clustering semantics."""
+"""Standalone Phasor exports preserve app grouping and plot semantics."""
 
 import runpy
-from pathlib import Path
 
 import matplotlib
 
@@ -21,7 +20,6 @@ S_COL = "Lifetime fit free_Ch1: S(1st)"
 def _state(
     *,
     separate_by="day",
-    k_means=False,
     show_counts=True,
     phasor_category=None,
 ):
@@ -46,19 +44,14 @@ def _state(
             "selected_channel": "Ch1",
             "phasor_harmonic": 1,
             "phasor_f": 0.08,
-            "k_means": k_means,
-            "k_means_clusters": 2,
             "phasor_category": phasor_category,
         },
     }
 
 
-def _run(tmp_path, monkeypatch, state, df, *, save_derived=False):
+def _run(tmp_path, monkeypatch, state, df):
     df.to_csv(tmp_path / state["csv_filename"], index=False)
     script = generate_script(state)
-    if save_derived:
-        assert "SAVE_DERIVED_DATA = False" in script
-        script = script.replace("SAVE_DERIVED_DATA = False", "SAVE_DERIVED_DATA = True")
     path = tmp_path / "analysis.py"
     path.write_text(script)
     monkeypatch.chdir(tmp_path)
@@ -223,7 +216,47 @@ def test_shared_legend_keeps_equal_text_from_distinct_encoding_channels(
     assert labels.count("B") == 2
 
 
-def _cluster_df():
+@pytest.mark.parametrize("separate_by", [None, "day"])
+@pytest.mark.parametrize("column_name", ["metadata", " \t\n"])
+def test_legacy_clustering_settings_only_export_the_phasor_plot(
+    tmp_path, monkeypatch, separate_by, column_name
+):
+    source = _faceted_df()
+    source["_color_group"] = [f"original-{index}" for index in source.index]
+    source["k_means_cluster"] = [f"previous-{index}" for index in source.index]
+    state = _state(separate_by=separate_by, phasor_category="Day 10")
+    normal = _run(tmp_path, monkeypatch, state, source)
+    state["method_params"].update(k_means=True, k_means_clusters=2)
+    state["derived_export"] = {
+        "column_name": column_name,
+        "value_names": {"ctrl_group1": " \t\n"},
+    }
+
+    legacy = _run(tmp_path, monkeypatch, state, source)
+
+    pd.testing.assert_frame_equal(legacy["df"], normal["df"])
+    pd.testing.assert_series_equal(
+        legacy["df"]["k_means_cluster"],
+        source.loc[legacy["df"].index, "k_means_cluster"],
+    )
+    assert len(legacy["ax"].lines) == len(normal["ax"].lines)
+    assert not any(line.get_marker() == "x" for line in legacy["ax"].lines)
+    assert len(legacy["ax"].collections) == len(normal["ax"].collections)
+    for actual, expected in zip(legacy["ax"].collections, normal["ax"].collections):
+        np.testing.assert_allclose(actual.get_offsets(), expected.get_offsets())
+    assert [path.name for path in tmp_path.glob("*.svg")] == ["phasor_plot.svg"]
+    assert [path.name for path in tmp_path.glob("*.csv")] == [state["csv_filename"]]
+    script = (tmp_path / "analysis.py").read_text()
+    for removed in (
+        "K_MEANS", "KMeans", "phasor_kmeans", "ConvexHull", "StandardScaler",
+        "SAVE_DERIVED_DATA", "DERIVED_EXPORT", "normalize_export_labels",
+        "apply_export_labels", "to_csv(",
+    ):
+        assert removed not in script
+    assert "def available_label_column(" in script
+
+
+def _grouped_df():
     rows = []
     for day, offset in [("Day 1", 0.0), ("Day 2", 0.2)]:
         for treatment, shift in [("ctrl", 0.0), ("drug", 0.04)]:
@@ -241,86 +274,14 @@ def _cluster_df():
                         "metadata": f"meta-{i}",
                     }
                 )
-    rows.extend(
-        [
-            {
-                "cell_id": "missing-g",
-                "image_name": "image",
-                "treatment": "ctrl",
-                "cell_line": "A",
-                "dose": "low",
-                "day": "Day 1",
-                G_COL: np.nan,
-                S_COL: 0.2,
-                "metadata": "keep-original",
-            },
-            {
-                "cell_id": "missing-s",
-                "image_name": "image",
-                "treatment": "drug",
-                "cell_line": "B",
-                "dose": "high",
-                "day": "Day 2",
-                G_COL: 0.4,
-                S_COL: np.nan,
-                "metadata": "keep-original",
-            },
-        ]
-    )
     return pd.DataFrame(rows)
-
-
-def test_separated_kmeans_fits_each_panel_and_color_group_and_exports_retained_rows(
-    tmp_path, monkeypatch
-):
-    source = _cluster_df()
-    ns = _run(
-        tmp_path,
-        monkeypatch,
-        _state(k_means=True, phasor_category="Day 2"),
-        source,
-        save_derived=True,
-    )
-    saved = pd.read_csv(tmp_path / "kmeans_clustered_data.csv")
-
-    assert saved["cell_id"].tolist() == source.iloc[:16]["cell_id"].tolist()
-    assert saved["metadata"].tolist() == source.iloc[:16]["metadata"].tolist()
-    assert saved[G_COL].tolist() == pytest.approx(source.iloc[:16][G_COL].tolist())
-    assert saved[S_COL].tolist() == pytest.approx(source.iloc[:16][S_COL].tolist())
-    assert len(ns["phasor_fits"]) == 4
-    assert all(len(fit["positions"]) == 4 for fit in ns["phasor_fits"])
-    centroids = [line for line in ns["ax"].lines if line.get_marker() == "x"]
-    assert len(centroids) == 4  # two clusters for each of two active color groups
-
-    labels = saved["k_means_cluster"].dropna().astype(str)
-    assert len(labels) == 16
-    assert set(label.split(" | ", 1)[0] for label in labels) == {"day=Day 1", "day=Day 2"}
-    assert all(label.split(" | ", 1)[1].startswith(("ctrl_group", "drug_group")) for label in labels)
-
-
-def test_kmeans_skips_too_few_distinct_pairs_but_retains_rows_and_reports_group(
-    tmp_path, monkeypatch, capsys
-):
-    df = _cluster_df().iloc[:8].copy()
-    mask = df["treatment"] == "drug"
-    df.loc[mask, [G_COL, S_COL]] = [0.5, 0.25]
-
-    _run(tmp_path, monkeypatch, _state(k_means=True), df, save_derived=True)
-    output = capsys.readouterr().out
-    saved = pd.read_csv(tmp_path / "kmeans_clustered_data.csv")
-
-    skipped = saved.loc[saved["treatment"] == "drug", "k_means_cluster"]
-    fitted = saved.loc[saved["treatment"] == "ctrl", "k_means_cluster"]
-    assert skipped.isna().all()
-    assert fitted.notna().all()
-    assert "Day 1" in output and "drug" in output and "distinct" in output
 
 
 def test_separator_named_like_internal_color_column_is_preserved(
     tmp_path, monkeypatch
 ):
-    source = _cluster_df().iloc[:16].rename(columns={"day": "_color_group"})
-    state = _state(separate_by="_color_group", k_means=True)
+    source = _grouped_df().rename(columns={"day": "_color_group"})
+    state = _state(separate_by="_color_group")
     state["categorical_cols"] = [
         "treatment",
         "cell_line",
@@ -328,12 +289,11 @@ def test_separator_named_like_internal_color_column_is_preserved(
         "_color_group",
     ]
 
-    ns = _run(tmp_path, monkeypatch, state, source, save_derived=True)
-    saved = pd.read_csv(tmp_path / "kmeans_clustered_data.csv")
+    ns = _run(tmp_path, monkeypatch, state, source)
 
     assert [panel[0] for panel in ns["phasor_panels"]] == ["Day 1", "Day 2"]
-    assert saved["_color_group"].tolist() == source["_color_group"].tolist()
-    assert saved["k_means_cluster"].str.startswith("_color_group=Day ").all()
+    pd.testing.assert_frame_equal(ns["df"][source.columns], source)
+    assert ns["PHASOR_GROUP_COLUMN"] != "_color_group"
 
 
 @pytest.mark.parametrize(

@@ -48,7 +48,7 @@ Each check runs both sides and compares:
 Two things make this work headlessly:
 
 - **`harness_widgets.patch_streamlit()`** — several plot functions render their own
-  widgets mid-plot (GMM hyperparameters, the k-means checkbox, the histogram bin width,
+  widgets mid-plot (GMM hyperparameters, the histogram bin width,
   the 2D marginal type). Outside `streamlit run` those return `None`, which would make the
   app path diverge for reasons unrelated to parity. The patch returns each widget's *own*
   default (`value=` / `options[index]`), which is the state the app is in right after
@@ -57,13 +57,13 @@ Two things make this work headlessly:
   app source exactly, e.g. `'Marginal Plot Type'`) to flip one on.
 - **`enable_derived()`** — flips `SAVE_DERIVED_DATA = False` in the generated script so it
   writes the CSV that the app offers through a download button, giving a per-cell
-  comparison (`GMM_group`, `k_means_cluster`) instead of just pixels.
+  comparison (`GMM_group`, `2D_GMM_group`) instead of just pixels.
 
 ## What is covered
 
 | Harness | Checks |
 |---|---|
-| `parity_phasor` | k-means label per cell, hull polygons, centroids, harmonic-scaled lifetime markers, frequency annotation, title — for harmonics 1 and 2, with and without clustering |
+| `parity_phasor` | harmonic-scaled lifetime markers, frequency annotation, title — for harmonics 1 and 2 |
 | `parity_methods` | histogram bin edges + per-group counts; `GMM_group` per cell on both the intersection and hard-assignment paths; feature-comparison group counts/y-values/jitter (uncollapsed and collapsed), x positions, tick labels, `separate_by` section headers and dividers, effect-size defaults and title; 2D scatter and marginals for all three marginal types; PCA and UMAP embeddings; the `ANALYSIS_COLUMNS` prune |
 | `parity_classify` | identical splits, predictions and metrics for Random Forest and threshold-tuned Logistic Regression |
 | `parity_controls` | every control on the page, each option in turn — see below |
@@ -127,7 +127,7 @@ stays quick:
   absent on purpose — it shares the picker with subcolor, so the two cannot both be on
 - **2D** — `log_x`, `log_y`, all three marginal types, regression line, 2D GMM, its two
   hyperparameters, all at once
-- **Phasor** — harmonics 1 and 2, laser rate, k-means at k=2 and k=5, combined with shape
+- **Phasor** — harmonics 1 and 2, laser rate, combined with shape
 - **Dimension Reduction** — PCA, UMAP (default and tuned), t-SNE (default and tuned),
   shape+opacity
 - **Classification** — all four classifiers, train split, under/oversampling, class
@@ -179,20 +179,18 @@ Resolved this way already:
   Any other string makes the export draw no marginal and look like a parity bug.
 - Matplotlib's `violinplot` emits ~5 artists per violin; only the `PolyCollection` bodies
   correspond to the app's traces.
-- The phasor semicircle is drawn black at `linewidth=1.5`, the same as the cluster hulls —
-  filter it out by colour before comparing hull sets.
 - Significance brackets are vertical line shapes in `fig.layout.shapes`, so a
   `separate_by` divider cannot be found by `x0 == x1` alone; match on the dash style.
 - `add_point_legend_traces()` adds shape/opacity legend entries as `x=[None], y=[None]`
   marker traces. The export draws those as empty scatters, so counting them makes the app
   look like it has one extra point per encoding level — `app_point_traces()` drops them.
-- Phasor reference geometry (11 lifetime markers, k-means centroids) is drawn as marker
+- Phasor reference geometry (11 lifetime markers) is drawn as marker
   traces in Plotly but `ax.plot` Line2Ds in Matplotlib, so it never reaches
   `scatter_points()`; exclude those trace names before comparing clouds.
 - Plotly reports colours as `rgba(r, g, b, a)` strings, which `matplotlib.colors.to_hex`
   cannot parse.
 - Controls read from a widget inside the plot function (bin width, GMM hyperparameters,
-  k-means, marginal type, log toggles) must be set on BOTH sides — pass them to
+  marginal type, log toggles) must be set on BOTH sides — pass them to
   `patch_streamlit()` as well as into `method_params`, or the app quietly uses its default
   while the export uses your value.
 - Feature Comparison has no x-axis label (the x axis is categorical), so a font-size

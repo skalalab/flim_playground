@@ -340,8 +340,7 @@ def run_2d(ctrl, tag):
 
 
 def run_phasor(ctrl, tag):
-    patch_streamlit({"Perform K-Means clustering": ctrl.get("k_means", False),
-                     "Number of clusters": ctrl.get("k_means_clusters", 2)})
+    patch_streamlit()
     from src.vis.bivar import phasor_plot
 
     df = _load(ctrl)
@@ -354,9 +353,7 @@ def run_phasor(ctrl, tag):
     state = _state("Phasor Plot", ctrl, {
         "selected_channel": "nadh",
         "phasor_harmonic": ctrl.get("phasor_harmonic", 1),
-        "phasor_f": ctrl.get("phasor_f", 0.08),
-        "k_means": ctrl.get("k_means", False),
-        "k_means_clusters": ctrl.get("k_means_clusters", 2)})
+        "phasor_f": ctrl.get("phasor_f", 0.08)})
     ns, _ = run_export(state, ctrl.get("csv_path", CSV), _wd(tag))
     return fig, ns["ax"], ns, state
 
@@ -411,10 +408,10 @@ def run_clf(ctrl, tag):
 # The control matrix
 # ---------------------------------------------------------------------------
 
-# Phasor reference geometry is drawn as marker traces too: the 11 lifetime markers and
-# the k-means centroids. The export draws both with ax.plot (Line2D), so they never reach
+# Phasor's 11 lifetime markers are drawn as marker traces too.
+# The export draws them with ax.plot (Line2D), so they never reach
 # scatter_points() and would otherwise read as points the app has and the export lacks.
-PHASOR_NON_DATA = ("Lifetime Markers", "Centroids")
+PHASOR_NON_DATA = ("Lifetime Markers",)
 
 
 def case(runner, tag, ctrl, points=True, colors=False, main_axis_only=False,
@@ -711,10 +708,7 @@ def phasor_controls():
         ("phasor: harmonic=1", {"phasor_harmonic": 1}),
         ("phasor: harmonic=2", {"phasor_harmonic": 2}),
         ("phasor: f=0.05", {"phasor_f": 0.05}),
-        ("phasor: kmeans k=2", {"k_means": True, "k_means_clusters": 2}),
-        ("phasor: kmeans k=5", {"k_means": True, "k_means_clusters": 5}),
-        ("phasor: h2+kmeans+shape", {"phasor_harmonic": 2, "k_means": True,
-                                     "k_means_clusters": 3, "shape_by": "dish"}),
+        ("phasor: h2+shape", {"phasor_harmonic": 2, "shape_by": "dish"}),
     ]:
         _fig, ax, _ns, _state = case(run_phasor, tag, ctrl,
                                      exclude_names=PHASOR_NON_DATA)

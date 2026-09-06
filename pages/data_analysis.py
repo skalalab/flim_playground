@@ -8,6 +8,7 @@ import streamlit as st
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.classify import run_classification
 from src.collapse import collapse_rows
+from src.export_labels import EXPORT_METHODS, apply_export_labels, available_label_column
 from src.dataset_io import (
     SUPPORTED_SUFFIXES,
     _render_reject,
@@ -56,7 +57,8 @@ from src.widgets.encoding_state import (
     dropped_channel_note,
 )
 from src.widgets.filter_widgets import filters_widget, selection_key
-from src.widgets.analysis_widget_state import control_default, preserve_analysis_controls
+from src.widgets.export_labels_widgets import export_labels_widget
+from src.widgets.analysis_widget_state import control_default, derived_fit_control_keys, preserve_analysis_controls
 from src.widgets.multiselect_modes import ALL_LABEL, chosen_items
 from src.widgets.review_table_widget import (
     applied_summary,
@@ -77,7 +79,6 @@ from src.widgets.visualization_widgets import (
     get_visual_group_keys,
     histogram_bin_width_key,
     phasor_category_widget,
-    phasor_clustering_widget,
     phasor_params_widget,
     plot_config_widget,
     reorder_x_axis_widget,
@@ -89,8 +90,9 @@ from src.widgets.visualization_widgets import (
 st.set_page_config(layout="wide", page_icon="📊")
 render_top_menu()
 
-# Facet layout remains available through method changes, review and empty filters.
-preserve_analysis_controls(st.session_state, SEPARATION_KEYS)
+# Preserve fit inputs as well as layout when a method hides their widgets.
+# Otherwise a method switch can reset the fit and discard its saved export names.
+preserve_analysis_controls(st.session_state, (*SEPARATION_KEYS, *derived_fit_control_keys(st.session_state)))
 # GMM and other methods hide Bin Width; keep each feature's raw/log choices.
 preserve_analysis_controls(st.session_state, tuple(
     key for key in st.session_state if key.startswith(HISTOGRAM_BIN_WIDTH_PREFIX)))
@@ -262,8 +264,6 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
             "phasor_harmonic": extra_params.get("phasor_harmonic"),
             "phasor_f": extra_params.get("phasor_f"),
             "phasor_category": extra_params.get("phasor_category"),
-            "k_means": st.session_state.get(f"k_means_phasor_{ch}", False) if ch else False,
-            "k_means_clusters": st.session_state.get(f"k_means_clusters_phasor_{ch}", 2) if ch else 2,
         }
     elif method == "Dimension Reduction":
         mp = {
@@ -287,10 +287,12 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
         }
 
     state["method_params"] = mp
+    state["derived_export"] = extra_params.get("derived_export")
+    export_names_valid = extra_params.get("export_names_valid", True)
 
     @st.fragment
     def _render_export_button(state, method):
-        script_text = generate_script(state)
+        script_text = generate_script(state) if export_names_valid else ""
         dataset_name = state["csv_filename"].rsplit(".", 1)[0]
         fname = f"{dataset_name}_{method.lower().replace(' ', '_')}_analysis.py"
         st.download_button(
@@ -299,6 +301,7 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
             file_name=fname,
             mime="text/x-python",
             key=f"export_script_{method}",
+            disabled=not export_names_valid,
         )
 
     _render_export_button(state, method)
@@ -511,6 +514,11 @@ with col2:
                     for _role, _col in _dropped.items():
                         st.caption(dropped_channel_note(_role, collapse_by, _col))
 
+            # Choose the result column after collapse and before fitting so a
+            # previous annotation remains available as an input and in the CSV.
+            label_column = (available_label_column(plot_df.columns, EXPORT_METHODS[method][0])
+                            if method in EXPORT_METHODS else None)
+
             if method in univar_methods and selected_var != "Select":
                 if len(filtered_df) > 0:
                     # Plot the filtered dataframe
@@ -557,7 +565,7 @@ with col2:
                                 plot_df = plot_df.copy()
                                 plot_df[selected_var] = np.log10(plot_df[selected_var] + 1e-6)
                         if apply_gmm:
-                            fig, gmm_df = feature_gmm_plot(plot_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x, separate_by=separate_by)
+                            fig, gmm_df = feature_gmm_plot(plot_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x, separate_by=separate_by, label_column=label_column)
                             data_export_ready = True
                         else:
                             fig = feature_histogram_plot(plot_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x, separate_by=separate_by)
@@ -571,8 +579,9 @@ with col2:
                             selected_x=selected_x, selected_y=selected_y, color_by=color_by,
                             shape_by=shape_by, opacity_by=opacity_by, colormap=st.session_state.plot_colormap,
                             row_id_label=plot_row_id_label, separate_by=separate_by,
-                            analysis_options=_distribution_options(selected_x, selected_y))
-                        data_export_ready = True
+                            analysis_options=_distribution_options(selected_x, selected_y),
+                            label_column=label_column)
+                        data_export_ready = _distribution_options(selected_x, selected_y)["fit_gmm"]
                     else:
                         st.write(f"No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Phasor Plot":
@@ -585,16 +594,13 @@ with col2:
                         elif filtered_df[[g_col, s_col]].dropna().empty:
                             st.info("No complete G/S observations remain after filtering.")
                         else:
-                            fig, kmeans_df = phasor_plot(
+                            fig, _ = phasor_plot(
                                 filtered_df, unique_row_id_col=unique_row_id_col,
                                 fov_name_col=fov_name_col, selected_channel=selected_channel,
                                 color_by=color_by, shape_by=shape_by, opacity_by=opacity_by,
                                 colormap=st.session_state.plot_colormap, f=f,
                                 harmonic=selected_harmonic, row_id_label=row_id_label,
-                                separate_by=separate_by,
-                                k_means=st.session_state.get(f"k_means_phasor_{selected_channel}", False),
-                                k_means_clusters=st.session_state.get(f"k_means_clusters_phasor_{selected_channel}", 2))
-                            data_export_ready = True
+                                separate_by=separate_by)
                     else:
                         st.write("Your data does not contain the required features for phasor plot.")
 
@@ -662,6 +668,27 @@ with col2:
                             _render_classification_results(results)
 
             if fig is not None:
+                if data_export_ready:
+                    export_frame = gmm_df
+                    fit_settings = dict(
+                        max_components=st.session_state.get("fit_gmm_max_components", 3),
+                        min_weight=st.session_state.get("fit_gmm_min_weight_threshold", .1))
+                    if method == "Feature Histogram":
+                        fit_settings.update(log_x=log_x, intersection=st.session_state.get("intersection_threshold", False))
+                    else:
+                        options = _distribution_options(selected_x, selected_y)
+                        # Negative values make 2D skip the requested log transform.
+                        # Describe the scale actually used for these means.
+                        fit_settings.update(
+                            log_x=options["log_x"] and not (plot_df[selected_x] < 0).any(),
+                            log_y=options["log_y"] and not (plot_df[selected_y] < 0).any())
+                    export_context = dict(
+                        dataset=(getattr(uploaded_file, "name", None), getattr(uploaded_file, "file_id", None)),
+                        features=selected_columns, color_by=color_by, separate_by=separate_by,
+                        collapse_by=collapse_by, fit=fit_settings,
+                        categorical_filters=_collect_categorical_filters(categorical_cols, st.session_state.vis_df),
+                        numerical_filters=_collect_numerical_filters())
+
                 # Colormap, group counts and section-header sizes require rebuilding the
                 # figure. Point and legend sizes can be restyled within the fragment.
                 def _plot_build_params():
@@ -669,9 +696,6 @@ with col2:
                         st.session_state.plot_colormap,
                         st.session_state.get("plot_show_group_counts", False),
                         st.session_state.plot_axis_label_size,
-                        (st.session_state.get(f"k_means_phasor_{selected_channel}", False),
-                         st.session_state.get(f"k_means_clusters_phasor_{selected_channel}", 2))
-                        if method == "Phasor Plot" else None,
                         _distribution_options(selected_x, selected_y)
                         if method == "2D Feature Distribution" else None,
                     )
@@ -697,8 +721,6 @@ with col2:
                         phasor_category = phasor_category_widget(
                             fig.layout.meta["phasor_categories"], separate_by)
                         select_phasor_category(fig, phasor_category)
-                    if method == "Phasor Plot":
-                        phasor_clustering_widget(selected_channel)
                     fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
                     if method == "2D Feature Distribution":
                         square_2d_plot(fig, key=f"plot_chart_2d_{method}")
@@ -713,14 +735,17 @@ with col2:
                     if method == "Feature Histogram":
                         render_histogram_summaries(fig)
                     # 1. Data export (if applicable)
+                    derived_export, export_names_valid = None, True
                     if data_export_ready:
-                        # available for download
-                        if method == "2D Feature Distribution" and "2D_GMM_group" in gmm_df.columns:
-                            st.download_button(label="Download 2D GMM data", data=gmm_df.to_csv(index=False), file_name="2D_gmm_data.csv")
-                        elif method == "Feature Histogram" and "GMM_group" in gmm_df.columns:
-                            st.download_button(label="Download GMM Grouped Data", data=gmm_df.to_csv(index=False), file_name="gmm_grouped_data.csv", mime="text/csv", key="gmm_download")
-                        elif method == "Phasor Plot" and "k_means_cluster" in kmeans_df.columns:
-                            st.download_button(label="Download K-Means Clustered Data", data=kmeans_df.to_csv(index=False), file_name="kmeans_clustered_data.csv", mime="text/csv", key="kmeans_download")
+                        derived_export, export_names_valid = export_labels_widget(
+                            export_frame, label_column, method=method, context=export_context)
+                        if label_column in export_frame and export_frame[label_column].notna().any():
+                            _, filename, download_label = EXPORT_METHODS[method]
+                            csv_data = (apply_export_labels(export_frame, label_column, derived_export).to_csv(index=False)
+                                        if export_names_valid else "")
+                            st.download_button(label=download_label, data=csv_data, file_name=filename,
+                                               mime="text/csv", key=f"derived_data_{method}",
+                                               disabled=not export_names_valid)
                     if method == "Feature Comparison":
                         # Widgets for reordering below
                         reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by)
@@ -734,7 +759,7 @@ with col2:
                                            method in ("Dimension Reduction", "Phasor Plot", "2D Feature Distribution") and bool(separate_by)))
 
                     # 3. Export as Python Script
-                    _extra = {}
+                    _extra = {"derived_export": derived_export, "export_names_valid": export_names_valid}
                     if method in univar_methods:
                         _extra["selected_var"] = selected_var
                         if method == "Feature Comparison":

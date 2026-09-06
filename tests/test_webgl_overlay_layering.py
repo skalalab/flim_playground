@@ -27,7 +27,6 @@ OVERLAY_TOGGLES = {
     "Connect means",
     "2D Gaussian Mixture Model",
     "Regression line",
-    "Perform K-Means clustering",
 }
 
 PHASOR_CHANNEL = "nadh"
@@ -165,8 +164,8 @@ def test_two_d_distribution_overlays_use_the_point_renderer(webgl):
     assert all(t.type == "scattergl" for t in ellipses)
 
 
-def test_phasor_kmeans_overlays_use_the_point_renderer(webgl):
-    """The semicircle is drawn BEFORE the points, so only the hulls are at risk."""
+def test_phasor_background_stays_beneath_the_points(webgl):
+    """The semicircle is drawn before the points."""
     fig = _run_phasor(_blobs_df())
 
     assert _svg_overlays_after_points(fig) == []

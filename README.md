@@ -14,9 +14,10 @@ FLIM Playground allows you to extract single-cell features from <span title="can
 
 ## 🎡 Playground Construction News
 
+- 🏷️ **Name exported groups** — Histogram GMM and 2D GMM share an **Export labels** panel above their CSV download. Rename the column and each group using prefilled text fields. The Python script captures the same names, and previous annotations are preserved when exporting again.
 - 📊 **Feature Histogram category panels** — **Separate by** and **Color by** compare individual-unit distributions in stacked rows with shared scales and colors. Count curves and GMM fits use each category’s own observations to explore variability and distribution heterogeneity. Python export reproduces the complete figure and category-qualified GMM labels.
 - 🔬 **2D Feature Distribution category views** — Use **Separate by** to switch between full-size joint distributions with consistent axes and colors. Marginals, correlations, regression, GMM results, and counts follow the selected category. The four encoding controls are **Separate by**, **Color by**, **Collapse by**, and one **Opacity | Shape** picker. Collapse averages complete X/Y observations within each category, color group, and replicate; exports reproduce the same analysis.
-- 🧭 **Phasor category views** — Choose one **Separate by** category, then switch its values directly below the encoding controls in one full-size plot. Other categories remain visible as faint gray context points. Colors stay consistent, while counts and optional K-Means overlays follow the selected category. Python and CSV exports retain the separation.
+- 🧭 **Phasor category views** — Choose one **Separate by** category, then switch its values directly below the encoding controls in one full-size plot. Other categories remain visible as faint gray context points. Colors stay consistent, while counts follow the selected category. Python export retains the separation.
 - 🗺️ **Dimension Reduction separation grid** — Keep a combined UMAP, PCA, or t-SNE overview beside smaller maps highlighting individual groups. **Separate by** accepts two categorical columns: the first defines rows and the second defines columns. Color, shape, and opacity remain independent, and the Python export reproduces the whole composition in one SVG.
 - 🎨 **Point encoding in one row** — In *Feature Comparison*, use **Opacity | Subcolor | Shape** to choose how one categorical column decorates the points. Switching modes takes one click and keeps the selected column; clearing the column turns that encoding off. Subcolor assigns consistent colours across groups and changes *Color by* to *Group by*. The four controls are *Separate by*, *Color/Group by*, *Collapse by*, and the shared point encoding. *2D Feature Distribution* offers the same layout with **Opacity | Shape**; Phasor Plot and Dimension Reduction keep separate shape and opacity controls. Missing data (`N/A`) stays outside the opacity ramp so it can never outrank a real level.
 - ⚡ **Speed & scale** — Point plots switch to WebGL rendering above 5,000 drawn points, so large figures no longer freeze the page on scroll; styling tweaks restyle the existing figure instead of rebuilding it, and the KDE overlay is no longer quadratic in point count. In *Data Extraction*, lifetime curve fitting runs across CPU cores via multiprocessing, and raw-data checks are keyed on the files they actually read, so reassigning one channel no longer re-decodes every later channel's files.
@@ -24,6 +25,30 @@ FLIM Playground allows you to extract single-cell features from <span title="can
 - 🧪 **Derived feature extraction & analysis** — Build custom mathematical features (e.g., redox ratios like `A / (A + B)`, or ratio / difference formulas) using arithmetic expressions over existing features. These are appended as `Derived: <name>` columns and automatically consolidated into a unified **Derived Features** group in the Data Analysis layer.
 - 🗂️ **Multiple configuration profiles** — Save up to 10 named setups in *Data Extraction* (channels, file suffixes, feature extractors, fixed lifetimes, laser rate, …) and switch between them in one click from the Configuration page. *Data Analysis* configurations are profile-based too, so you can keep several datasets' settings side by side.
 - 📜 **Export Data Analysis as a Python script** — Download a standalone, editable Python script that reproduces all *Data Analysis* settings you see in FLIM Playground; also saves figures as publication-ready SVG.
+
+## Name groups before exporting
+
+After fitting GMM in Feature Histogram or 2D Feature Distribution, use **Export labels** above the CSV download to
+name the result column and its categorical values. Current names are prefilled
+in text fields, with each group identified by its generated label.
+Hover over a field's help icon to see its assigned-row feature means on the
+analyzed scale, including any log transformation.
+For separated analyses, the fields include every category.
+Default names join selected category values with `::`, followed by the component
+suffix; for example, `0-control::MCF7::high_dose_group1`. With only **Separate by**,
+the name is `0-control_group1`; with neither grouping selected, it is `all_data_group1`.
+
+Several groups can share a name, such as `Low`, to create a common exported
+category. Unassigned rows retain blank values. Empty names and column names
+that would overwrite existing data must be corrected before downloading.
+An existing default result column is preserved by adding a numeric suffix to
+the new result column.
+
+Names survive styling changes, module switches, and column review in the current
+session. Changing the data or fitting settings resets them for the new analysis.
+The exported Python script includes the same naming choices; set
+`SAVE_DERIVED_DATA = True` in that script to write its CSV output.
+Reuploaded exports use ordinary column detection and review, regardless of their column names.
 
 # Data Extraction Demo
 - Demo uses the T cell activation [dataset](example_data/Data_Extraction/T_cell_activation) from this [paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11425855/):
@@ -121,17 +146,12 @@ survives method changes and filtering to one remaining value.
 The separation column cannot also be used for **Color by**. Colors, shapes, and
 opacity mappings stay consistent when switching categories, with fixed G/S axes
 and the same lifetime references. Other categories always remain faint gray for
-context. Color-group counts in the right-hand legend and clustering overlays
+context. Color-group counts in the right-hand legend
 describe the selected category. The selector identifies the current category.
 
-When enabled, K-Means fits each **separation value × color group** independently,
-using the selected cluster count. Groups with too few distinct G/S observations
-remain visible and report why clustering was skipped. Cluster numbers belong to
-their own fit; the CSV qualifies them with their category, for example
-`day=Day 1 | ctrl_group1`. Switching categories changes visibility without
-refitting. The Python export reproduces the current category with gray context
-and a category label beneath the plot in one SVG. It can save one combined CSV containing all retained observations
-and their independently fitted cluster labels.
+Hover over points to inspect their row identifiers and G/S values. The Python
+export reproduces the current category with gray context and a category label
+beneath the plot in one SVG.
 
 This differs from Dimension Reduction, where separation highlights subsets of
 one globally fitted embedding, and Feature Comparison, where separation creates
@@ -205,7 +225,7 @@ intersection thresholding fails, that group uses the highest posterior probabili
 
 The Python export reproduces every panel in one SVG using the same numerical
 preparation as the app. The GMM CSV retains individual rows from all analyzed
-categories. Labels such as `day=Day 2 | ctrl_group1` identify the
+categories. Labels such as `Day 2::ctrl_group1` identify the
 local fit; `group1` is its lowest-mean component, not a shared component across days.
 
 ## Use Your Own Data in Data Analysis

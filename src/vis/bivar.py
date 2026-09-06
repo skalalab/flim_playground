@@ -1,15 +1,13 @@
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
-from scipy.spatial import ConvexHull
 from scipy.stats import chi2, gaussian_kde, pearsonr
-from sklearn.cluster import KMeans
 from sklearn.linear_model import LinearRegression
-from sklearn.preprocessing import StandardScaler
 
 from src.feature_labels import format_feature_label
+from src.export_labels import available_label_column, format_export_group_labels
 from src.widgets.gmm_tables import gmm_component_table, gmm_tables_html
-from src.widgets.visualization_widgets import gmm_hyperParams_widget, phasor_clustering_widget
+from src.widgets.visualization_widgets import gmm_hyperParams_widget
 
 from .helpers import (
     _find_best_gmm,
@@ -286,7 +284,7 @@ def distribution_controls(selected_x, selected_y, marginal_plot_type='gaussian f
 
 def distribution_fit_groups(df, x_col, y_col, group_col, color_groups, panels,
                             separate_by=None, fit_regression=False, fit_gmm=False,
-                            max_components=3, min_weight_threshold=.1):
+                            max_components=3, min_weight_threshold=.1, color_by=None):
     """Analyze category × color populations once; shared verbatim with export.
 
     Shape/opacity never enter the memberships. Position-based assignments preserve
@@ -335,10 +333,10 @@ def distribution_fit_groups(df, x_col, y_col, group_col, color_groups, panels,
                         result['components'] = [
                             dict(mean=mean, covariance=cov, weight=float(weight))
                             for mean, cov, weight in zip(model.means_, model.covariances_, model.weights_)]
-                        prefix = f"{separate_by}={level} | " if separate_by else ''
                         labels = model.predict(group[[x_col, y_col]])
-                        assignments[positions] = [f"{prefix}{color_group}_group{label + 1}"
-                                                  for label in labels]
+                        assignments[positions] = format_export_group_labels(
+                            labels, color_group, separate_by=separate_by,
+                            category=level, color_by=color_by)
             results.append(result)
     return results, assignments
 
@@ -390,10 +388,12 @@ def select_distribution_category(fig, category=None):
 def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x,
                                  selected_y, color_by=None, shape_by=None, opacity_by=None,
                                  marginal_plot_type='gaussian fit', colormap="tab10",
-                                 row_id_label="ID", separate_by=None, analysis_options=None):
+                                 row_id_label="ID", separate_by=None, analysis_options=None,
+                                 label_column=None):
     """One joint distribution per category, with shared coordinates and encodings."""
     import html
 
+    label_column = available_label_column(df.columns, label_column or "2D_GMM_group")
     color_by = [color_by] if isinstance(color_by, str) else list(color_by or [])
     df = df.dropna(subset=[selected_x, selected_y]).copy()
     panels = category_panel_rows(df, separate_by, color_by)
@@ -431,9 +431,9 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         df, selected_x, selected_y, group_column, list(color_map), panels,
         separate_by=separate_by, fit_regression=options.get('fit_regression', False),
         fit_gmm=options.get('fit_gmm', False), max_components=options.get('max_components', 3),
-        min_weight_threshold=options.get('min_weight_threshold', .1))
+        min_weight_threshold=options.get('min_weight_threshold', .1), color_by=color_by)
     if options.get('fit_gmm') and (separate_by or any(value is not None for value in assignments)):
-        result_df['2D_GMM_group'] = assignments
+        result_df[label_column] = assignments
 
     hover = [hover_field(row_id_label, '%{text}')]
     if fov_name_col is not None:
@@ -572,118 +572,6 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         table_md = summaries[None]
     return fig, table_md, result_df
 
-def _cluster_hull_polygon(pts):
-    """Return one cluster's boundary polygon (unclosed) for its (x, y) points.
-
-    Deduplicates first because Qhull fails on repeated points, and falls back to a
-    small circle around the mean when there are fewer than three unique points,
-    which have no hull. Kept free of Plotly/Streamlit so the exported script can
-    inline this exact source and draw identical boundaries.
-    """
-    uniq = np.unique(np.asarray(pts, dtype=float), axis=0)
-    if uniq.shape[0] >= 3:
-        from scipy.spatial import QhullError
-        try:
-            hull = ConvexHull(uniq)
-            return uniq[hull.vertices]
-        except QhullError:
-            pass  # Collinear points have no polygon; use the same circle fallback.
-    center = uniq.mean(axis=0)
-    r = max(np.linalg.norm(uniq - center, axis=1).max(initial=0.0), 0.01)
-    theta = np.linspace(0, 2 * np.pi, 80)
-    return np.c_[center[0] + 1.2 * r * np.cos(theta),
-                 center[1] + 1.2 * r * np.sin(theta)]
-
-
-def _plot_convex_hull(
-    fig,
-    df,
-    g_col,
-    s_col,
-    theme_color,
-    label_col="k_means_cluster",
-    polygon_color="#1f77b4",
-    centers_raw=None,
-    line_width=2,
-    scatter_cls=go.Scatter,
-):
-    """
-    Overlay per-cluster convex hull polygons (same color) and black × centroids
-    onto an existing Plotly figure.
-
-    Parameters
-    ----------
-    fig : go.Figure
-        Existing figure that already has your (G,S) scatter.
-    df : DataFrame
-        Must contain columns g_col, s_col, and label_col (int cluster labels).
-    g_col, s_col : str
-        Column names for raw G and S used in your scatter.
-    label_col : str
-        Column with integer labels from k-means (e.g., "k_means_cluster").
-    polygon_color : str
-        Single color for all polygons (hex like "#1f77b4" or a named color).
-    centers_raw : array-like, shape (k,2), optional
-        Centroids in RAW (G,S) units (e.g., `scaler.inverse_transform(kmeans.cluster_centers_)`).
-        If None, centroid positions are computed as the mean (G,S) per cluster.
-    line_width : int
-        Polygon outline width.
-    """
-    # 1) Draw a convex hull polygon for each cluster
-    unique_clusters = sorted([c for c in df[label_col].unique() if c >= 0])
-
-    for c in unique_clusters:
-        sub = df.loc[df[label_col] == c, [g_col, s_col]].dropna()
-        if sub.empty:
-            continue
-
-        poly = _cluster_hull_polygon(sub.to_numpy())
-
-        fig.add_trace(scatter_cls(
-            x=np.r_[poly[:, 0], poly[0, 0]],
-            y=np.r_[poly[:, 1], poly[0, 1]],
-            mode="lines",
-            line=dict(color=polygon_color, width=line_width),
-            name=f"Cluster {int(c)} boundary",
-            showlegend=False,
-        ))
-
-    # 2) Centroids as black crosses
-    if centers_raw is None:
-        centers_raw = (df.groupby(label_col)[[g_col, s_col]]
-                       .mean().reindex(unique_clusters).to_numpy())
-
-    fig.add_trace(scatter_cls(
-        x=centers_raw[:, 0],
-        y=centers_raw[:, 1],
-        mode="markers",
-        marker=dict(symbol="x", size=14, line=dict(width=1.5, color=theme_color), color=polygon_color),
-        hovertemplate="<b>Centroid</b><br>g: %{x:.2f}<br>s: %{y:.2f}<extra></extra>",
-        name="Centroids",
-        showlegend=False
-    ))
-    return fig
-
-def phasor_kmeans(X_raw, n_clusters, random_state=42):
-    """Standardize raw (G, S) coordinates, K-Means cluster them, and return
-    (labels, cluster centers transformed back to raw coordinates).
-
-    n_init=10 keeps the best of 10 seeded k-means++ restarts so clusters are
-    stable. Must stay free of Streamlit dependencies — it is embedded verbatim
-    into exported analysis scripts via inspect.getsource(), which is also why the
-    threadpoolctl import below sits inside the function rather than at module scope.
-    """
-    # A single OpenMP thread avoids synchronization overhead for two-column coordinates.
-    from threadpoolctl import threadpool_limits
-
-    scaler = StandardScaler().fit(X_raw)
-    kmeans = KMeans(n_clusters=n_clusters, random_state=random_state, n_init=10)
-    with threadpool_limits(1):
-        kmeans.fit(scaler.transform(X_raw))
-    centers_raw = scaler.inverse_transform(kmeans.cluster_centers_)
-    return kmeans.labels_, centers_raw
-
-
 def category_panel_rows(df, separate_by=None, color_by=None):
     """Ordered positional memberships, shared verbatim with script export."""
     if separate_by is None:
@@ -701,34 +589,6 @@ def category_panel_rows(df, separate_by=None, color_by=None):
 def _phasor_panel_rows(df, separate_by=None, color_by=None):
     """Compatibility entry point for Phasor's shared category memberships."""
     return category_panel_rows(df, separate_by, color_by)
-
-
-def _phasor_fit_groups(df, g_col, s_col, group_col, color_groups, panels,
-                       n_clusters, separate_by=None):
-    """Fit local populations without losing row identity or altering raw G/S.
-
-    Positional assignments also work with duplicate dataframe indices or row IDs.
-    This computation is embedded into standalone scripts with phasor_kmeans.
-    """
-    fits, notices = [], []
-    assignments = np.full(len(df), None, dtype=object)
-    for panel_index, (level, panel_rows) in enumerate(panels):
-        for color_group in color_groups:
-            positions = panel_rows[df.iloc[panel_rows][group_col].to_numpy() == color_group]
-            if not len(positions):
-                continue
-            coords = df.iloc[positions][[g_col, s_col]].to_numpy(copy=True)
-            prefix = f"{separate_by}={level} | " if separate_by else ""
-            if len(np.unique(coords, axis=0)) < n_clusters:
-                notices.append(f"Skipping K-Means for {prefix}{color_group}: "
-                               f"fewer than {n_clusters} distinct G/S observations.")
-                continue
-            labels, centers = phasor_kmeans(coords, n_clusters)
-            assignments[positions] = [f"{prefix}{color_group}_group{label + 1}"
-                                      for label in labels]
-            fits.append(dict(panel=panel_index, color_group=color_group,
-                             positions=positions, labels=labels, centers=centers))
-    return fits, assignments, notices
 
 
 def select_phasor_category(fig, category=None):
@@ -755,9 +615,8 @@ def select_phasor_category(fig, category=None):
     return fig
 
 
-def _compose_phasor_categories(base, df, panels, separate_by, row_id_col, fits,
-                              g_col, s_col, theme_color, color_map, point_cls,
-                              show_counts):
+def _compose_phasor_categories(base, df, panels, separate_by, row_id_col,
+                              g_col, s_col, point_cls, show_counts):
     """Prepare category foregrounds and context on one full-size set of axes."""
     fig = go.Figure(layout=base.layout)
     fig.update_xaxes(domain=[0, 1], anchor="y", scaleanchor="y", scaleratio=1,
@@ -766,14 +625,14 @@ def _compose_phasor_categories(base, df, panels, separate_by, row_id_col, fits,
     for trace in base.data:
         if trace.text is None and not trace.showlegend:
             fig.add_trace(trace)  # One copy of the semicircle and lifetime references.
-    # Context always lies beneath the selected category's encoded points/overlays.
+    # Context always lies beneath the selected category's encoded points.
     for level, positions in panels:
         fig.add_trace(point_cls(
             x=df.iloc[positions][g_col].to_numpy(), y=df.iloc[positions][s_col].to_numpy(),
             mode="markers", marker=dict(color="#b8b8b8", opacity=.18, symbol="circle", size=3),
             showlegend=False, hoverinfo="skip",
             meta=dict(phasor_role="context", category=level)))
-    for index, (level, positions) in enumerate(panels):
+    for level, positions in panels:
         batches, counts = [], {}
         for trace in base.data:
             if trace.text is None:
@@ -802,20 +661,6 @@ def _compose_phasor_categories(base, df, panels, separate_by, row_id_col, fits,
                                   legend=group not in seen_colors))
             seen_colors.add(group)
             fig.add_trace(type(trace)(**spec))
-        overlay = go.Figure()
-        for fit in fits:
-            if fit["panel"] != index:
-                continue
-            group_df = df.iloc[fit["positions"]].copy()
-            group_df["k_means_cluster"] = fit["labels"]
-            start = len(overlay.data)
-            _plot_convex_hull(overlay, group_df, g_col, s_col, theme_color,
-                              polygon_color=color_map[fit["color_group"]],
-                              centers_raw=fit["centers"], scatter_cls=point_cls)
-            for trace in overlay.data[start:]:
-                trace.update(xaxis="x", yaxis="y", legendgroup=str(fit["color_group"]),
-                             meta=dict(phasor_role="fit", category=level))
-                fig.add_trace(trace)
     # Shape/opacity swatches retain the global mappings when a category changes.
     for trace in base.data:
         if trace.text is None and trace.showlegend:
@@ -832,7 +677,7 @@ def _compose_phasor_categories(base, df, panels, separate_by, row_id_col, fits,
     return select_phasor_category(fig)
 
 
-def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, colormap="tab10", f=0.08, harmonic=1, row_id_label="ID", separate_by: str | None = None, k_means=None, k_means_clusters=2):
+def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=[], shape_by=None, opacity_by=None, colormap="tab10", f=0.08, harmonic=1, row_id_label="ID", separate_by: str | None = None):
     color_by = [color_by] if isinstance(color_by, str) else list(color_by or [])
     # Get theme color once at the start for all theme-aware elements
     theme_color = get_context_theme_color()
@@ -910,13 +755,13 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         overlap_point=True,
         colormap=colormap
     )
-    # The analysis page renders these controls in its display fragment so a
-    # category switch only changes trace visibility. Direct callers keep the UI.
-    if k_means is None:
-        k_means, k_means_clusters = phasor_clustering_widget(selected_channel)
-
     # Convert grouped iterator to list so we can iterate multiple times
     grouped_list = list(grouped)
+
+    hover = hover_field(row_id_label, "%{text}")
+    if fov_name_col is not None:
+        hover += hover_field(fov_name_col, "%{customdata}")
+    hover += hover_field("g", "%{x:.4g}") + hover_field("s", "%{y:.4g}")
 
     # Add all points using interleaved plotting function
     point_cls = add_interleaved_points_trace(
@@ -929,51 +774,12 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
         text_col=point_id_col,
         customdata_col=fov_name_col,
         # Label identifiers because they may be generated row numbers.
-        hovertemplate=hover_field(row_id_label, "%{text}"),
+        hovertemplate=hover,
         show_counts=st.session_state.get("plot_show_group_counts", False)
     )
-
-
-    # --- K-Means clustering per panel and color group, never per decoration ---
-    if k_means:
-        fits, assignments, notices = _phasor_fit_groups(
-            df, g_feature, s_feature, GROUP_COL_NAME, list(color_map), panels,
-            k_means_clusters, separate_by)
-        for notice in notices:
-            st.warning(notice)
-        original_df["k_means_cluster"] = assignments
-    else:
-        fits = []
     if separate_by:
         return (_compose_phasor_categories(fig, original_df, panels, separate_by, unique_row_id_col,
-                                          fits, g_feature, s_feature, theme_color, color_map, point_cls,
+                                          g_feature, s_feature, point_cls,
                                           st.session_state.get("plot_show_group_counts", False)),
                 original_df)
-    if k_means:
-        for fit in fits:
-            color_group = fit["color_group"]
-            # Filter data for this color group using the helper column
-            group_df = df[df[GROUP_COL_NAME] == color_group]
-
-            if group_df.empty:
-                continue
-
-            # cluster on a standardized copy — raw G,S stay untouched
-            labels, centers_raw = fit["labels"], fit["centers"]
-
-            # plot the convex hull
-            # Create a temporary dataframe with cluster labels for plotting
-            group_df_with_clusters = group_df.copy()
-            group_df_with_clusters["k_means_cluster"] = labels
-
-            _plot_convex_hull(fig, group_df_with_clusters, g_feature, s_feature, theme_color, "k_means_cluster", color_map.get(color_group, 'gray'), centers_raw, line_width=2, scatter_cls=point_cls)
-
-            # Update the main dataframe with cluster labels
-            assigned_labels = [f"{color_group}_group{label + 1}" for label in labels]
-            df.loc[group_df.index, "k_means_cluster"] = assigned_labels
-
-    # Note: Legend traces and hovermode are already added by add_interleaved_points_trace
-    # Remove the temporary group column after plotting
-    df.drop(columns=[GROUP_COL_NAME], inplace=True)
-
-    return fig, df
+    return fig, original_df

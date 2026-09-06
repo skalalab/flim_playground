@@ -94,7 +94,7 @@ def test_models_fit_each_category_color_group_and_labels_are_qualified(monkeypat
     for (day, treatment), group in result.groupby([result.day.fillna("N/A"), "treatment"]):
         assert any(np.array_equal(group[["x", "y"]].to_numpy(), call) for call in calls)
         labels = group["2D_GMM_group"].dropna()
-        assert all(label.startswith(f"day={day} | {treatment}_group") for label in labels)
+        assert all(label.startswith(f"{day}::{treatment}_group") for label in labels)
     bivar.select_distribution_category(fig, "Day 10")
     assert len(calls) == 5
 

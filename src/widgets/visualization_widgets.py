@@ -102,22 +102,6 @@ def distribution_category_widget(categories, separate_by):
                             _FD_CATEGORY_COLUMN_KEY, _FD_LAST_CATEGORY_KEY)
 
 
-def phasor_clustering_widget(selected_channel):
-    """Render clustering controls independently of category view changes."""
-    enable, count = st.columns(2)
-    with enable:
-        k_means = st.checkbox("Perform K-Means clustering", value=False,
-                              key=f"k_means_phasor_{selected_channel}")
-    k_means_clusters = 2
-    if k_means:
-        with count:
-            key = f"k_means_clusters_phasor_{selected_channel}"
-            k_means_clusters = st.number_input(
-                "Number of clusters", value=number_input_default(st.session_state, key, 2),
-                min_value=1, max_value=8, step=1, key=key)
-    return k_means, k_means_clusters
-
-
 def _pruned_selectbox(label, options, key, **kwargs):
     """Preserve a keyed selection while clearing values absent from current options.
 
@@ -244,6 +228,12 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
     point_based = point_based and not histogram
     # Histogram explores variability among individual units, never replicate means.
     collapse_available = collapse_available and not histogram
+    # Retain fit grouping when another method hides its controls. This runs after
+    # the dataset review gate, which owns control cleanup during initial review.
+    if not color_based:
+        preserve_analysis_controls(st.session_state, (COLOR_BY_KEY,))
+    if not collapse_available:
+        preserve_analysis_controls(st.session_state, (COLLAPSE_BY_KEY,))
     distribution = separate_by_mode == "distribution"
     merged_point_encoding = point_based and (subcolor_available or distribution)
     # Public self-assignment interrupts cleanup while a widget is hidden. Mode
@@ -329,9 +319,9 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                          "after any Collapse by aggregation. The separation column "
                          "cannot also be used for Color by or Collapse by."
                          if distribution else
-                         "View one category at a time in a full-size plot. K-Means fits "
-                         "each category's color groups independently. The separation "
-                         "column cannot also be used for Color by."))
+                         "View one category at a time in a full-size plot. Other categories "
+                         "remain visible as gray context points. The separation column "
+                         "cannot also be used for Color by."))
             else:
                 separate_by = _pruned_selectbox(
                     "Separate by", available_categories, key="analysis_control_separate_by")

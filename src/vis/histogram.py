@@ -7,6 +7,7 @@ The functions are embedded with inspect.getsource(), along with their dependenci
 import numpy as np
 import pandas as pd
 
+from src.export_labels import available_label_column, format_export_group_labels
 from .helpers import _find_best_gmm, find_intersection, natural_tuple_sort
 
 
@@ -51,7 +52,8 @@ def histogram_legend_label(label, count, skewness, show_counts, *, show_skewness
     return f"{name}\nskew={skew}"
 
 
-def _assign_subpopulation_labels(values, best_gmm, thresholds, color_group):
+def _assign_subpopulation_labels(values, best_gmm, thresholds, color_group, *,
+                                 separate_by=None, category=None, color_by=None):
     """Label components by ascending mean, for both threshold and posterior rules."""
     values = np.asarray(values)
     if thresholds is not None:
@@ -60,11 +62,13 @@ def _assign_subpopulation_labels(values, best_gmm, thresholds, color_group):
         sorted_indices = np.argsort(best_gmm.means_.flatten())
         rank_of = {int(orig): rank for rank, orig in enumerate(sorted_indices)}
         ranks = [rank_of[int(c)] for c in best_gmm.predict(values.reshape(-1, 1))]
-    return [f"{color_group}_group{int(rank) + 1}" for rank in ranks]
+    return format_export_group_labels(ranks, color_group, separate_by=separate_by,
+                                      category=category, color_by=color_by)
 
 
 def histogram_gmm(values, label, max_components=3, min_weight_threshold=0.1,
-                  intersection_threshold=False):
+                  intersection_threshold=False, *, separate_by=None, category=None,
+                  color_by=None):
     """Fit one local population; failures and unsupported analyses stay local."""
     result = dict(gmm=None, x=np.array([]), pdf=np.array([]), components=[],
                   thresholds=None, h_index=None, assignments=None, notices=[])
@@ -112,7 +116,9 @@ def histogram_gmm(values, label, max_components=3, min_weight_threshold=0.1,
                 thresholds = None
                 result["notices"].append("Intersection threshold is unavailable; using hard assignment in this group.")
         result["thresholds"] = thresholds
-        result["assignments"] = _assign_subpopulation_labels(values, model, thresholds, label)
+        result["assignments"] = _assign_subpopulation_labels(
+            values, model, thresholds, label, separate_by=separate_by,
+            category=category, color_by=color_by)
     except Exception as error:
         # Discard incomplete fit output, retaining the group's observations/counts.
         result.update(gmm=None, x=np.array([]), pdf=np.array([]), components=[],
@@ -123,12 +129,13 @@ def histogram_gmm(values, label, max_components=3, min_weight_threshold=0.1,
 
 def prepare_histogram(df, selected_var, color_by=None, separate_by=None, bin_width=None,
                       bin_edges=None, apply_gmm=False, max_components=3,
-                      min_weight_threshold=0.1, intersection_threshold=False):
+                      min_weight_threshold=0.1, intersection_threshold=False, label_column=None):
     """Prepare all category × color populations, bins, fits, and shared ranges.
 
     Labels are descriptive strings, while membership and assignment are positional.
     No internal grouping columns are added to the returned analyzed dataframe.
     """
+    label_column = available_label_column(df.columns, label_column or "GMM_group")
     color_by = [color_by] if isinstance(color_by, str) else list(color_by or [])
     if separate_by is not None:
         if not isinstance(separate_by, str) or separate_by not in df.columns:
@@ -177,8 +184,10 @@ def prepare_histogram(df, selected_var, color_by=None, separate_by=None, bin_wid
                          positions=local_positions, values=local, count=len(local),
                          counts=np.histogram(local, bins=edges)[0], skewness=skewness)
             if apply_gmm:
-                group.update(histogram_gmm(local, label, max_components,
-                                          min_weight_threshold, intersection_threshold))
+                group.update(histogram_gmm(local, color, max_components,
+                                          min_weight_threshold, intersection_threshold,
+                                          separate_by=separate_by, category=category,
+                                          color_by=color_by))
                 if group["assignments"] is not None:
                     assignments[local_positions] = group["assignments"]
                 if len(group["pdf"]):
@@ -194,7 +203,7 @@ def prepare_histogram(df, selected_var, color_by=None, separate_by=None, bin_wid
             panel["groups"].append(group)
         panels.append(panel)
     if apply_gmm:
-        df["GMM_group"] = assignments
+        df[label_column] = assignments
     return dict(df=df, selected_var=selected_var, color_by=color_by,
                 separate_by=separate_by, apply_gmm=apply_gmm, panels=panels,
                 color_groups=color_groups, color_counts=color_counts, bin_edges=edges,

@@ -238,13 +238,11 @@ def test_a_field_of_view_column_is_a_categorical_like_any_other():
     assert "fov_name_col" not in args
 
 
-def test_the_clustering_columns_the_plots_invent_stay_categorical():
-    """GMM_group and friends are added to the frame later; get_features must not
-    offer them as measurements."""
+def test_only_reviewed_categorical_columns_are_included():
     from src.widgets.analysis_config_widgets import working_copy_arguments
 
     args = working_copy_arguments(ROLES, {})
-    assert {"GMM_group", "2D_GMM_group", "k_means_cluster"} <= set(args["categorical_cols"])
+    assert args["categorical_cols"] == ["treatment"]
 
 
 @pytest.mark.parametrize("role, is_categorical", [
@@ -252,17 +250,34 @@ def test_the_clustering_columns_the_plots_invent_stay_categorical():
     (ROLE_IGNORE, False),
     (ROLE_CATEGORICAL, True),
 ])
-def test_a_file_column_named_after_a_clustering_one_keeps_the_role_it_was_given(
-        role, is_categorical):
-    """A file column keeps its reviewed role when its name matches a generated cluster
-    column.
-    """
+@pytest.mark.parametrize("column", ["GMM_group", "2D_GMM_group", "k_means_cluster", "Cell state α"])
+def test_export_columns_keep_their_reviewed_roles(
+        role, is_categorical, column):
+    """Default and custom export headers follow the same reviewed roles."""
     from src.widgets.analysis_config_widgets import working_copy_arguments
 
-    args = working_copy_arguments(dict(ROLES, k_means_cluster=role), {})
-    assert ("k_means_cluster" in args["categorical_cols"]) is is_categorical
-    # Names absent from the file remain available for generated clustering labels.
-    assert {"GMM_group", "2D_GMM_group"} <= set(args["categorical_cols"])
+    args = working_copy_arguments({**ROLES, column: role}, {})
+    assert args["categorical_cols"] == ["treatment"] + ([column] if is_categorical else [])
+
+
+@pytest.mark.parametrize("column", ["GMM_group", "2D_GMM_group", "Cell state α"])
+def test_reuploaded_export_labels_follow_ordinary_detection_and_review(column):
+    import pandas as pd
+    from src.dataset_io import detect_roles, interpret_table
+    from src.widgets.analysis_config_widgets import working_copy_arguments
+
+    data = pd.DataFrame({"id": ["a", "b", "c", "d"], "measurement": [1.5, 2.5, 3.5, 4.5],
+                         column: ["Low", "Low", "High", "High"]})
+    roles = detect_roles(data)
+    assert roles[column] == ROLE_CATEGORICAL
+    args = working_copy_arguments(roles, {})
+    assert args["categorical_cols"] == [column]
+    result, features, valid, _ = interpret_table(
+        data.copy(), args["categorical_cols"], args["unique_row_id_col"], None,
+        ignored_cols=args["ignored_cols"], feature_groups=args["feature_groups"],
+        use_data_extraction=False)
+    assert valid and result[column].tolist() == data[column].tolist()
+    assert column not in {feature for group in features.values() for feature in group}
 
 
 def test_a_clustering_name_the_file_owns_reaches_the_plots_as_a_measurement():

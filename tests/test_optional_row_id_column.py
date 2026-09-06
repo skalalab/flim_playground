@@ -487,6 +487,5 @@ def test_a_fresh_install_creates_no_analysis_profile_at_all(monkeypatch, tmp_pat
     assert acw._get_profile_config() == {}
     assert acw.get_unique_row_id_col(use_data_extraction=False) == ""
     assert acw.get_fov_name_col_analysis(use_data_extraction=False) == ""
-    assert acw.get_categorical_cols_analysis(use_data_extraction=False) == [
-        "GMM_group", "2D_GMM_group", "k_means_cluster"]
+    assert acw.get_categorical_cols_analysis(use_data_extraction=False) == []
     assert not (tmp_path / "analysis_config.toml").exists(), "reading the config wrote it"

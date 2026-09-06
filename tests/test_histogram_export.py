@@ -205,7 +205,7 @@ def test_gmm_export_fits_each_local_population_and_saves_every_qualified_assignm
     assert "GMM_group" in saved
     for day, treatment, label in saved[["day", "treatment", "GMM_group"]].itertuples(index=False):
         category = "N/A" if pd.isna(day) else day
-        assert label.startswith(f"day={category} | {treatment}_group")
+        assert label.startswith(f"{category}::{treatment}_group")
     expected = prepare_histogram(_normalized(source), "value", ["treatment"], "day",
                                  apply_gmm=True, max_components=2,
                                  intersection_threshold=intersection)

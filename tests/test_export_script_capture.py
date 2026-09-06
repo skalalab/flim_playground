@@ -634,8 +634,6 @@ def test_phasor_script_applies_opacity_per_point(tmp_path, monkeypatch):
             "selected_channel": "Ch1",
             "phasor_harmonic": 1,
             "phasor_f": 0.08,
-            "k_means": False,
-            "k_means_clusters": 2,
         },
     )
     ns = _run_script(tmp_path, state, df, monkeypatch)
@@ -699,76 +697,6 @@ def test_feature_comparison_mixed_encoding_groups_split_points(tmp_path, monkeyp
     points = _nonempty_collections(ns["ax"])
     assert len(points) == 4, f"expected 4 sub-group scatters, got {len(points)}"
     assert len(_marker_signatures(points)) == 2
-
-
-# ---------------------------------------------------------------------------
-# Phasor K-Means — app and export must run the identical clustering
-# ---------------------------------------------------------------------------
-
-def _kmeans_blobs(seed=2):
-    """Three overlapping blobs where a single k-means++ init lands in a worse
-    local optimum than best-of-10 restarts (seed chosen so the two disagree)."""
-    rng = np.random.default_rng(seed)
-    return np.vstack(
-        [
-            rng.normal((0, 0), 1.2, (60, 2)),
-            rng.normal((4, 4), 1.2, (60, 2)),
-            rng.normal((0, 5), 1.2, (60, 2)),
-        ]
-    )
-
-
-def test_phasor_kmeans_uses_ten_seeded_restarts():
-    from sklearn.cluster import KMeans
-    from sklearn.preprocessing import StandardScaler
-
-    from src.vis.bivar import phasor_kmeans
-
-    X = _kmeans_blobs()
-    labels, centers = phasor_kmeans(X, 3)
-
-    scaler = StandardScaler().fit(X)
-    ten = KMeans(n_clusters=3, random_state=42, n_init=10).fit(scaler.transform(X))
-    assert (labels == ten.labels_).all()
-    assert np.allclose(centers, scaler.inverse_transform(ten.cluster_centers_))
-    # These blobs distinguish best-of-ten restarts from a single initialization.
-    one = KMeans(n_clusters=3, random_state=42, n_init=1).fit(scaler.transform(X))
-    assert not (one.labels_ == ten.labels_).all()
-
-
-def test_phasor_kmeans_parity_app_vs_export(tmp_path, monkeypatch):
-    """The exported script must embed and run the app's clustering function."""
-    from src.vis.bivar import phasor_kmeans
-
-    X = _kmeans_blobs()
-    n = len(X)
-    df = pd.DataFrame(
-        {
-            "cell_id": [f"img1_{i}" for i in range(n)],
-            "image_name": ["img1"] * n,
-            "treatment": ["ctrl"] * n,
-            "Lifetime fit free_Ch1: G(1st)": X[:, 0],
-            "Lifetime fit free_Ch1: S(1st)": X[:, 1],
-        }
-    )
-    state = _base_state(
-        "Phasor Plot",
-        categorical_cols=["treatment"],
-        color_by=["treatment"],
-        method_params={
-            "selected_channel": "Ch1",
-            "phasor_harmonic": 1,
-            "phasor_f": 0.08,
-            "k_means": True,
-            "k_means_clusters": 3,
-        },
-    )
-    assert "def phasor_kmeans(" in generate_script(state)
-
-    ns = _run_script(tmp_path, state, df, monkeypatch)
-    app_labels, app_centers = phasor_kmeans(X, 3)
-    assert (ns["labels"] == app_labels).all()
-    assert np.allclose(ns["centers"], app_centers)
 
 
 # ---------------------------------------------------------------------------
@@ -895,43 +823,6 @@ def test_2d_gmm_derived_data_saved_behind_flag(tmp_path, monkeypatch):
     assert saved["2D_GMM_group"].tolist() == ns["df"]["2D_GMM_group"].tolist()
 
 
-def test_phasor_kmeans_derived_data_saved_behind_flag(tmp_path, monkeypatch):
-    from src.vis.bivar import phasor_kmeans
-
-    X = _kmeans_blobs()
-    n = len(X)
-    df = pd.DataFrame(
-        {
-            "cell_id": [f"img1_{i}" for i in range(n)],
-            "image_name": ["img1"] * n,
-            "treatment": ["ctrl"] * n,
-            "Lifetime fit free_Ch1: G(1st)": X[:, 0],
-            "Lifetime fit free_Ch1: S(1st)": X[:, 1],
-        }
-    )
-    state = _base_state(
-        "Phasor Plot",
-        categorical_cols=["treatment"],
-        color_by=["treatment"],
-        method_params={
-            "selected_channel": "Ch1",
-            "phasor_harmonic": 1,
-            "phasor_f": 0.08,
-            "k_means": True,
-            "k_means_clusters": 3,
-        },
-    )
-    _run_script(tmp_path, state, df, monkeypatch)
-    assert not (tmp_path / "kmeans_clustered_data.csv").exists()
-
-    _run_script(tmp_path, state, df, monkeypatch, script_transform=_enable_derived_data)
-    saved = pd.read_csv(tmp_path / "kmeans_clustered_data.csv")
-    assert "_color_group" not in saved.columns
-    app_labels, _ = phasor_kmeans(X, 3)
-    # app label format: {color_group}_group{label + 1}
-    assert saved["k_means_cluster"].tolist() == [f"ctrl_group{l + 1}" for l in app_labels]
-
-
 # ---------------------------------------------------------------------------
 # Phasor reference geometry — lifetime markers must follow the harmonic
 # ---------------------------------------------------------------------------
@@ -962,8 +853,6 @@ def _phasor_state(harmonic, f=0.08, **overrides):
             "selected_channel": "Ch1",
             "phasor_harmonic": harmonic,
             "phasor_f": f,
-            "k_means": False,
-            "k_means_clusters": 2,
         },
     )
 
@@ -1150,8 +1039,6 @@ def test_all_methods_generate_compilable_scripts():
             "selected_channel": "Ch1",
             "phasor_harmonic": 1,
             "phasor_f": 0.08,
-            "k_means": True,
-            "k_means_clusters": 2,
         },
         "Dimension Reduction": {
             "selected_features": ["feature_a", "feature_b"],
@@ -1227,33 +1114,6 @@ def test_2d_two_component_gmm_still_draws_ellipses(tmp_path, monkeypatch):
     ns = _run_script(tmp_path, _2d_gmm_state(), df, monkeypatch)
     ellipses = [p for p in ns["ax_main"].patches if isinstance(p, Ellipse)]
     assert len(ellipses) >= 2
-
-
-def test_phasor_kmeans_hulls_colored_by_group_not_cluster(tmp_path, monkeypatch):
-    """App colors each group's k-means hulls/centroids by the GROUP color; the
-    export must too — not a per-cluster tab10 ramp."""
-    import matplotlib.colors as mcolors
-    rng = np.random.default_rng(30)
-    df = _encoding_df()
-    df["Lifetime fit free_Ch1: G(1st)"] = rng.uniform(0.2, 0.8, len(df))
-    df["Lifetime fit free_Ch1: S(1st)"] = rng.uniform(0.1, 0.4, len(df))
-    state = _base_state(
-        "Phasor Plot",
-        categorical_cols=["treatment", "cell_line", "day"],
-        color_by=["treatment"],
-        method_params={
-            "selected_channel": "Ch1", "phasor_harmonic": 1, "phasor_f": 0.08,
-            "k_means": True, "k_means_clusters": 3,
-        },
-    )
-    ns = _run_script(tmp_path, state, df, monkeypatch)
-    centroids = [ln for ln in ns["ax"].lines if ln.get_marker() == "x"]
-    colors = {tuple(np.round(mcolors.to_rgba(ln.get_color()), 6)) for ln in centroids}
-    # 2 color groups x 3 clusters = 6 centroids, but one color per GROUP, not per cluster.
-    assert len(centroids) == 6
-    expected = {tuple(np.round(mcolors.to_rgba(ns["color_map"][g][:3]), 6))
-                for g in ns["color_groups"]}
-    assert colors == expected
 
 
 def _histogram_state(**mp_overrides):
@@ -1430,8 +1290,7 @@ def test_phasor_annotates_six_lifetime_markers_like_app(tmp_path, monkeypatch):
     df["Lifetime fit free_Ch1: S(1st)"] = rng.uniform(0.1, 0.4, len(df))
     state = _base_state(
         "Phasor Plot", categorical_cols=["treatment", "cell_line", "day"], color_by=["treatment"],
-        method_params={"selected_channel": "Ch1", "phasor_harmonic": 1, "phasor_f": 0.08,
-                       "k_means": False, "k_means_clusters": 2})
+        method_params={"selected_channel": "Ch1", "phasor_harmonic": 1, "phasor_f": 0.08})
     ns = _run_script(tmp_path, state, df, monkeypatch)
     annos = [a.get_text() for a in ns["ax"].texts if a.get_text().endswith("ns")]
     assert len(annos) == 6
@@ -1598,7 +1457,7 @@ def test_export_phasor_axes_lowercase_like_app(tmp_path, monkeypatch):
     state = _base_state(
         "Phasor Plot", categorical_cols=["treatment"], color_by=["treatment"],
         method_params={"phasor_x": "Lifetime fit free_nadh: G(1st)",
-                       "phasor_y": "Lifetime fit free_nadh: S(1st)", "k_means": False})
+                       "phasor_y": "Lifetime fit free_nadh: S(1st)"})
     script = generate_script(state)
     assert 'ax.set_xlabel("g"' in script
     assert 'ax.set_ylabel("s"' in script
@@ -1651,8 +1510,7 @@ def test_feature_comparison_constant_group_keeps_uniform_jitter(tmp_path, monkey
           "fit_gmm_2d": False, "gmm_max_components": 3, "gmm_min_weight_threshold": 0.1},
          "2D Distribution of"),
         ("Phasor Plot",
-         {"selected_channel": "Ch1", "phasor_harmonic": 1, "phasor_f": 0.08,
-          "k_means": False, "k_means_clusters": 2},
+         {"selected_channel": "Ch1", "phasor_harmonic": 1, "phasor_f": 0.08},
          "Harmonic Phasor"),
     ],
 )
@@ -2318,8 +2176,7 @@ def test_export_inlines_the_apps_group_label_helper_rather_than_copying_it():
                                  "log_x": False, "log_y": False,
                                  "marginal_plot_type": "none", "fit_regression": False,
                                  "fit_gmm_2d": False}),
-    ("Phasor Plot", {"selected_channel": "Ch1", "phasor_harmonic": 1, "phasor_f": 0.08,
-                     "k_means": False, "k_means_clusters": 2}),
+    ("Phasor Plot", {"selected_channel": "Ch1", "phasor_harmonic": 1, "phasor_f": 0.08}),
     ("Dimension Reduction", {"selected_features": ["feature_a", "feature_b"],
                              "dr_method": "PCA", "hyperParam_dict": {}}),
 ])

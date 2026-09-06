@@ -173,8 +173,9 @@ def test_gmm_fits_each_panel_locally_and_assigns_by_position(monkeypatch):
         assert means[0] < group["thresholds"][0] < means[1]
         assert group["h_index"] > 0
         assigned = data["df"].iloc[group["positions"]]["GMM_group"].tolist()
-        assert assigned[:12] == [group["label"] + "_group1"] * 12
-        assert assigned[12:] == [group["label"] + "_group2"] * 12
+        prefix = f"{group['category']}::{group['color_group']}"
+        assert assigned[:12] == [prefix + "_group1"] * 12
+        assert assigned[12:] == [prefix + "_group2"] * 12
         assert data["x_range"][0] <= min(group["x"])
         assert data["x_range"][1] >= max(group["x"])
         assert data["y_range"][1] > max(group["pdf"])
