@@ -23,6 +23,7 @@ from harness_common import (
     enable_derived,
     load_app_df,
     mpl_label,
+    plain_legend_label,
     run_export,
     scatter_points,
     sorted_rows,
@@ -68,10 +69,11 @@ def histogram():
     R.check("bin edges identical", np.allclose(ns["bin_edges"], app_edges),
             f"app n={len(app_edges)} exp n={len(ns['bin_edges'])}")
 
-    app_counts = {t.name: np.asarray(t.y, float) for t in fig.data}
-    exp_counts = {ln.get_label(): np.asarray(ln.get_ydata(), float) for ln in ax.lines}
+    app_counts = {plain_legend_label(t.name): np.asarray(t.y, float) for t in fig.data}
+    exp_counts = {plain_legend_label(ln.get_label()): np.asarray(ln.get_ydata(), float)
+                  for ln in ax.lines}
     same = set(app_counts) == set(exp_counts) and all(
-        np.allclose(app_counts[k], exp_counts[k]) for k in app_counts)
+        np.array_equal(app_counts[k], exp_counts[k]) for k in app_counts)
     R.check(f"per-group counts ({len(app_counts)} groups)", same,
             "" if same else f"app={list(app_counts)} exp={list(exp_counts)}")
     R.check("title", ax.get_title() ==

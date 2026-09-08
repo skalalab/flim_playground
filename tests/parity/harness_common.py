@@ -6,6 +6,7 @@ and run an export from equivalent state, then compare plotted values and metadat
 See README.md in this directory for how to run these.
 """
 import os
+import re
 import runpy
 import sys
 import warnings
@@ -213,6 +214,12 @@ def mpl_label(var):
     """The axis/title text the export uses (Matplotlib mathtext, not Plotly HTML)."""
     from src.feature_labels import format_feature_label
     return format_feature_label(var, engine="mpl")
+
+
+def plain_legend_label(label):
+    """Normalize Plotly legend markup to Matplotlib's plain text and newlines."""
+    label = re.sub(r"<br\s*/?>", "\n", label, flags=re.IGNORECASE)
+    return re.sub(r"<[^>]+>", "", label)
 
 
 class Results:

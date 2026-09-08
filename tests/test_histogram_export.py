@@ -117,8 +117,12 @@ def test_count_export_draws_all_natural_panels_with_shared_bins_ranges_and_local
     tmp_path, monkeypatch, capsys, color_by
 ):
     source = _source()
-    ns = _run(tmp_path, monkeypatch, _state(color_by=color_by), source)
-    expected = prepare_histogram(_normalized(source), "value", color_by, "day")
+    state = _state(color_by=color_by)
+    ns = _run(tmp_path, monkeypatch, state, source)
+    # Both the app and export analyze CSV-read values. Parsing can shift an
+    # extremum by one floating-point unit and change its histogram bin.
+    app_source = pd.read_csv(tmp_path / state["csv_filename"], index_col=False)
+    expected = prepare_histogram(_normalized(app_source), "value", color_by, "day")
     axes = ns["fig"].axes
     assert len(axes) == 3
     assert [axis.get_title() for axis in axes] == ["Day 2", "Day 10", "N/A"]

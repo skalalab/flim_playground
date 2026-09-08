@@ -399,7 +399,9 @@ def test_gmm_hyperparameters_flow_into_2d_script(tmp_path, monkeypatch):
     assert "min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD" in script
 
     ns = _run_script(tmp_path, state, df, monkeypatch)
-    assert ns["best_gmm"].n_components <= 2
+    components = ns["distribution_results"][0]["components"]
+    assert len(components) == 2  # This fixture has two well-separated populations.
+    assert all(component["weight"] >= 0.2 for component in components)
 
 
 # ---------------------------------------------------------------------------
@@ -497,7 +499,8 @@ def _nonempty_collections(ax):
 
 def _marker_signatures(collections):
     """Distinct marker shapes drawn, identified by their path vertices."""
-    return {tuple(np.round(c.get_paths()[0].vertices, 6).ravel()) for c in collections}
+    return {tuple(np.round(path.vertices, 6).ravel())
+            for collection in collections for path in collection.get_paths()}
 
 
 @pytest.mark.parametrize("marginal", ["gaussian fit", "boxplot", "violin", "none"])
@@ -545,16 +548,16 @@ def test_2d_script_applies_shape_and_opacity_per_point(tmp_path, monkeypatch):
     )
     ns = _run_script(tmp_path, state, df, monkeypatch)
     points = _nonempty_collections(ns["ax_main"])
-    # Two colors × two shapes give four calls. Per-point alpha preserves draw order
-    # across opacity levels instead of painting each level in a separate batch.
-    assert len(points) == 4, f"expected 4 (colour x shape) scatters, got {len(points)}"
+    # A color can contribute several shuffled batches with mixed marker shapes.
+    assert sum(len(collection.get_offsets()) for collection in points) == len(df)
     assert len(_marker_signatures(points)) == 2
-    # Alpha is a per-point array on every call, carrying both opacity levels.
+    # Alpha follows each point through the shuffle, regardless of its batch.
     for c in points:
         alpha = c.get_alpha()
         assert alpha is not None and not np.isscalar(alpha), (
             "opacity must be a per-point alpha array, not one alpha per sub-group")
-        assert set(np.round(np.asarray(alpha), 6)) == {0.3, 1.0}
+    alphas = np.concatenate([collection.get_alpha() for collection in points])
+    np.testing.assert_allclose(np.sort(alphas), np.repeat([0.3, 1.0], len(df) // 2))
     # The y coordinates distinguish days, so each alpha must match its point's day.
     for c in points:
         ys = np.asarray(c.get_offsets())[:, 1]
@@ -638,17 +641,20 @@ def test_phasor_script_applies_opacity_per_point(tmp_path, monkeypatch):
     )
     ns = _run_script(tmp_path, state, df, monkeypatch)
     points = _nonempty_collections(ns["ax"])
-    # No shape_by, so one scatter call per colour group; opacity rides along as a
-    # per-point alpha array rather than splitting the group in two (see the 2D test).
-    assert len(points) == 2, f"expected 2 colour-group scatters, got {len(points)}"
+    assert sum(len(collection.get_offsets()) for collection in points) == len(df)
+    alphas_by_color = {}
     for c in points:
         alpha = c.get_alpha()
         assert alpha is not None and not np.isscalar(alpha), (
             "opacity must be a per-point alpha array, not one alpha per sub-group")
-        alphas = np.asarray(alpha, dtype=float)
-        assert set(np.round(alphas, 6)) == {0.3, 1.0}
-        # _encoding_df is a full grid: each colour group holds 24 rows per day.
-        assert sorted(np.bincount(np.searchsorted([0.65], alphas)).tolist()) == [24, 24]
+        color = tuple(c.get_facecolors()[0, :3])
+        alphas_by_color.setdefault(color, []).extend(np.asarray(alpha, dtype=float))
+    assert len(alphas_by_color) == 2
+    for alphas in alphas_by_color.values():
+        # Plotly multiplies the opacity channel by the multi-color alpha (0.6).
+        assert set(np.round(alphas, 6)) == {0.18, 0.6}
+        # Across all batches, each color group holds 24 rows per day.
+        assert sorted(np.bincount(np.searchsorted([0.39], alphas)).tolist()) == [24, 24]
 
 
 def test_dimension_reduction_script_applies_shape_per_point(tmp_path, monkeypatch):
@@ -1207,8 +1213,9 @@ def test_2d_skips_constant_column_group_like_app(tmp_path, monkeypatch, capsys):
                        "fit_regression": False, "fit_gmm_2d": False})
     _run_script(tmp_path, state, df, monkeypatch)
     out = capsys.readouterr().out
-    assert "var: Pearson r" in out
-    assert "const: Pearson r" not in out
+    assert "var: Pearson r=" in out
+    assert "const: Pearson r=" not in out
+    assert "const: Pearson r and regression unavailable: constant X or Y." in out
 
 
 def test_feature_comparison_logy_refuses_negative_like_app(tmp_path, monkeypatch, capsys):

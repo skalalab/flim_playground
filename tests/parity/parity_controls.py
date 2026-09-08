@@ -20,6 +20,7 @@ from harness_common import (
     base_state,
     load_app_df,
     page_collectors,
+    plain_legend_label,
     run_export,
     scatter_points,
     sorted_rows,
@@ -87,10 +88,12 @@ def compare_points(tag, fig, ax, main_axis_only=False, known_gap=False, detail="
             detail if not same else "", known_gap=known_gap)
 
 
-def _alphas_app(fig, main_axis_only=False, include_color_alpha=False):
-    """Per-point marker opacity, optionally including DR's translucent color."""
+def _alphas_app(fig, main_axis_only=False, include_color_alpha=False, exclude_names=()):
+    """Per-point marker opacity, including translucent color when requested."""
     vals = []
     for t in app_point_traces(fig, main_axis_only=main_axis_only):
+        if t.name in exclude_names:
+            continue
         opacity = getattr(getattr(t, "marker", None), "opacity", None)
         count = len(t.x) if t.x is not None else 0
         if not count:
@@ -98,8 +101,8 @@ def _alphas_app(fig, main_axis_only=False, include_color_alpha=False):
         point_opacity = (list(opacity) if np.ndim(opacity)
                          else [1.0 if opacity is None else opacity] * count)
         if include_color_alpha:
-            # DR uses one rgba color per trace. Plotly multiplies its alpha by
-            # marker.opacity; Matplotlib stores that product in each facecolor.
+            # DR and Phasor use one rgba color per trace. Plotly multiplies
+            # its alpha by marker.opacity; Matplotlib stores that product.
             color = t.marker.color
             if isinstance(color, str) and color.startswith("rgba("):
                 color_alpha = float(color.rstrip(")").rsplit(",", 1)[1])
@@ -120,15 +123,16 @@ def _alphas_exp(ax):
     return np.sort(np.asarray(vals, float))
 
 
-def compare_alphas(tag, fig, ax, main_axis_only=False, include_color_alpha=False):
+def compare_alphas(tag, fig, ax, main_axis_only=False, include_color_alpha=False,
+                   exclude_names=()):
     """The opacity channel, point by point.
 
     Compare Plotly's per-trace marker.opacity with Matplotlib's per-point alpha
-    arrays as multisets, because the renderers use different paint orders. DR
-    additionally includes color alpha to compare the effective rendered opacity.
+    arrays as multisets, because the renderers use different paint orders. DR and
+    Phasor include color alpha to compare the effective rendered opacity.
     """
     app = _alphas_app(fig, main_axis_only=main_axis_only,
-                     include_color_alpha=include_color_alpha)
+                     include_color_alpha=include_color_alpha, exclude_names=exclude_names)
     exp = _alphas_exp(ax)
     same = app.shape == exp.shape and np.allclose(app, exp, atol=1e-9)
     R.check(f"{tag}: per-point opacity ({len(app)} points)", same,
@@ -422,8 +426,9 @@ def case(runner, tag, ctrl, points=True, colors=False, main_axis_only=False,
         compare_points(tag, fig, ax, main_axis_only=main_axis_only,
                        exclude_names=exclude_names)
         if ctrl.get("opacity_by"):
+            color_alpha = state["method"] in ("Dimension Reduction", "Phasor Plot")
             compare_alphas(tag, fig, ax, main_axis_only=main_axis_only,
-                           include_color_alpha=state["method"] == "Dimension Reduction")
+                           include_color_alpha=color_alpha, exclude_names=exclude_names)
     compare_styling(tag, state, ax)
     if colors:
         compare_colors(tag, fig, ax)
@@ -459,20 +464,14 @@ def shared_controls():
 
     # Both app plots and base_state() read the group-count toggle from session state.
     print("\n-- show_group_counts --")
-    import re
-
     import streamlit as st
 
     from src.vis.helpers import format_group_label
 
-    def _plain(label):
-        """Convert Plotly legend markup to plain text with Matplotlib-style newlines."""
-        return re.sub(r"<[^>]+>", "", label.replace("<br>", "\n"))
-
     st.session_state["plot_show_group_counts"] = True
     try:
         fig, ax, _ns, _state = run_fc({"color_by": ["treatment"]}, "show_counts")
-        app_legend = [_plain(t.name) for t in fig.data if t.name]
+        app_legend = [plain_legend_label(t.name) for t in fig.data if t.name]
         exp_legend = legend_labels_exp(ax)
         counted = [lbl for lbl in app_legend if "n=" in lbl]
         R.check("show_group_counts: app renders counts", bool(counted),
@@ -557,14 +556,18 @@ def hist_controls():
     ]:
         print(f"\n-- {tag} --")
         fig, ax, _ns, state = run_hist(dict(ctrl), tag)
-        app_counts = {t.name: np.asarray(t.y, float) for t in fig.data
-                      if t.name and t.y is not None and len(t.y)}
-        exp_counts = {ln.get_label(): np.asarray(ln.get_ydata(), float)
-                      for ln in ax.lines if not ln.get_label().startswith("_")}
-        shared = set(app_counts) & set(exp_counts)
-        R.check(f"{tag}: histogram/GMM curves ({len(shared)} shared)",
-                bool(shared) and all(len(app_counts[k]) == len(exp_counts[k]) for k in shared),
-                f"app={sorted(app_counts)[:3]} exp={sorted(exp_counts)[:3]}")
+        app_curves = {plain_legend_label(t.name): np.column_stack([t.x, t.y]).astype(float)
+                      for t in fig.data if t.name and t.y is not None and len(t.y)}
+        exp_curves = {
+            plain_legend_label(ln.get_label()):
+            np.column_stack([ln.get_xdata(), ln.get_ydata()]).astype(float)
+            for ln in ax.lines if not ln.get_label().startswith("_")}
+        same = bool(app_curves) and set(app_curves) == set(exp_curves) and all(
+            app_curves[k].shape == exp_curves[k].shape
+            and np.allclose(app_curves[k], exp_curves[k], rtol=1e-9, atol=1e-12)
+            for k in app_curves)
+        R.check(f"{tag}: histogram/GMM curves ({len(app_curves)} curves)", same,
+                "" if same else f"app={sorted(app_curves)} exp={sorted(exp_curves)}")
         compare_styling(tag, state, ax)
 
 
@@ -619,12 +622,7 @@ def subcolor_controls():
     encodings cannot be selected together.
     """
     print("\n=== Subcolor channel (Feature Comparison) ===")
-    import re
-
     import streamlit as st
-
-    def _plain(label):
-        return re.sub(r"<[^>]+>", "", label.replace("<br>", "\n"))
 
     # Cases hold (tag, controls, subcolor values, x groups). X groups must appear
     # only in ticks; the legend may also contain entries for other encodings.
@@ -648,7 +646,7 @@ def subcolor_controls():
     ]
     for tag, ctrl, values, groups in cases:
         fig, ax, _ns, _state = case(run_fc, tag, ctrl, colors=True)
-        app_legend = {_plain(t.name) for t in fig.data if t.name}
+        app_legend = {plain_legend_label(t.name) for t in fig.data if t.name}
         exp_legend = set(legend_labels_exp(ax))
         R.check(f"{tag}: legend is one entry per value on both sides",
                 app_legend == exp_legend and values <= app_legend
@@ -664,7 +662,7 @@ def subcolor_controls():
     st.session_state["plot_show_group_counts"] = True
     try:
         fig, ax, _ns, _state = run_fc({"subcolor_by": "dish"}, "subcolor_counts")
-        app_legend = {_plain(t.name) for t in fig.data if t.name}
+        app_legend = {plain_legend_label(t.name) for t in fig.data if t.name}
         exp_legend = set(legend_labels_exp(ax))
         R.check("subcolor: counted legend matches, and counts the whole figure",
                 app_legend == exp_legend and all("n=" in lbl for lbl in exp_legend),
@@ -709,6 +707,8 @@ def phasor_controls():
         ("phasor: harmonic=2", {"phasor_harmonic": 2}),
         ("phasor: f=0.05", {"phasor_f": 0.05}),
         ("phasor: h2+shape", {"phasor_harmonic": 2, "shape_by": "dish"}),
+        ("phasor: opacity", {"opacity_by": "dish"}),
+        ("phasor: shape+opacity", {"shape_by": "dish", "opacity_by": "cell_line"}),
     ]:
         _fig, ax, _ns, _state = case(run_phasor, tag, ctrl,
                                      exclude_names=PHASOR_NON_DATA)

@@ -100,7 +100,8 @@ stays quick:
   order differently and a missing one would split into `"nan"` on one side and `"N/A"` on
   the other. Checked on shape, on opacity, and on both at once
 - **Feature Histogram** — `log_x`, bin width, GMM on/off, intersection threshold, GMM max
-  components, GMM min weight
+  components, GMM min weight; complete curve-label sets and every x/y value, after
+  normalizing Plotly legend markup to plain text
 - **Feature Comparison** — `log_y`, boxplot, connect means, both effect sizes ×
   mean/median, both t-tests, selected pairs, custom order, shape/opacity, all at once
 - **Collapse by** — one point per replicate, per x group, holding the MEAN of its
@@ -127,7 +128,7 @@ stays quick:
   absent on purpose — it shares the picker with subcolor, so the two cannot both be on
 - **2D** — `log_x`, `log_y`, all three marginal types, regression line, 2D GMM, its two
   hyperparameters, all at once
-- **Phasor** — harmonics 1 and 2, laser rate, combined with shape
+- **Phasor** — harmonics 1 and 2, laser rate, shape, opacity, and shape plus opacity
 - **Dimension Reduction** — PCA, UMAP (default and tuned), t-SNE (default and tuned),
   shape+opacity
 - **Classification** — all four classifiers, train split, under/oversampling, class
@@ -136,9 +137,10 @@ stays quick:
 Each case checks the plotted values, the point cloud (positions included), axis-label and
 legend font sizes, and — where relevant — group colours, plus per-method extras (phasor
 marker geometry, DR axis labels, classifier metrics and predictions). Any case with
-`opacity_by` also compares per-point alpha as a multiset: the engines take opacity in
-differently (a scalar `marker.opacity` per Plotly trace against one per-point alpha array
-in Matplotlib), so nothing else would notice the export applying a different ramp.
+`opacity_by` also compares per-point alpha as a multiset: Plotly's `marker.opacity` can
+be a scalar or a per-point array, while Matplotlib stores a per-point alpha array.
+Dimension Reduction and Phasor also multiply by the trace color's alpha to compare the
+effective rendered opacity. Phasor lifetime markers are excluded from data-point checks.
 
 ## Known gaps
 
@@ -155,8 +157,8 @@ Resolved this way already:
   captured by `base_state()`, and `format_group_label()` takes an `engine` argument so the
   one helper writes both renderings: `<br>` plus a 0.75em span for Plotly, a plain newline
   for Matplotlib, which renders no markup in legend entries. That difference is also why
-  the check needs `_plain()` — comparing the raw legend strings could never match even
-  with the export correct, which is what made this look permanent.
+  the check needs `plain_legend_label()` — raw legend strings cannot match across the
+  renderers even when the export is correct.
 
 - Feature Comparison `separate_by` section spacing — the export advanced a whole slot
   between sections where the app uses `section_spacing = 0.5`, so every later section and

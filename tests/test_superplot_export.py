@@ -246,7 +246,7 @@ def test_overlay_defaults_from_legacy_boxplot_but_explicit_none_takes_precedence
     ns = _run(tmp_path / "legacy", monkeypatch, state, source)
     assert ns.get("OVERLAY") == ("Boxplot" if legacy else "None")
     assert len(ns["ax"].patches) == (2 if legacy else 0)
-    assert all(artist.get_sizes() == pytest.approx([state["point_size"]])
+    assert all(artist.get_sizes() == pytest.approx([state["point_size"] ** 2])
                for artist in _points(ns, 2))
     state["method_params"]["overlay"] = "None"
     plain = _run(tmp_path / "explicit", monkeypatch, state, source)

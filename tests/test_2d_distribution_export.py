@@ -279,9 +279,11 @@ def test_no_color_by_uses_one_local_population_and_opaque_color_mapping(tmp_path
     ns = _run(tmp_path, monkeypatch, state, _source())
     assert set(ns["color_map"]) == {"all_data"}
     assert len(ns["distribution_results"]) == 3
-    assert len(_foreground(ns["ax_main"])) == 1
-    assert _foreground(ns["ax_main"])[0].get_alpha() == 0.8
-    assert _foreground(ns["ax_main"])[0].get_label() == "all_data\nn=24"
+    foreground = _foreground(ns["ax_main"])
+    assert sum(len(collection.get_offsets()) for collection in foreground) == 24
+    assert all(collection.get_alpha() == 0.8 for collection in foreground)
+    assert [text.get_text() for text in ns["ax_main"].get_legend().get_texts()] == [
+        "all_data\nn=24"]
 
 
 def test_internal_group_columns_preserve_uploaded_names_and_categories(tmp_path, monkeypatch):

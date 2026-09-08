@@ -148,10 +148,14 @@ def scatter_with_encodings(ax, x, y, color, label, point_size,
 def add_encoding_legend_entries(ax, shape_map, opacity_map, point_size):
     """Add gray proxy legend entries for opacity and shape groups
     (mirrors the app's helpers.add_point_legend_traces: opacity first, then shape)."""
+    handles = []
     for group, alpha in (opacity_map or {}).items():
-        ax.scatter([], [], c='gray', alpha=alpha, marker='o', s=point_size, label=str(group))
+        handles.append(ax.scatter([], [], c='gray', alpha=alpha, marker='o',
+                                  s=point_size, label=str(group)))
     for group, marker in (shape_map or {}).items():
-        ax.scatter([], [], c='gray', alpha=0.8, marker=marker, s=point_size, label=str(group))
+        handles.append(ax.scatter([], [], c='gray', alpha=0.8, marker=marker,
+                                  s=point_size, label=str(group)))
+    return handles
 
 
 def scatter_dimension_batch(ax, x, y, color, label, point_size,
@@ -172,6 +176,68 @@ def scatter_dimension_batch(ax, x, y, color, label, point_size,
             paths[value] = style.get_path().transformed(style.get_transform())
         collection.set_paths([paths[str(value)] for value in shape_vals])
     return collection
+
+
+def scatter_interleaved_points(ax, df, x_col, y_col, group_column, color_groups,
+                               color_map, point_size, shape_by=None, shape_map=None,
+                               opacity_by=None, opacity_map=None, base_alpha=0.7,
+                               show_counts=False, active_positions=None):
+    """Draw the app's global batches, optionally restricted to one category.
+
+    Keep mixed shapes in a single collection so every point retains its shuffled
+    position. Return one legend handle per visible color in natural group order.
+    """
+    import numpy as np
+    from src.vis.dimension_facets import dimension_interleaved_indices
+    from src.vis.helpers import format_group_label
+
+    batches = dimension_interleaved_indices(
+        df, group_column, color_groups, shape_by, shape_map, opacity_by, opacity_map)
+    membership = np.ones(len(df), dtype=bool)
+    if active_positions is not None:
+        membership[:] = False
+        membership[active_positions] = True
+    counts = df.loc[membership, group_column].value_counts().to_dict()
+    first_handles = {}
+    for group, positions in batches:
+        positions = positions[membership[positions]]
+        if not len(positions):
+            continue
+        points = df.iloc[positions]
+        label = (format_group_label(group, counts[group], show_counts, engine='mpl')
+                 if group not in first_handles else None)
+        point_opacity_map = {key: alpha * color_map[group][3]
+                             for key, alpha in (opacity_map or {}).items()}
+        handle = scatter_dimension_batch(
+            ax, points[x_col], points[y_col], color_map[group][:3], label, point_size,
+            shape_vals=points[shape_by] if shape_by else None, shape_map=shape_map,
+            opacity_vals=points[opacity_by] if opacity_by else None,
+            opacity_map=point_opacity_map, base_alpha=base_alpha)
+        first_handles.setdefault(group, handle)
+    return [first_handles[group] for group in color_groups if group in first_handles]
+
+
+def _print_distribution_statistics(result, label):
+    """Report the shared 2D fit results for either exported category layout."""
+    import numpy as np
+
+    if result["pearson"] is not None:
+        coefficient, p_value = result["pearson"]
+        print(f"  {label}: Pearson r={coefficient:.4f}, p={p_value:.2e}")
+    regression = result["regression"]
+    if regression is not None:
+        print(f"    R²={regression['r2']:.4f}, slope={regression['slope']:.4f}, "
+              f"intercept={regression['intercept']:.4f}")
+    if result["components"]:
+        print(f"  {label}: GMM components")
+        print("    | Component | Mean X | Std. Dev. X | Mean Y | Std. Dev. Y | Weight |")
+    for index, component in enumerate(result["components"], 1):
+        mean, covariance, weight = component["mean"], component["covariance"], component["weight"]
+        std_x, std_y = np.sqrt(np.diag(covariance))
+        print(f"    | {index} | {mean[0]:.4f} | {std_x:.4f} | "
+              f"{mean[1]:.4f} | {std_y:.4f} | {weight:.3f} |")
+    for notice in result["notices"]:
+        print(f"  {label}: {notice}")
 
 
 # ---------------------------------------------------------------------------
@@ -529,8 +595,14 @@ def _build_visual_encoding(state: dict, overlap_point: bool = True,
     helpers_src = _extract_source(natural_key, tuple_natural_key, natural_tuple_sort,
                                   create_opacity_mapping, format_group_label)
     # Extract Matplotlib-adapted color/shape maps and scatter helpers from this module
-    mpl_src = _extract_source(create_color_map, create_shape_map,
-                              scatter_with_encodings, add_encoding_legend_entries)
+    mpl_helpers = [create_color_map, create_shape_map,
+                   scatter_with_encodings, add_encoding_legend_entries]
+    if state["method"] in ("2D Feature Distribution", "Phasor Plot"):
+        from src.vis.dimension_facets import dimension_interleaved_indices
+
+        mpl_helpers.extend([dimension_interleaved_indices, scatter_dimension_batch,
+                            scatter_interleaved_points])
+    mpl_src = _extract_source(*mpl_helpers)
 
     alpha_expr = "0.6 if len(color_groups) > 1 else 1.0" if overlap_point else "1.0"
     # Effective point alpha = color alpha × 0.8 marker opacity (the app's
@@ -842,6 +914,7 @@ if LOG_Y:
 
 
 def _build_feature_comparison(state: dict) -> str:
+    from src.export_labels import available_label_column
     from src.vis import subcolor_palette
     from src.vis.superplot import summarize_superplot
     from src.vis.helpers import (
@@ -867,7 +940,14 @@ def _build_feature_comparison(state: dict) -> str:
         _density_at_points, summarize_superplot,
     )
 
-    return _build_collapse(state) + _build_visual_encoding(state, overlap_point=False) + f"""
+    group_preparation = _extract_source(available_label_column) + """
+# Reserve the grouping column across both replicate and observation layers.
+_fc_columns = list(df.columns) + (list(source_df.columns) if OVERLAY == "SuperPlot" else [])
+FC_GROUP_COLUMN = available_label_column(_fc_columns, "_color_group")
+"""
+    return _build_collapse(state) + group_preparation + _build_visual_encoding(
+        state, overlap_point=False, group_column_expr="FC_GROUP_COLUMN"
+    ) + f"""
 # ============================================================
 # Feature Comparison — Sina Plot
 # ============================================================
@@ -882,9 +962,9 @@ from scipy.stats import gaussian_kde, ttest_ind, median_abs_deviation
 # The main frame remains replicate means; observations and SEM ends affect geometry only.
 display_df = df
 if OVERLAY == "SuperPlot":
-    source_df["_color_group"] = (source_df[COLOR_BY].astype(str).agg("::".join, axis=1)
+    source_df[FC_GROUP_COLUMN] = (source_df[COLOR_BY].astype(str).agg("::".join, axis=1)
                                  if COLOR_BY else "all_data")
-    _summary_groups = ([SEPARATE_BY] if SEPARATE_BY else []) + ["_color_group"]
+    _summary_groups = ([SEPARATE_BY] if SEPARATE_BY else []) + [FC_GROUP_COLUMN]
     superplot_summary_df = summarize_superplot(df, SELECTED_VAR, _summary_groups)
     _display_frames = [source_df[_summary_groups + [SELECTED_VAR]],
                        df[_summary_groups + [SELECTED_VAR]]]
@@ -926,7 +1006,7 @@ section_headers = []
 for sec_i, sec_group in enumerate(ordered_separate_groups):
     if sec_group is not None:
         sec_df = df[df[SEPARATE_BY] == sec_group]
-        sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df["_color_group"].unique()]
+        sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df[FC_GROUP_COLUMN].unique()]
     else:
         sec_df = df
         sec_color_groups = ordered_color_groups
@@ -950,18 +1030,17 @@ for sec_i, sec_group in enumerate(ordered_separate_groups):
 fig, ax = plt.subplots(figsize=(max(10, len(tick_positions) * 1.2), 6))
 
 # Count groups across all sections of the retained frame for shared legend entries.
-group_counts = df.groupby("_color_group").size().to_dict()
+group_counts = df.groupby(FC_GROUP_COLUMN).size().to_dict()
 # Subcolor identifies nested values across the figure; x positions, boxes, and
 # statistics continue to describe comparison groups.
 subcolor_of = create_subcolor_map(
-    df, SUBCOLOR_BY, "_color_group", ordered_color_groups, engine='mpl', colormap=COLORMAP)
+    df, SUBCOLOR_BY, FC_GROUP_COLUMN, ordered_color_groups, engine='mpl', colormap=COLORMAP)
 subcolor_counts = {{}}
 if subcolor_of:
     subcolor_counts = df[SUBCOLOR_BY].fillna("N/A").astype(str).value_counts().to_dict()
 legend_entries = set()
-# SuperPlot sizes are marker diameters, converted to Matplotlib's area units.
-# Preserve the existing None/Boxplot marker sizing convention.
-primary_point_area = (POINT_SIZE * {SUPERPLOT_REPLICATE_SIZE_SCALE}) ** 2 if OVERLAY == "SuperPlot" else POINT_SIZE
+# The app's Point Size is a diameter; Matplotlib scatter takes an area.
+primary_point_area = (POINT_SIZE * {SUPERPLOT_REPLICATE_SIZE_SCALE}) ** 2 if OVERLAY == "SuperPlot" else POINT_SIZE ** 2
 point_layers = [(df, primary_point_area, 1.0, 2, True)]
 if OVERLAY == "SuperPlot":
     point_layers.insert(0, (source_df, max({SUPERPLOT_OBSERVATION_MIN_SIZE}, POINT_SIZE * {SUPERPLOT_OBSERVATION_SIZE_SCALE}) ** 2,
@@ -974,7 +1053,7 @@ for layer_df, point_area, opacity_scale, layer_zorder, is_primary in point_layer
     for sec_group in ordered_separate_groups:
         if sec_group is not None:
             sec_df = layer_df[layer_df[SEPARATE_BY] == sec_group]
-            sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df["_color_group"].unique()]
+            sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df[FC_GROUP_COLUMN].unique()]
         else:
             sec_df = layer_df
             sec_color_groups = ordered_color_groups
@@ -982,7 +1061,7 @@ for layer_df, point_area, opacity_scale, layer_zorder, is_primary in point_layer
         for cg in sec_color_groups:
             key = (sec_group, cg) if sec_group is not None else cg
             x_pos = x_positions[key]
-            group_df = sec_df[sec_df["_color_group"] == cg]
+            group_df = sec_df[sec_df[FC_GROUP_COLUMN] == cg]
             y_data = group_df[SELECTED_VAR].values
 
             # Fit independent layer jitter once per section/color group; encodings keep the same positions.
@@ -1035,7 +1114,7 @@ if OVERLAY == "SuperPlot":
         _summary_key = _summary_key if isinstance(_summary_key, tuple) else (_summary_key,)
         _groups = dict(zip(superplot_summary_df.index.names, _summary_key))
         _section = _groups[SEPARATE_BY] if SEPARATE_BY else None
-        _color = _groups["_color_group"]
+        _color = _groups[FC_GROUP_COLUMN]
         _key = (_section, _color) if _section is not None else _color
         _x = x_positions[_key]
         _mean, _sem = _summary["mean"], _summary["sem"]
@@ -1051,7 +1130,7 @@ if OVERLAY == "Boxplot":
     for sec_group in ordered_separate_groups:
         if sec_group is not None:
             sec_df = df[df[SEPARATE_BY] == sec_group]
-            sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df["_color_group"].unique()]
+            sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df[FC_GROUP_COLUMN].unique()]
         else:
             sec_df = df
             sec_color_groups = ordered_color_groups
@@ -1059,11 +1138,19 @@ if OVERLAY == "Boxplot":
         for cg in sec_color_groups:
             key = (sec_group, cg) if sec_group is not None else cg
             x_pos = x_positions[key]
-            gdata = sec_df[sec_df["_color_group"] == cg][SELECTED_VAR].dropna().values
+            gdata = sec_df[sec_df[FC_GROUP_COLUMN] == cg][SELECTED_VAR].dropna().values
             if len(gdata) == 0:
                 continue
-            bp = ax.boxplot([gdata], positions=[x_pos], widths=0.5, patch_artist=True,
-                          manage_ticks=False, showfliers=False, showmeans=True, meanline=True, zorder=1)
+            # Match the app's IQR fences, capped at observed extrema.
+            # Matplotlib's automatic whiskers instead snap to in-fence observations.
+            q1, median, q3 = np.percentile(gdata, [25, 50, 75])
+            iqr = q3 - q1
+            box_stats = dict(q1=q1, med=median, q3=q3,
+                             whislo=max(q1 - 1.5 * iqr, np.min(gdata)),
+                             whishi=min(q3 + 1.5 * iqr, np.max(gdata)),
+                             mean=np.mean(gdata), fliers=[])
+            bp = ax.bxp([box_stats], positions=[x_pos], widths=0.5, patch_artist=True,
+                        manage_ticks=False, showfliers=False, showmeans=True, meanline=True, zorder=1)
             bp['boxes'][0].set_facecolor('none')
             bp['boxes'][0].set_edgecolor('black')
             bp['medians'][0].set_color('black')
@@ -1076,7 +1163,7 @@ if CONNECT_MEANS:
     for sec_group in ordered_separate_groups:
         if sec_group is not None:
             sec_df = df[df[SEPARATE_BY] == sec_group]
-            sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df["_color_group"].unique()]
+            sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df[FC_GROUP_COLUMN].unique()]
         else:
             sec_df = df
             sec_color_groups = ordered_color_groups
@@ -1085,7 +1172,7 @@ if CONNECT_MEANS:
         for cg in sec_color_groups:
             key = (sec_group, cg) if sec_group is not None else cg
             x_pos = x_positions[key]
-            gdata = sec_df[sec_df["_color_group"] == cg][SELECTED_VAR].dropna()
+            gdata = sec_df[sec_df[FC_GROUP_COLUMN] == cg][SELECTED_VAR].dropna()
             if len(gdata) > 0:
                 means_x.append(x_pos)
                 means_y.append(gdata.mean())
@@ -1103,7 +1190,7 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
         if sec_group is not None:
             sec_df = df[df[SEPARATE_BY] == sec_group]
             display_sec_df = display_df[display_df[SEPARATE_BY] == sec_group]
-            sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df["_color_group"].unique()]
+            sec_color_groups = [cg for cg in ordered_color_groups if cg in sec_df[FC_GROUP_COLUMN].unique()]
         else:
             sec_df = df
             display_sec_df = display_df
@@ -1136,8 +1223,8 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
         drawn = []
 
         for pair in pairs:
-            g1_data = sec_df[sec_df["_color_group"] == pair[0]][SELECTED_VAR].dropna().values
-            g2_data = sec_df[sec_df["_color_group"] == pair[1]][SELECTED_VAR].dropna().values
+            g1_data = sec_df[sec_df[FC_GROUP_COLUMN] == pair[0]][SELECTED_VAR].dropna().values
+            g2_data = sec_df[sec_df[FC_GROUP_COLUMN] == pair[1]][SELECTED_VAR].dropna().values
             if len(g1_data) == 0 or len(g2_data) == 0:
                 continue
 
@@ -1175,7 +1262,7 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
             spanned = [cg for cg in sec_color_groups
                        if x_positions.get((sec_group, cg) if sec_group is not None else cg, -1) >= x_start
                        and x_positions.get((sec_group, cg) if sec_group is not None else cg, -1) <= x_end]
-            region_df = display_sec_df[display_sec_df["_color_group"].isin(spanned)]
+            region_df = display_sec_df[display_sec_df[FC_GROUP_COLUMN].isin(spanned)]
             region_max = region_df[SELECTED_VAR].max() if not region_df.empty else all_y.max()
 
             # Use extracted collision detection function
@@ -1233,8 +1320,14 @@ def _build_2d_distribution(state: dict) -> str:
     if state.get("separate_by") is not None:
         return _build_separated_2d_distribution(state)
 
-    from src.vis.helpers import _find_best_gmm
-    gmm_src = _extract_source(_find_best_gmm) if state.get("method_params", {}).get("fit_gmm_2d") else ""
+    from src.vis.bivar import distribution_fit_groups
+
+    helpers = [distribution_fit_groups, _print_distribution_statistics]
+    if state.get("method_params", {}).get("fit_gmm_2d"):
+        from src.vis.helpers import _find_best_gmm
+
+        helpers.append(_find_best_gmm)
+    fit_src = _extract_source(*helpers)
 
     group_preparation = '\nFD_GROUP_COLUMN = available_label_column(df.columns, "_color_group")\n'
     return _build_collapse(state) + group_preparation + _build_visual_encoding(
@@ -1243,7 +1336,7 @@ def _build_2d_distribution(state: dict) -> str:
 # ============================================================
 # 2D Feature Distribution
 # ============================================================
-{gmm_src}
+{fit_src}
 DERIVED_LABEL_COLUMN = available_label_column(df.columns, "2D_GMM_group")
 
 # Create figure with marginal axes
@@ -1257,28 +1350,24 @@ if MARGINAL_PLOT_TYPE != 'none':
     ax_main = fig.add_subplot(gs[1, 0], box_aspect=1, anchor='NE')
     ax_top = fig.add_subplot(gs[0, 0], sharex=ax_main, box_aspect=1/9, anchor='SE')
     ax_right = fig.add_subplot(gs[1, 1], sharey=ax_main, box_aspect=9, anchor='NW')
-    ax_top.tick_params(labelbottom=False)
-    ax_right.tick_params(labelleft=False)
+    ax_top.tick_params(labelbottom=False, labelleft=False)
+    ax_right.tick_params(labelleft=False, labelbottom=False)
 else:
     fig, ax_main = plt.subplots(figsize=(10, 10), subplot_kw=dict(box_aspect=1))
     ax_top = None
     ax_right = None
 
-legend_entries = set()
+point_legend_handles = scatter_interleaved_points(
+    ax_main, df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups, color_map,
+    POINT_SIZE ** 2, shape_by=SHAPE_BY, shape_map=shape_map,
+    opacity_by=OPACITY_BY, opacity_map=opacity_map,
+    base_alpha=BASE_ALPHA, show_counts=SHOW_GROUP_COUNTS,
+)
+
+# Each visible box/violin gets its own categorical position on each axis.
+marginal_positions = {{"x": 0, "y": 0}}
 for g in color_groups:
     gdf = df[df[FD_GROUP_COLUMN] == g]
-    # len(gdf) counts the rows the app's point collector holds for this colour group
-    # (helpers.py add_interleaved_points_trace: len(points_by_color[g])). Both sides
-    # count after the same X/Y NaN filter — data_analysis.py applies it before calling
-    # the plot, the notna() line above reproduces it.
-    label = (format_group_label(g, len(gdf), SHOW_GROUP_COUNTS, engine='mpl')
-             if g not in legend_entries else None)
-    scatter_with_encodings(ax_main, gdf[SELECTED_X], gdf[SELECTED_Y],
-                           color_map[g][:3], label, POINT_SIZE,
-                           shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
-                           opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
-                           base_alpha=BASE_ALPHA)
-    legend_entries.add(g)
 
     # Guard each marginal on its own axis, as the app does (_plot_marginal_density
     # in src/vis/bivar.py returns early per axis), so a constant y still draws x.
@@ -1291,12 +1380,14 @@ for g in color_groups:
             if MARGINAL_PLOT_TYPE == 'gaussian fit':
                 ax_top.plot(x_range, kde_x(x_range), color=color_map[g][:3], linewidth=1.5)
             elif MARGINAL_PLOT_TYPE == 'boxplot':
-                ax_top.boxplot(x_vals, vert=False, positions=[0], widths=0.5,
+                ax_top.boxplot(x_vals, vert=False, positions=[marginal_positions["x"]], widths=0.5,
                              patch_artist=True, boxprops=dict(facecolor=(*color_map[g][:3], 0.3)))
             elif MARGINAL_PLOT_TYPE == 'violin':
-                parts = ax_top.violinplot(x_vals, vert=False, positions=[0], showmedians=True)
+                parts = ax_top.violinplot(x_vals, vert=False, positions=[marginal_positions["x"]], showmedians=True)
                 for pc in parts.get('bodies', []):
                     pc.set_facecolor((*color_map[g][:3], 0.3))
+            if MARGINAL_PLOT_TYPE in ('boxplot', 'violin'):
+                marginal_positions["x"] += 1
         except Exception:
             pass
 
@@ -1308,81 +1399,57 @@ for g in color_groups:
             if MARGINAL_PLOT_TYPE == 'gaussian fit':
                 ax_right.plot(kde_y(y_range), y_range, color=color_map[g][:3], linewidth=1.5)
             elif MARGINAL_PLOT_TYPE == 'boxplot':
-                ax_right.boxplot(y_vals, vert=True, positions=[0], widths=0.5,
+                ax_right.boxplot(y_vals, vert=True, positions=[marginal_positions["y"]], widths=0.5,
                                patch_artist=True, boxprops=dict(facecolor=(*color_map[g][:3], 0.3)))
             elif MARGINAL_PLOT_TYPE == 'violin':
-                parts = ax_right.violinplot(y_vals, vert=True, positions=[0], showmedians=True)
+                parts = ax_right.violinplot(y_vals, vert=True, positions=[marginal_positions["y"]], showmedians=True)
                 for pc in parts.get('bodies', []):
                     pc.set_facecolor((*color_map[g][:3], 0.3))
+            if MARGINAL_PLOT_TYPE in ('boxplot', 'violin'):
+                marginal_positions["y"] += 1
         except Exception:
             pass
 
-# Pearson r + p is reported per color group unconditionally, matching the app's
-# always-on correlation readout; the regression line + R² stay gated.
-for g in color_groups:
-    gdf = df[df[FD_GROUP_COLUMN] == g].dropna(subset=[SELECTED_X, SELECTED_Y])
-    # Skip constant-x or constant-y groups, matching the app's nunique<2 guard.
-    if gdf[SELECTED_X].nunique() < 2 or gdf[SELECTED_Y].nunique() < 2:
-        continue
-    r_val, p_val = pearsonr(gdf[SELECTED_X], gdf[SELECTED_Y])
-    print(f"  {{g}}: Pearson r={{r_val:.4f}}, p={{p_val:.2e}}")
-    if FIT_REGRESSION:
-        X_reg = gdf[SELECTED_X].values.reshape(-1, 1)
-        y_reg = gdf[SELECTED_Y].values
-        model = LinearRegression().fit(X_reg, y_reg)
-        r2 = model.score(X_reg, y_reg)
-        x_line = np.linspace(X_reg.min(), X_reg.max(), 100)
-        ax_main.plot(x_line, model.predict(x_line.reshape(-1, 1)), '--',
-                    color=color_map[g][:3], linewidth=2)
-        print(f"    R\\u00b2={{r2:.4f}}")
+# Use the app's category/color computation for correlations, fits, and labels.
+distribution_results, distribution_assignments = distribution_fit_groups(
+    df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups,
+    [(None, np.arange(len(df)))], fit_regression=FIT_REGRESSION,
+    fit_gmm=FIT_GMM_2D, max_components=GMM_MAX_COMPONENTS,
+    min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD, color_by=COLOR_BY,
+)
+if FIT_GMM_2D and any(value is not None for value in distribution_assignments):
+    df[DERIVED_LABEL_COLUMN] = distribution_assignments
 
-if FIT_GMM_2D:
-    from matplotlib.patches import Ellipse
-    from scipy.stats import chi2
+for result in distribution_results:
+    color = color_map[result["color_group"]][:3]
+    _print_distribution_statistics(result, result["color_group"])
+    regression = result["regression"]
+    if regression is not None:
+        ax_main.plot(regression["x"], regression["y"], '--', color=color, linewidth=2)
+    for component in result["components"]:
+        mean, covariance = component["mean"], component["covariance"]
+        eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+        angle = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
+        width, height = 2 * np.sqrt(eigenvalues * chi2.ppf(0.95, 2))
+        ax_main.add_patch(Ellipse(
+            xy=mean, width=width, height=height, angle=angle, fill=False,
+            edgecolor=color, linewidth=2, linestyle='--',
+        ))
+        ax_main.plot(*mean, '+', color=color, markersize=15, markeredgewidth=2)
 
-    for g in color_groups:
-        gdf = df[df[FD_GROUP_COLUMN] == g].dropna(subset=[SELECTED_X, SELECTED_Y])
-        # Match the app's minimum sample count and non-constant axes.
-        if len(gdf) < 2 or gdf[SELECTED_X].nunique() < 2 or gdf[SELECTED_Y].nunique() < 2:
-            continue
-        X_gmm = gdf[[SELECTED_X, SELECTED_Y]].values
-        best_gmm = _find_best_gmm(X_gmm, max_components=GMM_MAX_COMPONENTS,
-                                  min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD)
-
-        # Ellipses + per-point labels only when the GMM has >1 component (bivar.py);
-        # a unimodal best-fit draws no overlay.
-        if best_gmm is not None and best_gmm.n_components > 1:
-            for i in range(best_gmm.n_components):
-                mean = best_gmm.means_[i]
-                cov = best_gmm.covariances_[i]
-                eigenvalues, eigenvectors = np.linalg.eigh(cov)
-                angle = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
-                chi2_val = chi2.ppf(0.95, 2)
-                width = 2 * np.sqrt(eigenvalues[0] * chi2_val)
-                height = 2 * np.sqrt(eigenvalues[1] * chi2_val)
-                ellipse = Ellipse(xy=mean, width=width, height=height, angle=angle,
-                                fill=False, edgecolor=color_map[g][:3], linewidth=2, linestyle='--')
-                ax_main.add_patch(ellipse)
-                ax_main.plot(*mean, '+', color=color_map[g][:3], markersize=15, markeredgewidth=2)
-
-            # per-point component membership, as the app assigns it
-            subpopulation_labels = best_gmm.predict(X_gmm)
-            if DERIVED_LABEL_COLUMN not in df.columns:
-                df[DERIVED_LABEL_COLUMN] = None
-            df.loc[gdf.index, DERIVED_LABEL_COLUMN] = format_export_group_labels(subpopulation_labels, g)
-
-    if SAVE_DERIVED_DATA:
-        apply_export_labels(
-            df.drop(columns=[FD_GROUP_COLUMN]), DERIVED_LABEL_COLUMN, DERIVED_EXPORT
-        ).to_csv("2D_gmm_data.csv", index=False)
-        print("2D GMM data saved to 2D_gmm_data.csv")
+if FIT_GMM_2D and SAVE_DERIVED_DATA:
+    apply_export_labels(
+        df.drop(columns=[FD_GROUP_COLUMN]), DERIVED_LABEL_COLUMN, DERIVED_EXPORT
+    ).to_csv("2D_gmm_data.csv", index=False)
+    print("2D GMM data saved to 2D_gmm_data.csv")
 
 ax_main.set_xlabel(f"log₁₀({{format_feature_label(SELECTED_X, engine='mpl')}})" if LOG_X else format_feature_label(SELECTED_X, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
 ax_main.set_ylabel(f"log₁₀({{format_feature_label(SELECTED_Y, engine='mpl')}})" if LOG_Y else format_feature_label(SELECTED_Y, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
 ax_main.set_title(f"2D Distribution of {{format_feature_label(SELECTED_X, engine='mpl')}} and {{format_feature_label(SELECTED_Y, engine='mpl')}} by {{', '.join(COLOR_BY)}}", fontsize=AXIS_LABEL_SIZE)
 ax_main.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
-add_encoding_legend_entries(ax_main, shape_map, opacity_map, POINT_SIZE)
-ax_main.legend(fontsize=LEGEND_SIZE)
+encoding_legend_handles = add_encoding_legend_entries(
+    ax_main, shape_map, opacity_map, POINT_SIZE ** 2)
+ax_main.legend(handles=point_legend_handles + encoding_legend_handles, fontsize=LEGEND_SIZE)
 """
 
 
@@ -1394,7 +1461,8 @@ def _build_separated_2d_distribution(state: dict) -> str:
         distribution_ranges,
     )
 
-    helper_functions = [category_panel_rows, distribution_fit_groups, distribution_ranges]
+    helper_functions = [category_panel_rows, distribution_fit_groups, distribution_ranges,
+                        _print_distribution_statistics]
     if state.get("method_params", {}).get("fit_gmm_2d"):
         from src.vis.helpers import _find_best_gmm
 
@@ -1495,29 +1563,26 @@ if len(other_positions):
         label='_nolegend_', zorder=0,
     )
 
+point_legend_handles = scatter_interleaved_points(
+    ax_main, df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups, color_map,
+    POINT_SIZE ** 2, shape_by=SHAPE_BY, shape_map=shape_map,
+    opacity_by=OPACITY_BY, opacity_map=opacity_map,
+    base_alpha=BASE_ALPHA, show_counts=SHOW_GROUP_COUNTS,
+    active_positions=active_positions,
+)
+
+# Count only available marginals in the selected category, independently per axis.
+marginal_positions = {"x": 0, "y": 0}
 for result in distribution_results:
     if result["category"] != distribution_category:
         continue
     group = result["color_group"]
-    group_df = df.iloc[result["positions"]]
     color = color_map[group][:3]
-    scatter_with_encodings(
-        ax_main, group_df[SELECTED_X], group_df[SELECTED_Y], color,
-        format_group_label(group, len(group_df), SHOW_GROUP_COUNTS, engine='mpl'),
-        POINT_SIZE ** 2,
-        shape_vals=group_df[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
-        opacity_vals=group_df[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
-        base_alpha=BASE_ALPHA,
-    )
     label = f"{SEPARATE_BY}={distribution_category} | {group}"
-    if result["pearson"] is not None:
-        coefficient, p_value = result["pearson"]
-        print(f"  {label}: Pearson r={coefficient:.4f}, p={p_value:.2e}")
+    _print_distribution_statistics(result, label)
     regression = result["regression"]
     if regression is not None:
         ax_main.plot(regression["x"], regression["y"], '--', color=color, linewidth=2)
-        print(f"    R²={regression['r2']:.4f}, slope={regression['slope']:.4f}, "
-              f"intercept={regression['intercept']:.4f}")
 
     for axis, marginal_ax in [("x", ax_top), ("y", ax_right)]:
         marginal = result["marginals"].get(axis)
@@ -1532,21 +1597,20 @@ for result in distribution_results:
                              color=color, linewidth=1.5, alpha=0.7)
         elif MARGINAL_PLOT_TYPE == 'boxplot':
             marginal_ax.boxplot(
-                marginal["values"], orientation=orientation, positions=[0], widths=0.5,
+                marginal["values"], orientation=orientation, positions=[marginal_positions[axis]], widths=0.5,
                 patch_artist=True, boxprops=dict(facecolor=(*color, 0.3)),
             )
         elif MARGINAL_PLOT_TYPE == 'violin':
             violin = marginal_ax.violinplot(
-                marginal["values"], orientation=orientation, positions=[0], showmedians=True,
+                marginal["values"], orientation=orientation, positions=[marginal_positions[axis]], showmedians=True,
             )
             for body in violin.get('bodies', []):
                 body.set_facecolor((*color, 0.3))
+        if MARGINAL_PLOT_TYPE in ('boxplot', 'violin'):
+            marginal_positions[axis] += 1
 
-    if result["components"]:
-        print(f"  {label}: GMM components")
-        print("    | Component | Mean X | Std. Dev. X | Mean Y | Std. Dev. Y | Weight |")
-    for index, component in enumerate(result["components"], 1):
-        mean, covariance, weight = component["mean"], component["covariance"], component["weight"]
+    for component in result["components"]:
+        mean, covariance = component["mean"], component["covariance"]
         eigenvalues, eigenvectors = np.linalg.eigh(covariance)
         angle = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
         width, height = 2 * np.sqrt(eigenvalues * chi2.ppf(0.95, 2))
@@ -1555,11 +1619,6 @@ for result in distribution_results:
             edgecolor=color, linewidth=2, linestyle='--',
         ))
         ax_main.plot(*mean, '+', color=color, markersize=15, markeredgewidth=2)
-        std_x, std_y = np.sqrt(np.diag(covariance))
-        print(f"    | {index} | {mean[0]:.4f} | {std_x:.4f} | "
-              f"{mean[1]:.4f} | {std_y:.4f} | {weight:.3f} |")
-    for notice in result["notices"]:
-        print(f"  {label}: {notice}")
 
 ax_main.set_xlim(x_range)
 ax_main.set_ylim(y_range)
@@ -1574,8 +1633,10 @@ ax_main.text(
     0.5, -0.15, f"{SEPARATE_BY}: {distribution_category}", transform=ax_main.transAxes,
     ha='center', va='top', fontsize=AXIS_LABEL_SIZE, fontweight='bold', clip_on=False,
 )
-add_encoding_legend_entries(ax_main, shape_map, opacity_map, POINT_SIZE ** 2)
-ax_main.legend(fontsize=LEGEND_SIZE, loc='upper left', bbox_to_anchor=(1.18, 1),
+encoding_legend_handles = add_encoding_legend_entries(
+    ax_main, shape_map, opacity_map, POINT_SIZE ** 2)
+ax_main.legend(handles=point_legend_handles + encoding_legend_handles,
+               fontsize=LEGEND_SIZE, loc='upper left', bbox_to_anchor=(1.18, 1),
                borderaxespad=0, frameon=False)
 """)
 
@@ -1583,11 +1644,22 @@ ax_main.legend(fontsize=LEGEND_SIZE, loc='upper left', bbox_to_anchor=(1.18, 1),
 def _build_phasor_plot(state: dict) -> str:
     from src.export_labels import available_label_column
 
-    grouping_helper = ("\n# Grouping helper (extracted from FLIM Playground source)\n"
-                       + _extract_source(available_label_column))
+    preparation = ("\n# Grouping helper (extracted from FLIM Playground source)\n"
+                   + _extract_source(available_label_column) + """
+# Both Phasor layouts build their encodings from complete G/S observations.
+harmonic_label = "1st" if PHASOR_HARMONIC == 1 else "2nd"
+g_col = f"Lifetime fit free_{PHASOR_CHANNEL}: G({harmonic_label})"
+s_col = f"Lifetime fit free_{PHASOR_CHANNEL}: S({harmonic_label})"
+if g_col not in df.columns or s_col not in df.columns:
+    raise SystemExit(f"ERROR: Columns {g_col} and/or {s_col} not found in data.")
+df = df.dropna(subset=[g_col, s_col]).copy()
+if df.empty:
+    raise ValueError("No complete G/S observations remain for Phasor Plot.")
+PHASOR_GROUP_COLUMN = available_label_column(df.columns, "_color_group")
+""")
     if state.get("separate_by") is not None:
-        return grouping_helper + _build_separated_phasor_plot(state)
-    return grouping_helper + _build_unseparated_phasor_plot(state)
+        return preparation + _build_separated_phasor_plot(state)
+    return preparation + _build_unseparated_phasor_plot(state)
 
 
 def _build_separated_phasor_plot(state: dict) -> str:
@@ -1596,25 +1668,7 @@ def _build_separated_phasor_plot(state: dict) -> str:
 
     helper_src = _extract_source(category_panel_rows, _phasor_panel_rows)
 
-    # Coordinate filtering deliberately precedes visual-map and panel construction.
-    # This keeps every grouping and count scoped to plotted points.
-    preparation = f"""
-# ============================================================
-# Phasor panel helpers (extracted from FLIM Playground source)
-# ============================================================
-{helper_src}
-
-harmonic_label = "1st" if PHASOR_HARMONIC == 1 else "2nd"
-g_col = f"Lifetime fit free_{{PHASOR_CHANNEL}}: G({{harmonic_label}})"
-s_col = f"Lifetime fit free_{{PHASOR_CHANNEL}}: S({{harmonic_label}})"
-if g_col not in df.columns or s_col not in df.columns:
-    raise SystemExit(f"ERROR: Columns {{g_col}} and/or {{s_col}} not found in data.")
-
-# Panel membership, visual mappings, and legend counts all use exactly the
-# observations visible in the Phasor figure.
-df = df[df[g_col].notna() & df[s_col].notna()].copy()
-PHASOR_GROUP_COLUMN = available_label_column(df.columns, "_color_group")
-"""
+    preparation = "\n# Shared Phasor panel helpers\n" + helper_src
 
     return preparation + _build_visual_encoding(
         state, group_column_expr="PHASOR_GROUP_COLUMN"
@@ -1668,7 +1722,6 @@ def draw_phasor_background(panel_ax):
 
 
 draw_phasor_background(ax)
-active_df = df.iloc[active_positions]
 if len(active_positions) < len(df):
     other_positions = np.setdiff1d(
         np.arange(len(df)), active_positions, assume_unique=True
@@ -1680,30 +1733,16 @@ if len(active_positions) < len(df):
         label='_nolegend_', zorder=0,
     )
 
-active_group_counts = active_df[PHASOR_GROUP_COLUMN].value_counts().to_dict()
-for color_group in color_groups:
-    group_df = active_df[active_df[PHASOR_GROUP_COLUMN] == color_group]
-    if group_df.empty:
-        continue
-    point_opacity_map = {
-        key: alpha * color_map[color_group][3]
-        for key, alpha in opacity_map.items()
-    }
-    scatter_with_encodings(
-        ax, group_df[g_col], group_df[s_col], color_map[color_group][:3],
-        format_group_label(
-            color_group, active_group_counts[color_group], SHOW_GROUP_COUNTS,
-            engine='mpl',
-        ),
-        POINT_SIZE ** 2,
-        shape_vals=group_df[SHAPE_BY] if SHAPE_BY else None,
-        shape_map=shape_map,
-        opacity_vals=group_df[OPACITY_BY] if OPACITY_BY else None,
-        opacity_map=point_opacity_map,
-        base_alpha=BASE_ALPHA,
-    )
+point_legend_handles = scatter_interleaved_points(
+    ax, df, g_col, s_col, PHASOR_GROUP_COLUMN, color_groups, color_map,
+    POINT_SIZE ** 2, shape_by=SHAPE_BY, shape_map=shape_map,
+    opacity_by=OPACITY_BY, opacity_map=opacity_map,
+    base_alpha=BASE_ALPHA, show_counts=SHOW_GROUP_COUNTS,
+    active_positions=active_positions,
+)
 
-add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
+encoding_legend_handles = add_encoding_legend_entries(
+    ax, shape_map, opacity_map, POINT_SIZE ** 2)
 
 ax.set_xlabel("g", fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("s", fontsize=AXIS_LABEL_SIZE)
@@ -1725,10 +1764,10 @@ if phasor_category is not None:
     )
     category_label.set_in_layout(False)
 
-legend_handles, legend_labels = ax.get_legend_handles_labels()
+legend_handles = point_legend_handles + encoding_legend_handles
 if legend_handles:
     ax.legend(
-        legend_handles, legend_labels, fontsize=LEGEND_SIZE,
+        handles=legend_handles, fontsize=LEGEND_SIZE,
         loc='upper left', ncol=1, frameon=False,
         bbox_to_anchor=(1.02, 1), borderaxespad=0,
     )
@@ -1766,8 +1805,7 @@ if category_label is not None:
 
 
 def _build_unseparated_phasor_plot(state: dict) -> str:
-    group_preparation = '\nPHASOR_GROUP_COLUMN = available_label_column(df.columns, "_color_group")\n'
-    return group_preparation + _build_visual_encoding(
+    return _build_visual_encoding(
         state, group_column_expr="PHASOR_GROUP_COLUMN"
     ) + """
 # ============================================================
@@ -1808,30 +1846,15 @@ if PHASOR_HARMONIC != 1:
     freq_text += f"\\n({PHASOR_HARMONIC} x {PHASOR_F * 1000} MHz)"
 ax.text(0.8, 0.5, freq_text, fontsize=AXIS_LABEL_SIZE, ha='left', va='center')
 
-harmonic_label = "1st" if PHASOR_HARMONIC == 1 else "2nd"
-g_col = f"Lifetime fit free_{PHASOR_CHANNEL}: G({harmonic_label})"
-s_col = f"Lifetime fit free_{PHASOR_CHANNEL}: S({harmonic_label})"
+point_legend_handles = scatter_interleaved_points(
+    ax, df, g_col, s_col, PHASOR_GROUP_COLUMN, color_groups, color_map,
+    POINT_SIZE ** 2, shape_by=SHAPE_BY, shape_map=shape_map,
+    opacity_by=OPACITY_BY, opacity_map=opacity_map,
+    base_alpha=BASE_ALPHA, show_counts=SHOW_GROUP_COUNTS,
+)
 
-if g_col not in df.columns or s_col not in df.columns:
-    print(f"ERROR: Columns {g_col} and/or {s_col} not found in data.")
-else:
-    keep_cols = [g_col, s_col, PHASOR_GROUP_COLUMN] + [col for col in (SHAPE_BY, OPACITY_BY) if col]
-    plot_df = df[list(dict.fromkeys(keep_cols))].dropna()
-
-    for g in color_groups:
-        gdf = plot_df[plot_df[PHASOR_GROUP_COLUMN] == g]
-        # Counted on plot_df, after the coordinate dropna. Phasor is the one point plot
-        # data_analysis.py hands over unfiltered, but the app drops the missing
-        # coordinates itself (bivar.py phasor_plot: df[g_feature].notna() &
-        # df[s_feature].notna()) before grouping, so the screen count excludes them too.
-        scatter_with_encodings(ax, gdf[g_col], gdf[s_col], color_map[g][:3],
-                               format_group_label(g, len(gdf), SHOW_GROUP_COUNTS,
-                                                  engine='mpl'), POINT_SIZE,
-                               shape_vals=gdf[SHAPE_BY] if SHAPE_BY else None, shape_map=shape_map,
-                               opacity_vals=gdf[OPACITY_BY] if OPACITY_BY else None, opacity_map=opacity_map,
-                               base_alpha=BASE_ALPHA)
-
-    add_encoding_legend_entries(ax, shape_map, opacity_map, POINT_SIZE)
+encoding_legend_handles = add_encoding_legend_entries(
+    ax, shape_map, opacity_map, POINT_SIZE ** 2)
 
 ax.set_xlabel("g", fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("s", fontsize=AXIS_LABEL_SIZE)
@@ -1840,7 +1863,7 @@ ax.set_xlim(-0.05, 1.05)
 ax.set_ylim(-0.05, 0.55)
 ax.set_aspect('equal')
 ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
-ax.legend(fontsize=LEGEND_SIZE)
+ax.legend(handles=point_legend_handles + encoding_legend_handles, fontsize=LEGEND_SIZE)
 """
 
 
@@ -2050,6 +2073,27 @@ else:
 """
 
 
+def _print_classification_statistics(metrics):
+    """Report shared metrics with the app table's precision and unweighted averages."""
+    per_class = metrics["per_class"]
+    total_n = sum(result["n"] for result in per_class.values())
+    print(f"Accuracy: {metrics['accuracy']:.4f}")
+    print(f"Total N: {total_n}")
+    print("| Class | N | Precision | Recall | Specificity | Youden's J | F1 Score |")
+    print("|-------|---|-----------|--------|-------------|------------|----------|")
+    fields = ("precision", "recall", "specificity", "youdens_j", "f1_score")
+    for label, result in per_class.items():
+        values = " | ".join(f"{result[field]:.4f}" for field in fields)
+        print(f"| {label} | {result['n']} | {values} |")
+    class_count = len(per_class)
+    if class_count > 1:
+        averages = " | ".join(
+            f"{sum(result[field] for result in per_class.values()) / class_count:.4f}"
+            for field in fields)
+        print(f"| Average | {total_n / class_count:.2f} | {averages} |")
+    print(f"Balanced Accuracy: {metrics['balanced_accuracy']:.4f}")
+
+
 def _build_classification(state: dict) -> str:
     from src.classify import (
         _build_classifier,
@@ -2064,7 +2108,7 @@ def _build_classification(state: dict) -> str:
 
     # Inlined from the app so the script computes exactly what the page did.
     computation_src = _extract_source(
-        prepare_data, _build_classifier, calculate_metrics,
+        prepare_data, _build_classifier, calculate_metrics, _print_classification_statistics,
         calculate_roc_curve, plot_roc_curve, plot_confusion_matrix, plot_feature_importance,
         TunedThresholdClassifierCV,
     )
@@ -2152,11 +2196,7 @@ metrics = calculate_metrics(y_test, y_pred)
 print("=" * 60)
 print(f"Classification Results: {{CLASSIFICATION_METHOD}}")
 print("=" * 60)
-print(f"Accuracy: {{metrics['accuracy']:.4f}}")
-for cls, m in metrics['per_class'].items():
-    print(f"  {{cls}}: Precision={{m['precision']:.3f}}, Recall={{m['recall']:.3f}}, "
-          f"Specificity={{m['specificity']:.3f}}, F1={{m['f1_score']:.3f}}, N={{m['n']}}")
-print(f"Balanced Accuracy: {{metrics['balanced_accuracy']:.4f}}")
+_print_classification_statistics(metrics)
 
 # --- Plots ---
 fig_roc = plot_roc_curve(y_test, y_score, axis_label_size=AXIS_LABEL_SIZE,
