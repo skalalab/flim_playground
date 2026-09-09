@@ -375,12 +375,12 @@ with col1:
                 if error_msg != "":
                     _render_reject(error_msg, scope_warning)
                 else:
-                    # Show sheet-scope warnings before review, including when Save is blocked.
-                    _render_warning(scope_warning)
                     # Review uses the wide column; loader messages stay beside the upload.
                     with col2:
                         decision = review_gate(uploaded_file, raw)
                     if decision is None:
+                        # Keep file warnings visible while review owns the page.
+                        _render_warning(scope_warning)
                         # The review screen owns this run. Clear analysis/export data,
                         # then stop before rendering any analysis controls or plots.
                         st.session_state.vis_df = None
@@ -396,7 +396,7 @@ with col1:
                             # column here is an ordinary categorical, named by no role.
                             raw, categorical_cols, args["unique_row_id_col"], configured_fov_col,
                             ignored_cols=args["ignored_cols"], feature_groups=args["feature_groups"],
-                            use_data_extraction=False)
+                            scope_warning=scope_warning, use_data_extraction=False)
                         # Identify the applied profile and allow reopening review after a reject.
                         applied_summary(decision)
     except Exception as e:
@@ -828,8 +828,8 @@ with col2:
             st.markdown(f"<h5 style='text-align: center; color: red'>No data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)
 
     elif uploaded_file is None and not use_data_extraction:
-        st.caption("Upload a dataset to get started. Its columns will be "
-                   f"automatically parsed {happy_emoji}")
+        st.info("**Upload a dataset to get started.** Its columns will be "
+                f"automatically parsed {happy_emoji}")
 
 
 # A closing review may trigger another rerun when method availability changes.

@@ -933,3 +933,72 @@ def test_what_the_reader_says_about_the_file_is_shown_while_the_gate_is_open(pag
     assert save and all(b.disabled for b in save), \
         f"expected Save blocked with no numerical column: {[(b.label, b.disabled) for b in at.button]}"
     assert [m for m in at.markdown if "ReadMe" in str(m.value)], "warning lost once the gate blocked"
+
+
+@pytest.mark.parametrize("use_data_extraction", [True, False])
+def test_dataset_warnings_share_one_section_across_loading_stages(
+        page, tmp_path, monkeypatch, use_data_extraction):
+    monkeypatch.setattr(dataset_io, "get_unique_row_id_col", lambda **kw: "cell_id")
+    monkeypatch.setattr(dataset_io, "get_fov_name_col_analysis", lambda **kw: "image_name")
+    page["warning"] = "Warning: only the first sheet was read.\n"
+    page["frame"]["Empty"] = None
+    page["frame"].loc[0, "Area"] = None
+    profiles = {"p": {"unique_row_id_col": "cell_id",
+                       "categorical_cols": ["image_name", "treatment"],
+                       "all_numerical_features": ["Area"], "ignored_cols": ["Empty"]}}
+    at = _run(profiles, path=tmp_path / "analysis_config.toml")
+    if use_data_extraction:
+        at.checkbox[0].check().run(timeout=90)
+
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state.vis_df is not None
+    sections = [e for e in at.expander if "warn" in e.label.lower()]
+    assert len(sections) == 1
+    assert sections[0].label == "Warning:"
+    assert sections[0].proto.expanded is True
+    shown = " ".join(m.value for m in sections[0].markdown)
+    for message in ("only the first sheet", "Empty columns are all empty", "Area column contains NaN"):
+        assert message in shown
+
+    # A clean replacement must not retain warnings from the previous dataset.
+    page["frame"] = _frame()
+    page["warning"] = ""
+    at.run(timeout=90)
+    assert not at.exception, [e.value for e in at.exception]
+    assert not [e for e in at.expander if "warn" in e.label.lower()]
+
+
+@pytest.mark.parametrize("stage", ["read", "cleanup", "features"])
+def test_dataset_rejections_keep_errors_outside_the_warning_section(page, monkeypatch, stage):
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setattr(dataset_io, "get_unique_row_id_col", lambda **kw: "cell_id")
+    page["warning"] = "Warning: only the first sheet was read.\n"
+    page["frame"]["Empty"] = None
+    if stage == "read":
+        error = "Unsupported table structure"
+        monkeypatch.setattr(dataset_io, "read_table",
+                            lambda _u: (None, {}, ",", page["warning"], error))
+    elif stage == "cleanup":
+        page["frame"]["cell_id"] = [1, 1, 2, 3]
+        error = "does not identify a row on its own"
+    else:
+        page["frame"]["Area"] = ["a", "b", "c", "d"]
+        error = "No feature found"
+
+    at = AppTest.from_file(_PAGE).run(timeout=90)
+
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state.vis_df is None
+    assert len(at.expander) == 1
+    section = at.expander[0]
+    assert section.label == "Warning:"
+    assert section.proto.expanded is True
+    warnings = " ".join(m.value for m in section.markdown)
+    assert "only the first sheet" in warnings
+    if stage != "read":
+        assert "Empty columns are all empty" in warnings
+    assert error not in warnings
+    assert "Therefore" not in warnings
+    assert any(error in m.value for m in at.markdown)
+    assert any("Therefore" in m.value for m in at.markdown)

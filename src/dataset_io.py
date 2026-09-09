@@ -428,10 +428,11 @@ def _as_html(msg):
 
 
 def _render_warning(warning_msg):
-    """Render accumulated warnings."""
+    """Render accumulated warnings in an initially expanded section."""
     if warning_msg:
-        st.markdown(f"<h5 style='text-align: center; color: orange'>{_as_html(warning_msg)}</h5>",
-                    unsafe_allow_html=True)
+        with st.expander("Warning:", expanded=True):
+            st.markdown(f"<h5 style='text-align: center; color: orange'>{_as_html(warning_msg)}</h5>",
+                        unsafe_allow_html=True)
 
 
 def _render_reject(error_msg, warning_msg=""):
@@ -507,7 +508,7 @@ def interpret_table(df, categorical_cols, unique_row_id_col, fov_name_col,
     Return (df, feature_groups, upload_complete, row_id_col), including the resolved
     identifier name when row numbers are generated. The caller supplies the
     confirmed column decisions independently of the current profile.
-    Render structural warnings before feature-level warnings.
+    Group structural, cleanup, and feature warnings in one section, in that order.
     """
     # Kept for the hint below: check_and_fix_df returns None when it fails.
     table = df
@@ -518,15 +519,15 @@ def interpret_table(df, categorical_cols, unique_row_id_col, fov_name_col,
         _render_reject(error_msg + _comma_decimal_hint(table), warning_msg)
         return None, None, False, unique_row_id_col
 
-    _render_warning(warning_msg)
     # Resolve after normalization and before feature selection excludes the ID.
     df, row_id_col = resolve_row_id_col(df, unique_row_id_col)
-    df, feature_groups_dict, warning_msg, error_msg = get_features(
+    df, feature_groups_dict, feature_warning, error_msg = get_features(
         df, categorical_cols, use_data_extraction=use_data_extraction,
         unique_row_id_col=row_id_col, ignored_cols=ignored_cols,
         feature_groups=feature_groups)
+    warning_msg += feature_warning
     if error_msg != "":
-        _render_reject(error_msg + _comma_decimal_hint(table))
+        _render_reject(error_msg + _comma_decimal_hint(table), warning_msg)
         return None, None, False, row_id_col
 
     # Only extraction config designates a FOV column; user tables may omit one.
