@@ -787,8 +787,6 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     to ``legend_size``. Existing ghost legend traces (e.g. shape/opacity
     entries) are also resized to ``legend_size``.
     """
-    # Names of traces that should keep their original marker sizes
-    skip_trace_names = {'Lifetime Markers'}
     meta = fig.layout.meta
     theme_color = get_context_theme_color()
     dimension_reduction = isinstance(meta, dict) and 'dimension_reduction_layout' in meta
@@ -842,7 +840,7 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     # Update marker sizes for all scatter and box traces
     for trace in fig.data:
         # Skip traces that should maintain their original sizes
-        if hasattr(trace, 'name') and trace.name in skip_trace_names:
+        if isinstance(trace.meta, dict) and trace.meta.get('is_lifetime_reference'):
             continue
         if hasattr(trace, 'marker') and trace.marker:
             # Style both SVG and WebGL point traces.
@@ -906,7 +904,7 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
         # Ghosts use SVG because they draw only a legend swatch.
         if trace.type not in ('scatter', 'scattergl'):
             continue
-        if hasattr(trace, 'name') and trace.name in skip_trace_names:
+        if isinstance(trace.meta, dict) and trace.meta.get('is_lifetime_reference'):
             continue
         if not getattr(trace, 'showlegend', True):
             continue

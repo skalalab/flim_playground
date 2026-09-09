@@ -184,7 +184,8 @@ def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
         y=y_points,
         mode='markers',
         marker=dict(size=7, color=theme_color),
-        name='Lifetime Markers', 
+        name='Lifetime Markers',
+        meta=dict(is_lifetime_reference=True),
         hoverinfo='skip', # Hide the hover info for this trace,
         showlegend=False
     ))

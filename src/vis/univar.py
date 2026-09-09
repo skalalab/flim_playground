@@ -319,7 +319,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         colormap=colormap
     )
     grouped_list = list(grouped_sep)
-    group_keys = [group_key for group_key, _ in grouped_list]
+    # Group keys are (color, shape, opacity, section); keep column roles distinct.
+    section_color_pairs = {(key[3], key[0]) for key, _ in grouped_list}
     compare_groups = list(color_map.keys())
     show_counts = st.session_state.get("plot_show_group_counts", False)
     plotted = df.dropna(subset=[selected_var])
@@ -371,12 +372,7 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
 
             # Use ordered_compare_groups (already set with custom order at function start)
             for color_group in ordered_compare_groups:
-                combo_exists = any(
-                    (separate_group in group_key if isinstance(group_key, tuple) else group_key == separate_group) and
-                    (color_group in group_key if isinstance(group_key, tuple) else group_key == color_group)
-                    for group_key in group_keys
-                )
-                if combo_exists:
+                if (separate_group, color_group) in section_color_pairs:
                     section_combinations.append((separate_group, color_group))
             existing_combinations.append(section_combinations)
 
