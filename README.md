@@ -59,6 +59,9 @@ The exported Python script includes the same naming choices; set
 Reuploaded exports use ordinary column detection and review, regardless of their column names.
 
 # Data Extraction Demo
+
+For an image-based extraction walkthrough, download the [Mosaic NADH example](example_data/Data_Extraction/README.md#mosaic-nadh-images): 25 fields of view with raw decays, cell masks, and a shared IRF.
+
 - Demo uses the T cell activation [dataset](example_data/Data_Extraction/T_cell_activation) from this [paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11425855/):
 
 https://github.com/user-attachments/assets/a01b8a22-1bc3-46f1-aa37-1c3191a6fa1a
