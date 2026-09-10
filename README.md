@@ -36,9 +36,7 @@ https://github.com/user-attachments/assets/a01b8a22-1bc3-46f1-aa37-1c3191a6fa1a
 https://github.com/user-attachments/assets/7ac6b61f-7bde-45b8-92f5-5dbdb05dde67
 
 ## Use Your Own Data in Data Analysis
-- Demo uses the [iris dataset](example_data/Data_Analysis/iris.csv) and the [wine quality dataset](example_data/Data_Analysis/wine_quality.csv):
-  
-https://github.com/user-attachments/assets/08b55f51-c7a6-4fa3-a00a-65f3fcd11cc6
+- [A walkthrough using a simple dataset](https://skalalab.github.io/flim_playground_doc/data_analysis_config.html)
 
 # Quick try 
 It is deployed at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). 
