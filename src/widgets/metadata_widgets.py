@@ -16,7 +16,7 @@ from src.config import (
     get_fov_name_col,
     get_spc_output_suffix,
 )
-from src.decay_io import read_decay, read_decay_metadata
+from src.decay_io import read_decay_metadata, read_decay_with_frames
 from src.emojis import happy_emoji, sad_emoji
 from src.file_io import load_image
 
@@ -303,12 +303,14 @@ def _fov_labels(fov_df):
     return tuple(str(label) for label in source)
 
 
-def _files_by_group_msg(header, label, mapping):
-    """Spell out which files disagreed: one group per distinct value, with the
-    offending basenames listed two per line underneath."""
+def _files_by_group_msg(header, label, mapping, title=None):
+    """Spell out which files share each value: one group per distinct value, with
+    the basenames listed two per line underneath. A group is titled
+    "{label} {value}" unless ``title(value)`` supplies its own wording."""
     msg = header
     for value, files in mapping.items():
-        msg += f"- {label} {value} ({len(files)} file(s)):\n"
+        group = title(value) if title else f"{label} {value}"
+        msg += f"- {group} ({len(files)} file(s)):\n"
         basenames = [os.path.basename(f) for f in files]
         for i in range(0, len(basenames), 2):
             msg += f"  - {', '.join(basenames[i : i + 2])}\n"
@@ -326,6 +328,7 @@ class _DecayScan(NamedTuple):
     empty_fov_labels: list
     channel_has_signal: object  # (C,) bool array, or None if no 4D FOV was read
     preview_images: object  # (C, Y, X) float64 photon counts of the first 4D FOV, or None
+    frames_to_files: dict  # n_frames -> decay paths whose repeated frames were summed (n > 1 only)
 
 
 @st.cache_data(show_spinner="Reading decay files...")
@@ -343,10 +346,14 @@ def _scan_decay_files(decay_paths, fov_labels):
     empty_fov_labels = []
     channel_has_signal = None  # set on first 4D decay; used if all FOVs agree on 4D shape
     preview_images = None  # (C, Y, X) intensity of the first 4D FOV, for the channel preview
+    frames_to_files = {}  # n_frames -> decay paths whose repeated frames were summed (n > 1 only)
     for decay_path, fov_label in zip(decay_paths, fov_labels):
-        error_msg, decay_data = read_decay(decay_path)
+        error_msg, result = read_decay_with_frames(decay_path)
         if error_msg != "":
             return error_msg, None
+        decay_data, n_frames = result
+        if n_frames > 1:
+            frames_to_files.setdefault(n_frames, []).append(decay_path)
         shape = decay_data.shape
         shape_list.append(shape)
         shape_to_files.setdefault(shape, []).append(decay_path)
@@ -379,6 +386,7 @@ def _scan_decay_files(decay_paths, fov_labels):
         empty_fov_labels=empty_fov_labels,
         channel_has_signal=channel_has_signal,
         preview_images=preview_images,
+        frames_to_files=frames_to_files,
     )
 
 
@@ -443,6 +451,37 @@ def check_raw_decay_data(fov_df, channel_name):
         f"Error: Unexpected {channel_name} decay data shape {shape}. "
         "Expected 3 or 4 dimensions."
     ), [], None, None, None
+
+
+def decay_frame_warning(fov_df, channel_names):
+    """Return a Step 1 warning naming the decay files whose repeated frames were
+    summed into one image, or "" when every file held a single frame.
+
+    Reads the cached scans, so it costs nothing after ``check_raw_decay_data``.
+    Channels sharing a multi-detector file contribute the same paths, listed once.
+    """
+    frames_to_paths = {}
+    for channel_name in channel_names:
+        decay_column_name = f"{channel_name}_Decay"
+        if decay_column_name not in fov_df.columns:
+            continue
+        error_msg, scan = _scan_decay_files(_column_values(fov_df, decay_column_name), _fov_labels(fov_df))
+        if error_msg != "":
+            continue
+        for n_frames, paths in scan.frames_to_files.items():
+            frames_to_paths.setdefault(n_frames, set()).update(paths)
+    if not frames_to_paths:
+        return ""
+    num_files = sum(len(paths) for paths in frames_to_paths.values())
+    header = (
+        f"{num_files} decay file(s) contain multiple frames. Frames were summed into a single "
+        "decay per field of view. If these are genuine time-lapse acquisitions, split them into "
+        "one file per time point before extraction:\n"
+    )
+    return _files_by_group_msg(
+        header, None, {n: sorted(paths) for n, paths in sorted(frames_to_paths.items())},
+        title=lambda n_frames: f"{n_frames} frames",
+    )
 
 
 @st.cache_data(show_spinner="Reading 2D decay files...")
@@ -588,6 +627,7 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
     time_bins_list = []
     laser_rep_time_list = []
     fov_dimensions_list = []
+    checked_decay_channels = []  # 3/4D channels whose decay files passed the raw-data check
     num_cols = len(selected_channels)
     cols = st.columns(num_cols)
     has_flim = has_3_4D_decay = has_intensity_only = False
@@ -640,6 +680,7 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
                             time_bins_list.append(shape[-1])
                             fov_dimensions_list.append(shape[:-1])
                             laser_rep_time_list.append(laser_rep_time)
+                            checked_decay_channels.append(channel_name)
                         else:
                             return error_msg, None
         else:
@@ -670,6 +711,12 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
     else:
         # Store as string to avoid hashing issues in caching
         fov_df["fov_dimensions"] = [str(fov_dimensions_list[0])] * len(fov_df)
+
+    # One notice below the channel row: files whose repeated frames were summed,
+    # listed once even when channels share a multi-detector file.
+    frame_warning = decay_frame_warning(fov_df, checked_decay_channels)
+    if frame_warning:
+        st.warning(frame_warning)
 
     return error_msg, fov_df
 
