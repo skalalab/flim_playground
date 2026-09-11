@@ -1,0 +1,380 @@
+/* Adapted from Moving Train Animation [Pure CSS], zexbeat (MIT).
+   https://codepen.io/zexbeat/pen/VwoNYxv — see LICENSE-train.txt.
+   Original locomotive, carriage, linkage and smoke CSS; namespaced and scaled
+   with em units. Mirrored for rightward travel, finite loops and an arrival stop. */
+.fp-arriving-train {
+  animation-name: fp-train-scene;
+  animation-duration: 5s;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+.fp-train-craft {
+  position: absolute; left: 0; bottom: 8vh;
+  font-size: clamp(5.4px, 1vw, 11px); width: 44em; height: 10em;
+  animation: fp-train-arrive 3.8s cubic-bezier(0.15, 0.4, 0.45, 1) forwards;
+  will-change: transform;
+}
+.fp-online-train {
+  position: absolute; inset: 0; transform: scaleX(-1);
+  filter: drop-shadow(0 2px 2px rgba(25, 38, 48, 0.15));
+}
+.fp-online-train, .fp-online-train *,
+.fp-online-train *::before, .fp-online-train *::after { box-sizing: border-box; }
+.fp-train-track {
+  position: absolute; left: 0; right: 0; bottom: calc(8vh - 2px); height: 3px;
+  background: #75828c; box-shadow: 0 4px 0 rgba(66, 78, 90, 0.18);
+}
+.fp-train-track::after {
+  content: ""; position: absolute; inset: 3px 0 auto; height: 5px;
+  background: repeating-linear-gradient(90deg, transparent 0 20px,
+    #ad8c6d 20px 25px, transparent 25px 32px);
+}
+.fp-train-station {
+  position: absolute; right: 1vw; bottom: calc(8vh + 8px);
+  width: clamp(180px, 25vw, 340px); aspect-ratio: 1330 / 640;
+  background: url("__STATION_SVG_URI__") center / contain no-repeat;
+}
+@keyframes fp-train-arrive {
+  from { transform: translateX(calc(-100% - 2vw)); }
+  /* The source nose extends 1.4em beyond the mirrored train body. */
+  to { transform: translateX(calc(96vw - 100% - 1.4em)); }
+}
+@keyframes fp-train-scene {
+  0% { opacity: 0; }
+  6%, 90% { opacity: 1; }
+  100% { opacity: 0; visibility: hidden; }
+}
+
+.fp-train-engine-front::before, .fp-train-engine-front::after, .fp-train-engine-front {
+  background: rgb(6%, 6%, 6%);
+  background: linear-gradient(0deg, rgb(6%, 6%, 6%), rgb(15%, 15%, 15%), rgb(6%, 6%, 6%));
+  border: 0.1em solid rgba(255, 255, 255, 0.15);
+  border-radius: 50% 0 0 50%;
+  border-right: none;
+}
+
+.fp-train-engine-front {
+  animation: fp-train-body-upDown 0.3s 12;
+  border-radius: 0.5em 0 0 0.5em;
+  bottom: 1.4em;
+  height: 4.6em;
+  left: 0;
+  position: absolute;
+  width: 8em;
+}
+.fp-train-engine-front::before, .fp-train-engine-front::after {
+  content: "";
+  position: absolute;
+  height: 70%;
+  left: -0.9em;
+  top: 50%;
+  transform: translate(0, -50%);
+  width: 0.8em;
+}
+.fp-train-engine-front::after {
+  height: 40%;
+  left: -1.4em;
+  width: 0.5em;
+}
+
+.fp-train-chimney {
+  background: #990000;
+  height: 2.2em;
+  left: 2.5em;
+  position: absolute;
+  top: -2.3em;
+  width: 1.7em;
+}
+.fp-train-chimney::before, .fp-train-chimney::after {
+  content: "";
+  position: absolute;
+}
+.fp-train-chimney::before {
+  animation: fp-train-up-down 0.3s 12;
+  border-bottom: none;
+  border-left: 0.5em solid transparent;
+  border-right: 0.5em solid transparent;
+  border-top: 0.8em solid orange;
+  left: 50%;
+  top: -0.9em;
+  transform: translate(-50%, 0);
+  width: 160%;
+}
+
+.fp-train-smoke {
+  animation: fp-train-move-smoke 0.8s linear 5 forwards;
+  background: rgba(190, 203, 216, 0.85);
+  border-radius: 50%;
+  height: 1.4em;
+  left: 0.2em;
+  position: absolute;
+  top: -1.5em;
+  width: 0.8em;
+  z-index: -1;
+}
+.fp-train-smoke-2 {
+  animation-delay: 0.1s;
+  left: 0.4em;
+}
+.fp-train-smoke-3 {
+  animation-delay: 0.2s;
+  left: 0.6em;
+}
+.fp-train-smoke-4 {
+  animation-delay: 0.3s;
+  left: 0.8em;
+}
+
+.fp-train-engine-body {
+  animation: fp-train-body-upDown 0.3s 0.1s 12;
+  background: rgb(70%, 0%, 0%);
+  background: linear-gradient(0deg, #330000, red, #990000);
+  border-radius: 0 0 0.4em 0;
+  bottom: 1.4em;
+  height: 7em;
+  left: 8em;
+  position: absolute;
+  width: 5em;
+}
+.fp-train-engine-body::before, .fp-train-engine-body::after {
+  content: "";
+  left: 50%;
+  position: absolute;
+  transform: translate(-50%, 0);
+}
+.fp-train-engine-body::before {
+  animation: fp-train-up-down 0.3s 0.2s 12;
+  background: #660000;
+  background: linear-gradient(0deg, #660000, #990000, #660000);
+  border-radius: 50% 50% 0 0;
+  height: 1.2em;
+  top: -1.2em;
+  width: 130%;
+}
+.fp-train-engine-body::after {
+  background: rgb(70.0840336134%, 87.7843137255%, 95.0140056022%);
+  border-radius: 0.2em;
+  height: 40%;
+  top: 1em;
+  width: 45%;
+}
+
+.fp-train-wheel::after, .fp-train-wheel::before {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.fp-train-wheel-holder {
+  height: 2.8em;
+  bottom: 0;
+  position: absolute;
+  width: 100%;
+}
+
+.fp-train-wheel {
+  animation: fp-train-rotate 3.8s cubic-bezier(0.15, 0.4, 0.45, 1) forwards;
+  background: orange;
+  border: 0.3em solid rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+  height: 2.8em;
+  left: 1em;
+  position: absolute;
+  width: 2.8em;
+}
+.fp-train-wheel-2 {
+  left: 4.5em;
+  z-index: 1;
+}
+.fp-train-wheel-3 {
+  border-width: 0.5em;
+  height: 3.8em;
+  left: 8.7em;
+  top: -1.1em;
+  width: 3.8em;
+}
+.fp-train-wheel-4 {
+  left: 15.7em;
+}
+.fp-train-wheel-5 {
+  left: 19.5em;
+}
+.fp-train-wheel-6 {
+  left: 25.7em;
+}
+.fp-train-wheel-7 {
+  left: 29.5em;
+}
+.fp-train-wheel-8 {
+  left: 35.7em;
+}
+.fp-train-wheel-9 {
+  left: 39.5em;
+}
+.fp-train-wheel::before, .fp-train-wheel::after {
+  content: "";
+  position: absolute;
+}
+.fp-train-wheel::before {
+  background: rgba(0, 0, 0, 0.3);
+  height: 86%;
+  width: 0.2em;
+}
+.fp-train-wheel::after {
+  background: #996300;
+  background: radial-gradient(circle at center, rgb(70%, 45.2941176471%, 0%) 30%, #996300 30%);
+  border-radius: 50%;
+  height: 40%;
+  width: 40%;
+}
+
+.fp-train-compartment {
+  animation: fp-train-body-upDown 0.3s 12;
+  background: rgb(9.299719888%, 42.3137254902%, 55.7983193277%);
+  background: linear-gradient(rgb(6.4425770308%, 29.3137254902%, 38.6554621849%) 50%, rgb(12.1568627451%, 55.3137254902%, 72.9411764706%));
+  border-radius: 0 0 0.3em 0.3em;
+  bottom: 1.4em;
+  height: 5em;
+  left: 15em;
+  position: absolute;
+  width: 8em;
+}
+.fp-train-compartment-two {
+  animation: fp-train-body-upDown 0.3s 0.1s 12;
+  left: 25em;
+}
+.fp-train-compartment-two .fp-train-compartment-window::before {
+  animation: fp-train-up-down 0.3s 0.3s 12;
+}
+.fp-train-compartment-three {
+  animation: fp-train-body-upDown 0.3s 0.2s 12;
+  left: 35em;
+}
+.fp-train-compartment-three .fp-train-compartment-window::before {
+  animation: fp-train-up-down 0.35s 10;
+}
+.fp-train-compartment::before, .fp-train-compartment::after {
+  background: black;
+  border: 0.4em solid transparent;
+  bottom: 0.4em;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1);
+  content: "";
+  height: 0.8em;
+  position: absolute;
+  width: 0.9em;
+}
+.fp-train-compartment::before {
+  border-left: 0.4em solid rgba(255, 255, 255, 0.3);
+  left: -0.9em;
+}
+.fp-train-compartment::after {
+  border-right: 0.4em solid rgba(255, 255, 255, 0.3);
+  left: -2em;
+}
+
+.fp-train-compartment-window {
+  background: rgb(12.1568627451%, 55.3137254902%, 72.9411764706%);
+  background: linear-gradient(90deg, transparent 0.8em, skyblue 0.8em) left/2.4em 100%;
+  height: 40%;
+  position: absolute;
+  top: 0.7em;
+  width: 100%;
+}
+.fp-train-compartment-window::before, .fp-train-compartment-window::after {
+  content: "";
+  position: absolute;
+}
+.fp-train-compartment-window::before {
+  animation: fp-train-up-down 0.3s 0.1s 12;
+  background: rgb(6.4425770308%, 29.3137254902%, 38.6554621849%);
+  border-radius: 50% 50% 0 0;
+  height: 0.6em;
+  left: 50%;
+  top: -1.4em;
+  transform: translate(-50%, 0);
+  width: 110%;
+}
+
+@keyframes fp-train-up-down {
+  0%, 100% {
+    transform: translate(-50%, 0);
+  }
+  50% {
+    transform: translate(-50%, -0.3em);
+  }
+}
+@keyframes fp-train-rotate {
+  100% {
+    transform: rotate(-1080deg);
+  }
+}
+@keyframes fp-train-body-upDown {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+@keyframes fp-train-move-smoke {
+  0% {
+    filter: blur(0);
+    opacity: 1;
+  }
+  50% {
+    filter: blur(0.2em);
+    opacity: 0.6;
+    transform: translate(0, -3em) scale(2);
+  }
+  100% {
+    filter: blur(0.3em);
+    opacity: 0;
+    transform: translate(2.5em, -6em) scale(3);
+  }
+}
+.fp-train-wheel-joint {
+  animation: fp-train-wheel-joint 3.8s cubic-bezier(0.15, 0.4, 0.45, 1) forwards;
+  background: white;
+  border-radius: 0.6em;
+  height: 0.4em;
+  position: absolute;
+  right: 0.4em;
+  top: calc(50% - 0.2em);
+  transform-origin: 100% 50%;
+  width: 3.6em;
+  z-index: 1;
+}
+.fp-train-wheel-joint::before, .fp-train-wheel-joint::after {
+  background: #333333;
+  border: 0.1em solid white;
+  border-radius: 50%;
+  content: "";
+  height: 0.8em;
+  position: absolute;
+  top: 50%;
+  transform: translate(0, -50%);
+  width: 0.8em;
+}
+.fp-train-wheel-joint::before {
+  left: -0.4em;
+}
+.fp-train-wheel-joint::after {
+  right: -0.4em;
+}
+.fp-train-wheel-joint-2 {
+  left: 1.8em;
+  right: auto;
+  transform: rotate(-15deg);
+  transform-origin: 0 50%;
+  width: 4.4em;
+}
+.fp-train-wheel-joint-2::before {
+  height: 1.1em;
+  width: 1.1em;
+}
+
+@keyframes fp-train-wheel-joint {
+  100% {
+    transform: rotate(1080deg);
+  }
+}

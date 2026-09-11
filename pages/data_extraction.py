@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import pandas as pd
 import streamlit as st
 
+from src.celebrate import celebrate
 from src.config import (
     get_channel_names,
     get_current_profile_name,
@@ -465,7 +466,7 @@ def _render_run_extraction(metadata_df, metadata_dict):
         # Consume the confirmation flag once after features are available; rerenders
         # of the extraction result must not repeat the celebration.
         if st.session_state.pop("celebrate_extraction", False):
-            st.balloons()
+            celebrate()
         st.write(single_cell_features.head())
         # get the current timestamp
         timestamp = time.strftime("%Y%m%d_%H%M%S")

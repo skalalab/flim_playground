@@ -1,0 +1,67 @@
+/* Passenger-jet artwork by sagism (CC0):
+   https://openclipart.org/detail/169030/airliner.
+   Landing motion adapted from Simon Vrachliotis's Plane Flight (MIT):
+   https://codepen.io/simonswiss/pen/qdmPGr. See LICENSE-plane.txt.
+   A 4.8-second CSS pass, with locally bundled artwork. */
+.fp-landing-plane {
+  --fp-plane-width:min(42vw, clamp(120px, 20vw, 260px));
+  animation-name: fp-plane-scene;
+  animation-duration: 4.8s;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+.fp-landing-plane .fp-plane-runway {
+  position:absolute; left:0; right:0; bottom:18vh; height:5px;
+  background:linear-gradient(90deg,transparent,#778b9a 10%,#778b9a 94%,transparent);
+  box-shadow:0 7px 16px rgba(30,45,65,.15);
+}
+.fp-landing-plane .fp-plane-track {
+  position:absolute; bottom:18vh; left:0;
+  width:var(--fp-plane-width); aspect-ratio:511.82/177.33;
+  transform-origin:54% 98%;
+  animation:fp-plane-land 4.8s linear forwards;
+  will-change:transform;
+}
+.fp-landing-plane .fp-plane-art {
+  width:100%; height:100%; display:block;
+  background-image:url("__PLANE_SVG_URI__");
+  background-size:contain; background-position:center; background-repeat:no-repeat;
+  filter:drop-shadow(0 3px 3px rgba(22,32,50,.17));
+}
+@keyframes fp-plane-land {
+  0% {transform:translate(-110%, -24vh) rotate(9deg);}
+  12% {transform:translate(-10%, -20vh) rotate(7deg);}
+  38% {transform:translate(24vw, -8vh) rotate(3deg);}
+  58% {transform:translate(48vw, 0) rotate(0deg);}
+  63% {transform:translate(54vw, 0) rotate(0deg);}
+  100% {transform:translate(110vw, 0) rotate(0deg);}
+}
+@keyframes fp-plane-scene {
+  0% {opacity:0;}
+  7%,88% {opacity:1;}
+  100% {opacity:0;visibility:hidden;}
+}
+@media(prefers-reduced-motion:reduce) {
+  .fp-landing-plane {display:none;}
+}
+
+
+/* A short tire-smoke puff marks contact with the runway. */
+.fp-landing-plane .fp-plane-tire-smoke {
+  position: absolute; left: 52%; bottom: 0; width: 18px; height: 14px;
+  border-radius: 50%; opacity: 0;
+  background: #c8d4dc; filter: blur(2px);
+  animation-name: fp-plane-tire-smoke;
+  animation-duration: 0.7s;
+  animation-delay: 2.78s;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+.fp-landing-plane .fp-plane-tire-smoke:nth-of-type(2) { animation-delay: 2.86s; }
+.fp-landing-plane .fp-plane-tire-smoke:nth-of-type(3) { animation-delay: 2.94s; }
+.fp-landing-plane .fp-plane-tire-smoke:nth-of-type(4) { animation-delay: 3.02s; }
+@keyframes fp-plane-tire-smoke {
+  0% { opacity: 0; transform: translate(0, 0) scale(0.4); }
+  15% { opacity: 0.8; }
+  100% { opacity: 0; transform: translate(-100px, -22px) scale(2); }
+}

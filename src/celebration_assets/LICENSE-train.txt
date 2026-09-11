@@ -1,0 +1,33 @@
+MIT License
+
+Copyright (c) zexbeat
+https://codepen.io/zexbeat/pen/VwoNYxv
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+of the Software, and to permit persons to whom the Software is furnished to do
+so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Public Pens are MIT licensed:
+https://blog.codepen.io/docs/pens/licensing/
+
+Station artwork: "2D Train Station" by TVLuke (July 25, 2020).
+https://openclipart.org/detail/321861/2d-train-station
+CC0 1.0 public domain: https://openclipart.org/share
+
+Adaptation: retained the station and people, cropped to a transparent
+background. The surrounding poster, skyline, train, station-name sign, facade
+DB logo and both door DB logos are omitted.
