@@ -16,7 +16,7 @@ from src.config import (
     get_fov_name_col,
     get_spc_output_suffix,
 )
-from src.decay_io import read_decay_metadata, read_decay_with_frames
+from src.decay_io import read_decay_metadata, read_decay_with_frames, clear_ptu_reference_cache
 from src.emojis import happy_emoji, sad_emoji
 from src.file_io import load_image
 
@@ -130,11 +130,13 @@ def _permission_denied_message(folder_path, err):
     return msg
 
 @st.cache_data
-def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
+def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3, reference_suffixes=()):
     """Scan and display each FOV's files, keyed by image name.
 
     Per-FOV filenames must equal image_name + suffix. IRF and lifetime-standard
     files are shared across the dataset and matched by suffix alone.
+    Additional reference_suffixes identify inactive references to exclude,
+    without requiring those files to be present.
     """
 
     valid_image_groups = {}
@@ -178,21 +180,39 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
         files_by_name[filename].append(file_path)
 
         # Index by suffix for each suffix we care about
-        for suffix in set(file_suffix.values()):
+        for suffix in set(file_suffix.values()) | set(reference_suffixes):
             if filename.endswith(suffix):
                 if suffix not in files_by_suffix:
                     files_by_suffix[suffix] = []
                 files_by_suffix[suffix].append(file_path)
 
-    # use the first key to get the list of images (it does not matter which key to use, since they are all required, they should all be there)
-    image_search_suffix = list(file_suffix.values())[0]
+    # Calibration files can share the decay extension, but are never FOVs.
+    reference_keys = {key for key in file_suffix
+                      if key.endswith(("_IRF", "_Fluorescence Lifetime Standard"))}
+    reference_files = {file for key in reference_keys
+                       for file in files_by_suffix.get(file_suffix[key], [])}
+    reference_files.update(file for suffix in reference_suffixes
+                           for file in files_by_suffix.get(suffix, []))
+    image_search_suffix = next((suffix for key, suffix in file_suffix.items()
+                                if key not in reference_keys), None)
+    if image_search_suffix is None:
+        st.warning("No per-FOV file suffix provided.")
+        return {}
     image_files = files_by_suffix.get(image_search_suffix, [])
-    if len(image_files) == 0:
+    image_names = []
+    for file in image_files:
+        name = os.path.basename(file).removesuffix(image_search_suffix)
+        # The discovery suffix may be a mask. Exclude its FOV too if another
+        # per-FOV input (e.g. its decay) is an identified calibration file.
+        if any(candidate in reference_files
+               for key, suffix in file_suffix.items() if key not in reference_keys
+               for candidate in files_by_name.get(name + suffix, [])):
+            continue
+        image_names.append(name)
+    if len(image_names) == 0:
         st.warning(f"No image files found with suffix: **{image_search_suffix}**.")
         return {}
 
-    # Derive image names by removing the required file suffix.
-    image_names = [os.path.basename(file).removesuffix(image_search_suffix) for file in image_files]
     # for each image name, build a widget card with the image name and the files that belong to it
     num_images = len(image_names)
     num_cols = min(num_cols, num_images)
@@ -214,7 +234,7 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
             # get the list of files that belong to this image
             for key, suffix in file_suffix.items():
                 # Exact match for per-FOV files; suffix-only for IRF and Fluorescence Lifetime Standard (global per dataset)
-                if "IRF" not in key and "Fluorescence Lifetime Standard" not in key:
+                if key not in reference_keys:
                     filename = image_name + suffix
                     matched_files = files_by_name.get(filename, [])
                 else:
@@ -236,12 +256,12 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3):
                     if missing_keys or duplicate_keys:
                         st.write("❌ Missing or duplicate files:")
                         for key in missing_keys:
-                            if "IRF" not in key and "Fluorescence Lifetime Standard" not in key:
+                            if key not in reference_keys:
                                 st.write(f"- Missing {key}: {image_name + file_suffix[key]}")
                             else:
                                 st.write(f"- Missing {key} with suffix: {file_suffix[key]}")
                         for key in duplicate_keys:
-                            if "IRF" not in key and "Fluorescence Lifetime Standard" not in key:
+                            if key not in reference_keys:
                                 st.write(f"- Duplicate {key}: {image_name + file_suffix[key]}")
                             else:
                                 st.write(f"- Duplicate {key} with suffix: {file_suffix[key]}")
@@ -564,12 +584,22 @@ def check_raw_intensity_data(fov_df, channel_name):
 def clear_folder_scan_caches():
     """Clear folder listing and all raw-data caches for the Rescan folder action.
 
-    Clear the cached readers; their check_raw_* wrappers are uncached.
+    Clear readers and derived results that depend on their files. The
+    check_raw_* wrappers are uncached.
     """
     load_list_data_from_folder_widget.clear()
     _scan_decay_files.clear()
     _scan_2d_decay_files.clear()
     _scan_intensity_images.clear()
+    clear_ptu_reference_cache()
+    # These caches key on metadata paths, so replacing a reference in place
+    # otherwise leaves the old shifts and calibrated features visible.
+    from src.choose_shift import choose_shift_fit, choose_shift_fit_free
+    from src.fov_extraction import fov_extraction
+
+    choose_shift_fit.clear()
+    choose_shift_fit_free.clear()
+    fov_extraction.clear()
 
 def _inconsistent_selected(x):
     return f"Inconsistent {x} found for the selected channels. Please check the data."

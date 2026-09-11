@@ -213,6 +213,15 @@ def get_default_file_suffixes(channel_key: str, input_type: str, selected_featur
         filtered_file_suffixes[file_type] = file_suffixes[file_type]
     return filtered_file_suffixes
 
+
+def get_reference_file_suffixes(channel_key: str, input_type: str) -> dict:
+    """Configured calibration files, including the currently inactive method."""
+    cfg = _load_active_profile_cfg()
+    suffixes = cfg.get(channel_key, {}).get(input_type, {}).get("input_suffixes", {})
+    return {kind: suffix for kind, suffix in suffixes.items()
+            if kind in ("IRF", "Fluorescence Lifetime Standard") and suffix}
+
+
 def get_channel_names() -> dict:
     cfg = _load_active_profile_cfg()
     num_channels = cfg.get("num_channels", 0)

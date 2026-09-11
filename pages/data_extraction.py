@@ -18,11 +18,12 @@ from src.config import (
     get_imaging_modality,
     get_input_types,
     get_num_components,
+    get_reference_file_suffixes,
     get_selected_feature_extractors,
 )
 from src.config_watch import notify_on_config_change
 from src.emojis import happy_emoji, sad_emoji
-from src.file_io import load_image
+from src.file_io import get_lifetime_standard
 from src.metadata import parse_metadata_file
 from src.navigation import render_top_menu
 from src.widgets.category_widgets import (
@@ -116,9 +117,10 @@ def validate_folder_path(folder_path):
     return True
 
 
-def load_and_validate_fovs(folder_path, actual_file_suffix):
+def load_and_validate_fovs(folder_path, actual_file_suffix, reference_suffixes=()):
     """Load FOVs from folder and validate"""
-    fovs = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix)
+    fovs = load_list_data_from_folder_widget(folder_path, file_suffix=actual_file_suffix,
+                                            reference_suffixes=reference_suffixes)
     if len(fovs) == 0:
         st.warning("No data found in the folder. Please check the path and the file suffixes.")
         return None
@@ -174,22 +176,11 @@ def validate_fluorescence_lifetime_standard_per_channel(fov_df, selected_channel
         unique_paths = fov_df[ref_col].dropna().unique().tolist()
         if len(unique_paths) != 1:
             return f"Fluorescence lifetime standard file path column {ref_col} is not consistent across FOVs.", fov_df
-        fluorescence_lifetime_standard_file_path = unique_paths[0]
-        # Check dimensions of fluorescence lifetime standard file
-        try:
-            fluorescence_lifetime_standard_data = load_image(fluorescence_lifetime_standard_file_path)
-            fluorescence_lifetime_standard_shape = fluorescence_lifetime_standard_data.shape
-            if len(fluorescence_lifetime_standard_shape) != 3:
-                return f"Fluorescence lifetime standard file for {channel_name} must be 3D, got {len(fluorescence_lifetime_standard_shape)} with shape {fluorescence_lifetime_standard_shape}", fov_df
-            matched_time_bins = fluorescence_lifetime_standard_shape.count(time_bins)
-            if matched_time_bins == 0:
-                return f"Cannot find the time axis ({time_bins} bins) for {channel_name} fluorescence lifetime standard file dimensions: {fluorescence_lifetime_standard_shape}", fov_df
-            elif matched_time_bins > 1:
-                return f"Ambiguous time axis for {channel_name} fluorescence lifetime standard file dimensions: {fluorescence_lifetime_standard_shape}", fov_df
-            else:
-                fov_df[f"{channel_name}_fluorescence_lifetime_standard_time_axis"] = fluorescence_lifetime_standard_shape.index(time_bins)
-        except Exception as e:  # noqa: BLE001
-            return f"Error reading fluorescence lifetime standard file for {channel_name}: {str(e)}", fov_df
+        error_msg, reference = get_lifetime_standard(fov_df, channel_name, time_bins)
+        if error_msg:
+            return error_msg, fov_df
+        _, time_axis = reference
+        fov_df[f"{channel_name}_fluorescence_lifetime_standard_time_axis"] = time_axis
 
     return "", fov_df
 
@@ -287,7 +278,14 @@ def render_fov_metadata_step(col1, col2, ctx):
                 pass  # Error already displayed in function
             else:
                 # Step 2: Load and validate FOVs
-                fovs = load_and_validate_fovs(folder_path, actual_file_suffix)
+                # Hidden calibration fields still identify references. Active
+                # fields use the suffix currently entered by the user instead.
+                reference_suffixes = tuple(
+                    suffix for key, channel in selected_channels.items()
+                    for kind, suffix in get_reference_file_suffixes(key, ctx.input_types[key]).items()
+                    if f"{channel}_{kind}" not in actual_file_suffix
+                )
+                fovs = load_and_validate_fovs(folder_path, actual_file_suffix, reference_suffixes)
                 if fovs is None:
                     pass  # Error already displayed in function
                 else:

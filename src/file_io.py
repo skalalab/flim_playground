@@ -4,7 +4,7 @@ import pathlib
 from pathlib import Path
 import tifffile
 from typing import Union
-from src.decay_io import read_decay
+from src.decay_io import read_decay, read_ptu_reference
 from src.config import get_fov_name_col
 import pandas as pd
 import os
@@ -170,6 +170,83 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
 
     return error_msg, decay_curves
 
+def _validate_reference_timing(reference, metadata_df, time_bins, label):
+    """Require the PTU acquisition grid; never resample a calibration curve."""
+    rows = [metadata_df] if isinstance(metadata_df, pd.Series) else (
+        row for _, row in metadata_df.iterrows())
+    ref_width = reference.duration / reference.time_bins
+    for row in rows:
+        mismatches = []
+        sample_bins = row.get("time_bins", time_bins)
+        if reference.time_bins != time_bins or reference.time_bins != sample_bins:
+            mismatches.append(f"time bins mismatch: reference={reference.time_bins}, "
+                              f"sample={sample_bins} (requested={time_bins})")
+        try:
+            duration = float(row.get("duration", np.nan))
+            sample_width = duration / float(sample_bins)
+            if not np.isfinite(sample_width) or sample_width <= 0:
+                raise ValueError
+        except (TypeError, ValueError, ZeroDivisionError):
+            mismatches.append("sample duration and time bins must be positive finite numbers to validate the PTU bin width")
+        else:
+            if not np.isclose(ref_width, sample_width, rtol=1e-5, atol=0):
+                mismatches.append(f"bin width mismatch: reference={ref_width:.12g} ns, "
+                                  f"sample={sample_width:.12g} ns")
+        laser_rate = row.get("laser_rate")
+        if laser_rate is not None and not pd.isna(laser_rate):
+            try:
+                laser_rate = float(laser_rate)
+            except (ValueError, TypeError):
+                mismatches.append(f"invalid sample laser frequency: {laser_rate}")
+            else:
+                if not np.isclose(reference.laser_rate, laser_rate, rtol=1e-5, atol=0):
+                    mismatches.append(f"laser frequency mismatch: reference={reference.laser_rate * 1000:.12g} MHz, "
+                                      f"sample={laser_rate * 1000:.12g} MHz")
+        if mismatches:
+            return f"Error: {label}: " + "; ".join(mismatches) + "."
+    return ""
+
+
+def get_lifetime_standard(metadata_df, channel_name, time_bins):
+    """Return ``(error_msg, (reference_image, time_axis))`` for calibration.
+
+    PTU curves use shape (1, 1, time_bins). TIFF/ASC images retain their original
+    layout; use the CSV's time axis when present or infer one unambiguous axis.
+    """
+    row = metadata_df if isinstance(metadata_df, pd.Series) else metadata_df.iloc[0]
+    path = row.get(f"{channel_name}_Fluorescence Lifetime Standard")
+    label = f"Fluorescence lifetime standard for {channel_name}"
+    if not isinstance(path, (str, os.PathLike)) or not str(path).strip():
+        return f"Error: {label} file path not specified.", None
+    if Path(path).suffix.lower() == ".ptu":
+        err, ref = read_ptu_reference(path)
+        if err:
+            return err, None
+        err = _validate_reference_timing(ref, metadata_df, time_bins, label)
+        if err:
+            return err, None
+        return "", (ref.curve.reshape(1, 1, -1), 2)
+    try:
+        data = load_image(path)
+        if data.ndim != 3:
+            return f"{label} must be 3D, got {data.ndim} with shape {data.shape}.", None
+        axis = row.get(f"{channel_name}_fluorescence_lifetime_standard_time_axis")
+        if axis is not None and not pd.isna(axis):
+            if int(axis) != float(axis) or int(axis) not in range(3) or data.shape[int(axis)] != time_bins:
+                return f"Invalid time axis {axis} for {label}: shape={data.shape}, time bins={time_bins}.", None
+            axis = int(axis)
+        else:
+            matches = data.shape.count(time_bins)
+            if matches == 0:
+                return f"Cannot find the time axis ({time_bins} bins) for {label} dimensions: {data.shape}.", None
+            if matches > 1:
+                return f"Ambiguous time axis for {label} dimensions: {data.shape}.", None
+            axis = data.shape.index(time_bins)
+        return "", (data, axis)
+    except Exception as e:
+        return f"Error reading {label} at {path}: {e}", None
+
+
 def get_irf(metadata_df, channel_name, time_bins):
     # Handle both DataFrame and Series cases
     if isinstance(metadata_df, pd.Series):
@@ -181,8 +258,17 @@ def get_irf(metadata_df, channel_name, time_bins):
       
     irf_path = first_row.get(f'{channel_name}_IRF', None)
     
-    if irf_path is None or (isinstance(irf_path, str) and irf_path.strip() == ""):
+    if not isinstance(irf_path, (str, os.PathLike)) or not str(irf_path).strip():
         return f"Error: IRF file path not specified for {channel_name}.", None
+
+    if Path(irf_path).suffix.lower() == ".ptu":
+        error_msg, reference = read_ptu_reference(irf_path)
+        if error_msg:
+            return error_msg, None
+        error_msg = _validate_reference_timing(reference, metadata_df, time_bins, f"IRF for {channel_name}")
+        if error_msg:
+            return error_msg, None
+        return "", reference.curve
     
     try:
         if str(irf_path).endswith(".csv"):

@@ -12,6 +12,9 @@ single decay image.
 
 import math
 import os
+from dataclasses import dataclass, replace
+from functools import lru_cache
+from pathlib import Path
 
 import numpy as np
 from ptufile import PtuFile
@@ -213,6 +216,82 @@ def _decode_ptu(filename, channel=-1):
 def read_ptu(filename, channel=-1):
     error_msg, decay_data, _ = _decode_ptu(filename, channel)
     return error_msg, decay_data
+
+
+@dataclass(frozen=True)
+class PtuReference:
+    """Integrated reference counts; duration is in ns and laser_rate in GHz."""
+
+    curve: np.ndarray
+    time_bins: int
+    duration: float
+    laser_rate: float
+    n_frames: int
+
+
+@lru_cache(maxsize=32)
+def _read_ptu_reference_cached(filename, file_size, mtime_ns):
+    """Cache only the compact histogram, keyed by the file's identity on disk."""
+    try:
+        with PtuFile(filename) as ptu:
+            if not ptu.is_t3 or not ptu.is_image:
+                return f"Error: PTU reference {filename} must contain T3 imaging data.", None
+            if ptu.number_records == 0:
+                return f"Error: PTU reference {filename} is empty.", None
+            # Cache the read-only mapping before inspecting shape: ptufile scans
+            # records to discover frames/channels and otherwise reads them into RAM.
+            records = ptu.read_records(memmap=True, cache=True)
+            sizes = dict(zip(ptu.dims, ptu.shape))
+            if not all(dim in sizes for dim in ("T", "Y", "X", "C", "H")):
+                return f"Error: PTU reference {filename} must contain T3 imaging data.", None
+            if sizes["C"] != 1:
+                return (f"Error: PTU reference {filename} must be single-channel; "
+                        f"found {sizes['C']} channels."), None
+            try:
+                time_bins, duration = _ptu_time_axis(ptu)
+            except Exception as e:
+                return _msg_no_time_axis(filename, e), None
+            if min(sizes["T"], sizes["Y"], sizes["X"], time_bins) <= 0:
+                return _msg_bad_dims(filename, sizes["X"], sizes["Y"], time_bins), None
+            # A negative slice step integrates the selected axis in the decoder.
+            # No (frames, pixels, bins) image is allocated, even for long scans.
+            selection = tuple(slice(None, None, -1) if dim in ("T", "Y", "X")
+                              else slice(None) for dim in ptu.dims)
+            curve = ptu.decode_image(selection, records=records, dtime=time_bins,
+                                     dtype=np.uint64).reshape(-1)
+            if not np.any(curve):
+                return f"Error: PTU reference {filename} is empty (no decoded photons in the acquisition window).", None
+            return "", PtuReference(curve, time_bins, duration,
+                                    float(ptu.tags["TTResult_SyncRate"] * 1e-9),
+                                    int(sizes["T"]))
+    except Exception as e:
+        return _msg_corrupted(filename, e), None
+
+
+def read_ptu_reference(filename):
+    """Return ``(error_msg, PtuReference)`` for a single-channel imaging PTU.
+
+    All decoded pixels and repeated frames contribute within the same
+    acquisition window as the sample reader. Callers receive their own curve
+    so background subtraction or IRF processing cannot mutate the cached data.
+    """
+    err = _validate_decay_path(filename)
+    if err:
+        return err, None
+    try:
+        path = Path(filename).resolve()
+        stat = path.stat()
+        err, reference = _read_ptu_reference_cached(str(path), stat.st_size, stat.st_mtime_ns)
+    except OSError as e:
+        return _msg_corrupted(filename, e), None
+    if err:
+        return err, None
+    return "", replace(reference, curve=reference.curve.copy())
+
+
+def clear_ptu_reference_cache():
+    """Discard compact references when the user requests a folder rescan."""
+    _read_ptu_reference_cached.cache_clear()
 
 
 def read_decay_with_frames(filename, channel=-1):

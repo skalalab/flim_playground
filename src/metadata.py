@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from src.config import get_available_feature_extractors, get_file_types, get_fov_name_col, get_unique_cell_id_col
+from src.file_io import get_irf, get_lifetime_standard
 
 
 def _not_found(desc):
@@ -181,7 +182,7 @@ def parse_metadata_file(metadata_df, fov_name_col):
             if f"{channel_name}_{file_type}" in metadata_df.columns and file_type != "IRF":
                # then this is a column storing file paths
                # check if all file paths are valid and if they are unique
-               if metadata_df[f"{channel_name}_{file_type}"].duplicated().any():
+               if file_type != "Fluorescence Lifetime Standard" and metadata_df[f"{channel_name}_{file_type}"].duplicated().any():
                    return f"File paths for {channel_name}_{file_type} are not unique.", None
 
                # check if the file paths are valid
@@ -203,6 +204,22 @@ def parse_metadata_file(metadata_df, fov_name_col):
             metadata_dict["duration"] = metadata_df["duration"].iloc[0]
         else:
             return _not_found("Duration column duration"), None
+
+        # Replayed CSVs must validate PTU references against their saved timing,
+        # even when the current configuration or reference file has changed.
+        for channel_name in metadata_dict["channel_names"]:
+            ref_path = metadata_dict[channel_name].get("fluorescence_lifetime_standard_file")
+            if ref_path is not None and Path(str(ref_path)).suffix.lower() == ".ptu":
+                error_msg, _ = get_lifetime_standard(metadata_df, channel_name, metadata_dict["time_bins"])
+                if error_msg:
+                    return error_msg, None
+            if channel_name in metadata_dict["channels_shift"]:
+                for _, row in metadata_df.iterrows():
+                    irf_path = row.get(f"{channel_name}_IRF")
+                    if irf_path is not None and Path(str(irf_path)).suffix.lower() == ".ptu":
+                        error_msg, _ = get_irf(row, channel_name, metadata_dict["time_bins"])
+                        if error_msg:
+                            return error_msg, None
 
     # Read the CSV's repeated JSON definitions so saved metadata replays its own
     # formulas. Missing or unparsable definitions default to [].
