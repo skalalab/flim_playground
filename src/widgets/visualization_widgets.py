@@ -19,6 +19,7 @@ from src.widgets.encoding_state import (
 from src.widgets.analysis_widget_state import (
     control_default, number_input_default, preserve_analysis_controls,
 )
+from src.widgets.laser_rate_widget import laser_rate_input
 
 # Explicit keys preserve selections when labels or option lists change.
 COLOR_BY_KEY = "vis_encoding_color_by"
@@ -598,7 +599,8 @@ def phasor_params_widget(feature_groups_dict):
     selected_harmonic = st.selectbox(f"{selected_channel} harmonic No. ", channel_harmonics[selected_channel], key=f"analysis_control_phasor_harmonic_{selected_channel}")
     f = None
     if selected_channel is not None and selected_harmonic is not None:
-        f = st.number_input("Laser repetition rate (**GHz**)", value=number_input_default(st.session_state, "analysis_control_phasor_frequency", 0.08), min_value=0.0, step=0.01, key="analysis_control_phasor_frequency")
+        f = laser_rate_input("Laser repetition rate (**MHz**)", 0.08,
+                             key="analysis_control_phasor_frequency", max_value_mhz=None)
     return selected_channel, selected_harmonic, f
 
 def plot_config_widget(point_based=True, show_colormap=False, show_count_toggle=False):

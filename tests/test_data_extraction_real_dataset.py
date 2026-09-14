@@ -155,7 +155,7 @@ def test_real_tcell_extraction_from_configuration_through_export(
     app.number_input(key=f"{_INPUT}_time_bins_default").set_value(200)
     app.multiselect(key="categorical_cols_default").set_value(["condition"])
     run(app, "select_extractors")
-    assert bool([w for w in app.number_input if w.key == f"laser_rate_{_INPUT}_default"]) == has_fit_free
+    assert bool([w for w in app.number_input if w.key == f"laser_rate_{_INPUT}_default_mhz"]) == has_fit_free
     assert bool([w for w in app.radio if w.key == f"fit_free_calibration_{_INPUT}_default"]) == has_fit_free
     heading = next(h for h in app.subheader if h.value == "Shared FLIM settings")
     assert heading.proto.help == "Applies to all FLIM channels."
@@ -163,7 +163,7 @@ def test_real_tcell_extraction_from_configuration_through_export(
     if has_fit:
         app.number_input(key=f"num_components_ch1_{_INPUT}_default").set_value(2)
     if has_fit_free:
-        app.number_input(key=f"laser_rate_{_INPUT}_default").set_value(0.08)
+        app.number_input(key=f"laser_rate_{_INPUT}_default_mhz").set_value(80.0)
         app.radio(key=f"fit_free_calibration_{_INPUT}_default").set_value("IRF")
     app.text_input(key=f"ch1_{_INPUT}_Decay_default").set_value("_filtered.csv")
     app.text_input(key=f"ch1_{_INPUT}_IRF_default").set_value("IRF.txt")

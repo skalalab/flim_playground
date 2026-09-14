@@ -19,6 +19,7 @@ from src.config import (
 from src.decay_io import read_decay_metadata, read_decay_with_frames, clear_ptu_reference_cache
 from src.emojis import happy_emoji, sad_emoji
 from src.file_io import load_image
+from src.widgets.laser_rate_widget import laser_rate_input
 
 
 def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_components, selected_feature_extractors):
@@ -766,9 +767,9 @@ def lifetime_data_config_widget(selected_feature_extractors, input_type):
         if fit_free:
             default_laser_rate = get_default_laser_rate(input_type)
             with cols[2]:
-                laser_rate = st.number_input("Laser rate **(GHz)**", value=default_laser_rate, min_value=0.0, max_value=1.0, key="2D_decay_laser_rate")
+                laser_rate = laser_rate_input("Laser rate **(MHz)**", default_laser_rate, key="2D_decay_laser_rate")
     else:
         if fit_free:
             default_laser_rate = get_default_laser_rate(input_type)
-            laser_rate = st.number_input("Laser rate **(GHz)**", value=default_laser_rate, min_value=0.0, max_value=1.0, key="laser_rate")
+            laser_rate = laser_rate_input("Laser rate **(MHz)**", default_laser_rate, key="laser_rate")
     return duration, time_bins, laser_rate

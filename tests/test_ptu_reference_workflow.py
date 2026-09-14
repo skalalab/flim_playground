@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from ptufile import PtuFile
 from streamlit.testing.v1 import AppTest
 import tifffile
 import toml
@@ -153,6 +154,54 @@ def test_csv_replay_rejects_incompatible_reference_frequency(dataset, method):
     err, info = metadata.parse_metadata_file(rows, "image_name")
     assert info is None
     assert "frequency" in err and "40" in err and "80" in err
+
+
+@pytest.mark.parametrize("method", [STANDARD, "IRF"])
+def test_numeric_step_checks_reference_timing_without_reading_photons(dataset, monkeypatch, method):
+    folder, _ = dataset
+    rows = sample_metadata(folder, method)
+    reads = []
+    original = PtuFile.read_records
+
+    def tracked_read(self, *args, **kwargs):
+        reads.append(self.filename)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(PtuFile, "read_records", tracked_read)
+    page = Path(__file__).resolve().parents[1] / "pages/data_extraction.py"
+    app = AppTest.from_file(str(page)).run(timeout=30)
+    app.session_state["last_extracted_metadata"] = rows
+    next(r for r in app.radio if r.label == "Select a step to perform").set_value(
+        "Numeric Feature Extraction (fitting, phasor, etc.)"
+    ).run(timeout=30)
+    assert not app.exception
+    assert not app.error, [e.value for e in app.error]
+    action = "Optimize for Shifts" if method == "IRF" else "Confirm and Start"
+    assert any(button.label == action for button in app.button)
+    assert reads == []
+
+
+def test_metadata_timing_checks_every_distinct_irf_header(dataset):
+    folder, _ = dataset
+    rows = sample_metadata(folder, "IRF")
+    replacement = folder / "second_irf.ptu"
+    write_reference(replacement, frequency=80_000_000)
+    rows.loc[1, "ch1_IRF"] = str(replacement)
+    err, info = metadata.parse_metadata_file(rows, "image_name")
+    assert info is None
+    assert "frequency" in err and "reference=80" in err and "sample=40" in err
+
+
+@pytest.mark.parametrize("method", [STANDARD, "IRF"])
+def test_metadata_timing_rereads_replaced_reference_header(dataset, method):
+    folder, _ = dataset
+    rows = sample_metadata(folder, method)
+    assert metadata.parse_metadata_file(rows, "image_name")[0] == ""
+    path = folder / ("Atto488.ptu" if method == STANDARD else "quenched.ptu")
+    write_reference(path, frequency=80_000_000)
+    err, info = metadata.parse_metadata_file(rows, "image_name")
+    assert info is None
+    assert "frequency" in err and "reference=80" in err and "sample=40" in err
 
 
 @pytest.mark.parametrize("method", [STANDARD, "IRF"])

@@ -219,6 +219,43 @@ def read_ptu(filename, channel=-1):
 
 
 @dataclass(frozen=True)
+class PtuTiming:
+    """Acquisition timing from header tags, without scanning photon records."""
+
+    time_bins: int
+    duration: float  # ns
+    laser_rate: float  # GHz
+
+
+def read_ptu_reference_timing(filename):
+    """Validate a reference's header and return its timing without decoding it.
+
+    Channel count and nonempty photon histograms are checked by the full
+    reference reader when calibration or extraction actually needs the curve.
+    """
+    err = _validate_decay_path(filename)
+    if err:
+        return err, None
+    try:
+        with PtuFile(filename) as ptu:
+            if not ptu.is_t3 or not ptu.is_image:
+                return f"Error: PTU reference {filename} must contain T3 imaging data.", None
+            if ptu.number_records == 0:
+                return f"Error: PTU reference {filename} is empty.", None
+            try:
+                time_bins, duration = _ptu_time_axis(ptu)
+                laser_rate = float(ptu.tags["TTResult_SyncRate"] * 1e-9)
+                if (time_bins <= 0 or not math.isfinite(duration) or duration <= 0
+                        or not math.isfinite(laser_rate) or laser_rate <= 0):
+                    raise ValueError("acquisition timing must be positive and finite")
+            except Exception as e:
+                return _msg_no_time_axis(filename, e), None
+            return "", PtuTiming(time_bins, duration, laser_rate)
+    except Exception as e:
+        return _msg_corrupted(filename, e), None
+
+
+@dataclass(frozen=True)
 class PtuReference:
     """Integrated reference counts; duration is in ns and laser_rate in GHz."""
 

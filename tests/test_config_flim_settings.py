@@ -87,7 +87,7 @@ def test_hidden_shared_values_survive_saving_and_reopening(
     at, path = _open(tmp_path, monkeypatch, {
         "default": _profile(input_type=input_type, extractors=["Lifetime fit free"]),
     })
-    at.number_input(key=f"laser_rate_{input_type}_default").set_value(0.12).run()
+    at.number_input(key=f"laser_rate_{input_type}_default_mhz").set_value(120.0).run()
     at.radio(key=f"fit_free_calibration_{input_type}_default").set_value(
         "Fluorescence Lifetime Standard").run()
     at.number_input(key=f"fluorescence_lifetime_standard_lifetime_{input_type}_default").set_value(3.5).run()
@@ -119,7 +119,7 @@ def test_hidden_shared_values_survive_saving_and_reopening(
     at.selectbox(key="imaging_modality_ch1_default").set_value("FLIM").run()
     _healthy(at)
     assert at.selectbox(key="flim_decay_input_type_default").value == input_type
-    assert at.number_input(key=f"laser_rate_{input_type}_default").value == 0.12
+    assert at.number_input(key=f"laser_rate_{input_type}_default_mhz").value == 120.0
     assert at.radio(key=f"fit_free_calibration_{input_type}_default").value == expected["fit_free_calibration"]
     assert at.number_input(key=f"fluorescence_lifetime_standard_lifetime_{input_type}_default").value == 3.5
     if input_type == _TABULAR:
@@ -132,22 +132,22 @@ def test_unsaved_values_are_independent_per_format_and_profile(tmp_path, monkeyp
         "default": _profile(extractors=["Lifetime fit free"]),
         "second": _profile(input_type=_TABULAR, extractors=["Lifetime fit free"]),
     })
-    at.number_input(key=f"laser_rate_{_RAW}_default").set_value(0.06).run()
+    at.number_input(key=f"laser_rate_{_RAW}_default_mhz").set_value(60.0).run()
     at.selectbox(key="flim_decay_input_type_default").set_value(_TABULAR).run()
-    at.number_input(key=f"laser_rate_{_TABULAR}_default").set_value(0.09).run()
+    at.number_input(key=f"laser_rate_{_TABULAR}_default_mhz").set_value(90.0).run()
     at.number_input(key=f"{_TABULAR}_duration_default").set_value(26.0).run()
     at.selectbox(key="flim_decay_input_type_default").set_value(_RAW).run()
-    assert at.number_input(key=f"laser_rate_{_RAW}_default").value == 0.06
+    assert at.number_input(key=f"laser_rate_{_RAW}_default_mhz").value == 60.0
 
     at.selectbox(key="extraction_profile_selector").set_value("second").run()
-    at.number_input(key=f"laser_rate_{_TABULAR}_second").set_value(0.11).run()
+    at.number_input(key=f"laser_rate_{_TABULAR}_second_mhz").set_value(110.0).run()
     at.selectbox(key="extraction_profile_selector").set_value("default").run()
-    assert at.number_input(key=f"laser_rate_{_RAW}_default").value == 0.06
+    assert at.number_input(key=f"laser_rate_{_RAW}_default_mhz").value == 60.0
     at.selectbox(key="flim_decay_input_type_default").set_value(_TABULAR).run()
-    assert at.number_input(key=f"laser_rate_{_TABULAR}_default").value == 0.09
+    assert at.number_input(key=f"laser_rate_{_TABULAR}_default_mhz").value == 90.0
     assert at.number_input(key=f"{_TABULAR}_duration_default").value == 26.0
     at.selectbox(key="extraction_profile_selector").set_value("second").run()
-    assert at.number_input(key=f"laser_rate_{_TABULAR}_second").value == 0.11
+    assert at.number_input(key=f"laser_rate_{_TABULAR}_second_mhz").value == 110.0
     _healthy(at)
 
 
@@ -155,12 +155,12 @@ def test_deleted_profile_does_not_restore_its_shared_settings(tmp_path, monkeypa
     at, _ = _open(tmp_path, monkeypatch, {
         "default": _profile(extractors=["Lifetime fit free"]), "second": _profile(),
     })
-    at.number_input(key=f"laser_rate_{_RAW}_default").set_value(0.13).run()
+    at.number_input(key=f"laser_rate_{_RAW}_default_mhz").set_value(130.0).run()
     at.button(key="delete_extraction_profile").click().run()
     at.text_input(key="new_extraction_profile_name").set_value("default")
     next(b for b in at.button if b.label == "➕ Create").click().run()
     at.multiselect(key=f"{_RAW}_ch1_feature_extractors_default").set_value(["Lifetime fit free"]).run()
-    assert at.number_input(key=f"laser_rate_{_RAW}_default").value == 0.08
+    assert at.number_input(key=f"laser_rate_{_RAW}_default_mhz").value == 80.0
     _healthy(at)
 
 
@@ -229,7 +229,7 @@ def test_fit_free_controls_follow_live_selection_and_retain_hidden_values(
         "default": _profile(input_type=input_type, extractors=["Lifetime fit"]),
     })
     feature_key = f"{input_type}_ch1_feature_extractors_default"
-    laser_key = f"laser_rate_{input_type}_default"
+    laser_key = f"laser_rate_{input_type}_default_mhz"
     method_key = f"fit_free_calibration_{input_type}_default"
     lifetime_key = f"fluorescence_lifetime_standard_lifetime_{input_type}_default"
     irf_key = f"ch1_{input_type}_IRF_default"
@@ -243,7 +243,7 @@ def test_fit_free_controls_follow_live_selection_and_retain_hidden_values(
 
     # A single rerun must reflect the new extractor choice above the picker.
     at.multiselect(key=feature_key).set_value(["Lifetime fit free"]).run()
-    at.number_input(key=laser_key).set_value(0.12).run()
+    at.number_input(key=laser_key).set_value(120.0).run()
     at.radio(key=method_key).set_value("Fluorescence Lifetime Standard").run()
     at.number_input(key=lifetime_key).set_value(3.5).run()
 
@@ -261,7 +261,7 @@ def test_fit_free_controls_follow_live_selection_and_retain_hidden_values(
     at = AppTest.from_file(_PAGE).run(timeout=30)
     assert not at.radio
     at.multiselect(key=feature_key).set_value(["Lifetime fit", "Lifetime fit free"]).run()
-    assert at.number_input(key=laser_key).value == 0.12
+    assert at.number_input(key=laser_key).value == 120.0
     assert at.radio(key=method_key).value == "Fluorescence Lifetime Standard"
     assert at.number_input(key=lifetime_key).value == 3.5
     # Regular fitting still needs the IRF even when fit-free uses a standard.

@@ -2,6 +2,8 @@
 
 import streamlit as st
 
+from src.widgets.laser_rate_widget import laser_rate_input
+
 
 _FLIM_SETTINGS_KEY = "_extraction_flim_settings"
 _SHARED_FIELDS = (
@@ -77,9 +79,9 @@ def render_shared_flim_settings(cfg, profile, has_flim):
             settings = cfg.setdefault(input_type, {})
             if has_fit_free:
                 with cols[1]:
-                    settings["laser_rate"] = st.number_input(
-                        f"Laser rate **(GHz)** for {input_type}",
-                        value=settings.get("laser_rate", 0.08), min_value=0.0, max_value=1.0,
+                    settings["laser_rate"] = laser_rate_input(
+                        f"Laser rate **(MHz)** for {input_type}",
+                        settings.get("laser_rate", 0.08),
                         key=f"laser_rate_{input_type}_{profile}",
                     )
                 with cols[2]:

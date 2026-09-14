@@ -176,10 +176,10 @@ def test_real_image_extraction_through_configuration_and_csv_export(
     app.multiselect(key=f"{input_type}_ch1_feature_extractors_default").set_value(extractors)
     app.multiselect(key="categorical_cols_default").set_value(["acquisition"])
     run(app, "choose_extractors", False)
-    assert any(w.key == f"laser_rate_{input_type}_default" for w in app.number_input) == has_fit_free
+    assert any(w.key == f"laser_rate_{input_type}_default_mhz" for w in app.number_input) == has_fit_free
     assert any(w.key == f"fit_free_calibration_{input_type}_default" for w in app.radio) == has_fit_free
     if has_fit_free:
-        app.number_input(key=f"laser_rate_{input_type}_default").set_value(0.08)
+        app.number_input(key=f"laser_rate_{input_type}_default_mhz").set_value(80.0)
         app.radio(key=f"fit_free_calibration_{input_type}_default").set_value("IRF")
     if has_fit:
         app.number_input(key=f"num_components_ch1_{input_type}_default").set_value(2)

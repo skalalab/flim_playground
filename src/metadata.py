@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 from src.config import get_available_feature_extractors, get_file_types, get_fov_name_col, get_unique_cell_id_col
-from src.file_io import get_irf, get_lifetime_standard
+from src.file_io import validate_ptu_reference_timing
 
 
 def _not_found(desc):
@@ -205,19 +205,25 @@ def parse_metadata_file(metadata_df, fov_name_col):
         else:
             return _not_found("Duration column duration"), None
 
-        # Replayed CSVs must validate PTU references against their saved timing,
-        # even when the current configuration or reference file has changed.
+        # Validate saved PTU timing from headers only. Reading photon records
+        # here blocks entry to the numeric step for large references; the full
+        # readers validate and decode curves when calibration/extraction runs.
         for channel_name in metadata_dict["channel_names"]:
             ref_path = metadata_dict[channel_name].get("fluorescence_lifetime_standard_file")
             if ref_path is not None and Path(str(ref_path)).suffix.lower() == ".ptu":
-                error_msg, _ = get_lifetime_standard(metadata_df, channel_name, metadata_dict["time_bins"])
+                error_msg = validate_ptu_reference_timing(
+                    ref_path, metadata_df, metadata_dict["time_bins"],
+                    f"Fluorescence lifetime standard for {channel_name}",
+                )
                 if error_msg:
                     return error_msg, None
-            if channel_name in metadata_dict["channels_shift"]:
-                for _, row in metadata_df.iterrows():
-                    irf_path = row.get(f"{channel_name}_IRF")
-                    if irf_path is not None and Path(str(irf_path)).suffix.lower() == ".ptu":
-                        error_msg, _ = get_irf(row, channel_name, metadata_dict["time_bins"])
+            irf_col = f"{channel_name}_IRF"
+            if channel_name in metadata_dict["channels_shift"] and irf_col in metadata_df.columns:
+                for irf_path, rows in metadata_df.groupby(irf_col, sort=False):
+                    if Path(str(irf_path)).suffix.lower() == ".ptu":
+                        error_msg = validate_ptu_reference_timing(
+                            irf_path, rows, metadata_dict["time_bins"], f"IRF for {channel_name}",
+                        )
                         if error_msg:
                             return error_msg, None
 

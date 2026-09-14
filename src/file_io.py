@@ -4,7 +4,7 @@ import pathlib
 from pathlib import Path
 import tifffile
 from typing import Union
-from src.decay_io import read_decay, read_ptu_reference
+from src.decay_io import read_decay, read_ptu_reference, read_ptu_reference_timing
 from src.config import get_fov_name_col
 import pandas as pd
 import os
@@ -205,6 +205,14 @@ def _validate_reference_timing(reference, metadata_df, time_bins, label):
         if mismatches:
             return f"Error: {label}: " + "; ".join(mismatches) + "."
     return ""
+
+
+def validate_ptu_reference_timing(path, metadata_df, time_bins, label):
+    """Check saved acquisition timing without loading a reference histogram."""
+    err, reference = read_ptu_reference_timing(path)
+    if err:
+        return err
+    return _validate_reference_timing(reference, metadata_df, time_bins, label)
 
 
 def get_lifetime_standard(metadata_df, channel_name, time_bins):
