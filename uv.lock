@@ -320,7 +320,7 @@ requires-dist = [
     { name = "phasorpy", specifier = ">=0.7" },
     { name = "plotly", specifier = "==6.2.0" },
     { name = "psutil", specifier = ">=7.0.0" },
-    { name = "ptufile", specifier = ">=2025.5.10" },
+    { name = "ptufile", specifier = "==2025.9.9" },
     { name = "pyinstaller", specifier = ">=6.13.0" },
     { name = "pynndescent", specifier = "==0.5.13" },
     { name = "pyparsing", specifier = "==3.2.3" },

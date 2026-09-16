@@ -29,7 +29,8 @@ dependencies = [
     "phasorpy>=0.7",
     "plotly==6.2.0",
     "psutil>=7.0.0",
-    "ptufile>=2025.5.10",
+    # PTU reference decoding uses read_records(cache=...), removed in 2025.11.8.
+    "ptufile==2025.9.9",
     "pyinstaller>=6.13.0",
     "pynndescent==0.5.13",
     "pyparsing==3.2.3",
