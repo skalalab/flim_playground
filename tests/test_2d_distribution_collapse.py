@@ -97,7 +97,7 @@ def page(monkeypatch):
                 **{X: frame[X] + 20, Y: frame[Y] * 2 + 15})], ignore_index=True)
         at = AppTest.from_file(PAGE).run(timeout=90)
         assert not at.exception
-        at.radio[0].set_value("### **Bivariate**")
+        at.radio[0].set_value("**Bivariate**")
         settings = {
             "2d_x_menu_Uncategorized Features": X,
             "2d_y_menu_Uncategorized Features": Y,
@@ -211,10 +211,10 @@ def test_2d_collapse_control_follows_color_by_and_survives_method_changes(page):
     assert row.children[0].selectbox[0].label == "Separate by"
     assert row.children[1].multiselect[0].label == "Color by"
     assert row.children[2].selectbox[0].label == "Collapse by"
-    at.radio[0].set_value("### **Univariate**").run(timeout=90)
+    at.radio[0].set_value("**Univariate**").run(timeout=90)
     assert not at.exception
     assert at.selectbox(vw.COLLAPSE_BY_KEY).value == "dish"
-    at.radio[0].set_value("### **Bivariate**").run(timeout=90)
+    at.radio[0].set_value("**Bivariate**").run(timeout=90)
     assert not at.exception
     assert at.selectbox(vw.COLLAPSE_BY_KEY).value == "dish"
 

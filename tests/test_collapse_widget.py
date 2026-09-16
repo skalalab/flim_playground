@@ -95,7 +95,7 @@ def test_feature_histogram_has_no_collapse_or_point_decorations(page):
 
 def test_the_2d_distribution_offers_collapse_by(page):
     at = page()
-    at.radio[0].set_value("### **Bivariate**")
+    at.radio[0].set_value("**Bivariate**")
     at.run(timeout=90)
     assert not at.exception
     assert "Collapse by" in _labels(at)
@@ -148,7 +148,7 @@ def test_feature_comparison_has_one_direct_three_way_selector(page):
             f"{mode.title()} by"}
         assert _colour(at).label == ("Group by" if mode == "subcolor" else "Color by")
 
-    at.radio[0].set_value("### **Bivariate**")
+    at.radio[0].set_value("**Bivariate**")
     at.run(timeout=90)
     assert not at.exception
     group = at.get("button_group")[0]
@@ -166,7 +166,7 @@ def test_a_color_grouping_column_can_also_encode_points(page, mode):
     assert "treatment" in _options(at, f"{mode.title()} by")
     assert at.selectbox(vw.PICKER_COL_KEY).value == "treatment"
 
-    at.radio[0].set_value("### **Bivariate**")
+    at.radio[0].set_value("**Bivariate**")
     at.run(timeout=90)
     assert not at.exception
     for fd_mode in ("shape", "opacity"):
@@ -231,24 +231,24 @@ def test_subcolor_without_groups_is_disabled_but_remembers_the_column(page):
 
 def test_other_methods_keep_independent_opacity_across_feature_comparison(page):
     at = page()
-    at.radio[0].set_value("### **Multivariate**").run(timeout=90)
+    at.radio[0].set_value("**Multivariate**").run(timeout=90)
     assert not at.exception
     _opacity(at).select("day").run(timeout=90)
     next(box for box in at.selectbox if box.label == "Shape by").select("dish").run(timeout=90)
 
-    at.radio[0].set_value("### **Univariate**").run(timeout=90)
+    at.radio[0].set_value("**Univariate**").run(timeout=90)
     assert not at.exception
     _point_mode(at, "opacity").select("image_name").run(timeout=90)
     # An extra run exposes cleanup of widgets hidden by the method change.
     at.run(timeout=90)
     assert not at.exception
 
-    at.radio[0].set_value("### **Multivariate**").run(timeout=90)
+    at.radio[0].set_value("**Multivariate**").run(timeout=90)
     assert not at.exception
     assert _opacity(at).value == "day"
     assert next(box for box in at.selectbox if box.label == "Shape by").value == "image_name"
 
-    at.radio[0].set_value("### **Univariate**").run(timeout=90)
+    at.radio[0].set_value("**Univariate**").run(timeout=90)
     assert not at.exception
     assert at.get("button_group")[0].value == "opacity"
     assert _opacity(at).value == "image_name"
@@ -275,7 +275,7 @@ def test_legacy_encoding_migrates_once(page, legacy, expected_mode, expected_col
 def _bivariate(page):
     """Open 2D Feature Distribution with its merged point-encoding control."""
     at = page()
-    at.radio[0].set_value("### **Bivariate**")
+    at.radio[0].set_value("**Bivariate**")
     at.run(timeout=90)
     assert not at.exception
     return at

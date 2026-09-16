@@ -391,7 +391,7 @@ def test_data_analysis_routes_dimension_reduction_through_responsive_wrapper(mon
                         lambda fig, *, key: seen.append((fig, key)))
     page = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
     at = AppTest.from_file(page).run(timeout=30)
-    at.radio[0].set_value("### **Multivariate**")
+    at.radio[0].set_value("**Multivariate**")
     at.session_state["analysis_control_dr_method"] = "PCA"
     at.session_state["ms_Uncategorized Features"] = ["first", "second"]
     at.run(timeout=30)

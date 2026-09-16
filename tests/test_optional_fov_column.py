@@ -369,7 +369,7 @@ def test_fresh_visit_shows_phasor_plot(monkeypatch):
     assert not at.exception
     assert at.radio[1].options == ["Feature Comparison", "Feature Histogram"]
 
-    at.radio[0].set_value("### **Bivariate**")
+    at.radio[0].set_value("**Bivariate**")
     at.run(timeout=90)
     assert not at.exception
     assert "Phasor Plot" in at.radio[1].options
@@ -394,7 +394,7 @@ def test_phasor_hides_when_loaded_feature_groups_lack_a_complete_gs_pair(monkeyp
     at = AppTest.from_file(page)
     at.run(timeout=90)
     assert not at.exception
-    at.radio[0].set_value("### **Bivariate**")
+    at.radio[0].set_value("**Bivariate**")
     at.run(timeout=90)
     assert not at.exception
     assert "Phasor Plot" not in at.radio[1].options
@@ -421,7 +421,7 @@ def test_phasor_shows_when_loaded_feature_groups_have_a_complete_gs_pair(monkeyp
     at = AppTest.from_file(page)
     at.run(timeout=90)
     assert not at.exception
-    at.radio[0].set_value("### **Bivariate**")
+    at.radio[0].set_value("**Bivariate**")
     at.run(timeout=90)
     assert not at.exception
     assert "Phasor Plot" in at.radio[1].options

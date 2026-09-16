@@ -320,11 +320,11 @@ with col1:
     cols = st.columns([0.6, 1])
     with cols[0]:
         analysis_type = st.radio(
-            "### **Data Analysis**",
+            "**Data Analysis**",
             [
-            "### **Univariate**",
-            "### **Bivariate**",
-            "### **Multivariate**",
+            "**Univariate**",
+            "**Bivariate**",
+            "**Multivariate**",
             ],
         )
     with cols[1]:

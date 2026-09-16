@@ -56,3 +56,24 @@ def _forget_bare_mode_containers():
     context_dg_stack.set(default)
     for dg in (*left_standing, *default):
         dg._form_data = None
+
+
+@pytest.fixture(autouse=True)
+def _forget_pages_directory_probe():
+    """Let each AppTest decide for itself whether its script has a ``pages/`` directory.
+
+    Streamlit 1.54 records that answer once per process on the PagesManager class. A
+    test that runs ``main.py`` (which has ``pages/``) would otherwise turn every later
+    ``AppTest.from_function`` script into a legacy multipage app whose generated file
+    name fails the page-title check. Reset the probe around each test.
+    """
+    try:
+        from streamlit.runtime.pages_manager import PagesManager
+    except ImportError:
+        yield
+        return
+    if hasattr(PagesManager, "uses_pages_directory"):
+        PagesManager.uses_pages_directory = None
+    yield
+    if hasattr(PagesManager, "uses_pages_directory"):
+        PagesManager.uses_pages_directory = None

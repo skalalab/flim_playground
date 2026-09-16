@@ -205,7 +205,7 @@ def page(monkeypatch):
 @pytest.mark.parametrize("separate_by", [["patient"], ["patient", "treatment"]])
 def test_page_passes_ordered_facets_and_ignores_obsolete_settings(page, separate_by):
     at = AppTest.from_file(PAGE).run(timeout=90)
-    at.radio[0].set_value("### **Multivariate**")
+    at.radio[0].set_value("**Multivariate**")
     for key, value in {SEPARATE_KEY: separate_by,
                        OBSOLETE_BACKGROUND_KEY: False, OBSOLETE_COLUMNS_KEY: 4,
                        "analysis_control_dr_method": "PCA",
@@ -226,7 +226,7 @@ def test_page_passes_ordered_facets_and_ignores_obsolete_settings(page, separate
 
 def test_facets_offer_group_counts_without_a_color_group(page):
     at = AppTest.from_file(PAGE).run(timeout=90)
-    at.radio[0].set_value("### **Multivariate**")
+    at.radio[0].set_value("**Multivariate**")
     for key, value in {SEPARATE_KEY: ["patient"], vw.COLOR_BY_KEY: [],
                        "analysis_control_dr_method": "PCA",
                        "ms_Uncategorized Features": ["feature_x", "feature_y"]}.items():

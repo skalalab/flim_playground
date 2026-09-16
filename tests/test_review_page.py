@@ -128,7 +128,7 @@ def test_user_tables_offer_and_render_phasor_from_coordinate_names(
                "all_numerical_features": ["Area", g_col, s_col],
                "feature_groups": {"Real": [g_col], "Imaginary": [s_col]} if grouped else {}}
     at = _run({"p": profile}, path=tmp_path / "analysis_config.toml")
-    at = at.radio[0].set_value("### **Bivariate**").run(timeout=90)
+    at = at.radio[0].set_value("**Bivariate**").run(timeout=90)
 
     assert not at.exception, [e.value for e in at.exception]
     assert at.session_state.phasor_available is True
@@ -158,7 +158,7 @@ def test_user_tables_hide_phasor_without_a_complete_numerical_pair(
         else:
             profile["categorical_cols"].append(s_col)
     at = _run({"p": profile}, path=tmp_path / "analysis_config.toml")
-    at = at.radio[0].set_value("### **Bivariate**").run(timeout=90)
+    at = at.radio[0].set_value("**Bivariate**").run(timeout=90)
 
     assert not at.exception, [e.value for e in at.exception]
     assert at.session_state._review_confirmed is True
@@ -323,7 +323,7 @@ def test_plot_style_survives_switching_analysis_modules(page, tmp_path, analysis
 
     # The destination initially needs feature selections, so its styling widgets
     # are absent. Settings must survive cleanup on this and subsequent runs.
-    at = at.radio[0].set_value(f"### **{analysis_type}**").run(timeout=90)
+    at = at.radio[0].set_value(f"**{analysis_type}**").run(timeout=90)
     assert not at.get("plotly_chart")
     assert not any(w.key == "plot_point_size" for w in at.number_input)
     for _ in range(2):
@@ -339,7 +339,7 @@ def test_plot_style_survives_switching_analysis_modules(page, tmp_path, analysis
         assert phasor["layout"]["legend"]["font"]["size"] == 16
         assert _by_key(at, "number_input", "plot_point_size").value == 11
 
-    at = at.radio[0].set_value("### **Univariate**").run(timeout=90)
+    at = at.radio[0].set_value("**Univariate**").run(timeout=90)
     menu = next(w for w in at.selectbox if "_menu_" in str(w.key))
     at = menu.select("Area").run(timeout=90)
     assert not at.exception, [e.value for e in at.exception]

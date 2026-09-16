@@ -70,7 +70,7 @@ def test_page_captures_export_names_and_disables_both_downloads(monkeypatch, met
     at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "pages/data_analysis.py"))
     at.run(timeout=60)
     if method != "Feature Histogram":
-        at.radio[0].set_value("### **Bivariate**").run(timeout=60)
+        at.radio[0].set_value("**Bivariate**").run(timeout=60)
     at.session_state.analysis_control_apply_gmm = True
     at.session_state["fit_gmm_2d_x_y"] = True
     at.radio[1].set_value(method).run(timeout=60)
@@ -170,7 +170,7 @@ def test_gmm_table_renames_use_shared_export_mapping_and_replace_static_tables(g
         at.radio[1].set_value("Feature Histogram").run(timeout=60)
     else:
         at.session_state["fit_gmm_2d_x_y"] = True
-        at.radio[0].set_value("### **Bivariate**").run(timeout=60)
+        at.radio[0].set_value("**Bivariate**").run(timeout=60)
     assert len(at.dataframe) == 1
     assert not any(w.value == "**Export labels**" for w in at.markdown)
     assert not any("Original static GMM table" in w.value for w in at.markdown)
@@ -227,9 +227,9 @@ def test_histogram_export_names_survive_classification_hiding_color_by(grouping_
     _export_column_input(at).set_value("Cell state").run(timeout=60)
     assert captured[-1]["derived_export"]["column_name"] == "Cell state"
 
-    at.radio[0].set_value("### **Multivariate**").run(timeout=60)
+    at.radio[0].set_value("**Multivariate**").run(timeout=60)
     at.radio[1].set_value("Classification").run(timeout=60)
-    at.radio[0].set_value("### **Univariate**").run(timeout=60)
+    at.radio[0].set_value("**Univariate**").run(timeout=60)
     at.radio[1].set_value("Feature Histogram").run(timeout=60)
 
     assert not at.exception, [e.value for e in at.exception]
@@ -241,16 +241,16 @@ def test_histogram_export_names_survive_classification_hiding_color_by(grouping_
 def test_2d_export_names_survive_histogram_hiding_collapse_by(grouping_page):
     at, captured = grouping_page
     at.session_state["fit_gmm_2d_x_y"] = True
-    at.radio[0].set_value("### **Bivariate**").run(timeout=60)
+    at.radio[0].set_value("**Bivariate**").run(timeout=60)
     at.radio[1].set_value("2D Feature Distribution").run(timeout=60)
     at.multiselect(key="vis_encoding_color_by").set_value(["treatment"]).run(timeout=60)
     at.selectbox(key="vis_encoding_collapse_by").set_value("day").run(timeout=60)
     _export_column_input(at).set_value("Collapsed state").run(timeout=60)
     assert captured[-1]["derived_export"]["column_name"] == "Collapsed state"
 
-    at.radio[0].set_value("### **Univariate**").run(timeout=60)
+    at.radio[0].set_value("**Univariate**").run(timeout=60)
     at.radio[1].set_value("Feature Histogram").run(timeout=60)
-    at.radio[0].set_value("### **Bivariate**").run(timeout=60)
+    at.radio[0].set_value("**Bivariate**").run(timeout=60)
     at.radio[1].set_value("2D Feature Distribution").run(timeout=60)
 
     assert not at.exception, [e.value for e in at.exception]
@@ -263,7 +263,7 @@ def test_2d_mean_help_uses_effective_scale_when_negative_values_prevent_log(grou
     at, _ = grouping_page
     at.session_state["fit_gmm_2d_x_y"] = True
     at.session_state["log_x_2d_x_y"] = True
-    at.radio[0].set_value("### **Bivariate**").run(timeout=60)
+    at.radio[0].set_value("**Bivariate**").run(timeout=60)
     at.radio[1].set_value("2D Feature Distribution").run(timeout=60)
     assert not at.exception, [e.value for e in at.exception]
     assert at.checkbox(key="log_x_2d_x_y").value

@@ -109,7 +109,7 @@ def test_analysis_page_passes_separator_to_plot_and_export(monkeypatch):
     monkeypatch.setattr(export_script, "generate_script", capture_export)
     page = str(Path(__file__).resolve().parents[1] / "pages/data_analysis.py")
     at = AppTest.from_file(page).run(timeout=90)
-    at.radio[0].set_value("### **Bivariate**").run(timeout=90)
+    at.radio[0].set_value("**Bivariate**").run(timeout=90)
     at.radio[1].set_value("Phasor Plot")
     # Settings from an older session must not revive the removed analysis.
     at.session_state["k_means_phasor_ch1"] = True
