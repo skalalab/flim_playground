@@ -41,11 +41,6 @@
   7%,88% {opacity:1;}
   100% {opacity:0;visibility:hidden;}
 }
-@media(prefers-reduced-motion:reduce) {
-  .fp-landing-plane {display:none;}
-}
-
-
 /* A short tire-smoke puff marks contact with the runway. */
 .fp-landing-plane .fp-plane-tire-smoke {
   position: absolute; left: 52%; bottom: 0; width: 18px; height: 14px;

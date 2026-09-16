@@ -41,9 +41,6 @@ _SHARED_RULES = f"""
 .{CELEBRATION_CLASS} {{
     position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 9999990;
 }}
-@media (prefers-reduced-motion: reduce) {{
-    .{CELEBRATION_CLASS} {{ display: none; }}
-}}
 """
 _PARTY_COLORS = ("#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93", "#ff924c", "#f72585")
 _FIREWORK_PALETTES = (
@@ -691,7 +688,7 @@ def choose_effect(previous=None, names=EFFECT_NAMES):
 
 
 def render_effect(name):
-    """Play one named effect."""
+    """Play one named effect regardless of the system's reduced-motion setting."""
     if name == BALLOONS:
         # Keep Streamlit's balloon artwork, extending the native 750ms flight.
         # Its stagger is 0–1s; the final balloon anchors the total at four seconds.
@@ -700,9 +697,6 @@ def render_effect(name):
                 animation-duration: 3s; animation-fill-mode: both;
             }
             [data-testid="stBalloons"] img:last-child { animation-delay: 1s; }
-            @media (prefers-reduced-motion: reduce) {
-                [data-testid="stBalloons"] { display: none; }
-            }
         """]))
         st.balloons()
         return
