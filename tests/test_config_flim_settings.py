@@ -6,8 +6,7 @@ import pytest
 import toml
 from streamlit.testing.v1 import AppTest
 
-import src.config as config
-
+from src import config
 
 _PAGE = str(Path(__file__).resolve().parents[1] / "main.py")
 _RAW = "Decay (3/4D)"
@@ -53,6 +52,11 @@ def _healthy(at):
 
 def _save_button(at):
     return next((b for b in at.button if b.label == "Update Configuration"), None)
+
+
+def _profile_selector(at):
+    # The selector is re-keyed after create/delete, so find it by label.
+    return next(s for s in at.selectbox if s.label == "Profile")
 
 
 @pytest.mark.parametrize(("modalities", "input_type"), [
@@ -139,14 +143,14 @@ def test_unsaved_values_are_independent_per_format_and_profile(tmp_path, monkeyp
     at.selectbox(key="flim_decay_input_type_default").set_value(_RAW).run()
     assert at.number_input(key=f"laser_rate_{_RAW}_default_mhz").value == 60.0
 
-    at.selectbox(key="extraction_profile_selector").set_value("second").run()
+    _profile_selector(at).set_value("second").run()
     at.number_input(key=f"laser_rate_{_TABULAR}_second_mhz").set_value(110.0).run()
-    at.selectbox(key="extraction_profile_selector").set_value("default").run()
+    _profile_selector(at).set_value("default").run()
     assert at.number_input(key=f"laser_rate_{_RAW}_default_mhz").value == 60.0
     at.selectbox(key="flim_decay_input_type_default").set_value(_TABULAR).run()
     assert at.number_input(key=f"laser_rate_{_TABULAR}_default_mhz").value == 90.0
     assert at.number_input(key=f"{_TABULAR}_duration_default").value == 26.0
-    at.selectbox(key="extraction_profile_selector").set_value("second").run()
+    _profile_selector(at).set_value("second").run()
     assert at.number_input(key=f"laser_rate_{_TABULAR}_second_mhz").value == 110.0
     _healthy(at)
 

@@ -62,11 +62,15 @@ def main():
         st.markdown("#### ⚙️ Configuration")
         select_col, create_col = st.columns([1, 1], vertical_alignment="top")
         with select_col:
+            # Streamlit identifies a keyed selectbox by its key alone, so after a
+            # create or delete the browser would keep showing its old choice and
+            # send it back on the next interaction. A fresh key resets it.
+            selector_gen = st.session_state.setdefault("extraction_profile_selector_gen", 0)
             selected_profile = st.selectbox(
                 "Profile",
                 options=profiles,
                 index=profiles.index(active) if active in profiles else 0,
-                key="extraction_profile_selector",
+                key=f"extraction_profile_selector_{selector_gen}",
                 help="Select which extraction profile to configure. Each profile is an independent setup.",
             )
             if selected_profile and selected_profile != active:
@@ -82,8 +86,8 @@ def main():
             ):
                 delete_profile(active)
                 forget_shared_flim_settings(active)
-                # Reset the selector to the remaining active profile.
-                st.session_state.pop("extraction_profile_selector", None)
+                # Fresh selector identity: show the remaining active profile.
+                st.session_state["extraction_profile_selector_gen"] = selector_gen + 1
                 st.rerun()
         # New profiles start empty; rendering seeds their defaults.
         with create_col:
@@ -108,9 +112,9 @@ def main():
                         st.error(f"{unstorable} {sad_emoji}")
                     elif new_profile_name and new_profile_name not in profiles:
                         create_profile(new_profile_name)
-                        # Reset the selector so its saved value cannot restore
-                        # the previous profile on the next rerun.
-                        st.session_state.pop("extraction_profile_selector", None)
+                        # Fresh selector identity: show the new profile instead
+                        # of the browser's previous choice.
+                        st.session_state["extraction_profile_selector_gen"] = selector_gen + 1
                         st.rerun()
                     elif new_profile_name in profiles:
                         st.error(f"'{new_profile_name}' already exists! {sad_emoji}")
