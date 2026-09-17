@@ -88,7 +88,7 @@ from src.widgets.visualization_widgets import (
 )
 
 st.set_page_config(layout="wide", page_icon="📊")
-render_top_menu()
+render_top_menu(space_below="0.5rem")
 
 # Preserve fit inputs as well as layout when a method hides their widgets.
 # Otherwise a method switch can reset the fit and discard its saved export names.
@@ -319,8 +319,9 @@ col1, col2 = st.columns([0.4, 1])
 with col1:
     cols = st.columns([0.6, 1])
     with cols[0]:
+        # The nav bar names the page; this group is headed "Modules" once, on the left.
         analysis_type = st.radio(
-            "**Data Analysis**",
+            "**Modules**",
             [
             "**Univariate**",
             "**Bivariate**",
@@ -336,8 +337,10 @@ with col1:
             else multivar_methods
         )
         method = st.radio(
-            "Methods",
+            "Modules",
             available_methods,
+            # Hidden, not collapsed: the label's space keeps both option lists on the same rows.
+            label_visibility="hidden",
         )
     use_data_extraction = st.checkbox("**Use Dataset from Data Extraction**", value=True)
     st.session_state._use_data_extraction = use_data_extraction
@@ -351,7 +354,8 @@ with col1:
                         if use_data_extraction else "Upload your table")
     uploaded_file = st.file_uploader(
         instruction_text,
-        label_visibility="visible" if use_data_extraction else "collapsed",
+        # The label is read by assistive technology only; the dropzone explains itself.
+        label_visibility="collapsed",
         # Kept in sync with SUPPORTED_SUFFIXES and dataset_io._diagnose_table.
         help="CSV, tab-, semicolon- or pipe-separated text (.tsv, .txt), Excel (.xlsx, .xlsm) "
              "or OpenDocument (.ods). The table must be a plain grid: column names on the first "

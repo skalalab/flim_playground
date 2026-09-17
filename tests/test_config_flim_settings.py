@@ -276,6 +276,38 @@ def test_fit_free_controls_follow_live_selection_and_retain_hidden_values(
     _healthy(at)
 
 
+def test_default_laser_rate_seeds_an_unsaved_2d_rate_from_the_window(tmp_path, monkeypatch):
+    # A saved rate wins; without one a 2D window is assumed to span one laser period.
+    assert config.default_laser_rate(_TABULAR, {"laser_rate": 0.04, "duration": 12.5}) == 0.04
+    assert config.default_laser_rate(_TABULAR, {}) == pytest.approx(0.05)
+    assert config.default_laser_rate(_TABULAR, {"duration": 12.5}) == pytest.approx(0.08)
+    assert config.default_laser_rate(_TABULAR, {"duration": 0.0}) == 0.08
+    assert config.default_laser_rate(_RAW, {}) == 0.08
+    # The Numerical step reads the active profile through the same rule.
+    path = tmp_path / "config.toml"
+    profile = _profile(input_type=_TABULAR, extractors=["Lifetime fit free"])
+    profile[_TABULAR] = {"duration": 12.5, "time_bins": 200}
+    path.write_text(toml.dumps({"current_profile": "default", "profiles": {"default": profile}}), encoding="utf-8")
+    monkeypatch.setattr(config, "_CONFIG_PATH", path)
+    assert config.get_default_laser_rate(_TABULAR) == pytest.approx(0.08)
+    assert config.get_default_laser_rate(_RAW) == 0.08
+
+
+@pytest.mark.parametrize(("shared", "expected_mhz"), [
+    ({}, 50.0),
+    ({"duration": 12.5, "time_bins": 200}, 80.0),
+    ({"duration": 12.5, "laser_rate": 0.04}, 40.0),
+])
+def test_configuration_seeds_a_new_2d_laser_rate_from_its_duration(
+    tmp_path, monkeypatch, shared, expected_mhz,
+):
+    profile = _profile(input_type=_TABULAR, extractors=["Lifetime fit free"])
+    profile[_TABULAR] = shared
+    at, _ = _open(tmp_path, monkeypatch, {"default": profile})
+    assert at.number_input(key=f"laser_rate_{_TABULAR}_default_mhz").value == pytest.approx(expected_mhz)
+    assert at.number_input(key=f"{_TABULAR}_duration_default").value == shared.get("duration", 20.0)
+
+
 def test_fit_free_controls_only_consider_active_flim_channels_and_format(tmp_path, monkeypatch):
     profile = _profile(("FLIM", "FLIM", "Intensity-only"))
     profile["ch2"][_RAW]["selected_feature_extractors"] = ["Lifetime fit free"]

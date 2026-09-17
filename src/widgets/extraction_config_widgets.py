@@ -2,6 +2,7 @@
 
 import streamlit as st
 
+from src.config import DEFAULT_2D_DECAY_DURATION_NS, default_laser_rate
 from src.widgets.laser_rate_widget import laser_rate_input
 
 
@@ -81,7 +82,7 @@ def render_shared_flim_settings(cfg, profile, has_flim):
                 with cols[1]:
                     settings["laser_rate"] = laser_rate_input(
                         f"Laser rate **(MHz)** for {input_type}",
-                        settings.get("laser_rate", 0.08),
+                        default_laser_rate(input_type, settings),
                         key=f"laser_rate_{input_type}_{profile}",
                     )
                 with cols[2]:
@@ -105,7 +106,7 @@ def render_shared_flim_settings(cfg, profile, has_flim):
                 with cols[0]:
                     settings["duration"] = st.number_input(
                         f"{input_type} duration (**ns**)",
-                        value=settings.get("duration", 20.0), min_value=0.0, max_value=100.0,
+                        value=settings.get("duration", DEFAULT_2D_DECAY_DURATION_NS), min_value=0.0, max_value=100.0,
                         key=f"{input_type}_duration_{profile}",
                     )
                 with cols[1]:

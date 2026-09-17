@@ -28,8 +28,8 @@ _DATA = _ROOT / "example_data/Data_Extraction/T_cell_activation"
 _INPUT = "Decay (2D)"
 _CHANNEL = "NADH"
 _FOV_COUNTS = {"Tcell_Act": 342, "Tcell_Qui": 351, "Tcell_bckgrnd": 103}
-_NUMERIC_STEP = "Numeric Feature Extraction (fitting, phasor, etc.)"
-_CATEGORICAL_STEP = "Categorical Feature Extraction (e.g. treatment)"
+_NUMERIC_STEP = "**Numerical** (e.g. lifetime, morphology)"
+_CATEGORICAL_STEP = "**Categorical** (e.g. treatment, day)"
 
 
 def _button(app, label):
@@ -37,7 +37,7 @@ def _button(app, label):
 
 
 def _step(app, label):
-    selector = next(r for r in app.radio if r.label == "Select a step to perform")
+    selector = next(r for r in app.radio if r.label == "Select a step to extract single-object features")
     selector.set_value(label)
 
 
@@ -180,10 +180,10 @@ def test_real_tcell_extraction_from_configuration_through_export(
     app.text_input(key="fov_metadata_folder_path").set_value(str(data_dir))
     run(app, "scan_real_files")
     no_errors(app)
-    app.button(key="export_metadata_button").click()
+    app.button(key="prepare_extraction_button").click()
     run(app, "export_metadata")
     no_errors(app)
-    metadata_path = Path(app.session_state["last_extracted_metadata_filepath"])
+    metadata_path = Path(app.session_state["prepared_extraction"].metadata_path)
     metadata = pd.read_csv(metadata_path)
     assert set(metadata["image_name"]) == set(_FOV_COUNTS)
     assert metadata["duration"].eq(12.5).all()
@@ -209,7 +209,6 @@ def test_real_tcell_extraction_from_configuration_through_export(
     no_errors(app)
     if has_fit:
         app.selectbox(key="fitting_mode_update").set_value("Local")
-    _button(app, "Download updated metadata").click()
     run(app, "save_calibrated_metadata")
     no_errors(app)
     metadata = pd.read_csv(metadata_path)
@@ -219,7 +218,7 @@ def test_real_tcell_extraction_from_configuration_through_export(
         assert metadata["fitting_mode"].eq("Local").all()
         assert metadata[f"{_CHANNEL}_num_components"].eq(2).all()
 
-    _button(app, "Confirm and Start").click()
+    _button(app, "Start extraction").click()
     run(app, "extract_all_796_curves")
     no_errors(app)
     summary["extraction_warnings"] = [w.value for w in app.warning]

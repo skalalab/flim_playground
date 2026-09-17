@@ -64,9 +64,8 @@ def test_configured_profile_still_renders(tmp_path, monkeypatch):
 # Each extraction step renders, with an explicit guard for an empty FOV channel selection.
 
 _STEPS = [
-    "FOV Metadata Extraction",
-    "Numeric Feature Extraction (fitting, phasor, etc.)",
-    "Categorical Feature Extraction (e.g. treatment)",
+    "**Numerical** (e.g. lifetime, morphology)",
+    "**Categorical** (e.g. treatment, day)",
 ]
 
 
@@ -85,12 +84,12 @@ def _configured_cfg():
 
 def _step_radio(at):
     for r in at.radio:
-        if r.label == "Select a step to perform":
+        if r.label == "Select a step to extract single-object features":
             return r
     raise AssertionError(f"step radio not found; radios={[r.label for r in at.radio]}")
 
 
-def test_step_radio_lists_exactly_the_three_steps(tmp_path, monkeypatch):
+def test_step_radio_lists_exactly_the_two_steps(tmp_path, monkeypatch):
     from streamlit.testing.v1 import AppTest
 
     _point_config_at(tmp_path, monkeypatch, _configured_cfg())
@@ -119,7 +118,7 @@ def test_fov_step_errors_when_no_channel_selected(tmp_path, monkeypatch):
     at = AppTest.from_file(_PAGE).run(timeout=60)
     assert not at.exception
 
-    # Default step is FOV; the single channel is checked by default -> uncheck it.
+    # Default step is Numerical; the single channel is checked by default -> uncheck it.
     channel_boxes = [c for c in at.checkbox if c.label.startswith("has ")]
     assert channel_boxes, f"no channel checkbox; checkboxes={[c.label for c in at.checkbox]}"
     channel_boxes[0].set_value(False).run(timeout=60)

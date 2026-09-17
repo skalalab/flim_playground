@@ -39,7 +39,8 @@ def test_configuration_displays_and_saves_precise_laser_rate(tmp_path, monkeypat
         "default": _profile(input_type=input_type, extractors=["Lifetime fit free"]),
     })
     key = f"laser_rate_{input_type}_default_mhz"
-    assert_rate(app.number_input(key=key), 80.0)
+    # An unsaved 2D rate is seeded from the default 20 ns window: 1 / 20 ns.
+    assert_rate(app.number_input(key=key), 50.0 if input_type == "Decay (2D)" else 80.0)
     for rate in RATES_MHZ:
         app.number_input(key=key).set_value(rate).run()
         assert_rate(app.number_input(key=key), rate)

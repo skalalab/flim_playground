@@ -23,7 +23,8 @@ from src import config
 from src.decay_io import read_decay_with_frames
 from src.file_io import get_decay_curves
 from src.fov_extraction import fov_extraction
-from src.metadata import parse_metadata_file
+from src.metadata import prepare_extraction
+from src.extraction_session import ExtractionSession
 
 
 def _digest(path):
@@ -145,16 +146,22 @@ def test_synthetic_ptu_calibrates_against_measured_atto488(tmp_path, monkeypatch
         "dye_fluorescence_lifetime_standard_time_axis": 2,
         "fluorescence_lifetime_standard_lifetime": standard_ns,
     }])
-    metadata_path = tmp_path / "fov_metadata.csv"
-    rows.to_csv(metadata_path, index=False)
-    replayed = pd.read_csv(metadata_path)
-    error, metadata = parse_metadata_file(replayed, "image_name")
+    error, metadata = prepare_extraction(
+        rows, {"dye": {"input_type": "Decay (3/4D)", "imaging_modality": "FLIM",
+                       "selected_feature_extractors": ["Lifetime fit free"]}},
+        fov_name_col="image_name", unique_cell_id_col="cell_id",
+        laser_rate=frequency_hz * 1e-9,
+        fit_free_calibration_method="Fluorescence Lifetime Standard",
+        fluorescence_lifetime_standard_lifetime=standard_ns,
+    )
     assert error == ""
     assert metadata["channels_shift"] == {}
-    error, curves = get_decay_curves(replayed.iloc[0], "Decay (3/4D)", "dye", bins, shift=False)
+    prepared = ExtractionSession.create(rows, metadata, tmp_path)
+    assert not prepared.metadata_error
+    error, curves = get_decay_curves(rows.iloc[0], "Decay (3/4D)", "dye", bins, shift=False)
     assert error == ""
     fov_extraction.clear()
-    error, features = fov_extraction(replayed.iloc[0], metadata)
+    error, features = fov_extraction(rows.iloc[0], metadata)
     assert error == ""
     assert features.index.tolist() == [f"synthetic_sample_{label}" for label in (1, 2, 3)]
     features.to_csv(tmp_path / "extracted_features.csv")

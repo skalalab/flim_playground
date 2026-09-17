@@ -1,6 +1,5 @@
-"""PTU references work through discovery, metadata CSVs, shifts, and extraction."""
+"""PTU references work through folder discovery, preparation, shifts, and extraction."""
 
-from io import StringIO
 from pathlib import Path
 
 import numpy as np
@@ -74,6 +73,16 @@ def sample_metadata(folder, method=STANDARD):
     return pd.DataFrame(rows)
 
 
+def prepare_sample(rows, method=STANDARD):
+    return metadata.prepare_extraction(
+        rows, {"ch1": {"input_type": INPUT_TYPE, "imaging_modality": "FLIM",
+                       "selected_feature_extractors": ["Lifetime fit free"]}},
+        fov_name_col="image_name", unique_cell_id_col="cell_id",
+        laser_rate=rows["laser_rate"].iloc[0], fit_free_calibration_method=method,
+        fluorescence_lifetime_standard_lifetime=4.0,
+    )
+
+
 @pytest.mark.parametrize("reference_first", [False, True])
 def test_discovery_excludes_reference_files_even_if_reference_suffix_comes_first(dataset, reference_first):
     folder, _ = dataset
@@ -98,23 +107,22 @@ def test_metadata_page_creates_and_exports_shared_ptu_standard(dataset, inactive
     app.text_input(key="fov_metadata_folder_path").set_value(str(folder)).run(timeout=30)
     assert not app.exception
     assert not app.error, [e.value for e in app.error]
-    app.button(key="export_metadata_button").click().run(timeout=30)
+    app.button(key="prepare_extraction_button").click().run(timeout=30)
     assert not app.exception
-    csv_path = app.session_state["last_extracted_metadata_filepath"]
+    csv_path = app.session_state["prepared_extraction"].metadata_path
     rows = pd.read_csv(csv_path)
     assert rows["image_name"].tolist() == ["fov1", "fov2"]
     assert rows["ch1_fluorescence_lifetime_standard_time_axis"].tolist() == [2, 2]
     assert rows["fluorescence_lifetime_standard_lifetime"].tolist() == [4.0, 4.0]
-    err, info = metadata.parse_metadata_file(rows, "image_name")
-    assert err == ""
+    info = app.session_state["prepared_extraction"].settings
     assert info["channels_shift"] == {}
 
 
 @pytest.mark.parametrize("method", [STANDARD, "IRF"])
-def test_csv_replay_shift_and_single_object_extraction_match_existing_formats(dataset, method):
+def test_prepared_shift_and_single_object_extraction_match_existing_formats(dataset, method):
     folder, curves = dataset
-    rows = pd.read_csv(StringIO(sample_metadata(folder, method).to_csv(index=False)))
-    err, info = metadata.parse_metadata_file(rows, "image_name")
+    rows = sample_metadata(folder, method)
+    err, info = prepare_sample(rows, method)
     assert err == ""
     if method != STANDARD:
         err, shift = choose_shift_fit_free(rows, 32, INPUT_TYPE, "ch1")
@@ -138,7 +146,7 @@ def test_csv_replay_shift_and_single_object_extraction_match_existing_formats(da
         rows["ch1_IRF"] = str(path)
         err, old_shift = choose_shift_fit_free(rows, 32, INPUT_TYPE, "ch1")
         assert err == "" and old_shift == shift
-    err, info = metadata.parse_metadata_file(rows, "image_name")
+    err, info = prepare_sample(rows, method)
     assert err == ""
     for (_, row), expected in zip(rows.iterrows(), actual):
         err, features = fov_extraction(row, info)
@@ -147,17 +155,17 @@ def test_csv_replay_shift_and_single_object_extraction_match_existing_formats(da
 
 
 @pytest.mark.parametrize("method", [STANDARD, "IRF"])
-def test_csv_replay_rejects_incompatible_reference_frequency(dataset, method):
+def test_preparation_rejects_incompatible_reference_frequency(dataset, method):
     folder, _ = dataset
     rows = sample_metadata(folder, method)
     rows["laser_rate"] = 0.08
-    err, info = metadata.parse_metadata_file(rows, "image_name")
+    err, info = prepare_sample(rows, method)
     assert info is None
     assert "frequency" in err and "40" in err and "80" in err
 
 
 @pytest.mark.parametrize("method", [STANDARD, "IRF"])
-def test_numeric_step_checks_reference_timing_without_reading_photons(dataset, monkeypatch, method):
+def test_preparation_checks_reference_timing_without_reading_photons(dataset, monkeypatch, method):
     folder, _ = dataset
     rows = sample_metadata(folder, method)
     reads = []
@@ -168,26 +176,20 @@ def test_numeric_step_checks_reference_timing_without_reading_photons(dataset, m
         return original(self, *args, **kwargs)
 
     monkeypatch.setattr(PtuFile, "read_records", tracked_read)
-    page = Path(__file__).resolve().parents[1] / "pages/data_extraction.py"
-    app = AppTest.from_file(str(page)).run(timeout=30)
-    app.session_state["last_extracted_metadata"] = rows
-    next(r for r in app.radio if r.label == "Select a step to perform").set_value(
-        "Numeric Feature Extraction (fitting, phasor, etc.)"
-    ).run(timeout=30)
-    assert not app.exception
-    assert not app.error, [e.value for e in app.error]
-    action = "Optimize for Shifts" if method == "IRF" else "Confirm and Start"
-    assert any(button.label == action for button in app.button)
+    err, info = prepare_sample(rows, method)
+    assert err == ""
+    assert info is not None
     assert reads == []
 
 
 def test_metadata_timing_checks_every_distinct_irf_header(dataset):
     folder, _ = dataset
-    rows = sample_metadata(folder, "IRF")
+    method = "IRF"
+    rows = sample_metadata(folder, method)
     replacement = folder / "second_irf.ptu"
     write_reference(replacement, frequency=80_000_000)
     rows.loc[1, "ch1_IRF"] = str(replacement)
-    err, info = metadata.parse_metadata_file(rows, "image_name")
+    err, info = prepare_sample(rows, method)
     assert info is None
     assert "frequency" in err and "reference=80" in err and "sample=40" in err
 
@@ -196,10 +198,10 @@ def test_metadata_timing_checks_every_distinct_irf_header(dataset):
 def test_metadata_timing_rereads_replaced_reference_header(dataset, method):
     folder, _ = dataset
     rows = sample_metadata(folder, method)
-    assert metadata.parse_metadata_file(rows, "image_name")[0] == ""
+    assert prepare_sample(rows, method)[0] == ""
     path = folder / ("Atto488.ptu" if method == STANDARD else "quenched.ptu")
     write_reference(path, frequency=80_000_000)
-    err, info = metadata.parse_metadata_file(rows, "image_name")
+    err, info = prepare_sample(rows, method)
     assert info is None
     assert "frequency" in err and "reference=80" in err and "sample=40" in err
 
@@ -209,7 +211,7 @@ def test_rescan_refreshes_calculations_after_reference_is_replaced(dataset, meth
     folder, _ = dataset
     rows = sample_metadata(folder, method)
     rows["ch1_shift"] = 0.0
-    err, info = metadata.parse_metadata_file(rows, "image_name")
+    err, info = prepare_sample(rows, method)
     assert err == ""
     err, before = fov_extraction(rows.iloc[0], info)
     assert err == ""

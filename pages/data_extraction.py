@@ -1,7 +1,6 @@
 import json
 import os
-import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 import pandas as pd
 import streamlit as st
@@ -9,6 +8,7 @@ import streamlit as st
 from src.celebrate import celebrate
 from src.config import (
     get_channel_names,
+    get_config_mtime,
     get_current_profile_name,
     get_decay_input_type,
     get_derived_features,
@@ -20,12 +20,19 @@ from src.config import (
     get_num_components,
     get_reference_file_suffixes,
     get_selected_feature_extractors,
+    get_unique_cell_id_col,
 )
 from src.config_watch import notify_on_config_change
 from src.emojis import happy_emoji, sad_emoji
+from src.extraction_session import ExtractionSession
 from src.file_io import get_lifetime_standard
-from src.metadata import parse_metadata_file
+from src.metadata import prepare_extraction
 from src.navigation import render_top_menu
+from src.widgets.analysis_widget_state import (
+    control_default,
+    number_input_default,
+    preserve_analysis_controls,
+)
 from src.widgets.category_widgets import (
     check_and_merge_df_widget,
     find_available_dfs_widget,
@@ -35,7 +42,6 @@ from src.widgets.lifetime_widgets import choose_shift_widget, fit_options_widget
 from src.widgets.metadata_widgets import (
     check_assign_channel_widget,
     clear_folder_scan_caches,
-    export_metadata_widget,
     lifetime_data_config_widget,
     load_data_suffix_widget,
     load_list_data_from_folder_widget,
@@ -44,10 +50,9 @@ from src.widgets.metadata_widgets import (
 from src.widgets.numeric_extraction_widgets import fov_extraction_widget
 
 # Shared labels for the workflow selector and dispatch.
-STEP_FOV = "FOV Metadata Extraction"
-STEP_NUMERIC = "Numeric Feature Extraction (fitting, phasor, etc.)"
-STEP_CATEGORICAL = "Categorical Feature Extraction (e.g. treatment)"
-STEPS = [STEP_FOV, STEP_NUMERIC, STEP_CATEGORICAL]
+STEP_NUMERIC = "**Numerical** (e.g. lifetime, morphology)"
+STEP_CATEGORICAL = "**Categorical** (e.g. treatment, day)"
+STEPS = [STEP_NUMERIC, STEP_CATEGORICAL]
 
 
 # --- Cross-step context ----------------------------------------------------
@@ -67,6 +72,9 @@ class ExtractionContext:
     fov_name_col: str
     fit_free_calibration_method: object
     fluorescence_lifetime_standard_lifetime: object
+    fixed_lifetimes: dict
+    derived_features: list
+    unique_cell_id_col: str
 
 
 def build_context():
@@ -91,21 +99,42 @@ def build_context():
         fov_name_col=fov_name_col,
         fit_free_calibration_method=fit_free_calibration_method,
         fluorescence_lifetime_standard_lifetime=fluorescence_lifetime_standard_lifetime,
+        fixed_lifetimes={key: get_fixed_lifetimes(key, input_types[key]) for key in channel_names},
+        derived_features=get_derived_features(),
+        unique_cell_id_col=get_unique_cell_id_col(),
     )
 
 
-def init_session_state():
-    if "last_extracted_metadata" not in st.session_state:
-        st.session_state["last_extracted_metadata"] = None
-    if "last_extracted_metadata_filepath" not in st.session_state:
-        st.session_state["last_extracted_metadata_filepath"] = None
-    if "choosing_shift" not in st.session_state:
-        st.session_state["choosing_shift"] = False
-    if "shift_ready" not in st.session_state:
-        st.session_state["shift_ready"] = False
+def invalidate_preparation():
+    """Discard decisions and display state; previous output files remain records."""
+    st.session_state["prepared_extraction"] = None
+    st.session_state.pop("extraction_source", None)
+    st.session_state.pop("autostart_extraction", None)
 
 
-# --- FOV Metadata Extraction helpers ---------------------------------------
+def preserve_source_controls(ctx):
+    """Keep source-folder controls alive across steps and visible after remounting.
+
+    Reassigning a key while its widget is hidden prevents Streamlit's cleanup; the
+    same reassignment in the run that recreates the widget is what sends the value
+    to the browser, which otherwise remounts the widget with its constructor
+    default and reports that default on the next rerun. Runs before any source
+    widget on every page run, like the analysis page's control preservation.
+    Fitting controls need no key: they rebuild from the prepared settings.
+    """
+    keys = {
+        "fov_metadata_folder_path", "2D_decay_duration", "2D_decay_time_bins",
+        "2D_decay_laser_rate_mhz", "laser_rate_mhz",
+        "fluorescence_lifetime_standard_lifetime",
+    }
+    for key, name in ctx.channel_names.items():
+        keys.update((f"has_channel_{key}", f"num_component_{name}", f"{name}_channel_selectbox"))
+        prefix = f"{name}_{ctx.input_types[key]}_"
+        keys.update(k for k in st.session_state if k.startswith(prefix) and k.endswith("_suffix"))
+    preserve_analysis_controls(st.session_state, keys)
+
+
+# --- Source folder preparation helpers ---------------------------------------
 def validate_folder_path(folder_path):
     """Validate folder path and return appropriate error message"""
     if folder_path == "":
@@ -147,14 +176,13 @@ def prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components, c
             fov_df[f"{channel_name}_num_components"] = selected_ch_num_components[channel_name]
         # Write fixed-lifetime columns from config defaults (Step 1)
         if "Lifetime fit" in ctx.selected_ch_feature_extractors.get(channel_key, []):
-            fixed_lts = get_fixed_lifetimes(channel_key, ctx.input_types[channel_key])
+            fixed_lts = ctx.fixed_lifetimes[channel_key]
             for t_key in ["t1", "t2", "t3"]:
                 val = fixed_lts.get(t_key)  # None or float
                 fov_df[f"{channel_name}_fixed_{t_key}"] = val
 
-    # Repeat the profile's derived formulas on each metadata row so replaying
-    # this CSV uses the same definitions even after the profile changes.
-    fov_df["derived_features"] = json.dumps(get_derived_features())
+    # Metadata is an output record; extraction uses these definitions in memory.
+    fov_df["derived_features"] = json.dumps(ctx.derived_features)
 
     return fov_df
 
@@ -186,7 +214,7 @@ def validate_fluorescence_lifetime_standard_per_channel(fov_df, selected_channel
 
 
 def finalize_fov_processing(fov_df, selected_channels, decay_input_type, imaging_modalities, duration, time_bins, folder_path, selected_ch_feature_extractors, fit_free_calibration_method=None, fluorescence_lifetime_standard_lifetime=None):
-    """Assign channels, validate standards, then preview + export the metadata.
+    """Assign channels, validate standards, then preview the FOV table.
 
     Follows the ``(error_msg, result)`` convention: returns ``("", fov_df)`` on
     success, or ``(error_msg, fov_df)`` at the first failing step. Rendering the
@@ -210,14 +238,31 @@ def finalize_fov_processing(fov_df, selected_channels, decay_input_type, imaging
         if error_msg != "":
             return error_msg, fov_df
 
-    # Display and export
     preview_metadata_widget(fov_df)
-    export_metadata_widget(metadata_df=fov_df, folder_path=folder_path)
     return "", fov_df
 
 
-def render_fov_metadata_step(col1, col2, ctx):
-    """Step 1: select channels + suffixes + folder (col1), then scan/validate/export (col2)."""
+def _render_metadata_record(prepared):
+    """Where the Start button stood: a failed save until it is retried, otherwise
+    the saved path only in the view that follows the click, before calibration
+    moves on to shift finding or extraction."""
+    if prepared.metadata_error:
+        st.error(prepared.metadata_error)
+        if st.button("Retry saving metadata"):
+            prepared.save_metadata()
+            st.rerun()
+    elif not prepared.choosing_shift and (
+        not prepared.calibration_confirmed or not prepared.settings["channels_shift"]
+    ):
+        st.success(f"Metadata is saved automatically to {prepared.metadata_path}")
+
+
+def render_source_controls(ctx):
+    """Render the metadata settings and return ``(error_msg, source)``.
+
+    ``source`` collects every input the folder scan and preparation read, so a
+    prepared session can be checked against the settings still on screen.
+    """
     error_msg = ""
     actual_file_suffix = None
     selected_channels = {}
@@ -229,274 +274,226 @@ def render_fov_metadata_step(col1, col2, ctx):
     fit_free_calibration_method = ctx.fit_free_calibration_method
     fluorescence_lifetime_standard_lifetime = ctx.fluorescence_lifetime_standard_lifetime
 
-    with col1:
-        # Notify when another tab changes the config; refreshing loads those changes.
-        notify_on_config_change()
-        # show decay input type
-        if ctx.has_flim:
-            st.write(f"Decay input type: {ctx.decay_input_type}")
-        checkbox_cols = st.columns(len(ctx.channel_names))
+    checkbox_cols = st.columns(len(ctx.channel_names))
 
-        for index, (channel_key, channel_name) in enumerate(ctx.channel_names.items()):
-            with checkbox_cols[index]:
-                has_channel = st.checkbox(f"has {channel_name}", value=True, key=f"has_channel_{channel_key}")
-                if has_channel:
-                    with st.expander(f"Feature extractors for {channel_name}", expanded=False):
-                        st.write(", ".join(ctx.selected_ch_feature_extractors[channel_key]))
-                    selected_channels[channel_key] = channel_name
-                    if ctx.ch_num_components[channel_key] != 0 and "prefitted" in ctx.input_types[channel_key]:  # Prefitted component count determines required output files.
-                        selected_ch_num_components[channel_name] = st.number_input("No. component", value=ctx.ch_num_components[channel_key], min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_name}")
-                    elif ctx.ch_num_components[channel_key] != 0:  # Configure raw-data components in the fitting step.
-                        selected_ch_num_components[channel_name] = ctx.ch_num_components[channel_key]
-        if len(selected_channels) == 0:
-            error_msg = "Please check at least one of the channels"
-            st.error(f"{error_msg} {sad_emoji}")
+    for index, (channel_key, channel_name) in enumerate(ctx.channel_names.items()):
+        with checkbox_cols[index]:
+            # A False default suppresses the duplication warning once the key is restored.
+            has_channel = st.checkbox(f"has {channel_name}", value=bool(control_default(st.session_state, f"has_channel_{channel_key}", True)), key=f"has_channel_{channel_key}")
+            if has_channel:
+                with st.expander(f"{channel_name}: {ctx.imaging_modalities[channel_key]}", expanded=False):
+                    st.write(f"Feature extractors: {', '.join(ctx.selected_ch_feature_extractors[channel_key])}")
+                selected_channels[channel_key] = channel_name
+                if ctx.ch_num_components[channel_key] != 0 and "prefitted" in ctx.input_types[channel_key]:  # Prefitted component count determines required output files.
+                    selected_ch_num_components[channel_name] = st.number_input("No. component", value=number_input_default(st.session_state, f"num_component_{channel_name}", ctx.ch_num_components[channel_key]), min_value=1, max_value=3, help="Number of components for the lifetime fit/fit free analysis" if index == 0 else None, key=f"num_component_{channel_name}")
+                elif ctx.ch_num_components[channel_key] != 0:  # Configure raw-data components in the fitting step.
+                    selected_ch_num_components[channel_name] = ctx.ch_num_components[channel_key]
+    if len(selected_channels) == 0:
+        error_msg = "Please check at least one of the channels"
+        st.error(f"{error_msg} {sad_emoji}")
+    else:
+        if any(ctx.imaging_modalities[key] == "FLIM" for key in selected_channels):
+            selected_extractors = {key: ctx.selected_ch_feature_extractors[key] for key in selected_channels}
+            duration, time_bins, laser_rate = lifetime_data_config_widget(selected_extractors, ctx.decay_input_type)
         else:
-            if ctx.has_flim:
-                duration, time_bins, laser_rate = lifetime_data_config_widget(ctx.selected_ch_feature_extractors, ctx.decay_input_type)
-            else:
-                duration, time_bins, laser_rate = None, None, None
-            if laser_rate is None:
-                fit_free_calibration_method = None
-            if fit_free_calibration_method == "Fluorescence Lifetime Standard":
-                # Fluorescence lifetime standard file is per-channel and collected via suffixes; only lifetime is shared
-                fluorescence_lifetime_standard_lifetime = st.number_input("Fluorescence lifetime standard's lifetime in **ns**", value=fluorescence_lifetime_standard_lifetime, min_value=0.1, max_value=20.0, step=0.1, key="fluorescence_lifetime_standard_lifetime")
+            duration, time_bins, laser_rate = None, None, None
+        if laser_rate is None:
+            fit_free_calibration_method = None
+        if fit_free_calibration_method == "Fluorescence Lifetime Standard":
+            # Fluorescence lifetime standard file is per-channel and collected via suffixes; only lifetime is shared
+            fluorescence_lifetime_standard_lifetime = st.number_input("Fluorescence lifetime standard's lifetime in **ns**", value=number_input_default(st.session_state, "fluorescence_lifetime_standard_lifetime", fluorescence_lifetime_standard_lifetime), min_value=0.1, max_value=20.0, step=0.1, key="fluorescence_lifetime_standard_lifetime")
 
-            actual_file_suffix, error_msg = load_data_suffix_widget(ctx.input_types, selected_channels, selected_ch_num_components, ctx.selected_ch_feature_extractors)
-            if error_msg != "":
-                st.error(error_msg)
-            else:
-                folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the raw data that is needed for the selected data extraction type.", key="fov_metadata_folder_path")
-                if folder_path and st.button("Rescan folder", help="Re-read files from disk, ignoring cached results"):
-                    clear_folder_scan_caches()
-                    st.rerun()
+        actual_file_suffix, error_msg = load_data_suffix_widget(ctx.input_types, selected_channels, selected_ch_num_components, ctx.selected_ch_feature_extractors)
+        if error_msg != "":
+            st.error(error_msg)
+        else:
+            folder_path = st.text_input("Copy the folder path here", help="The folder should contain all the raw data that is needed for the selected data extraction type.", key="fov_metadata_folder_path")
+            if folder_path and st.button("Rescan folder", help="Re-read files from disk, ignoring cached results"):
+                invalidate_preparation()
+                clear_folder_scan_caches()
+                st.rerun()
 
+    return error_msg, {
+        "selected_channels": selected_channels,
+        "selected_ch_num_components": selected_ch_num_components,
+        "duration": duration, "time_bins": time_bins, "laser_rate": laser_rate,
+        "fit_free_calibration_method": fit_free_calibration_method,
+        "fluorescence_lifetime_standard_lifetime": fluorescence_lifetime_standard_lifetime,
+        "actual_file_suffix": actual_file_suffix, "folder_path": folder_path,
+    }
+
+
+def source_fingerprint(ctx, source):
+    """Identify the profile and metadata settings a session was prepared from."""
+    return json.dumps({"context": asdict(ctx), **source}, sort_keys=True, default=str)
+
+
+def render_preparation(col1, col2, ctx):
+    """Metadata view: review the source folder and create one validated session."""
+    with col1:
+        error_msg, source = render_source_controls(ctx)
+    if error_msg:
+        return
+    selected_channels = source["selected_channels"]
+    folder_path = source["folder_path"]
+    laser_rate = source["laser_rate"]
     with col2:
-        if error_msg == "":
-            # Step 1: Validate folder path
-            if not validate_folder_path(folder_path):
-                pass  # Error already displayed in function
-            else:
-                # Step 2: Load and validate FOVs
-                # Hidden calibration fields still identify references. Active
-                # fields use the suffix currently entered by the user instead.
-                reference_suffixes = tuple(
-                    suffix for key, channel in selected_channels.items()
-                    for kind, suffix in get_reference_file_suffixes(key, ctx.input_types[key]).items()
-                    if f"{channel}_{kind}" not in actual_file_suffix
-                )
-                fovs = load_and_validate_fovs(folder_path, actual_file_suffix, reference_suffixes)
-                if fovs is None:
-                    pass  # Error already displayed in function
-                else:
-                    # Step 3: Prepare dataframe
-                    fov_df = prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components, ctx)
-                    if laser_rate is not None:
-                        fov_df["laser_rate"] = laser_rate
+        if not validate_folder_path(folder_path):
+            return  # Error already displayed in function
+        # Hidden calibration fields still identify references. Active
+        # fields use the suffix currently entered by the user instead.
+        reference_suffixes = tuple(
+            suffix for key, channel in selected_channels.items()
+            for kind, suffix in get_reference_file_suffixes(key, ctx.input_types[key]).items()
+            if f"{channel}_{kind}" not in source["actual_file_suffix"]
+        )
+        fovs = load_and_validate_fovs(folder_path, source["actual_file_suffix"], reference_suffixes)
+        if fovs is None:
+            return  # Error already displayed in function
+        fov_df = prepare_fov_dataframe(fovs, selected_channels, source["selected_ch_num_components"], ctx)
+        if laser_rate is not None:
+            fov_df["laser_rate"] = laser_rate
 
-                    # Validate channel assignments and standards, then export metadata.
-                    error_msg, fov_df = finalize_fov_processing(fov_df, selected_channels, ctx.decay_input_type, ctx.imaging_modalities, duration, time_bins, folder_path, ctx.selected_ch_feature_extractors, fit_free_calibration_method, fluorescence_lifetime_standard_lifetime)
-                    if error_msg != "":
-                        st.error(f"{error_msg} {sad_emoji}")
-
-
-# --- Numeric Feature Extraction helpers ------------------------------------
-def _load_metadata_df():
-    """Load the FOV metadata: prefer the last extracted table in session, else a file upload."""
-    metadata_df = None
-    if st.session_state["last_extracted_metadata_filepath"] is not None:
-        file_path = st.session_state["last_extracted_metadata_filepath"]
-        st.info(f"Using the latest extracted metadata file: {file_path}. Refresh the page to use a different file.")
-    if st.session_state["last_extracted_metadata"] is not None:
-        metadata_df = st.session_state["last_extracted_metadata"]
-    else:
-        uploaded_file = st.file_uploader("Upload the field of view metadata csv", type=["csv"], help="The metadata file should be from the FOV metadata extraction step.")
-        if uploaded_file is not None:
-            try:
-                metadata_df = pd.read_csv(uploaded_file)
-            except Exception as e:  # noqa: BLE001
-                st.error(f"Error reading the uploaded CSV file: {e} {sad_emoji}")
-                metadata_df = None  # Ensure metadata_df is None if reading fail
-    return metadata_df
-
-
-def _save_or_download_metadata(metadata_df):
-    """Save the augmented metadata back to its known path (button-gated), else offer a download."""
-    if st.session_state["last_extracted_metadata_filepath"] is not None:
-        download = st.button("Download updated metadata", width='stretch', help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
-        if download:
-            try:
-                metadata_df.to_csv(st.session_state["last_extracted_metadata_filepath"], index=False)
-                st.success(f"✅ Metadata updated successfully at {st.session_state['last_extracted_metadata_filepath']} {happy_emoji}")
-            except PermissionError:
-                st.error(f"❌ Cannot save file - it may be open in another program (like Excel). Please close the file and try again. {sad_emoji}")
-            except Exception as e:  # noqa: BLE001
-                st.error(f"❌ Error saving file: {str(e)} {sad_emoji}")
-    else:
-        st.download_button(label="Download updated metadata", data=metadata_df.to_csv(index=False), file_name=f"fov_metadata_{time.strftime('%Y%m%d_%H%M%S')}.csv", key=f"download_metadata_{time.time()}", width='stretch', help="Download the augmented metadata with the calculated shifts and selected time gates as a CSV file.")
-
-
-def _render_shift_controls(metadata_df, metadata_dict):
-    """Configure fitting/shift options (col1). Returns the possibly-updated (metadata_df, metadata_dict)."""
-    st.success(f"✅ Features to be extracted confirmed. {happy_emoji}")
-    # Only relevant when at least one channel is FLIM; not set for intensity-only metadata
-    decay_input_type = metadata_dict.get("decay_input_type")
-    shift_needed = len(metadata_dict["channels_shift"]) > 0
-    shifts_are_present = all(f"{ch}_shift" in metadata_df.columns for ch in metadata_dict["channels_shift"])
-    # Required shift columns must exist before extraction can run.
-    if shift_needed and not shifts_are_present and st.session_state.get("shift_ready", False):
-        st.session_state["shift_ready"] = False
-    if shift_needed and not shifts_are_present:
-        # Prefitted inputs do not need fitting options.
-        if decay_input_type is not None and "Lifetime fit" in metadata_dict and len(metadata_dict["Lifetime fit"]) > 0 and "prefitted" not in decay_input_type:
-            st.info("Please specify the following fitting options.")
-            metadata_dict = fit_options_widget(metadata_dict)
-        col1_1, col1_2 = st.columns(2)
-        with col1_1:
-            metadata_dict["fix_shift"] = st.checkbox(
-                "Fix the Shift",
-                value=True,
-                key="fix_shift_checkbox",
-                help="If True, the shift will be fixed for all images. If False, the shift will be estimated for each image."
-            )
-        with col1_2:
-            if st.button("Optimize for Shifts"):
-                st.session_state["choosing_shift"] = True
-                st.session_state["shift_ready"] = False
-                st.rerun()
-    else:
-        if "fitting_mode" in metadata_df.columns:
-            metadata_df["fitting_mode"] = st.selectbox(
-                "Fitting Mode",
-                ["Hybrid", "Local"],
-                index=0,
-                key="fitting_mode_update",
-                help="Hybrid: global search for initial guess, then local refinement per cell (robust). Local: warm-start on mean decay, then local fit per cell (faster)."
-            )
-        col1_1, col1_2 = st.columns(2)
-        with col1_1:
-            if st.button("Confirm and Start", width='stretch'):
-                st.session_state["last_extracted_metadata"] = metadata_df
-                st.session_state["choosing_shift"] = False
-                st.session_state["shift_ready"] = True
-                # Arm the one-shot celebration; _render_run_extraction consumes it
-                # once the batch actually produces features.
-                st.session_state["celebrate_extraction"] = True
-                st.rerun()
-
-        if shift_needed and shifts_are_present:
-            with col1_2:
-                if st.button("Go back and find shift", width='stretch'):
-                    st.session_state["choosing_shift"] = True
-                    st.session_state["shift_ready"] = False
-                    # remove shift columns from metadata_df in session state
-                    for ch in metadata_dict["channels_shift"]:
-                        if f"{ch}_shift" in metadata_df.columns:
-                            metadata_df = metadata_df.drop(columns=[f"{ch}_shift"])
-                    st.session_state["last_extracted_metadata"] = metadata_df
-                    st.rerun()
-            _save_or_download_metadata(metadata_df)
-    return metadata_df, metadata_dict
-
-
-def _render_choose_shift(metadata_df, metadata_dict, ctx):
-    """Per-channel shift optimization (col2); on confirm, persist shifts/time-gates/fit options."""
-    channel_shifts = {}
-    for channel_name in metadata_dict["channels_shift"]:
-        error_msg, shifts = choose_shift_widget(metadata_df, metadata_dict, ctx.fov_name_col, channel_name=channel_name)
+        # Validate channel assignments and calibration compatibility before preparation.
+        error_msg, fov_df = finalize_fov_processing(
+            fov_df, selected_channels, ctx.decay_input_type, ctx.imaging_modalities,
+            source["duration"], source["time_bins"], folder_path, ctx.selected_ch_feature_extractors,
+            source["fit_free_calibration_method"], source["fluorescence_lifetime_standard_lifetime"],
+        )
         if error_msg != "":
             st.error(f"{error_msg} {sad_emoji}")
+            return
+        channels = {
+            name: {
+                "input_type": ctx.input_types[key],
+                "imaging_modality": ctx.imaging_modalities[key],
+                "selected_feature_extractors": ctx.selected_ch_feature_extractors[key],
+                "num_components": source["selected_ch_num_components"].get(name, 0),
+                "fixed_lifetimes": ctx.fixed_lifetimes[key],
+            }
+            for key, name in selected_channels.items()
+        }
+        error_msg, settings = prepare_extraction(
+            fov_df, channels, fov_name_col=ctx.fov_name_col,
+            unique_cell_id_col=ctx.unique_cell_id_col,
+            derived_features=ctx.derived_features, laser_rate=laser_rate,
+            fit_free_calibration_method=source["fit_free_calibration_method"],
+            fluorescence_lifetime_standard_lifetime=source["fluorescence_lifetime_standard_lifetime"],
+        )
+        if error_msg:
+            st.error(error_msg)
+            return
+        label = "Start calibration" if settings["channels_shift"] else "Start extraction"
+        if st.button(label, key="prepare_extraction_button", type="primary"):
+            prepared = ExtractionSession.create(fov_df, settings, folder_path)
+            st.session_state["prepared_extraction"] = prepared
+            st.session_state["extraction_source"] = source_fingerprint(ctx, source)
+            # Without calibration this click is the extraction start itself; a
+            # failed metadata save still holds it until the retry succeeds.
+            st.session_state["autostart_extraction"] = prepared.can_extract
+            # Rerun so this button leaves the screen in the same interaction.
+            st.rerun()
+
+
+# --- Calibration and extraction -------------------------------------------
+def _render_shift_controls(prepared):
+    settings = prepared.settings
+    if not prepared.calibration_confirmed:
+        if any(method == "fit" for method in settings["channels_shift"].values()):
+            fit_options_widget(settings)
+        settings["fix_shift"] = st.checkbox(
+            "Fix the Shift", value=settings.get("fix_shift", True), key="fix_shift_checkbox",
+            help="Use one shift for all FOVs, or estimate a shift for each FOV.",
+        )
+        if st.button("Optimize for Shifts"):
+            prepared.choosing_shift = True
+        return False
+
+    if "fitting_mode" in settings:
+        modes = ["Hybrid", "Local"]
+        mode = st.selectbox(
+            "Fitting Mode", modes, index=modes.index(settings["fitting_mode"]),
+            key="fitting_mode_update",
+            help="Hybrid: global search then local refinement. Local: warm-start on mean decay then local fit per cell.",
+        )
+        prepared.change_mode(mode)
+    start_col, back_col = st.columns(2)
+    with start_col:
+        start = st.button("Start extraction", width="stretch", disabled=not prepared.can_extract)
+    with back_col:
+        if settings["channels_shift"] and st.button("Go back and find shift", width="stretch"):
+            prepared.begin_recalibration()
+            st.rerun()
+    return start
+
+
+def _render_choose_shift(prepared, ctx):
+    channel_shifts = {}
+    for channel in prepared.settings["channels_shift"]:
+        error, shifts = choose_shift_widget(prepared.metadata_df, prepared.settings, ctx.fov_name_col, channel_name=channel)
+        if error:
+            st.error(f"{error} {sad_emoji}")
         else:
-            channel_shifts[channel_name] = shifts
-    shift_finished = st.button("Confirm Time Gates (if applicable) and Shift for each channel")
-    if shift_finished:
-        # write the shift, time gates and fitting options to the metadata file
-        for channel_name, shift in channel_shifts.items():
-            metadata_df[f"{channel_name}_shift"] = shift
-            if "start" in metadata_dict[channel_name]:
-                metadata_df[f"{channel_name}_start"] = metadata_dict[channel_name]["start"]
-            if "end" in metadata_dict[channel_name]:
-                metadata_df[f"{channel_name}_end"] = metadata_dict[channel_name]["end"]
-            if "num_components" in metadata_dict[channel_name]:
-                metadata_df[f"{channel_name}_num_components"] = metadata_dict[channel_name]["num_components"]
-            # Persist any session-level fixed-lifetime overrides back to the metadata CSV
-            fixed_lts = metadata_dict[channel_name].get("fixed_lifetimes", {})
-            for t_key in ["t1", "t2", "t3"]:
-                col = f"{channel_name}_fixed_{t_key}"
-                if t_key in fixed_lts:
-                    metadata_df[col] = fixed_lts[t_key]  # float or None
-
-        if "fitting_algo" in metadata_dict:
-            metadata_df["fitting_algo"] = metadata_dict["fitting_algo"]
-        if "fitting_mode" in metadata_dict:
-            metadata_df["fitting_mode"] = metadata_dict["fitting_mode"]
-
-        # Store the updated metadata_df in session state so it persists across rerun
-        st.session_state["last_extracted_metadata"] = metadata_df
-        st.session_state["choosing_shift"] = False
-        st.session_state["shift_ready"] = False
-        st.rerun()
-
-
-def _save_or_download_features(single_cell_features, timestamp):
-    """Auto-save the single-cell features next to the metadata file, else offer a download."""
-    # get the folder path from the file path
-    if st.session_state["last_extracted_metadata_filepath"] is not None:
-        folder_path = os.path.dirname(st.session_state["last_extracted_metadata_filepath"])
-        csv_path = os.path.join(folder_path, f"single_cell_features_{timestamp}.csv")
-        # save the features to a csv file automatically
-        try:
-            single_cell_features.to_csv(csv_path)  # Save the DataFrame
-            st.success(f"✅ Single cell features exported successfully to {csv_path} {happy_emoji}")
-        except Exception as e:  # noqa: BLE001
-            st.error(f"❌ Error exporting the single cell features: {str(e)} {sad_emoji}")
-    else:
-        downloaded = st.download_button(label="Download single cell features as CSV", data=single_cell_features.to_csv(), file_name=f"single_cell_features_{timestamp}.csv")
-        if downloaded:
-            st.success(f"✅ Single cell features exported successfully to your download folder {happy_emoji}")
-
-
-def _render_run_extraction(metadata_df, metadata_dict):
-    """Run the batch per-FOV extraction (col2) and export the resulting single-cell features."""
-    single_cell_features = fov_extraction_widget(metadata_df, metadata_dict)
-    if not single_cell_features.empty:
-        st.success(f"Fields of view features with ✅ are extracted successfully {happy_emoji}! FOVs with error messages are excluded. The first few rows of the features are shown below.")
-        # Consume the confirmation flag once after features are available; rerenders
-        # of the extraction result must not repeat the celebration.
-        if st.session_state.pop("celebrate_extraction", False):
-            celebrate()
-        st.write(single_cell_features.head())
-        # get the current timestamp
-        timestamp = time.strftime("%Y%m%d_%H%M%S")
-        _save_or_download_features(single_cell_features, timestamp)
+            channel_shifts[channel] = shifts
+    if st.button("Confirm Time Gates (if applicable) and Shift for each channel"):
+        error = prepared.confirm_calibration(channel_shifts)
+        if prepared.calibration_confirmed:
+            st.rerun()
+        elif error:
+            st.error(error)
 
 
 def render_numeric_step(col1, col2, ctx):
-    """Step 2: load metadata + configure fit/shift (col1); optimize shifts or run extraction (col2)."""
-    metadata_df = None
-    metadata_dict = None
     with col1:
-        metadata_df = _load_metadata_df()
-        if metadata_df is not None:
-            error_msg, metadata_dict = parse_metadata_file(metadata_df, ctx.fov_name_col)
-            if error_msg == "":
-                metadata_df, metadata_dict = _render_shift_controls(metadata_df, metadata_dict)
-            else:
-                st.error(f"Error: {error_msg} {sad_emoji}")
-
-    if metadata_df is None or metadata_dict is None:
+        # Notify when another tab changes the config, above whichever view shows.
+        notify_on_config_change()
+    prepared = st.session_state.get("prepared_extraction")
+    if prepared is None:
+        render_preparation(col1, col2, ctx)
         return
-
-    if st.session_state["choosing_shift"]:
-        with col2:
-            _render_choose_shift(metadata_df, metadata_dict, ctx)
-    elif st.session_state["shift_ready"]:
-        with col2:
-            _render_run_extraction(metadata_df, metadata_dict)
+    # A session exists: the calibration view, then the extraction view, take both
+    # columns. The metadata settings stay editable in a collapsed expander; an
+    # edit, a rescan, or a profile change discards the session and restores the
+    # metadata view.
+    with col1.expander("Metadata settings", expanded=False):
+        error_msg, source = render_source_controls(ctx)
+    if error_msg or source_fingerprint(ctx, source) != st.session_state.get("extraction_source"):
+        invalidate_preparation()
+        st.rerun()
+    autostart = st.session_state.pop("autostart_extraction", False)
+    with col1:
+        start = _render_shift_controls(prepared) or autostart
+    with col2:
+        # Where the metadata view stood. Rendered after the calibration column so
+        # a save that fails in this run is reported at once.
+        _render_metadata_record(prepared)
+        if prepared.choosing_shift:
+            _render_choose_shift(prepared, ctx)
+        elif start:
+            # This is the final save gate. A failure cannot invoke extraction.
+            error = prepared.before_extraction()
+            if error:
+                st.error(error)
+            else:
+                prepared.invalidate_results()
+                features = fov_extraction_widget(prepared.metadata_df, prepared.settings)
+                if not features.empty:
+                    prepared.export_features(features)
+                    if not prepared.features_error:
+                        celebrate()
+        if prepared.features is not None:
+            st.write(prepared.features.head())
+            if prepared.features_error:
+                st.error(prepared.features_error)
+                if st.button("Retry exporting features"):
+                    prepared.save_features()
+                    st.rerun()
+            else:
+                st.success(f"Single cell features exported successfully to {prepared.features_path} {happy_emoji}")
 
 
 def render_categorical_step(col1, col2, ctx):
-    """Step 3: scan a folder of CSVs (col1), then merge + assign categorical labels (col2)."""
+    """Step 2: scan a folder of CSVs (col1), then merge + assign categorical labels (col2)."""
     df_folder_path = ""
     delimiter = "_"
     available_dfs = []
@@ -520,17 +517,20 @@ def render_categorical_step(col1, col2, ctx):
 
 # --- Page controller -------------------------------------------------------
 STEP_RENDERERS = {
-    STEP_FOV: render_fov_metadata_step,
     STEP_NUMERIC: render_numeric_step,
     STEP_CATEGORICAL: render_categorical_step,
 }
 
 st.set_page_config(layout="wide", page_icon="🔬")
-render_top_menu()
-init_session_state()
-st.title("Data Extraction")
+render_top_menu(space_below="0.5rem")
+st.session_state.setdefault("prepared_extraction", None)
 
 ctx = build_context()
+preserve_source_controls(ctx)
+config_identity = (get_current_profile_name(), get_config_mtime())
+if st.session_state.get("extraction_config_identity") != config_identity:
+    invalidate_preparation()
+    st.session_state["extraction_config_identity"] = config_identity
 # An unsaved profile can have no channels; stop before creating channel columns.
 if not ctx.channel_names:
     st.warning(
@@ -545,10 +545,15 @@ col1, col2 = st.columns([0.4, 1])
 with col1:
     # first select the step to perform
     selected_step = st.radio(
-        "Select a step to perform",
+        "Select a step to extract single-object features",
         STEPS,
         index=0,
-        help="FOV Metadata Extraction: Extracts metadata from the field of views. Numeric Feature Extraction: Extracts single cell numeric features from the FOVs. Categorical Feature Extraction: Extracts categorical features from the FOVs. \n ",
+        help=(
+            "**Numerical**: prepare a source folder, calibrate, and extract per-object "
+            "measurements (e.g. lifetime, morphology); the features are exported "
+            "automatically. **Categorical**: combine numerical datasets and label the "
+            "exported objects (e.g. treatment, day)."
+        ),
     )
 
 STEP_RENDERERS[selected_step](col1, col2, ctx)

@@ -493,7 +493,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
                 fov_name = metadata.get(fov_col_name, "unknown")
                 return (
                     f"Error: Invalid shift for channel {channel_name} in {fov_col_name} {fov_name}: "
-                    f"{raw_shift!r}. Re-run shift optimization or correct {shift_col} in the metadata.",
+                    f"{raw_shift!r}. Re-run shift optimization and confirm calibration.",
                     pd.DataFrame(),
                 )
         elif shift_required:
@@ -539,7 +539,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
         try:
             laser_rate = metadata["laser_rate"]
         except (KeyError, TypeError):
-            return "Error: laser_rate not found in metadata. Ensure it was set during FOV Metadata Extraction.", pd.DataFrame()
+            return "Error: laser_rate not found in metadata. Set it in the Numerical step before preparing extraction.", pd.DataFrame()
         if calibration_method is None:
             return f"Error: Calibration method is not provided for {channel_name}", pd.DataFrame()
         error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf, fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis)

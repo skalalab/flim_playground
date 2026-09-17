@@ -1,7 +1,6 @@
 import errno
 import os
 import sys
-from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
@@ -16,9 +15,14 @@ from src.config import (
     get_fov_name_col,
     get_spc_output_suffix,
 )
-from src.decay_io import read_decay_metadata, read_decay_with_frames, clear_ptu_reference_cache
-from src.emojis import happy_emoji, sad_emoji
+from src.decay_io import (
+    clear_ptu_reference_cache,
+    read_decay_metadata,
+    read_decay_with_frames,
+)
+from src.emojis import sad_emoji
 from src.file_io import load_image
+from src.widgets.analysis_widget_state import control_default, number_input_default
 from src.widgets.laser_rate_widget import laser_rate_input
 
 
@@ -51,7 +55,9 @@ def load_data_suffix_widget(input_types, selected_channels, selected_ch_num_comp
                     help_msg = f"For other SPCImage output files (e.g. a1, t2), the suffixes are automatically generated based on the provided t1 suffix by replacing {spc_output_suffix['t1']} to get the others."
                 else:
                     help_msg = None
-                suffix = st.text_input(f"{file_type}", default_suffix, key=f"{channel_name}_{input_type}_{file_type}_suffix", help=help_msg)
+                suffix_key = f"{channel_name}_{input_type}_{file_type}_suffix"
+                # Restored keys carry the value; a default too would warn about duplication.
+                suffix = st.text_input(f"{file_type}", control_default(st.session_state, suffix_key, default_suffix), key=suffix_key, help=help_msg)
                 if suffix == "":
                     error_lines.append(f"Please provide a suffix for {file_type} in {channel_name}")
                 else:
@@ -220,7 +226,9 @@ def load_list_data_from_folder_widget(folder_path, file_suffix, num_cols=3, refe
     rows = (num_images + num_cols - 1) // num_cols
 
     if num_images > 0:
-        st.markdown("##### :green[Fields of view:] \n")
+        # Keyed so the shared stylesheet can level this heading with the step selector.
+        with st.container(key="fov_heading_metadata"):
+            st.markdown("##### :green[Fields of view:] \n")
 
     for row in range(rows):
         cols = st.columns(num_cols)
@@ -286,20 +294,7 @@ def preview_metadata_widget(metadata_df, num_cols=3):
     else:
         st.write(metadata_df)
 
-def export_metadata_widget(metadata_df, folder_path):
-    # Export one metadata row per FOV to the selected folder.
-    confirm_export = st.button("Export FOV Metadata as CSV", help=f"Export the fov metadata as one csv file (one fov per row) to {folder_path}", key="export_metadata_button")
-    if confirm_export:
-        time_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        csv_file_path = os.path.join(folder_path, f"fov_metadata_{time_stamp}.csv")
-        try:
-            metadata_df.to_csv(csv_file_path) # Save the DataFrame
-        except Exception as e:
-            st.error(f"Error exporting the fov metadata: {e}. Is the previous metadata file open in another program? {sad_emoji}")
-            return
-        st.success(f"FOV metadata exported successfully to {csv_file_path} {happy_emoji}")
-        st.session_state["last_extracted_metadata"] = metadata_df
-        st.session_state["last_extracted_metadata_filepath"] = csv_file_path
+
 
 # Cache validation by the columns each check reads. Channel assignments
 # mutate fov_df between calls and must not invalidate other channels' scans.
@@ -761,9 +756,9 @@ def lifetime_data_config_widget(selected_feature_extractors, input_type):
         default_2D_decay_duration, default_2D_decay_time_bins = get_default_2D_decay_config()
         cols = st.columns(3 if fit_free else 2)
         with cols[0]:
-            duration = st.number_input("Duration (**ns**)", value=default_2D_decay_duration, min_value=0.0, max_value=100.0, key="2D_decay_duration")
+            duration = st.number_input("Duration (**ns**)", value=number_input_default(st.session_state, "2D_decay_duration", default_2D_decay_duration), min_value=0.0, max_value=100.0, key="2D_decay_duration")
         with cols[1]:
-            time_bins = st.number_input("Time bins", value=default_2D_decay_time_bins, min_value=10, key="2D_decay_time_bins")
+            time_bins = st.number_input("Time bins", value=number_input_default(st.session_state, "2D_decay_time_bins", default_2D_decay_time_bins), min_value=10, key="2D_decay_time_bins")
         if fit_free:
             default_laser_rate = get_default_laser_rate(input_type)
             with cols[2]:

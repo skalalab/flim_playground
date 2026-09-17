@@ -1,4 +1,4 @@
-"""Synthetic PTU and manual replay files for the actual quenched-Atto IRF.
+"""Synthetic PTU and extraction records for the actual quenched-Atto IRF.
 
 Opt in with FLIM_PTU_REFERENCE_ROOT pointing to the supplied Atto folder.
 Keep pytest's --basetemp directory to inspect or copy the generated dataset.
@@ -6,6 +6,7 @@ Keep pytest's --basetemp directory to inspect or copy the generated dataset.
 
 import json
 import os
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -22,7 +23,7 @@ from src.decay_io import read_decay_with_frames
 from src.file_io import get_decay_curves, get_irf
 from src.fit_helper import irf_shift
 from src.fov_extraction import fov_extraction
-from src.metadata import parse_metadata_file
+from src.metadata import prepare_extraction
 from test_data_extraction_real_dataset import _refresh_after_rerun
 from test_ptu_measured_standard_calibration import _digest, _read_measured_reference
 
@@ -140,10 +141,15 @@ def test_synthetic_ptu_calibrates_against_measured_irf(tmp_path, monkeypatch):
         "laser_rate": frequency_hz * 1e-9,
         "fit_free_calibration_method": "IRF", "dye_IRF": str(irf_path),
     }])
-    find_shift_path = tmp_path / "synthetic_irf_metadata_find_shift.csv"
-    rows.to_csv(find_shift_path, index=False)
-    rows = pd.read_csv(find_shift_path)
-    error, metadata = parse_metadata_file(rows, "image_name")
+    def prepare(rows):
+        return prepare_extraction(
+            rows, {"dye": {"input_type": INPUT_TYPE, "imaging_modality": "FLIM",
+                           "selected_feature_extractors": ["Lifetime fit free"]}},
+            fov_name_col="image_name", unique_cell_id_col="cell_id",
+            laser_rate=frequency_hz * 1e-9, fit_free_calibration_method="IRF",
+        )
+
+    error, metadata = prepare(rows)
     assert error == ""
     assert metadata["channels_shift"] == {"dye": "fit free"}
     assert metadata["fit_free_calibration_method"] == "IRF"
@@ -179,7 +185,7 @@ def test_synthetic_ptu_calibrates_against_measured_irf(tmp_path, monkeypatch):
     fov_extraction.clear()
     for case, shift in [("known_shift_zero", 0.0), ("estimated_shift", estimated_shift)]:
         shifted_rows = rows.assign(dye_shift=float(shift))
-        error, info = parse_metadata_file(shifted_rows, "image_name")
+        error, info = prepare(shifted_rows)
         assert error == ""
         error, features = fov_extraction(shifted_rows.iloc[0], info)
         assert error == ""
@@ -234,29 +240,32 @@ def test_synthetic_ptu_calibrates_against_measured_irf(tmp_path, monkeypatch):
     error, csv_irf = get_irf(csv_rows, "dye", bins)
     assert error == ""
     np.testing.assert_array_equal(csv_irf, loaded_irf)
-    error, csv_info = parse_metadata_file(csv_rows, "image_name")
+    error, csv_info = prepare(csv_rows)
     assert error == ""
     error, csv_features = fov_extraction(csv_rows.iloc[0], csv_info)
     assert error == ""
     pd.testing.assert_frame_equal(csv_features, feature_tables["known_shift_zero"])
 
-    # Exercise the page's shift selection and extraction using the generated
-    # metadata. Session injection substitutes only for the browser's uploader.
+    # Exercise source-folder preparation, shift selection, and automatic exports.
     page = Path(__file__).resolve().parents[1] / "pages/data_extraction.py"
-    for case, replay in [("known_shift_zero", known_rows), ("estimated_shift", rows)]:
+    folder = tmp_path / "ui_data"
+    folder.mkdir()
+    shutil.copy2(sample_path, folder / sample_path.name)
+    shutil.copy2(mask_path, folder / mask_path.name)
+    (folder / IRF_NAME).symlink_to(irf_path)
+    for case in ("known_shift_zero", "estimated_shift"):
         app = AppTest.from_file(str(page)).run(timeout=45)
         assert not app.exception
-        app.session_state["last_extracted_metadata"] = replay
-        app.radio[0].set_value("Numeric Feature Extraction (fitting, phasor, etc.)").run(timeout=45)
-        assert not app.exception
-        assert not app.error, [error.value for error in app.error]
-        if case == "estimated_shift":
-            _click(app, "Optimize for Shifts")
-            shift_input = next(widget for widget in app.number_input if widget.label == "dye Shift")
-            assert shift_input.value == estimated_shift
-            _click(app, "Confirm Time Gates (if applicable) and Shift for each channel")
-            _refresh_after_rerun(app)
-        _click(app, "Confirm and Start")
+        app.text_input(key="fov_metadata_folder_path").set_value(str(folder)).run(timeout=45)
+        _click(app, "Start calibration")
+        _click(app, "Optimize for Shifts")
+        shift_input = next(widget for widget in app.number_input if widget.label == "dye Shift")
+        assert shift_input.value == estimated_shift
+        if case == "known_shift_zero":
+            shift_input.set_value(0.0).run(timeout=45)
+        _click(app, "Confirm Time Gates (if applicable) and Shift for each channel")
+        _refresh_after_rerun(app)
+        _click(app, "Start extraction")
         displayed = [table.value for table in app.dataframe if PREFIX + "Tau_phase" in table.value.columns]
         assert len(displayed) == 1
         pd.testing.assert_frame_equal(displayed[0], feature_tables[case])

@@ -33,7 +33,9 @@ def fov_extraction_widget(metadata_df, metadata_dict, num_cols=3):
    
     num_fovs = len(fov_names)
     if num_fovs > 0:
-        st.markdown("##### :green[Fields of view:] \n")
+        # Keyed so the shared stylesheet can level this heading with the step selector.
+        with st.container(key="fov_heading_extraction"):
+            st.markdown("##### :green[Fields of view:] \n")
     num_cols = min(num_cols, num_fovs)
     rows = (num_fovs + num_cols - 1) // num_cols
 
@@ -56,8 +58,7 @@ def fov_extraction_widget(metadata_df, metadata_dict, num_cols=3):
                         st.success("✅ Success!")
                         single_cell_features = pd.concat([single_cell_features, single_cell_features_fov])
 
-    # Append derived-feature columns computed from the baked metadata definitions
-    # (not live config), so a replayed metadata CSV reproduces the same output.
+    # Use the definitions captured by preparation, independent of later config edits.
     if not single_cell_features.empty:
         cols_before = set(single_cell_features.columns)
         single_cell_features, derived_warnings = compute_derived_features(

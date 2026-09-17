@@ -252,15 +252,32 @@ def get_selected_feature_extractors(input_types: dict, channel_keys: list) -> di
         selected_feature_extractors[channel_key] = cfg.get(channel_key, {}).get(input_type, {}).get("selected_feature_extractors", [])
     return selected_feature_extractors
 
+# Window default for a 2D decay table; the laser-rate seed assumes one period per window.
+DEFAULT_2D_DECAY_DURATION_NS = 20.0
+
 def get_default_2D_decay_config() -> tuple:
     cfg = _load_active_profile_cfg()
-    default_duration = cfg.get("Decay (2D)", {}).get("duration", 20.0)
+    default_duration = cfg.get("Decay (2D)", {}).get("duration", DEFAULT_2D_DECAY_DURATION_NS)
     default_time_bins = cfg.get("Decay (2D)", {}).get("time_bins", 1024)
     return default_duration, default_time_bins
 
+def default_laser_rate(input_type: str, settings: dict) -> float:
+    """Return the saved laser rate in GHz, or a seed for a profile without one.
+
+    A 2D decay table has no header to read the rate from, so the seed assumes
+    the window spans one laser period: 1 / duration, 50 MHz for the 20 ns default.
+    """
+    if "laser_rate" in settings:
+        return settings["laser_rate"]
+    if input_type == "Decay (2D)":
+        duration = settings.get("duration", DEFAULT_2D_DECAY_DURATION_NS)
+        if isinstance(duration, (int, float)) and duration > 0:
+            return 1 / duration
+    return 0.08
+
 def get_default_laser_rate(input_type: str) -> float:
     cfg = _load_active_profile_cfg()
-    return cfg.get(input_type, {}).get("laser_rate", 1.0)
+    return default_laser_rate(input_type, cfg.get(input_type, {}))
 
 def get_decay_input_type() -> str:
     cfg = _load_active_profile_cfg()

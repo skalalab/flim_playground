@@ -1,6 +1,6 @@
-"""Derived-feature evaluation, operand prediction, grouping, and metadata round-trips.
+"""Derived-feature evaluation, operand prediction, grouping, and metadata records.
 Formulas use safe AST evaluation; predicted operands match extractor output, and
-CSV metadata preserves definitions for replay.
+preparation carries definitions directly in memory.
 """
 import json
 import sys
@@ -21,8 +21,7 @@ from src.feature_schema import (
 from src.feature_labels import format_feature_label
 import src.dataset_io as dataset_io
 from src.dataset_io import get_feature_groups_data_extraction
-import src.metadata as metadata_mod
-from src.metadata import parse_metadata_file
+from src.metadata import prepare_extraction
 
 
 # --------------------------------------------------------------------------- #
@@ -587,57 +586,26 @@ def test_format_feature_label_derived():
 
 
 # --------------------------------------------------------------------------- #
-# 4. metadata round-trip (self-contained, replayable CSV)
+# 4. Prepared definitions and metadata output records
 # --------------------------------------------------------------------------- #
 
-def _patch_metadata_config(monkeypatch):
-    monkeypatch.setattr(
-        metadata_mod, "get_available_feature_extractors",
-        lambda input_type: ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture"],
+def test_derived_features_are_captured_in_memory(tmp_path):
+    defs = [{"name": "ratio", "expression": "A / B", "operands": ["a", "b"]}]
+    image = tmp_path / "intensity.tif"
+    mask = tmp_path / "mask.tif"
+    image.touch()
+    mask.touch()
+    rows = pd.DataFrame({"image_name": ["fov1"], "ch1_Intensity (2D)": [str(image)],
+                         "ch1_Mask": [str(mask)], "derived_features": ["obsolete CSV content"]})
+    error, settings = prepare_extraction(
+        rows, {"ch1": {"input_type": "Intensity (2D)", "imaging_modality": "Intensity-only",
+                       "selected_feature_extractors": ["Intensity morphology"]}},
+        fov_name_col="image_name", unique_cell_id_col="cell_id", derived_features=defs,
     )
-    monkeypatch.setattr(metadata_mod, "get_fov_name_col", lambda: "image_name")
-    monkeypatch.setattr(metadata_mod, "get_unique_cell_id_col", lambda: "cell_id")
-    # Intensity-only + no file-type columns => no file-existence checks needed.
-    monkeypatch.setattr(metadata_mod, "get_file_types", lambda input_type: [])
-
-
-def _intensity_only_metadata(extra_cols=None):
-    data = {
-        "image_name": ["fov1"],
-        "ch1_input_type": ["Intensity (2D)"],
-        "ch1_imaging_modality": ["Intensity-only"],
-        "ch1_Intensity morphology": [True],
-    }
-    if extra_cols:
-        data.update(extra_cols)
-    return pd.DataFrame(data)
-
-
-def test_derived_features_round_trip(monkeypatch, tmp_path):
-    _patch_metadata_config(monkeypatch)
-    defs = [
-        {"name": "redox_ratio", "expression": "A/(A+B)",
-         "operands": ["Lifetime fit_fad: a1", "Lifetime fit_nadh: a1"]},
-        {"name": "diff", "expression": "A-B",
-         "operands": ["Lifetime fit_fad: t1", "Lifetime fit_nadh: t1"]},
-    ]
-    df = _intensity_only_metadata({"derived_features": [json.dumps(defs)]})
-
-    # Round-trips through CSV (JSON cell has commas/colons/quotes; pandas quotes it).
-    csv_path = tmp_path / "meta.csv"
-    df.to_csv(csv_path, index=False)
-    reloaded = pd.read_csv(csv_path, index_col=False, low_memory=False)
-
-    err, md = parse_metadata_file(reloaded, "image_name")
-    assert err == ""
-    assert md["derived_features"] == defs
-
-
-def test_missing_derived_features_column_defaults_empty(monkeypatch):
-    _patch_metadata_config(monkeypatch)
-    err, md = parse_metadata_file(_intensity_only_metadata(), "image_name")
-    assert err == ""
-    assert md["derived_features"] == []
+    assert error == ""
+    assert settings["derived_features"] == defs
+    defs[0]["name"] = "edited after preparation"
+    assert settings["derived_features"][0]["name"] == "ratio"
 
 
 def test_json_definition_dump_parse_is_lossless():
@@ -667,12 +635,3 @@ def test_json_column_survives_csv_quoting(tmp_path):
     back = pd.read_csv(path, index_col=False, low_memory=False)
     assert back["derived_features"].nunique() == 1  # global column, identical per row
     assert json.loads(back["derived_features"].iloc[0]) == defs
-
-
-def test_parse_tolerates_malformed_json(monkeypatch):
-    """A hand-corrupted derived_features cell degrades to [] rather than crashing."""
-    _patch_metadata_config(monkeypatch)
-    df = _intensity_only_metadata({"derived_features": ["{not valid json"]})
-    err, md = parse_metadata_file(df, "image_name")
-    assert err == ""
-    assert md["derived_features"] == []

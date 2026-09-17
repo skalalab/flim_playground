@@ -94,11 +94,11 @@ def test_choose_shift_widget_keeps_finite_shift_results(monkeypatch):
         },
     }
 
-    monkeypatch.setattr(
-        lifetime_widgets,
-        "choose_shift_fit",
-        lambda *args, **kwargs: ("", results),
-    )
+    def optimize(*args, **kwargs):
+        assert args[5] == "Hybrid", "shift fitting is independent of the Local extraction mode"
+        return "", results
+
+    monkeypatch.setattr(lifetime_widgets, "choose_shift_fit", optimize)
     monkeypatch.setattr(lifetime_widgets, "display_shift_data_widget", lambda *args, **kwargs: None)
     monkeypatch.setattr(
         lifetime_widgets.st,

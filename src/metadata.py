@@ -1,241 +1,231 @@
-import json
+"""Validate acquisition sources and prepare explicit extraction settings."""
+
+from copy import deepcopy
+import math
+from os import PathLike
 from pathlib import Path
-from src.config import get_available_feature_extractors, get_file_types, get_fov_name_col, get_unique_cell_id_col
+
 from src.file_io import validate_ptu_reference_timing
 
 
-def _not_found(desc):
-    return f"{desc} not found in metadata file."
+_STANDARD = "Fluorescence Lifetime Standard"
 
 
-def _inconsistent(desc):
-    return f"{desc} is not consistent."
+def _single_value(fov_df, column):
+    if column not in fov_df.columns:
+        return f"Column `{column}` not found in the FOV table.", None
+    values = fov_df[column]
+    if values.isna().any() or values.nunique() != 1:
+        return f"Column `{column}` is not consistent or contains missing values.", None
+    return "", values.iloc[0]
 
 
-def get_ch_info(metadata_df):
-    # get available channels in the metadata file
-    # use the {channel_name}_input_type column name to get available channels
-    available_channels = [col for col in metadata_df.columns if col.endswith("_input_type")]
-    available_channels = [col.split("_input_type")[0] for col in available_channels]
-    available_channels = list(dict.fromkeys(available_channels))
-    if len(available_channels) == 0:
-        return "No channels found in metadata file.", None
-    metadata_dict = {}
-    metadata_dict["channels_shift"] = {}
-    metadata_dict["channel_names"] = []
-    fit_free = False
-    for channel_name in available_channels:
-        if channel_name not in metadata_dict:
-            metadata_dict[channel_name] = {}
-            metadata_dict["channel_names"].append(channel_name)
-
-        # get input type
-        input_type_col = f"{channel_name}_input_type"
-        # check for consistency of input type
-        if metadata_df[input_type_col].nunique() != 1:
-            return _inconsistent(f"Input type column {input_type_col}"), None
-        input_type = metadata_df[input_type_col].iloc[0]
-        metadata_dict[channel_name]["input_type"] = input_type
-
-         # get imaging modality
-        imaging_modality_col = f"{channel_name}_imaging_modality"
-        if imaging_modality_col not in metadata_df.columns:
-            return _not_found(f"Imaging modality column {imaging_modality_col}"), None
-        metadata_dict[channel_name]["imaging_modality"] = metadata_df[imaging_modality_col].iloc[0]
-        if metadata_dict[channel_name]["imaging_modality"] == "FLIM":
-            # get decay input type
-            if "decay_input_type" not in metadata_dict:
-                metadata_dict["decay_input_type"] = input_type
-            else:
-                if metadata_dict["decay_input_type"] != input_type:
-                    return "Decay input type should be consistent across all channels.", None
-
-        # get selected feature extractors
-        available_feature_extractors = get_available_feature_extractors(input_type)
-        selected_feature_extractors = []
-        for feature_extractor in available_feature_extractors:
-            feature_extractor_col = f"{channel_name}_{feature_extractor}"
-            if feature_extractor_col in metadata_df.columns:
-                if feature_extractor not in metadata_dict:
-                    metadata_dict[feature_extractor] = [channel_name]
-                else:
-                    metadata_dict[feature_extractor].append(channel_name)
-                selected_feature_extractors.append(feature_extractor)
-        if len(selected_feature_extractors) == 0:
-            return f"No feature extractors found for channel {channel_name}.", None
-        metadata_dict[channel_name]["selected_feature_extractors"] = selected_feature_extractors
-        # get num_components
-        if "Lifetime fit" in selected_feature_extractors:
-            num_components_col = f"{channel_name}_num_components"
-            if num_components_col not in metadata_df.columns:
-                return _not_found(f"Num components column {num_components_col}"), None
-            metadata_dict[channel_name]["num_components"] = metadata_df[num_components_col].iloc[0]
-            if "prefitted" not in input_type:
-        # Prefitted data uses fit-free shift estimation when alignment is needed.
-                metadata_dict["channels_shift"][channel_name] = "fit"
-            # Read fixed-lifetime columns (optional — may or may not be present in CSV)
-            import pandas as _pd
-            fixed_lifetimes = {}
-            for t_key in ["t1", "t2", "t3"]:
-                col = f"{channel_name}_fixed_{t_key}"
-                if col in metadata_df.columns:
-                    val = metadata_df[col].iloc[0]
-                    fixed_lifetimes[t_key] = None if (_pd.isna(val) or val == 0) else float(val)
-                else:
-                    fixed_lifetimes[t_key] = None
-            metadata_dict[channel_name]["fixed_lifetimes"] = fixed_lifetimes
-        if "Lifetime fit free" in selected_feature_extractors:
-            fit_free = True
-            if channel_name not in metadata_dict["channels_shift"]:
-                channel_ref_col = f"{channel_name}_Fluorescence Lifetime Standard"
-                # No IRF shift is needed when a per-channel fluorescence lifetime
-                # standard provides calibration; only fall back to "fit free" otherwise.
-                if channel_ref_col not in metadata_df.columns:
-                    metadata_dict["channels_shift"][channel_name] = "fit free"
-
-        if "Decay (3/4D)" in input_type:
-            if "prefitted" in input_type:
-                if len(selected_feature_extractors) == 1 and "Lifetime fit" in selected_feature_extractors:
-                    # only lifetime fit is selected, and data is prefitted, no decay channel needed
-                    continue
-            if f"{channel_name}_channel" not in metadata_df.columns:
-                return _not_found(f"Channel number column {channel_name}_channel"), None
-            else:
-                metadata_dict[channel_name]["channel_no"] = metadata_df[f"{channel_name}_channel"].iloc[0]
-
-    metadata_dict["unique_cell_id_col"] = get_unique_cell_id_col()
-    metadata_dict["fov_name_col"] = get_fov_name_col()
-
-    if fit_free:    # laser rate is only needed when fit free
-        if "laser_rate" in metadata_df.columns:
-            if metadata_df["laser_rate"].nunique() != 1:
-                return _inconsistent("Laser rate column laser_rate"), None
-            metadata_dict["laser_rate"] = metadata_df["laser_rate"].iloc[0]
-        else:
-            return _not_found("Laser rate column laser_rate"), None
-
-        if "fit_free_calibration_method" in metadata_df.columns:
-            if metadata_df["fit_free_calibration_method"].nunique() != 1:
-                return _inconsistent("Fit free calibration method column fit_free_calibration_method"), None
-            metadata_dict["fit_free_calibration_method"] = metadata_df["fit_free_calibration_method"].iloc[0]
-            if metadata_dict["fit_free_calibration_method"] == "Fluorescence Lifetime Standard":
-                # lifetime is global and must be present
-                if "fluorescence_lifetime_standard_lifetime" in metadata_df.columns:
-                    if metadata_df["fluorescence_lifetime_standard_lifetime"].nunique() != 1:
-                        return _inconsistent("Fluorescence lifetime standard's lifetime column fluorescence_lifetime_standard_lifetime"), None
-                    metadata_dict["fluorescence_lifetime_standard_lifetime"] = metadata_df["fluorescence_lifetime_standard_lifetime"].iloc[0]
-                else:
-                    return _not_found("Fluorescence lifetime standard's lifetime column fluorescence_lifetime_standard_lifetime"), None
-                # channel-specific fluorescence lifetime standard file and time axis
-                for channel_name in metadata_dict["channel_names"]:
-                    if "Lifetime fit free" not in metadata_dict[channel_name]["selected_feature_extractors"]:
-                        continue
-                    ref_col = f"{channel_name}_Fluorescence Lifetime Standard"
-                    if ref_col not in metadata_df.columns:
-                        return _not_found(f"Fluorescence lifetime standard's file column {ref_col}"), None
-                    # Must be consistent across rows
-                    if metadata_df[ref_col].nunique() != 1:
-                        return _inconsistent(f"Fluorescence lifetime standard's file column {ref_col}"), None
-                    metadata_dict[channel_name]["fluorescence_lifetime_standard_file"] = metadata_df[ref_col].iloc[0]
-                    time_axis_col = f"{channel_name}_fluorescence_lifetime_standard_time_axis"
-                    if time_axis_col not in metadata_df.columns:
-                        return _not_found(f"Fluorescence lifetime standard's time axis column `{time_axis_col}`"), None
-                    if metadata_df[time_axis_col].nunique() != 1:
-                        return _inconsistent(f"Fluorescence lifetime standard's time axis column {time_axis_col}"), None
-                    metadata_dict[channel_name]["fluorescence_lifetime_standard_time_axis"] = metadata_df[time_axis_col].iloc[0]
-        else:
-            return _not_found("Fit free calibration method column fit_free_calibration_method"), None
-
-    return "", metadata_dict
+def _number(value, *, minimum=0, integer=False):
+    """Return a finite number, or None for an invalid acquisition setting."""
+    if isinstance(value, bool):
+        return None
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or number < minimum:
+        return None
+    if integer:
+        return int(number) if number.is_integer() else None
+    return number
 
 
-def parse_metadata_file(metadata_df, fov_name_col):
+def _validate_paths(fov_df, channel_name, file_types):
+    for file_type in file_types:
+        column = f"{channel_name}_{file_type}"
+        if column not in fov_df.columns:
+            return f"File paths column `{column}` not found in the FOV table."
+        paths = []
+        for value in fov_df[column]:
+            if not isinstance(value, (str, PathLike)) or not str(value).strip():
+                return f"File path {value} for {column} is not valid."
+            path = Path(value)
+            if not path.is_file():
+                return f"File path {value} for {column} is not valid."
+            paths.append(path.resolve())
+        if file_type not in ("IRF", _STANDARD) and len(set(paths)) != len(paths):
+            return f"File paths for {column} are not unique."
+    return ""
+
+
+def prepare_extraction(
+    fov_df, channels, *, fov_name_col, unique_cell_id_col,
+    derived_features=(), laser_rate=None, fit_free_calibration_method=None,
+    fluorescence_lifetime_standard_lifetime=None,
+):
+    """Return ``(error_msg, settings_dict)`` without modifying the FOV table.
+
+    ``channels`` maps display names to the input type, imaging modality, selected
+    extractors, and fitting definitions. These settings are never inferred from
+    table columns or loaded from configuration. The table supplies source paths,
+    channel numbers, acquisition timing, and a standard's validated time axis.
+    Raw image geometry is validated by the folder setup before this function.
     """
-    Parse the metadata file and return a dictionary of metadata.
-    metadata_df: pandas dataframe of metadata
-    """
-    # check for required column
-    if fov_name_col not in metadata_df.columns:
-       return _not_found(f"Column of field of view names `{fov_name_col}`"), None
-    # check for unique image name
-    if metadata_df[fov_name_col].duplicated().any():
+    if fov_name_col not in fov_df.columns:
+        return f"Column of field of view names `{fov_name_col}` not found in the FOV table.", None
+    if fov_df.empty:
+        return "No fields of view are available for extraction.", None
+    if fov_df[fov_name_col].isna().any():
+        return f"Field of view names are missing in column `{fov_name_col}`.", None
+    if fov_df[fov_name_col].duplicated().any():
         return f"Field of view names are not unique. Check the column `{fov_name_col}`.", None
-    has_flim = False
-    error_msg, metadata_dict = get_ch_info(metadata_df)
-    # If channel info parsing failed, return early to avoid subscripting None
-    if error_msg != "" or metadata_dict is None:
-        return error_msg if error_msg != "" else "Channel info parsing failed.", None
-    for channel_name in metadata_dict["channel_names"]:
-        # check for file paths
-        input_type = metadata_dict[channel_name]["input_type"]
-        if metadata_dict[channel_name]["imaging_modality"] == "FLIM":
-            if "prefitted" in input_type:
-                feature_extractors = metadata_dict[channel_name]["selected_feature_extractors"]
-                if "Lifetime fit" in feature_extractors and len(feature_extractors) == 1:
-                    has_flim = False
+    if not channels:
+        return "No channels selected for extraction.", None
+
+    settings = {
+        "channel_names": [], "channels_shift": {},
+        "fov_name_col": fov_name_col, "unique_cell_id_col": unique_cell_id_col,
+        "derived_features": deepcopy(list(derived_features)),
+        "fix_shift": True,
+    }
+    needs_timing = False
+    for channel_name, definition in channels.items():
+        input_type = definition["input_type"]
+        imaging_modality = definition["imaging_modality"]
+        extractors = list(definition["selected_feature_extractors"])
+        if not extractors:
+            return f"No feature extractors selected for channel {channel_name}.", None
+        channel = {
+            "input_type": input_type, "imaging_modality": imaging_modality,
+            "selected_feature_extractors": deepcopy(extractors),
+        }
+        settings[channel_name] = channel
+        settings["channel_names"].append(channel_name)
+        for extractor in extractors:
+            settings.setdefault(extractor, []).append(channel_name)
+
+        fit = "Lifetime fit" in extractors
+        fit_free = "Lifetime fit free" in extractors
+        prefitted = "prefitted" in input_type
+        raw_fit = fit and not prefitted
+        prefitted_only = prefitted and extractors == ["Lifetime fit"]
+        if imaging_modality == "FLIM":
+            if settings.setdefault("decay_input_type", input_type) != input_type:
+                return "Decay input type should be consistent across all channels.", None
+            needs_timing |= not prefitted_only
+
+        if fit:
+            components = _number(definition.get("num_components"), minimum=1, integer=True)
+            if components is None or components > 3:
+                return f"Number of components for {channel_name} must be an integer from 1 to 3.", None
+            channel["num_components"] = components
+            channel["fixed_lifetimes"] = {}
+            for component, value in (definition.get("fixed_lifetimes") or {}).items():
+                try:
+                    lifetime = float(value) if value is not None else math.nan
+                except (TypeError, ValueError):
+                    lifetime = -1
+                if math.isnan(lifetime) or lifetime == 0:
+                    channel["fixed_lifetimes"][component] = None
+                elif math.isfinite(lifetime) and lifetime > 0:
+                    channel["fixed_lifetimes"][component] = lifetime
                 else:
-                    has_flim = True
-            else:
-                has_flim = True
-        available_file_types = get_file_types(input_type)
-        for file_type in available_file_types:
-            if f"{channel_name}_{file_type}" in metadata_df.columns and file_type != "IRF":
-               # then this is a column storing file paths
-               # check if all file paths are valid and if they are unique
-               if file_type != "Fluorescence Lifetime Standard" and metadata_df[f"{channel_name}_{file_type}"].duplicated().any():
-                   return f"File paths for {channel_name}_{file_type} are not unique.", None
+                    return f"Fixed lifetime {component} for {channel_name} must be positive and finite, or empty/zero for a free lifetime.", None
+        if raw_fit:
+            settings.update(fitting_algo="MLE", fitting_mode="Hybrid")
+            settings["channels_shift"][channel_name] = "fit"
+        elif fit_free and fit_free_calibration_method != _STANDARD:
+            settings["channels_shift"][channel_name] = "fit free"
 
-               # check if the file paths are valid
-               for file_path in metadata_df[f"{channel_name}_{file_type}"]:
-                   if not Path(file_path).exists():
-                       return f"File path {file_path} for {channel_name}_{file_type} is not valid.", None
+        if "Decay (3/4D)" in input_type and not prefitted_only:
+            column = f"{channel_name}_channel"
+            err, channel_no = _single_value(fov_df, column)
+            if err:
+                return err, None
+            channel_no = _number(channel_no, minimum=-1, integer=True)
+            if channel_no is None:
+                return f"Channel number in `{column}` must be an integer of -1 or greater.", None
+            channel["channel_no"] = channel_no
 
-    if has_flim:
-        # check for time bins, duration
-        if "time_bins" in metadata_df.columns:
-            if metadata_df["time_bins"].nunique() != 1:
-                return _inconsistent("Time bins column time_bins"), None
-            metadata_dict["time_bins"] = metadata_df["time_bins"].iloc[0]
+        if input_type == "Intensity (2D)":
+            file_types = ["Intensity (2D)", "Mask"]
         else:
-            return _not_found("Time bins column time_bins"), None
-        if "duration" in metadata_df.columns:
-            if metadata_df["duration"].nunique() != 1:
-                return _inconsistent("Duration column duration"), None
-            metadata_dict["duration"] = metadata_df["duration"].iloc[0]
-        else:
-            return _not_found("Duration column duration"), None
+            file_types = [] if input_type == "Decay (2D)" else ["Mask"]
+            if not prefitted_only:
+                file_types.append("Decay")
+        if prefitted and fit:
+            file_types.append("SPCImage t1")
+            if channel["num_components"] >= 2:
+                file_types.extend(["a1", "t2"])
+            if channel["num_components"] == 3:
+                file_types.extend(["a2", "t3"])
+        if channel_name in settings["channels_shift"]:
+            file_types.append("IRF")
+        if fit_free and fit_free_calibration_method == _STANDARD:
+            file_types.append(_STANDARD)
+        err = _validate_paths(fov_df, channel_name, file_types)
+        if err:
+            return err, None
 
-        # Validate saved PTU timing from headers only. Reading photon records
-        # here blocks entry to the numeric step for large references; the full
-        # readers validate and decode curves when calibration/extraction runs.
-        for channel_name in metadata_dict["channel_names"]:
-            ref_path = metadata_dict[channel_name].get("fluorescence_lifetime_standard_file")
-            if ref_path is not None and Path(str(ref_path)).suffix.lower() == ".ptu":
-                error_msg = validate_ptu_reference_timing(
-                    ref_path, metadata_df, metadata_dict["time_bins"],
+        if fit_free and fit_free_calibration_method == _STANDARD:
+            err, reference = _single_value(fov_df, f"{channel_name}_{_STANDARD}")
+            if err:
+                return err, None
+            channel["fluorescence_lifetime_standard_file"] = reference
+            column = f"{channel_name}_fluorescence_lifetime_standard_time_axis"
+            err, time_axis = _single_value(fov_df, column)
+            if err:
+                return err, None
+            time_axis = _number(time_axis, integer=True)
+            if time_axis not in (0, 1, 2):
+                return f"Time axis in `{column}` must be 0, 1, or 2.", None
+            channel["fluorescence_lifetime_standard_time_axis"] = time_axis
+
+    if "Lifetime fit free" in settings:
+        rate = _number(laser_rate)
+        if rate is None or rate <= 0:
+            return "Laser rate must be a positive finite number for fit-free extraction.", None
+        if fit_free_calibration_method not in ("IRF", _STANDARD):
+            return "Fit-free calibration method must be IRF or Fluorescence Lifetime Standard.", None
+        settings["laser_rate"] = rate
+        settings["fit_free_calibration_method"] = fit_free_calibration_method
+        if fit_free_calibration_method == _STANDARD:
+            lifetime = _number(fluorescence_lifetime_standard_lifetime)
+            if lifetime is None or lifetime <= 0:
+                return "Fluorescence lifetime standard lifetime must be a positive finite number.", None
+            settings["fluorescence_lifetime_standard_lifetime"] = lifetime
+
+    if needs_timing:
+        for column in ("time_bins", "duration"):
+            err, value = _single_value(fov_df, column)
+            if err:
+                return err, None
+            value = _number(value, integer=column == "time_bins")
+            if value is None or value <= 0:
+                return f"Acquisition `{column}` must be a positive finite {'integer' if column == 'time_bins' else 'number'}.", None
+            settings[column] = value
+        for channel_name in settings.get("Lifetime fit", []):
+            channel = settings[channel_name]
+            if "prefitted" not in channel["input_type"]:
+                channel.update(start=0, end=settings["time_bins"])
+
+        # Header checks do not decode photons or mutate the acquisition table.
+        # A supplied laser rate is authoritative over repeated settings columns.
+        timing = fov_df[["time_bins", "duration"]].copy()
+        if laser_rate is not None:
+            timing["laser_rate"] = laser_rate
+        for channel_name in settings["channel_names"]:
+            reference = settings[channel_name].get("fluorescence_lifetime_standard_file")
+            if reference is not None and Path(reference).suffix.lower() == ".ptu":
+                err = validate_ptu_reference_timing(
+                    reference, timing, settings["time_bins"],
                     f"Fluorescence lifetime standard for {channel_name}",
                 )
-                if error_msg:
-                    return error_msg, None
-            irf_col = f"{channel_name}_IRF"
-            if channel_name in metadata_dict["channels_shift"] and irf_col in metadata_df.columns:
-                for irf_path, rows in metadata_df.groupby(irf_col, sort=False):
-                    if Path(str(irf_path)).suffix.lower() == ".ptu":
-                        error_msg = validate_ptu_reference_timing(
-                            irf_path, rows, metadata_dict["time_bins"], f"IRF for {channel_name}",
+                if err:
+                    return err, None
+            if channel_name in settings["channels_shift"]:
+                column = f"{channel_name}_IRF"
+                for reference, rows in fov_df.groupby(column, sort=False):
+                    if Path(reference).suffix.lower() == ".ptu":
+                        err = validate_ptu_reference_timing(
+                            reference, timing.loc[rows.index], settings["time_bins"],
+                            f"IRF for {channel_name}",
                         )
-                        if error_msg:
-                            return error_msg, None
-
-    # Read the CSV's repeated JSON definitions so saved metadata replays its own
-    # formulas. Missing or unparsable definitions default to [].
-    if "derived_features" in metadata_df.columns:
-        raw = metadata_df["derived_features"].iloc[0]
-        try:
-            metadata_dict["derived_features"] = json.loads(raw) if isinstance(raw, str) and raw else []
-        except (ValueError, TypeError):
-            metadata_dict["derived_features"] = []
-    else:
-        metadata_dict["derived_features"] = []
-
-    return error_msg, metadata_dict
+                        if err:
+                            return err, None
+    return "", settings

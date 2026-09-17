@@ -221,7 +221,8 @@ def choose_shift_widget(metadata_df, metadata_dict, fov_name_col, channel_name, 
     else:
         try:
             fitting_algo = metadata_dict["fitting_algo"]
-            fitting_mode =  metadata_dict["fitting_mode"]
+            # Shift estimation always uses Hybrid, independently of extraction.
+            fitting_mode = "Hybrid"
             num_components = metadata_dict[channel_name]["num_components"]
             start = metadata_dict[channel_name]["start"]
             end = metadata_dict[channel_name]["end"]
@@ -306,21 +307,9 @@ def fit_options_widget(metadata_dict):
         fitting_algo = st.selectbox(
             "Metric", 
             ["MLE", "WLS"],
-            index=0,
+            index=["MLE", "WLS"].index(metadata_dict.get("fitting_algo", "MLE")),
             key="fitting_metric",
             help="MLE: Maximum Likelihood Estimation. WLS: Weighted Least Squares."
-        )
-    with cols1[1]:
-        needs_shift = len(metadata_dict.get("channels_shift", {})) > 0
-        mode_options = ["Hybrid"] if needs_shift else ["Hybrid", "Local"]
-        fitting_mode = st.selectbox(
-            "Fitting Mode",
-            mode_options,
-            index=0,
-            key="fitting_mode",
-            help="Hybrid: global search for initial guess, then local refinement per cell (robust)."
-                + ("" if needs_shift
-                   else " Local: warm-start on mean decay, then local fit per cell (faster).")
         )
 
 
@@ -354,12 +343,15 @@ def fit_options_widget(metadata_dict):
 
     # Update metadata_dict with results
     metadata_dict["fitting_algo"] = fitting_algo
-    metadata_dict["fitting_mode"] = fitting_mode
 
     # Update channel-specific components
     for channel_name in channels_fit:
         metadata_dict[channel_name]["num_components"] = channel_components[channel_name]
-        start, end = start_end_widget(metadata_dict["time_bins"], channel_name)
+        start, end = start_end_widget(
+            metadata_dict["time_bins"], channel_name,
+            start=metadata_dict[channel_name].get("start", 0),
+            end=metadata_dict[channel_name].get("end", metadata_dict["time_bins"]),
+        )
         metadata_dict[channel_name]["start"] = start
         metadata_dict[channel_name]["end"] = end
 
@@ -405,12 +397,12 @@ def fit_options_widget(metadata_dict):
 
     return metadata_dict
 
-def start_end_widget(time_bins, channel):
+def start_end_widget(time_bins, channel, start=0, end=None):
     col1, col2 = st.columns(2)
     with col1:
         start = st.number_input(
             f"{channel} Start (T1)", 
-            value=0,
+            value=start,
             step=1,
             min_value=0,
             max_value=time_bins-1,
@@ -419,7 +411,7 @@ def start_end_widget(time_bins, channel):
     with col2:
         end = st.number_input(
             f"{channel} End (T2)", 
-            value=time_bins,
+            value=time_bins if end is None else end,
             step=1,
             min_value=1,
             max_value=time_bins,

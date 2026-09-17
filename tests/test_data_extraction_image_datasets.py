@@ -207,9 +207,9 @@ def test_real_image_extraction_through_configuration_and_csv_export(
         # The third acquisition channel is NADH; channel one is empty and two is dim.
         app.selectbox(key=f"{_CHANNEL}_channel_selectbox").set_value(3)
         run(app, "assign_nadh_channel_3")
-    app.button(key="export_metadata_button").click()
+    app.button(key="prepare_extraction_button").click()
     run(app, "export_metadata")
-    metadata_path = Path(app.session_state["last_extracted_metadata_filepath"])
+    metadata_path = Path(app.session_state["prepared_extraction"].metadata_path)
     metadata = pd.read_csv(metadata_path)
     assert set(metadata["image_name"]) == set(data["fov_counts"])
     assert ("laser_rate" in metadata) == has_fit_free
@@ -237,15 +237,15 @@ def test_real_image_extraction_through_configuration_and_csv_export(
         assert not app.error, [e.value for e in app.error]
         if fits_raw:
             app.selectbox(key="fitting_mode_update").set_value("Local")
-        _button(app, "Download updated metadata").click()
-        run(app, "save_calibrated_metadata")
+            run(app, "save_calibrated_metadata")
         metadata = pd.read_csv(metadata_path)
         assert np.isfinite(metadata[f"{_CHANNEL}_shift"]).all()
+        _button(app, "Start extraction").click()
+        run(app, "extract_all_cells")
     else:
+        # Without calibration, the Start extraction click already ran the extraction.
         assert not any(b.label == "Optimize for Shifts" for b in app.button)
         assert not app.selectbox
-    _button(app, "Confirm and Start").click()
-    run(app, "extract_all_cells")
     summary["extraction_warnings"] = [w.value for w in app.warning]
     paths = list(data_dir.glob("single_cell_features_*.csv"))
     assert len(paths) == 1
