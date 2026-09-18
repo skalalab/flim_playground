@@ -428,13 +428,17 @@ def _render_shift_controls(prepared):
 
 
 def _render_choose_shift(prepared, ctx):
+    # One open expander per channel: a channel already inspected can be collapsed to
+    # make room for the others. Pending order is stable, so a collapsed state survives
+    # reruns, and the single Confirm below stays outside every block.
     channel_shifts = {}
     for channel in prepared.settings["channels_shift"]:
-        error, shifts = choose_shift_widget(prepared.metadata_df, prepared.settings, ctx.fov_name_col, channel_name=channel)
-        if error:
-            st.error(f"{error} {sad_emoji}")
-        else:
-            channel_shifts[channel] = shifts
+        with st.expander(f"{channel}: shift calibration", expanded=True):
+            error, shifts = choose_shift_widget(prepared.metadata_df, prepared.settings, ctx.fov_name_col, channel_name=channel)
+            if error:
+                st.error(f"{error} {sad_emoji}")
+            else:
+                channel_shifts[channel] = shifts
     if st.button("Confirm Time Gates (if applicable) and Shift for each channel"):
         error = prepared.confirm_calibration(channel_shifts)
         if prepared.calibration_confirmed:
