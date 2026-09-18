@@ -65,8 +65,8 @@ def _run(profiles=None, current="p", path=None):
         path.write_text(toml.dumps({"current_profile": current, "profiles": profiles}))
     at = AppTest.from_file(_PAGE)
     at.run(timeout=90)
-    # Turn off "Use Dataset from Data Extraction" -- the branch the gate lives on.
-    at.checkbox[0].uncheck().run(timeout=90)
+    # Turn on "Use a table from another source" -- the branch the gate lives on.
+    at.checkbox[0].check().run(timeout=90)
     return at
 
 
@@ -956,7 +956,7 @@ def test_dataset_warnings_share_one_section_across_loading_stages(
                        "all_numerical_features": ["Area"], "ignored_cols": ["Empty"]}}
     at = _run(profiles, path=tmp_path / "analysis_config.toml")
     if use_data_extraction:
-        at.checkbox[0].check().run(timeout=90)
+        at.checkbox[0].uncheck().run(timeout=90)
 
     assert not at.exception, [e.value for e in at.exception]
     assert at.session_state.vis_df is not None

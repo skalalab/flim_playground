@@ -65,7 +65,7 @@ def _gated(page, **session):
         at.session_state[key] = value
     at.run(timeout=90)
     assert not at.exception, at.exception
-    at.checkbox[0].uncheck().run(timeout=90)
+    at.checkbox[0].check().run(timeout=90)
     assert not at.exception, at.exception
     for widget in at.button:
         if str(widget.label).startswith(AUTO_DETECT):

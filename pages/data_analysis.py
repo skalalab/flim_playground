@@ -342,7 +342,13 @@ with col1:
             # Hidden, not collapsed: the label's space keeps both option lists on the same rows.
             label_visibility="hidden",
         )
-    use_data_extraction = st.checkbox("**Use Dataset from Data Extraction**", value=True)
+    # Checked means the table came from somewhere else; the default is Data Extraction output.
+    use_data_extraction = not st.checkbox(
+        "**Use a table from another source**",
+        value=False,
+        help="Leave this off for the file you downloaded from Data Extraction. "
+             "Turn it on for any other table — you'll review its columns before analysis.",
+    )
     st.session_state._use_data_extraction = use_data_extraction
     # Loading resolves a blank configured ID to a generated row-number column.
     configured_row_id_col = get_unique_row_id_col(use_data_extraction)
