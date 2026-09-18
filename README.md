@@ -14,6 +14,7 @@ FLIM Playground allows you to extract single-cell features from <span title="can
 
 ## 🎡 Playground Construction News
 
+- 🔬 **QPI, a new imaging modality** — A channel can now be quantitative phase imaging (QPI): give it an OPD image and a cell mask. FLIM Playground covers configuration (for dry mass conversion), calibration (for background correction), and extraction.
 - 🧭 **Separate by, in every module** — Split any plot by a categorical column: stacked rows in *Feature Histogram*, one full-size switchable view in *2D Feature Distribution* and *Phasor Plot*, and an overview beside a highlight grid in *Dimension Reduction*. Statistics, GMM fits, and counts follow the selected category, and the Python export reproduces the whole composition.
 - 🫧 **Collapse by** — Pick a categorical column and the single row points collapse to one dot per category within each group, so the plot and its statistics compare category (e.g. patient_id) means in *Feature Comparison* and *2D Feature Distribution*.
 - 🧾 **Bring your own table** — Upload CSV, TSV/TXT, Excel, or OpenDocument. A column-review table opens with one row per column, its role (row ID, categorical, measurement) and its feature group already guessed, and saves as an analysis profile — the next file with the same columns picks that profile itself. Row ID and FOV columns are optional.
