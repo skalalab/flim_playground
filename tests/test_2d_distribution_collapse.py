@@ -278,6 +278,22 @@ def _run_export(tmp_path, monkeypatch, frame, state):
 
 @pytest.mark.parametrize("logged", [False, True])
 def test_2d_export_collapses_complete_pairs_before_logging_and_model_fits(tmp_path, monkeypatch, logged):
+    from sklearn.linear_model import LinearRegression
+    from sklearn.mixture import GaussianMixture
+
+    regression_inputs, gmm_inputs = [], []
+    regression_fit, gmm_fit = LinearRegression.fit, GaussianMixture.fit
+
+    def record_regression(self, x, y, **kwargs):
+        regression_inputs.append(np.column_stack([x, y]))
+        return regression_fit(self, x, y, **kwargs)
+
+    def record_gmm(self, data, **kwargs):
+        gmm_inputs.append(np.asarray(data).copy())
+        return gmm_fit(self, data, **kwargs)
+
+    monkeypatch.setattr(LinearRegression, "fit", record_regression)
+    monkeypatch.setattr(GaussianMixture, "fit", record_gmm)
     frame = _frame()
     ns = _run_export(tmp_path, monkeypatch, frame, _export_state(log_x=logged, log_y=logged))
     expected = _means(frame, ["treatment"], logged)
@@ -286,9 +302,20 @@ def test_2d_export_collapses_complete_pairs_before_logging_and_model_fits(tmp_pa
     assert ns["OPACITY_BY"] is None
     assert ns["SHAPE_BY"] == "day"
     assert ns["df"].groupby("_color_group").size().to_dict() == {"ctrl": 4, "drug": 4}
-    drug = expected[expected["treatment"] == "drug"]
-    np.testing.assert_allclose(ns["X_reg"], drug[[X]])
-    np.testing.assert_allclose(ns["X_gmm"], drug[[X, Y]])
+    # Check the actual fits, including every GMM candidate, without relying on
+    # temporary variables in the generated script's implementation.
+    expected_inputs = {name: group[[X, Y]].to_numpy()
+                       for name, group in expected.groupby("treatment")}
+    assert len(regression_inputs) == len(expected_inputs)
+    for inputs in (regression_inputs, gmm_inputs):
+        groups_seen = set()
+        for values in inputs:
+            matches = [name for name, expected_values in expected_inputs.items()
+                       if values.shape == expected_values.shape
+                       and np.allclose(values, expected_values)]
+            assert len(matches) == 1, f"Unexpected model input: {values}"
+            groups_seen.update(matches)
+        assert groups_seen == set(expected_inputs)
     saved = pd.read_csv(tmp_path / "2D_gmm_data.csv")
     pd.testing.assert_frame_equal(saved[expected.columns], expected)
     assert saved["2D_GMM_group"].notna().all()

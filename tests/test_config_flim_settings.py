@@ -80,7 +80,7 @@ def test_shared_settings_only_appear_for_flim_channels(
     assert _save_button(at) is not None
     for i, modality in enumerate(modalities, 1):
         selector = at.selectbox(key=f"imaging_modality_ch{i}_default")
-        assert selector.options == ["FLIM", "Intensity-only"]
+        assert selector.options == ["FLIM", "Intensity-only", "QPI"]
         assert selector.value == modality
 
 

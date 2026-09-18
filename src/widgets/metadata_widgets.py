@@ -555,11 +555,16 @@ def _scan_intensity_images(intensity_paths, mask_paths):
     return "", dimension_list
 
 
-def check_raw_intensity_data(fov_df, channel_name):
-    intensity_column_name = f"{channel_name}_Intensity (2D)"
+def check_raw_intensity_data(fov_df, channel_name, image_file_type="Intensity (2D)"):
+    """Validate one 2D image channel (intensity or QPI wavefront) against its mask.
+
+    ``image_file_type`` names the path column, ``{channel}_{image_file_type}``; the checks are
+    shape-only (2D, image and mask equal, consistent across FOVs), so signed floats pass.
+    """
+    intensity_column_name = f"{channel_name}_{image_file_type}"
     mask_column_name = f"{channel_name}_Mask"
     if intensity_column_name not in fov_df.columns:
-        return f"Error: Intensity image path not found for {channel_name}", None
+        return f"Error: {image_file_type} image path not found for {channel_name}", None
     if mask_column_name not in fov_df.columns:
         return f"Error: Mask path not found for {channel_name}", None
 
@@ -591,11 +596,17 @@ def clear_folder_scan_caches():
     # These caches key on metadata paths, so replacing a reference in place
     # otherwise leaves the old shifts and calibrated features visible.
     from src.choose_shift import choose_shift_fit, choose_shift_fit_free
-    from src.fov_extraction import fov_extraction
+    from src.fov_extraction import (
+        corrected_qpi_image,
+        fov_extraction,
+        qpi_fov_diagnostics,
+    )
 
     choose_shift_fit.clear()
     choose_shift_fit_free.clear()
     fov_extraction.clear()
+    corrected_qpi_image.clear()
+    qpi_fov_diagnostics.clear()
 
 def _inconsistent_selected(x):
     return f"Inconsistent {x} found for the selected channels. Please check the data."
@@ -652,18 +663,19 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
     error_msg = ""
     time_bins_list = []
     laser_rep_time_list = []
-    fov_dimensions_list = []
+    fov_dimensions = {}  # imaging modality -> [(dims, channel_name)]; grids are compared within a modality only (D17)
     checked_decay_channels = []  # 3/4D channels whose decay files passed the raw-data check
     num_cols = len(selected_channels)
     cols = st.columns(num_cols)
     has_flim = has_3_4D_decay = has_intensity_only = False
     for i, (channel_key, channel_name) in enumerate(selected_channels.items()):
         imaging_modality = imaging_modalities[channel_key]
-        if imaging_modality == "Intensity-only":
+        if imaging_modality in ("Intensity-only", "QPI"):
             has_intensity_only = True
-            error_msg, fov_dimensions = check_raw_intensity_data(fov_df, channel_name)
+            image_file_type = "Intensity (2D)" if imaging_modality == "Intensity-only" else "QPI (2D)"
+            error_msg, dims = check_raw_intensity_data(fov_df, channel_name, image_file_type=image_file_type)
             if error_msg == "":
-                fov_dimensions_list.append(fov_dimensions)
+                fov_dimensions.setdefault(imaging_modality, []).append((dims, channel_name))
             else:
                 return error_msg, None
         elif imaging_modality == "FLIM":
@@ -704,13 +716,13 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
                                 fov_df[f"{channel_name}_channel"] = human_readable_channel_no - 1
                                 _render_channel_preview(fov_df, preview_images, available_channels, human_readable_channel_no - 1)
                             time_bins_list.append(shape[-1])
-                            fov_dimensions_list.append(shape[:-1])
+                            fov_dimensions.setdefault("FLIM", []).append((shape[:-1], channel_name))
                             laser_rep_time_list.append(laser_rep_time)
                             checked_decay_channels.append(channel_name)
                         else:
                             return error_msg, None
         else:
-            continue
+            return f"Error: Unknown imaging modality '{imaging_modality}' for {channel_name}.", None
 
     if len(set(time_bins_list)) > 1:
         return _inconsistent_selected("time bins"), None
@@ -729,14 +741,18 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
     else:
         fov_df["duration"] = laser_rep_time_list[0]
 
-    if len(set(fov_dimensions_list)) > 1:
-        return _inconsistent_selected("fov spatial dimensions"), None
-    elif len(fov_dimensions_list) == 0:
-        if has_intensity_only or has_3_4D_decay:
-            return _none_selected("fov dimensions"), None
-    else:
+    # Grids must agree within a modality; channels of different modalities may differ
+    # (the neutrophil fixture pairs 256² FLIM with 552² QPI). Nothing downstream reads
+    # these columns; they document the acquisition.
+    for modality, entries in fov_dimensions.items():
+        if len({dims for dims, _ in entries}) > 1:
+            listed = ", ".join(f"{name} {dims}" for dims, name in entries)
+            return f"Inconsistent fov spatial dimensions found for the {modality} channels: {listed}. Please check the data.", None
+        column = "fov_dimensions" if modality == "FLIM" else f"fov_dimensions_{modality}"
         # Store as string to avoid hashing issues in caching
-        fov_df["fov_dimensions"] = [str(fov_dimensions_list[0])] * len(fov_df)
+        fov_df[column] = [str(entries[0][0])] * len(fov_df)
+    if not fov_dimensions and (has_intensity_only or has_3_4D_decay):
+        return _none_selected("fov dimensions"), None
 
     # One notice below the channel row: files whose repeated frames were summed,
     # listed once even when channels share a multi-detector file.

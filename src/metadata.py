@@ -6,9 +6,40 @@ from os import PathLike
 from pathlib import Path
 
 from src.file_io import validate_ptu_reference_timing
+from src.qpi import BACKGROUND_METHODS, OPD_UNITS
 
 
 _STANDARD = "Fluorescence Lifetime Standard"
+BACKGROUND_KEYS = ("method", "degree", "expand_pct")
+
+
+def background_columns(channel_name):
+    """The four output columns recording a channel's confirmed QPI recipe."""
+    return [f"{channel_name}_bg_{key}" for key in BACKGROUND_KEYS]
+
+
+def pending_calibration(metadata_df, settings):
+    """Return unconfirmed FLIM and QPI channels in configured order."""
+    shifts = [ch for ch in settings.get("channels_shift", {})
+              if f"{ch}_shift" not in metadata_df]
+    backgrounds = [ch for ch in settings.get("channels_background", [])
+                   if "background" not in settings[ch]
+                   or not all(col in metadata_df for col in background_columns(ch))]
+    return shifts, backgrounds
+
+
+def validate_background_settings(channel_name, recipe):
+    """Validate one complete, explicit calibration recipe before saving it."""
+    if not isinstance(recipe, dict) or any(key not in recipe for key in BACKGROUND_KEYS):
+        return f"Confirm background correction settings for {channel_name} before extracting.", None
+    method = recipe["method"]
+    if method not in BACKGROUND_METHODS:
+        return f"Background method for {channel_name} must be one of {', '.join(BACKGROUND_METHODS)}.", None
+    degree = _number(recipe["degree"], integer=True) if method == "polynomial" else None
+    expand = _number(recipe["expand_pct"])
+    if (method == "polynomial" and degree not in (2, 4, 6)) or expand is None or expand > 100:
+        return f"Background settings for {channel_name} are invalid.", None
+    return "", {"method": method, "degree": degree, "expand_pct": expand}
 
 
 def _single_value(fov_df, column):
@@ -78,7 +109,7 @@ def prepare_extraction(
         return "No channels selected for extraction.", None
 
     settings = {
-        "channel_names": [], "channels_shift": {},
+        "channel_names": [], "channels_shift": {}, "channels_background": [],
         "fov_name_col": fov_name_col, "unique_cell_id_col": unique_cell_id_col,
         "derived_features": deepcopy(list(derived_features)),
         "fix_shift": True,
@@ -96,6 +127,19 @@ def prepare_extraction(
         }
         settings[channel_name] = channel
         settings["channel_names"].append(channel_name)
+        if imaging_modality == "QPI":
+            constants = definition.get("qpi", {})
+            channel["qpi"] = {}
+            for key in ("pixel_size_um", "alpha_um3_per_pg"):
+                value = _number(constants.get(key))
+                if value is None or value <= 0:
+                    return f"QPI {key} for {channel_name} must be positive and finite.", None
+                channel["qpi"][key] = value
+            if constants.get("opd_unit") not in OPD_UNITS:
+                return f"QPI opd_unit for {channel_name} must be one of {', '.join(OPD_UNITS)}.", None
+            channel["qpi"]["opd_unit"] = constants["opd_unit"]
+            if {"Dry-mass statistics", "Spatial texture"} & set(extractors):
+                settings["channels_background"].append(channel_name)
         for extractor in extractors:
             settings.setdefault(extractor, []).append(channel_name)
 
@@ -142,8 +186,8 @@ def prepare_extraction(
                 return f"Channel number in `{column}` must be an integer of -1 or greater.", None
             channel["channel_no"] = channel_no
 
-        if input_type == "Intensity (2D)":
-            file_types = ["Intensity (2D)", "Mask"]
+        if input_type in ("Intensity (2D)", "QPI (2D)"):
+            file_types = [input_type, "Mask"]
         else:
             file_types = [] if input_type == "Decay (2D)" else ["Mask"]
             if not prefitted_only:

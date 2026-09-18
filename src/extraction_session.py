@@ -12,6 +12,8 @@ import uuid
 import numpy as np
 import pandas as pd
 
+from src.metadata import BACKGROUND_KEYS, background_columns, pending_calibration, validate_background_settings
+
 
 def _output_path(folder, prefix):
     return Path(folder) / f"{prefix}_{datetime.now():%Y%m%d_%H%M%S_%f}.csv"
@@ -63,7 +65,7 @@ class ExtractionSession:
         session = cls(
             metadata_df.copy(deep=True), deepcopy(settings),
             _output_path(output_folder, "fov_metadata"),
-            calibration_confirmed=not settings["channels_shift"],
+            calibration_confirmed=not (settings["channels_shift"] or settings.get("channels_background")),
         )
         session.save_metadata()
         return session
@@ -87,6 +89,11 @@ class ExtractionSession:
             if "fixed_lifetimes" in settings:
                 for component in ("t1", "t2", "t3"):
                     self.metadata_df[f"{channel}_fixed_{component}"] = settings["fixed_lifetimes"].get(component)
+            for key, value in settings.get("qpi", {}).items():
+                self.metadata_df[f"{channel}_{key}"] = value
+            if "background" in settings:
+                for column, key in zip(background_columns(channel), BACKGROUND_KEYS):
+                    self.metadata_df[column] = settings["background"][key]
 
     def save_metadata(self):
         self._sync_settings()
@@ -95,13 +102,20 @@ class ExtractionSession:
 
     @property
     def can_extract(self):
-        return self.calibration_confirmed and not self.metadata_error and not self._shift_error()
+        return self.calibration_confirmed and not self.metadata_error and not self._shift_error() and not self._background_error()
 
     def _shift_error(self):
         for channel in self.settings["channels_shift"]:
             column = f"{channel}_shift"
             if column not in self.metadata_df or not _valid_shift(self.metadata_df[column], len(self.metadata_df)):
                 return f"Confirm valid shifts for every required channel before extracting ({channel})."
+        return ""
+
+    def _background_error(self):
+        for channel in self.settings.get("channels_background", []):
+            error, _ = validate_background_settings(channel, self.settings[channel].get("background"))
+            if error:
+                return error
         return ""
 
     def invalidate_results(self):
@@ -114,18 +128,34 @@ class ExtractionSession:
         self.choosing_shift = True
         self.metadata_error = ""
         self.invalidate_results()
-        self.metadata_df = self.metadata_df.drop(
-            columns=[f"{channel}_shift" for channel in self.settings["channels_shift"]],
-            errors="ignore",
-        )
+        columns = [f"{channel}_shift" for channel in self.settings["channels_shift"]]
+        for channel in self.settings.get("channels_background", []):
+            columns.extend(background_columns(channel))
+            self.settings[channel].pop("background", None)
+        self.metadata_df = self.metadata_df.drop(columns=columns, errors="ignore")
 
-    def confirm_calibration(self, shifts):
+    def confirm_calibration(self, shifts, backgrounds=None):
+        backgrounds = backgrounds or {}
+        _, pending_backgrounds = pending_calibration(self.metadata_df, self.settings)
         for channel in self.settings["channels_shift"]:
-            if channel not in shifts or not _valid_shift(shifts[channel], len(self.metadata_df)):
+            value = shifts.get(channel, self.metadata_df.get(f"{channel}_shift"))
+            if not _valid_shift(value, len(self.metadata_df)):
                 return f"Confirm valid shifts for every required channel before extracting ({channel})."
+        recipes = {}
+        for channel in self.settings.get("channels_background", []):
+            recipe = backgrounds.get(channel)
+            if channel not in pending_backgrounds and channel not in backgrounds:
+                recipe = self.settings[channel].get("background")
+            error, recipes[channel] = validate_background_settings(channel, recipe)
+            if error:
+                return error
         for channel in self.settings["channels_shift"]:
-            shift = np.asarray(shifts[channel], dtype=float)
-            self.metadata_df[f"{channel}_shift"] = float(shift) if shift.ndim == 0 else shift
+            if channel in shifts:
+                shift = np.asarray(shifts[channel], dtype=float)
+                self.metadata_df[f"{channel}_shift"] = float(shift) if shift.ndim == 0 else shift
+        for channel, recipe in recipes.items():
+            self.settings[channel]["background"] = recipe
+            self.settings[channel]["background_defaults"] = dict(recipe)
         self.calibration_confirmed = True
         self.choosing_shift = False
         self.invalidate_results()
@@ -144,7 +174,7 @@ class ExtractionSession:
     def before_extraction(self):
         if not self.calibration_confirmed:
             return "Confirm calibration before extracting."
-        error = self._shift_error()
+        error = self._shift_error() or self._background_error()
         if error:
             return error
         return self.save_metadata()

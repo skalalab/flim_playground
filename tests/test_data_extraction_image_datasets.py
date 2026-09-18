@@ -8,28 +8,27 @@ the configuration path is redirected. No extraction or fitting code is mocked.
 import hashlib
 import json
 import os
-from pathlib import Path
 import shutil
 import time
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
-from sdtfile import SdtFile
-from streamlit.testing.v1 import AppTest
 import tifffile
 import toml
-
-import src.config as config
+from sdtfile import SdtFile
+from streamlit.testing.v1 import AppTest
 from test_data_extraction_real_dataset import (
+    _CATEGORICAL_STEP,
+    _NUMERIC_STEP,
     _button,
     _check_calibrated_phasors,
     _refresh_after_rerun,
     _step,
-    _CATEGORICAL_STEP,
-    _NUMERIC_STEP,
 )
 
+from src import config
 
 _ROOT = Path(__file__).resolve().parents[1]
 _CHANNEL = "NADH"

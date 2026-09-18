@@ -354,3 +354,33 @@ def get_fixed_lifetimes(channel_key: str, input_type: str) -> dict:
     for key, val in raw.items():
         result[key] = float(val) if (val is not None and float(val) > 0) else None
     return result
+
+
+# QPI dry-mass constants. Units and alpha default are shared with the Configuration page;
+# src/qpi.py keeps its own OPD_TO_UM table (it imports no project modules) and a test pins them equal.
+QPI_OPD_UNITS = ("m", "um", "nm")
+QPI_ALPHA_DEFAULT = 0.181818
+
+
+def get_qpi_constants(channel_key: str, input_type: str) -> dict:
+    """Return the dry-mass constants stored for a QPI channel.
+
+    ``{"pixel_size_um": float | None, "opd_unit": str | None, "alpha_um3_per_pg": float}``.
+    Pixel size and unit have no defaults: None means "not configured", and the
+    Configuration page refuses to save it. Alpha defaults to 0.181818 µm³/pg.
+    """
+    raw = _load_active_profile_cfg().get(channel_key, {}).get(input_type, {})
+    try:
+        pixel_size = float(raw.get("pixel_size_um"))
+    except (TypeError, ValueError):
+        pixel_size = None
+    if pixel_size is not None and not pixel_size > 0:
+        pixel_size = None
+    unit = raw.get("opd_unit")
+    if unit not in QPI_OPD_UNITS:
+        unit = None
+    try:
+        alpha = float(raw.get("alpha_um3_per_pg", QPI_ALPHA_DEFAULT))
+    except (TypeError, ValueError):
+        alpha = QPI_ALPHA_DEFAULT
+    return {"pixel_size_um": pixel_size, "opd_unit": unit, "alpha_um3_per_pg": alpha}

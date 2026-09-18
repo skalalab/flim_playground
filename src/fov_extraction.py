@@ -16,6 +16,14 @@ from src.fit_helper import (
     irf_shift,
     reduced_chi_square,
 )
+from src.qpi import (
+    DRY_MASS_SUFFIXES,
+    SPATIAL_TEXTURE_SUFFIXES,
+    cell_features,
+    correct_background,
+    diagnostics,
+    to_um,
+)
 
 
 def get_offset(decay_curve):
@@ -134,6 +142,78 @@ def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask
             single_cell_morph_features_fov[cell_id][f"{feature_prefix}{feature}"] = value
     single_cell_morph_features_fov = pd.DataFrame.from_dict(single_cell_morph_features_fov, orient='index')
     return "", single_cell_morph_features_fov
+
+# max_entries bounds the memory: each entry holds four full-resolution arrays (~6 MB at 552²,
+# ~80 MB at 2048²). The diagnostics cache below stays unbounded; it holds small dicts.
+@st.cache_data(show_spinner="Correcting QPI background...", max_entries=4)
+def corrected_qpi_image(wavefront_path, mask_path, opd_unit, method, degree, expand_pct):
+    """Load one QPI FOV and correct its background.
+
+    ``(error_msg, (corrected_um, surface_um, exclusion, mask, info))``. Keyed on the two
+    paths, the unit and the four settings, which is everything it reads, so the calibration
+    preview and the extraction share one computation per FOV. Cleared by
+    ``clear_folder_scan_caches`` (a rescan may replace the files in place).
+    """
+    try:
+        image = load_image(wavefront_path)
+    except Exception as e:  # noqa: BLE001
+        return f"Error reading the QPI image {wavefront_path}: {e}", None
+    try:
+        mask = load_image(mask_path)
+    except Exception as e:  # noqa: BLE001
+        return f"Error reading the mask file {mask_path}: {e}", None
+    if image.ndim != 2 or image.shape != mask.shape:
+        return f"Error: QPI image {wavefront_path} has shape {image.shape} but its mask has shape {mask.shape}", None
+    settings = {"method": method, "degree": degree, "expand_pct": expand_pct}
+    try:
+        corrected, surface, exclusion, info = correct_background(to_um(image, opd_unit), mask, settings)
+    except (TypeError, ValueError) as e:
+        return f"Error: Background correction failed for {wavefront_path}: {e}", None
+    return "", (corrected, surface, exclusion, mask, info)
+
+
+@st.cache_data(show_spinner=False)
+def qpi_fov_diagnostics(wavefront_path, mask_path, opd_unit, method, degree, expand_pct):
+    """Calibration readouts for one FOV (``qpi.diagnostics``); ``(error_msg, dict)``.
+
+    Same key as ``corrected_qpi_image``, which it calls, so the arrays are computed once.
+    """
+    error_msg, result = corrected_qpi_image(wavefront_path, mask_path, opd_unit, method, degree, expand_pct)
+    if error_msg:
+        return error_msg, None
+    corrected, _, exclusion, mask, info = result
+    return "", diagnostics(corrected, mask, exclusion, info)
+
+
+def get_qpi_features(corrected_um, mask, fov_name, channel_name, constants, selected_feature_extractors):
+    """Per-cell Dry-mass statistics and Spatial texture columns for one QPI channel.
+
+    ``corrected_um`` is the background-corrected OPD in micrometres; ``constants`` holds the
+    channel's ``pixel_size_um`` and ``alpha_um3_per_pg``. Shaped like
+    ``get_intensity_texture_features``: ``(error_msg, DataFrame)`` indexed by
+    ``"{fov_name}_{label}"``. Pixels are selected by label, never by multiplying with the
+    mask, so signed values survive (the texture helpers infer cells from pixels > 0).
+    """
+    groups = [("Dry-mass statistics", DRY_MASS_SUFFIXES), ("Spatial texture", SPATIAL_TEXTURE_SUFFIXES)]
+    groups = [(name, suffixes) for name, suffixes in groups if name in selected_feature_extractors]
+    if not groups:
+        return "", pd.DataFrame()
+    if corrected_um.shape != mask.shape:
+        return f"Error: {channel_name} wavefront image has a different shape than the mask: {corrected_um.shape} != {mask.shape}", pd.DataFrame()
+    try:
+        per_cell = cell_features(corrected_um, mask, constants["pixel_size_um"], constants["alpha_um3_per_pg"])
+    except (KeyError, TypeError, ValueError) as e:
+        return f"Error computing QPI features for {channel_name}: {e}", pd.DataFrame()
+    if not per_cell:
+        return _NO_CELLS_IN_MASK, pd.DataFrame()
+    rows = {
+        f"{fov_name}_{label}": {
+            f"{name}_{channel_name}: {suffix}": feats[suffix]
+            for name, suffixes in groups for suffix in suffixes
+        }
+        for label, feats in per_cell.items()
+    }
+    return "", pd.DataFrame.from_dict(rows, orient="index")
 
 _NO_CELLS_IN_MASK = "Error: No cells found in the mask"
 
@@ -669,6 +749,36 @@ def fov_extraction(metadata, metadata_dict):
             if mask_error:
                 continue
             fov_feature_dfs.extend(intensity_dfs)
+        elif imaging_modality == "QPI":
+            # Morphology comes from the shared helper, so two channels over one mask
+            # file still emit it once. Dry-mass features need the confirmed recipe.
+            intensity_dfs, mask_error = extract_intensity_features(
+                metadata, channel_name, fov_col_name, input_type,
+                selected_feature_extractors, extracted_morphology_masks
+            )
+            if mask_error:
+                continue
+            fov_feature_dfs.extend(intensity_dfs)
+            if {"Dry-mass statistics", "Spatial texture"} & set(selected_feature_extractors):
+                recipe = metadata_dict[channel_name].get("background")
+                if recipe is None:
+                    st.error(f"Error: Background correction settings for {channel_name} are missing. Confirm calibration before extracting. {sad_emoji}")
+                    continue
+                constants = metadata_dict[channel_name]["qpi"]
+                error_msg, corrected = corrected_qpi_image(
+                    metadata[f"{channel_name}_QPI (2D)"], metadata[f"{channel_name}_Mask"], constants["opd_unit"],
+                    recipe["method"], recipe["degree"], recipe["expand_pct"])
+                if error_msg != "":
+                    st.error(f"{error_msg} {sad_emoji}")
+                    continue
+                corrected_um, _, _, mask, _ = corrected
+                error_msg, qpi_df = get_qpi_features(corrected_um, mask, fov_name, channel_name, constants, selected_feature_extractors)
+                if error_msg != "":
+                    st.error(f"{error_msg} {sad_emoji}")
+                else:
+                    fov_feature_dfs.append(qpi_df)
+        else:
+            return f"Error: Unknown imaging modality '{imaging_modality}' for {channel_name}", pd.DataFrame()
 
     # Combine all channel DataFrames in one operation
     single_cell_features_fov = pd.concat(fov_feature_dfs, axis=1) if fov_feature_dfs else pd.DataFrame()

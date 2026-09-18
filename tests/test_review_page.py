@@ -938,8 +938,16 @@ def test_what_the_reader_says_about_the_file_is_shown_while_the_gate_is_open(pag
 @pytest.mark.parametrize("use_data_extraction", [True, False])
 def test_dataset_warnings_share_one_section_across_loading_stages(
         page, tmp_path, monkeypatch, use_data_extraction):
-    monkeypatch.setattr(dataset_io, "get_unique_row_id_col", lambda **kw: "cell_id")
-    monkeypatch.setattr(dataset_io, "get_fov_name_col_analysis", lambda **kw: "image_name")
+    from src import config
+
+    # Extraction and user-table roles must both match the fixture, independent
+    # of whichever extraction profile the developer currently has selected.
+    extraction_path = tmp_path / "extraction_config.toml"
+    extraction_path.write_text(toml.dumps({
+        "unique_cell_id_col": "cell_id", "fov_name_col": "image_name",
+        "categorical_cols": ["treatment"],
+    }))
+    monkeypatch.setattr(config, "_CONFIG_PATH", extraction_path)
     page["warning"] = "Warning: only the first sheet was read.\n"
     page["frame"]["Empty"] = None
     page["frame"].loc[0, "Area"] = None

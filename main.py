@@ -26,6 +26,8 @@ def main():
 
     # Use the same active profile for the controls and configuration fields.
     from src.config import (
+        QPI_ALPHA_DEFAULT,
+        QPI_OPD_UNITS,
         _migrate_extraction_config_to_profiles,
         create_profile,
         delete_profile,
@@ -126,11 +128,19 @@ def main():
     max_num_channels = 8
     all_flim_decay_input_types = ["Decay (3/4D)", "Decay (3/4D) pixel-prefitted", "Decay (2D)"]
     intensity_only_input_types = ["Intensity (2D)"]
+    qpi_input_types = ["QPI (2D)"]
     all_available_categorical_cols = ["experiment", "patient_id", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "replicate"]
     spc_output_suffix = {"a1": "_a1[%].asc", "t1": "_t1.asc", "a2": "_a2[%].asc", "t2": "_t2.asc", "a3": "_a3[%].asc", "t3": "_t3.asc"}
-    all_feature_extractors = ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture"]
+    all_feature_extractors = ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture", "Dry-mass statistics", "Spatial texture"]
     if "all_feature_extractors" not in cfg:
         cfg["all_feature_extractors"] = all_feature_extractors
+    else:
+        # Profiles saved before an extractor existed keep their old list, and Data
+        # Analysis groups columns by this list: a missing name lands every column of
+        # that extractor in Uncategorized Features. Append what is missing.
+        for extractor in all_feature_extractors:
+            if extractor not in cfg["all_feature_extractors"]:
+                cfg["all_feature_extractors"].append(extractor)
 
     # Seed missing extraction defaults.
     if "flim_decay_input_types" not in cfg:
@@ -150,6 +160,12 @@ def main():
     cfg["intensity_only_input_type"] = intensity_only_input_type
     if intensity_only_input_type not in cfg:
         cfg[intensity_only_input_type] = {}
+
+    # QPI inputs are two-dimensional wavefront images with a label mask.
+    qpi_input_type = qpi_input_types[0]
+    cfg["qpi_input_type"] = qpi_input_type
+    if qpi_input_type not in cfg:
+        cfg[qpi_input_type] = {}
 
     cols = st.columns(3)
 
@@ -173,7 +189,7 @@ def main():
     channel_cols = channel_columns(n_channels)
     channel_names = []
     invalid_channels = set()
-    imaging_modalities = ["FLIM", "Intensity-only"]
+    imaging_modalities = ["FLIM", "Intensity-only", "QPI"]
     for i in range(n_channels):
         with channel_cols[i]:
             channel_key = f"ch{i+1}"
@@ -194,9 +210,9 @@ def main():
     modalities = {cfg[f"ch{i+1}"]["imaging_modality"] for i in range(n_channels)}
     has_flim = "FLIM" in modalities
     flim_decay_input_type, fit_free_calibration = render_shared_flim_settings(cfg, active, has_flim)
-    if has_flim and "Intensity-only" in modalities and flim_decay_input_type == "Decay (2D)":
+    if has_flim and modalities & {"Intensity-only", "QPI"} and flim_decay_input_type == "Decay (2D)":
         error_msg = (
-            "This configuration cannot mix 2D FLIM decays with intensity-only channels. "
+            "This configuration cannot mix 2D FLIM decays with intensity-only or QPI channels. "
             "Choose a 3/4D FLIM input format or change the channel modalities."
         )
         st.error(f"{error_msg} {sad_emoji}")
@@ -211,6 +227,8 @@ def main():
             cfg[flim_decay_input_type]["available_feature_extractors"] = ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture"]
     if "available_feature_extractors" not in cfg[intensity_only_input_type]:
         cfg[intensity_only_input_type]["available_feature_extractors"] = ["Intensity morphology", "Intensity texture"]
+    if "available_feature_extractors" not in cfg[qpi_input_type]:
+        cfg[qpi_input_type]["available_feature_extractors"] = ["Intensity morphology", "Dry-mass statistics", "Spatial texture"]
 
     # Ensure saved 2D configurations offer intensity_sum extraction.
     d2d = cfg.get("Decay (2D)", {})
@@ -218,7 +236,7 @@ def main():
         d2d["available_feature_extractors"].append("Intensity texture")
 
     # Seed file types; the per-channel controls filter them by selected extractors.
-    for input_type in all_flim_decay_input_types + intensity_only_input_types:
+    for input_type in all_flim_decay_input_types + intensity_only_input_types + qpi_input_types:
         if input_type not in cfg:
             cfg[input_type] = {}
         if "file_types" not in cfg[input_type]:
@@ -230,6 +248,8 @@ def main():
                 cfg[input_type]["file_types"] = ["Decay", "IRF"]
             elif input_type == "Intensity (2D)":
                 cfg[input_type]["file_types"] = ["Intensity (2D)", "Mask"]
+            elif input_type == "QPI (2D)":
+                cfg[input_type]["file_types"] = ["QPI (2D)", "Mask"]
 
     st.subheader("Extraction settings")
     channel_cols = channel_columns(n_channels)
@@ -243,6 +263,12 @@ def main():
                 input_type = flim_decay_input_type
             elif imaging_modality == "Intensity-only":
                 input_type = intensity_only_input_type
+            elif imaging_modality == "QPI":
+                input_type = qpi_input_type
+            else:
+                # Without this, channel 1 left input_type unbound and later channels
+                # silently inherited the previous channel's value.
+                raise ValueError(f"Unknown imaging modality {imaging_modality!r} for {channel_key}")
             cfg[channel_key]["input_type"] = input_type
             if input_type not in cfg[channel_key]:
                 cfg[channel_key][input_type] = {}
@@ -293,6 +319,41 @@ def main():
                 else:
                     # Clear constraints for single-component or prefitted inputs.
                     cfg[channel_key][input_type]["fixed_lifetimes"] = {}
+            # QPI constants live beside the extractor picker, in the slot fixed lifetimes
+            # occupy for FLIM. Pixel size and unit are required with no default.
+            if imaging_modality == "QPI":
+                qpi_cfg = cfg[channel_key][input_type]
+                const_cols = st.columns(3)
+                with const_cols[0]:
+                    saved_pixel = qpi_cfg.get("pixel_size_um")
+                    pixel_size = st.number_input(
+                        "Pixel size (µm)",
+                        value=float(saved_pixel) if saved_pixel else None,
+                        min_value=0.0, step=0.001, format="%.4f", placeholder="e.g. 0.275",
+                        key=f"{channel_key}_{input_type}_pixel_size_um_{active}",
+                        help="Specimen distance one pixel covers, in µm, after any binning. Required; no default.",
+                    )
+                    qpi_cfg["pixel_size_um"] = pixel_size if pixel_size else None
+                with const_cols[1]:
+                    saved_unit = qpi_cfg.get("opd_unit")
+                    qpi_cfg["opd_unit"] = st.selectbox(
+                        "OPD unit in file", list(QPI_OPD_UNITS),
+                        index=QPI_OPD_UNITS.index(saved_unit) if saved_unit in QPI_OPD_UNITS else None,
+                        placeholder="Select a unit",
+                        key=f"{channel_key}_{input_type}_opd_unit_{active}",
+                        help="Unit of the optical path difference in the file. Required.",
+                    )
+                with const_cols[2]:
+                    qpi_cfg["alpha_um3_per_pg"] = st.number_input(
+                        "α (µm³/pg)",
+                        value=float(qpi_cfg.get("alpha_um3_per_pg", QPI_ALPHA_DEFAULT)),
+                        min_value=0.001, step=0.001, format="%.6f",
+                        key=f"{channel_key}_{input_type}_alpha_um3_per_pg_{active}",
+                        help="Specific refractive increment; 0.181818 µm³/pg = 1/5.5, the lab's constant.",
+                    )
+                if qpi_cfg["pixel_size_um"] is None or qpi_cfg["opd_unit"] is None:
+                    error_msg = f"Enter a positive pixel size and choose the OPD unit for {custom_channel_name}."
+                    st.error(f"{error_msg} {sad_emoji}")
             if "input_suffixes" not in cfg[channel_key][input_type]:
                 cfg[channel_key][input_type]["input_suffixes"] = {}
 

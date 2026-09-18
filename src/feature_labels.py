@@ -48,6 +48,14 @@ def format_feature_label(column_name, engine="plotly"):
         # texture
         "intensity_sum": ("Intensity", "photons"),
         "mass_displacement": ("Mass displacement", "px"),
+        # QPI dry mass (pixel masses in pg; density per µm²)
+        "dry_mass_pg": ("Dry mass", "pg"), "mass_density_pg_per_um2": ("Mass density", "pg/µm²"),
+        "dry_mass_variance": ("Mass variance", "pg²"), "dry_mass_skewness": ("Mass skewness", ""),
+        "dry_mass_kurtosis": ("Mass kurtosis", ""), "dry_mass_entropy": ("Mass entropy", ""),
+        "dry_mass_evenness": ("Mass evenness", ""),
+        # QPI spatial texture
+        "avg_dm_gradient_mag": ("Mass gradient", "pg/px"), "radial_mass_index": ("Radial mass index", ""),
+        "polar_gradient_index": ("Polar gradient index", ""),
     }
     # uncategorized suffix (text after "{channel}_") -> (symbol, unit)
     suffix_labels = {

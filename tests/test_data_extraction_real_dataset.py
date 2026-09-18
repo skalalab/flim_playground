@@ -7,21 +7,20 @@ Run explicitly with pytest and --basetemp to retain the CSVs and result summarie
 
 import hashlib
 import json
-from pathlib import Path
 import shutil
 import time
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+import toml
 from streamlit.proto.WidgetStates_pb2 import WidgetStates
 from streamlit.testing.v1 import AppTest
 from streamlit.testing.v1.element_tree import Widget
-import toml
 
-import src.config as config
+from src import config
 from src.fit_helper import irf_shift
-
 
 _ROOT = Path(__file__).resolve().parents[1]
 _DATA = _ROOT / "example_data/Data_Extraction/T_cell_activation"

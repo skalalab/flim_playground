@@ -77,3 +77,19 @@ def _forget_pages_directory_probe():
     yield
     if hasattr(PagesManager, "uses_pages_directory"):
         PagesManager.uses_pages_directory = None
+
+
+_REAL_MAIN_MODULE = sys.modules["__main__"]
+
+
+@pytest.fixture(autouse=True)
+def _restore_main_module():
+    """Put the real ``__main__`` back after each test.
+
+    Streamlit's script runner installs the AppTest script as ``sys.modules["__main__"]``
+    and never restores it. A later spawn-based ``multiprocessing.Pool`` (the lifetime
+    fitter's parallel path) re-executes ``__main__`` in every worker; when that script is
+    an AppTest body the workers die at startup and ``Pool.imap`` waits forever.
+    """
+    yield
+    sys.modules["__main__"] = _REAL_MAIN_MODULE

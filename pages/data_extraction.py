@@ -18,6 +18,7 @@ from src.config import (
     get_imaging_modality,
     get_input_types,
     get_num_components,
+    get_qpi_constants,
     get_reference_file_suffixes,
     get_selected_feature_extractors,
     get_unique_cell_id_col,
@@ -26,7 +27,7 @@ from src.config_watch import notify_on_config_change
 from src.emojis import happy_emoji, sad_emoji
 from src.extraction_session import ExtractionSession
 from src.file_io import get_lifetime_standard
-from src.metadata import prepare_extraction
+from src.metadata import pending_calibration, prepare_extraction
 from src.navigation import render_top_menu
 from src.widgets.analysis_widget_state import (
     control_default,
@@ -48,6 +49,7 @@ from src.widgets.metadata_widgets import (
     preview_metadata_widget,
 )
 from src.widgets.numeric_extraction_widgets import fov_extraction_widget
+from src.widgets.qpi_widgets import choose_background_widget
 
 # Shared labels for the workflow selector and dispatch.
 STEP_NUMERIC = "**Numerical** (e.g. lifetime, morphology)"
@@ -75,6 +77,7 @@ class ExtractionContext:
     fixed_lifetimes: dict
     derived_features: list
     unique_cell_id_col: str
+    qpi_constants: dict
 
 
 def build_context():
@@ -102,6 +105,8 @@ def build_context():
         fixed_lifetimes={key: get_fixed_lifetimes(key, input_types[key]) for key in channel_names},
         derived_features=get_derived_features(),
         unique_cell_id_col=get_unique_cell_id_col(),
+        qpi_constants={key: get_qpi_constants(key, input_types[key])
+                       for key in channel_names if imaging_modalities[key] == "QPI"},
     )
 
 
@@ -180,6 +185,8 @@ def prepare_fov_dataframe(fovs, selected_channels, selected_ch_num_components, c
             for t_key in ["t1", "t2", "t3"]:
                 val = fixed_lts.get(t_key)  # None or float
                 fov_df[f"{channel_name}_fixed_{t_key}"] = val
+        for name, value in ctx.qpi_constants.get(channel_key, {}).items():
+            fov_df[f"{channel_name}_{name}"] = value
 
     # Metadata is an output record; extraction uses these definitions in memory.
     fov_df["derived_features"] = json.dumps(ctx.derived_features)
@@ -252,7 +259,8 @@ def _render_metadata_record(prepared):
             prepared.save_metadata()
             st.rerun()
     elif not prepared.choosing_shift and (
-        not prepared.calibration_confirmed or not prepared.settings["channels_shift"]
+        not prepared.calibration_confirmed
+        or not (prepared.settings["channels_shift"] or prepared.settings.get("channels_background"))
     ):
         st.success(f"Metadata is saved automatically to {prepared.metadata_path}")
 
@@ -370,6 +378,7 @@ def render_preparation(col1, col2, ctx):
                 "selected_feature_extractors": ctx.selected_ch_feature_extractors[key],
                 "num_components": source["selected_ch_num_components"].get(name, 0),
                 "fixed_lifetimes": ctx.fixed_lifetimes[key],
+                "qpi": ctx.qpi_constants.get(key, {}),
             }
             for key, name in selected_channels.items()
         }
@@ -383,7 +392,7 @@ def render_preparation(col1, col2, ctx):
         if error_msg:
             st.error(error_msg)
             return
-        label = "Start calibration" if settings["channels_shift"] else "Start extraction"
+        label = "Start calibration" if settings["channels_shift"] or settings["channels_background"] else "Start extraction"
         if st.button(label, key="prepare_extraction_button", type="primary"):
             prepared = ExtractionSession.create(fov_df, settings, folder_path)
             st.session_state["prepared_extraction"] = prepared
@@ -396,16 +405,30 @@ def render_preparation(col1, col2, ctx):
 
 
 # --- Calibration and extraction -------------------------------------------
+def _calibration_verb(shifts, backgrounds):
+    if shifts and backgrounds:
+        return "Calibrate channels", "recalibrate"
+    if backgrounds:
+        return "Correct background", "correct background"
+    return "Optimize for Shifts", "find shift"
+
+
 def _render_shift_controls(prepared):
     settings = prepared.settings
     if not prepared.calibration_confirmed:
-        if any(method == "fit" for method in settings["channels_shift"].values()):
-            fit_options_widget(settings)
-        settings["fix_shift"] = st.checkbox(
-            "Fix the Shift", value=settings.get("fix_shift", True), key="fix_shift_checkbox",
-            help="Use one shift for all FOVs, or estimate a shift for each FOV.",
-        )
-        if st.button("Optimize for Shifts"):
+        pending_shift, pending_background = pending_calibration(prepared.metadata_df, settings)
+        if pending_shift:
+            if any(settings["channels_shift"][channel] == "fit" for channel in pending_shift):
+                fit_options_widget(settings)
+            settings["fix_shift"] = st.checkbox(
+                "Fix the Shift", value=settings.get("fix_shift", True), key="fix_shift_checkbox",
+                help="Use one shift for all FOVs, or estimate a shift for each FOV.",
+            )
+            label, _ = _calibration_verb(pending_shift, pending_background)
+            if st.button(label):
+                prepared.choosing_shift = True
+        elif pending_background:
+            # QPI correction is cached and needs no shift-optimization gate.
             prepared.choosing_shift = True
         return False
 
@@ -421,26 +444,39 @@ def _render_shift_controls(prepared):
     with start_col:
         start = st.button("Start extraction", width="stretch", disabled=not prepared.can_extract)
     with back_col:
-        if settings["channels_shift"] and st.button("Go back and find shift", width="stretch"):
-            prepared.begin_recalibration()
-            st.rerun()
+        if settings["channels_shift"] or settings.get("channels_background"):
+            _, verb = _calibration_verb(settings["channels_shift"], settings.get("channels_background"))
+            if st.button(f"Go back and {verb}", width="stretch"):
+                prepared.begin_recalibration()
+                st.rerun()
     return start
 
 
 def _render_choose_shift(prepared, ctx):
+    pending_shift, pending_background = pending_calibration(prepared.metadata_df, prepared.settings)
     # One open expander per channel: a channel already inspected can be collapsed to
     # make room for the others. Pending order is stable, so a collapsed state survives
     # reruns, and the single Confirm below stays outside every block.
     channel_shifts = {}
-    for channel in prepared.settings["channels_shift"]:
+    for channel in pending_shift:
         with st.expander(f"{channel}: shift calibration", expanded=True):
             error, shifts = choose_shift_widget(prepared.metadata_df, prepared.settings, ctx.fov_name_col, channel_name=channel)
             if error:
                 st.error(f"{error} {sad_emoji}")
             else:
                 channel_shifts[channel] = shifts
-    if st.button("Confirm Time Gates (if applicable) and Shift for each channel"):
-        error = prepared.confirm_calibration(channel_shifts)
+    channel_backgrounds = {}
+    for channel in pending_background:
+        with st.expander(f"{channel}: background correction", expanded=True):
+            error, recipe = choose_background_widget(prepared.metadata_df, prepared.settings, ctx.fov_name_col, channel)
+            if error:
+                st.error(f"{error} {sad_emoji}")
+            else:
+                channel_backgrounds[channel] = recipe
+    label = ("Confirm calibration for each channel" if prepared.settings.get("channels_background")
+             else "Confirm Time Gates (if applicable) and Shift for each channel")
+    if st.button(label):
+        error = prepared.confirm_calibration(channel_shifts, channel_backgrounds)
         if prepared.calibration_confirmed:
             st.rerun()
         elif error:

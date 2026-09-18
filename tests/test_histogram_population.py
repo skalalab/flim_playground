@@ -80,5 +80,21 @@ def test_page_keeps_individual_units_despite_stale_collapse_settings(
     assert state["separate_by"] == "day"
     assert state["shape_by"] is state["opacity_by"] is state["subcolor_by"] is None
     if gmm:
-        assert len(at.expander) >= 3
-        assert len([e for e in at.expander if e.label.startswith("GMM details")]) == 3
+        tables = [table.value for table in at.dataframe
+                  if table.value.columns.tolist() == ["#", "Name", "Mean ± SD", "Weight"]]
+        editable_groups = {name.rsplit("_group", 1)[0]
+                           for table in tables for name in table["Name"]}
+        markdown = [item.value for item in at.markdown]
+        for day in ("Day 2", "Day 10", "N/A"):
+            assert f"**`day={day}`**" in markdown
+            for treatment in ("ctrl", "drug"):
+                # A single-component fit has a read-only table; multi-component
+                # fits expose editable names. Both must show each population.
+                if f"{day}::{treatment}" not in editable_groups:
+                    caption = f"<caption>day={day} | {treatment} (H-index:"
+                    assert any(caption in html and "Mean ± SD" in html
+                               and "Weight" in html for html in markdown)
+        for table in tables:
+            assert len(table) >= 2
+            assert table["Mean ± SD"].str.contains(" ± ", regex=False).all()
+            assert table["Weight"].sum() == pytest.approx(1.0)
