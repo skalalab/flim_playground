@@ -20,7 +20,7 @@ from src.dataset_io import (
 )
 from src.emojis import happy_emoji, sad_emoji
 from src.export_script import generate_script, get_effect_size_threshold_capture
-from src.navigation import render_top_menu
+from src.navigation import DESKTOP_APP_URL, data_extraction_available, render_top_menu
 from src.vis.bivar import (
     distribution_controls, feature_2d_distribution_plot, phasor_plot,
     select_distribution_category, select_phasor_category,
@@ -342,11 +342,16 @@ with col1:
             # Hidden, not collapsed: the label's space keeps both option lists on the same rows.
             label_visibility="hidden",
         )
-    # Checked means the table came from somewhere else; the default is Data Extraction output.
+    # Checked means the table came from somewhere else; the default is Data Extraction
+    # output, except online, where Data Extraction is not part of the deployment and a
+    # visitor's own table is the likely upload. "Data Extraction" then names the download.
+    extraction_here = data_extraction_available()
+    extraction_link = "/data_extraction" if extraction_here else DESKTOP_APP_URL
+    extraction_name = "Data Extraction" if extraction_here else f"[Data Extraction]({extraction_link})"
     use_data_extraction = not st.checkbox(
         "**Use a table from another source**",
-        value=False,
-        help="Leave this off for the file you downloaded from Data Extraction. "
+        value=not extraction_here,
+        help=f"Leave this off for the file you downloaded from {extraction_name}. "
              "Turn it on for any other table — you'll review its columns before analysis.",
     )
     st.session_state._use_data_extraction = use_data_extraction
@@ -356,7 +361,7 @@ with col1:
     # Hover labels use the user's column name, or "ID" for generated row numbers.
     row_id_label = "Cell ID" if use_data_extraction else (configured_row_id_col or "ID")
     categorical_cols = get_categorical_cols_analysis(use_data_extraction)
-    instruction_text = ("Upload the file obtained from [Data Extraction](/data_extraction) directly."
+    instruction_text = (f"Upload the file obtained from [Data Extraction]({extraction_link}) directly."
                         if use_data_extraction else "Upload your table")
     uploaded_file = st.file_uploader(
         instruction_text,

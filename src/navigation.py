@@ -20,7 +20,7 @@ page_2 = "data_analysis"
 pages = [page_1, page_2]
 
 # Where a visitor who wants the pages this deployment cannot serve should go.
-_DESKTOP_APP_URL = "https://github.com/skalalab/flim_playground#install"
+DESKTOP_APP_URL = "https://github.com/skalalab/flim_playground#install"
 
 
 def link_2_name(link):
@@ -58,6 +58,16 @@ def _only_page():
     except (AttributeError, ImportError, TypeError):
         return None
     return entry.stem if entry.parent.name == "pages" and entry.stem in pages else None
+
+
+def data_extraction_available():
+    """Whether Data Extraction is part of this deployment.
+
+    False online, where ``pages/data_analysis.py`` is the entrypoint and Data
+    Extraction ships only with the desktop app. A deployed app always has a
+    browser URL; AppTest has none, so page tests keep the desktop answer.
+    """
+    return not (st.context.url and _only_page() == page_2)
 
 
 def _link_style(active):
@@ -106,7 +116,7 @@ def render_top_menu(space_below="0"):
         menu_html += f"""
     <a href='/{only}' style='{_link_style(True)}'>{link_2_name(only)}</a>"""
         menu_html += (
-            f"<a href='{_DESKTOP_APP_URL}' target='_blank' rel='noopener' "
+            f"<a href='{DESKTOP_APP_URL}' target='_blank' rel='noopener' "
             "style='margin-left:auto; font-size:0.8em;'>"
             "Data Extraction: get the desktop app ↗</a>"
         )

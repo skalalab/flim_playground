@@ -120,3 +120,63 @@ def test_single_page_deployment_points_at_the_desktop_app(tmp_path, monkeypatch)
 
 def test_full_app_does_not_advertise_the_desktop_app():
     assert _INSTALL_URL not in _bar_html(_MENU_SCRIPT)
+
+
+_AVAILABLE_SCRIPT = (
+    "import sys\n"
+    f"sys.path.insert(0, r'{_ROOT}')\n"
+    "import streamlit as st\n"
+    "from src.navigation import data_extraction_available\n"
+    "st.text(str(data_extraction_available()))\n"
+)
+
+
+def _extraction_available(monkeypatch, url, entry=None):
+    from streamlit.runtime.context import ContextProxy
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setattr(ContextProxy, "url", property(lambda self: url))
+    if entry is None:
+        at = AppTest.from_string(_AVAILABLE_SCRIPT).run(timeout=60)
+    else:
+        entry.parent.mkdir(exist_ok=True)
+        entry.write_text(_AVAILABLE_SCRIPT)
+        at = AppTest.from_file(str(entry)).run(timeout=60)
+    assert not at.exception, [e.value for e in at.exception]
+    return at.text[0].value == "True"
+
+
+def test_data_extraction_is_unavailable_only_on_the_single_page_deployment(tmp_path, monkeypatch):
+    online = tmp_path / "pages" / "data_analysis.py"
+    assert not _extraction_available(
+        monkeypatch, "https://flim-playground.streamlit.app/", entry=online)
+    # The desktop app and a local `streamlit run main.py` serve both pages.
+    assert _extraction_available(monkeypatch, "http://localhost:8501/data_analysis")
+    # AppTest reports no URL, so page tests exercise the deployment that has both.
+    assert _extraction_available(monkeypatch, None, entry=online)
+
+
+def _analysis_page(monkeypatch, url):
+    from streamlit.runtime.context import ContextProxy
+    from streamlit.testing.v1 import AppTest
+
+    monkeypatch.setattr(ContextProxy, "url", property(lambda self: url))
+    at = AppTest.from_file(str(Path(_ROOT) / "pages" / "data_analysis.py")).run(timeout=90)
+    assert not at.exception, [e.value for e in at.exception]
+    return at
+
+
+def test_online_upload_starts_on_the_visitors_own_table(monkeypatch):
+    # Data Extraction is not part of that deployment, so its output is the unlikely upload.
+    at = _analysis_page(monkeypatch, "https://flim-playground.streamlit.app/")
+    assert at.checkbox[0].value is True
+    assert at.session_state._use_data_extraction is False
+    # "Data Extraction" can only mean the download from here.
+    assert _INSTALL_URL in at.checkbox[0].help
+
+
+def test_full_app_upload_starts_on_data_extraction_output(monkeypatch):
+    at = _analysis_page(monkeypatch, None)
+    assert at.checkbox[0].value is False
+    assert at.session_state._use_data_extraction is True
+    assert _INSTALL_URL not in at.checkbox[0].help
