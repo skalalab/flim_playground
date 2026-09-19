@@ -25,23 +25,19 @@ FLIM Playground allows you to extract single-cell features from <span title="can
 
 # Data Extraction Demo
 
-For an image-based extraction walkthrough, download the [Mosaic NADH example](example_data/Data_Extraction/README.md#mosaic-nadh-images): 25 fields of view with raw decays, cell masks, and a shared IRF.
-
-- Demo uses the T cell activation [dataset](example_data/Data_Extraction/T_cell_activation) from this [paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11425855/):
-
-https://github.com/user-attachments/assets/a01b8a22-1bc3-46f1-aa37-1c3191a6fa1a
+https://github.com/user-attachments/assets/8391d0ca-e0a7-49ef-9f8b-3d7e0d9a273f
 
 # Data Analysis Demo
 - Demo uses the inhibitor treatments on cancer cell lines (MCF7 and PANC-1) [dataset](./example_data/Data_Analysis/inhibitors.csv) extracted by Data Extraction:
 
-https://github.com/user-attachments/assets/7ac6b61f-7bde-45b8-92f5-5dbdb05dde67
+https://github.com/user-attachments/assets/f422d364-dff8-4422-afdb-48601bd7e0dd
 
 ## Use Your Own Data in Data Analysis
 - [A walkthrough using a simple dataset](https://skalalab.github.io/flim_playground_doc/data_analysis_config.html)
 
 # Quick try 
 It is deployed at: [https://flim-playground.streamlit.app/](https://flim-playground.streamlit.app/). 
-You can try out analysis modules in the **Data Analysis** section using this sample [dataset](./example_data/Data_Analysis/inhibitors.csv) extracted previously by the **Data Extraction** module.
+You can try out analysis modules in the **Data Analysis** section using this sample [dataset](./example_data/Data_Analysis/inhibitors.csv) extracted previously by the **Data Extraction** section.
 
 # Install
 ## Option 1: Download from Releases
