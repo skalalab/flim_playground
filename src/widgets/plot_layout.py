@@ -130,12 +130,14 @@ def square_2d_plot(fig, *, key):
                     ['yaxis', expanded ? Math.min(1, w / h) : 1],
                 ]) {
                     const start = (1 - span) / 2;
+                    // Constant/small groups, and Marginal Plot Type = None, leave
+                    // the strip axes unused; the main axes then take the block.
+                    const main = layout[axis + '2'] ? 0.9 * span : span;
                     const mainAxes = axis === 'yaxis' ? [axis, 'yaxis3'] : [axis];
                     for (const [name, domain] of [
-                        ...mainAxes.map(name => [name, [start, start + 0.9 * span]]),
+                        ...mainAxes.map(name => [name, [start, start + main]]),
                         [axis + '2', [start + 0.9 * span, start + span]],
                     ]) {
-                        // Constant/small groups can leave the marginal axes unused.
                         if (!layout[name]) continue;
                         if (domain.some((value, i) => Math.abs(value - layout[name].domain[i]) > 1e-6)) {
                             changes[name + '.domain'] = domain;
@@ -169,29 +171,32 @@ def square_2d_plot(fig, *, key):
         st.plotly_chart(fig, width="stretch", height="stretch", key=key)
 
 
-def dimension_reduction_chart(fig, *, key):
-    """Fit canonical DR panel geometry using Plotly's measured browser margins.
+def dimension_reduction_chart(fig, *, key, container_key="dimension_reduction_plot",
+                              meta_key="dimension_reduction_layout"):
+    """Fit canonical facet-grid geometry using Plotly's measured browser margins.
 
     Normal charts fit the available width and most of the viewport height, with
     room for measured label and legend margins. Fullscreen charts keep the
     viewport size and center the same composition inside it.
     Canonical domains and paper annotations stay in metadata so repeated resizing
     cannot accumulate coordinate drift or alter the user's zoom ranges.
+    ``container_key``/``meta_key`` let Dimension Reduction and the 2D separation
+    grid mount the same script without clobbering each other's globals.
     """
     meta = fig.layout.meta
-    if not isinstance(meta, dict) or not meta.get("dimension_reduction_layout"):
+    if not isinstance(meta, dict) or not meta.get(meta_key):
         st.plotly_chart(fig, width="stretch", key=key)
         return
 
     st.html("""
         <style>
-        .st-key-dimension_reduction_plot [data-testid="stElementContainer"] {
+        .st-key-__CONTAINER_KEY__ [data-testid="stElementContainer"] {
             min-height: 0;
         }
         </style>
         <script>
         (() => {
-            window._flimDimensionReductionCleanup?.();
+            window.__CLEANUP_GLOBAL__?.();
             let graph;
             let observedRoot;
             let frame;
@@ -199,7 +204,7 @@ def dimension_reduction_chart(fig, *, key):
             let disposed = false;
 
             const update = () => {
-                const root = document.querySelector('.st-key-dimension_reduction_plot');
+                const root = document.querySelector('.st-key-__CONTAINER_KEY__');
                 if (!root && mounted) {
                     cleanup();
                     return;
@@ -220,7 +225,7 @@ def dimension_reduction_chart(fig, *, key):
                     }
                 }
                 const layout = graph?._fullLayout;
-                const canonical = layout?.meta?.dimension_reduction_layout;
+                const canonical = layout?.meta?.__META_KEY__;
                 const ratio = canonical?.plot_height;
                 if (!layout?._size || !Number.isFinite(ratio) || ratio <= 0) return;
                 const {w, h, l, r, t, b} = layout._size;
@@ -307,16 +312,19 @@ def dimension_reduction_chart(fig, *, key):
                 window.removeEventListener('resize', schedule);
                 cancelAnimationFrame(frame);
                 graph?.removeListener?.('plotly_afterplot', schedule);
-                if (window._flimDimensionReductionCleanup === cleanup) {
-                    delete window._flimDimensionReductionCleanup;
+                if (window.__CLEANUP_GLOBAL__ === cleanup) {
+                    delete window.__CLEANUP_GLOBAL__;
                 }
             };
             window.addEventListener('resize', schedule);
             observer.observe(document.body, {childList: true, subtree: true});
-            window._flimDimensionReductionCleanup = cleanup;
+            window.__CLEANUP_GLOBAL__ = cleanup;
             schedule();
         })();
         </script>
-    """, unsafe_allow_javascript=True)
-    with st.container(key="dimension_reduction_plot"):
+    """.replace("__CONTAINER_KEY__", container_key)
+       .replace("__META_KEY__", meta_key)
+       .replace("__CLEANUP_GLOBAL__", f"_flim_{container_key}_cleanup"),
+       unsafe_allow_javascript=True)
+    with st.container(key=container_key):
         st.plotly_chart(fig, width="stretch", height="stretch", key=key)

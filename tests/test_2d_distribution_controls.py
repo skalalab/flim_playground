@@ -6,17 +6,17 @@ from streamlit.testing.v1 import AppTest
 
 from src.widgets import visualization_widgets as vw
 
-
 SEPARATE_KEY = "vis_encoding_fd_separate_by"
 MODE_KEY = "vis_encoding_fd_point_mode"
-CATEGORY_KEY = "vis_encoding_fd_category"
 
 
 def app():
     import pandas as pd
     import streamlit as st
+
     from src.widgets.analysis_widget_state import (
-        analysis_control_keys, preserve_analysis_controls,
+        analysis_control_keys,
+        preserve_analysis_controls,
     )
     from src.widgets.visualization_widgets import visual_encoding_channels_widget
 
@@ -283,95 +283,66 @@ def test_removed_or_retyped_separator_is_pruned(state):
     assert at.session_state[SEPARATE_KEY] is None
 
 
-def category_app():
+def marginal_app():
     import streamlit as st
-    from src.widgets.analysis_widget_state import (
-        analysis_control_keys, preserve_analysis_controls,
-    )
-    from src.widgets import visualization_widgets as vw
 
-    def open_review():
-        if st.session_state.review:
-            st.session_state.saved_controls = analysis_control_keys(st.session_state)
+    from src.vis.bivar import distribution_controls
 
-    preserve_analysis_controls(st.session_state, vw.SEPARATION_KEYS)
-    method = st.selectbox("Method", ["FD", "PP", "Hidden"], key="method")
-    st.checkbox("Review", key="review", on_change=open_review)
-    preserve_analysis_controls(st.session_state, st.session_state.get("saved_controls", ()))
-    if st.session_state.review or method == "Hidden":
-        st.stop()
-    options = st.session_state.get("categories", ["Day 2", "Day 10", "N/A"])
-    separator = st.session_state.get("separator", "day")
-    widget = (vw.distribution_category_widget if method == "FD" else vw.phasor_category_widget)
-    st.session_state.result = widget(options, separator)
-    st.session_state.pop("saved_controls", None)
+    st.session_state.options = distribution_controls("x", "y")
 
 
-def category_new(state=None):
-    at = AppTest.from_function(category_app)
-    for key, value in (state or {}).items():
-        at.session_state[key] = value
-    return run(at)
+def test_marginal_plot_type_offers_none_first_and_defaults_to_it():
+    at = run(AppTest.from_function(marginal_app))
+    widget = at.selectbox(key="marginal_plot_type_selector_x_y")
+    assert widget.label == "Marginal Plot Type"
+    assert list(widget.options) == ["None", "gaussian fit", "boxplot", "violin"]
+    assert widget.value == "None"
+    assert at.session_state.options["marginal_plot_type"] == "None"
 
 
-def test_category_buttons_cannot_deselect_and_fall_back_to_first_available_category():
-    at = category_new()
-    assert at.session_state.result == "Day 2"
-    at.button_group(key=CATEGORY_KEY).set_value("Day 10")
+def test_a_stored_marginal_choice_survives_and_an_unknown_one_is_pruned():
+    at = AppTest.from_function(marginal_app)
+    at.session_state["marginal_plot_type_selector_x_y"] = "violin"
     run(at)
-    at.button_group(key=CATEGORY_KEY).set_value(None)
+    assert at.session_state.options["marginal_plot_type"] == "violin"
+    # A second AppTest, rather than a second run() on the same one: Streamlit's
+    # own widget-state bookkeeping raises ValueError when a *rendered* selectbox's
+    # session value is overwritten with something outside its current options,
+    # before this app's own pruning ever gets a chance to run. Priming session
+    # state before the first run exercises the same pruning code path (the
+    # selectbox has not rendered yet, so nothing pre-validates the stored value).
+    at = AppTest.from_function(marginal_app)
+    at.session_state["marginal_plot_type_selector_x_y"] = "heatmap"
     run(at)
-    assert at.session_state.result == "Day 10"
-    at.session_state.categories = ["Day 10", "N/A"]
-    run(at)
-    assert at.session_state.result == "Day 10"
-    at.session_state.categories = ["N/A"]
-    run(at)
-    assert at.session_state.result == "N/A"
-    at.session_state.categories = ["Day 2", "N/A"]
-    at.session_state.separator = "batch"
-    run(at)
-    assert at.session_state.result == "Day 2"
+    assert at.session_state.options["marginal_plot_type"] == "None"
 
 
-def test_category_dropdown_switches_to_buttons_with_the_same_selected_value():
-    at = category_new({"categories": [f"Day {i}" for i in range(1, 8)]})
-    at.selectbox(key=CATEGORY_KEY).set_value("Day 2")
-    run(at)
-    at.session_state.categories = [f"Day {i}" for i in range(1, 7)]
-    run(at)
-    assert at.button_group(key=CATEGORY_KEY).value == "Day 2"
-    at.session_state.categories = [f"Day {i}" for i in range(1, 8)]
-    run(at)
-    assert at.selectbox(key=CATEGORY_KEY).value == "Day 2"
+def test_two_facet_wrappers_target_different_containers_and_globals():
+    import inspect
+    import re
 
+    from src.widgets import plot_layout
 
-def test_fd_category_is_independent_of_pp_and_survives_review_and_hidden_controls():
-    at = category_new()
-    at.button_group(key=CATEGORY_KEY).set_value("Day 10")
-    run(at)
-    at.checkbox(key="review").check()
-    run(at)
-    at.checkbox(key="review").uncheck()
-    run(at)
-    assert at.button_group(key=CATEGORY_KEY).value == "Day 10"
-    at.selectbox(key="method").set_value("PP")
-    run(at)
-    assert at.button_group(key=vw.PHASOR_CATEGORY_KEY).value == "Day 2"
-    at.button_group(key=vw.PHASOR_CATEGORY_KEY).set_value("N/A")
-    run(at)
-    at.selectbox(key="method").set_value("Hidden")
-    run(at)
-    at.selectbox(key="method").set_value("FD")
-    run(at)
-    assert at.button_group(key=CATEGORY_KEY).value == "Day 10"
-    at.selectbox(key="method").set_value("PP")
-    run(at)
-    assert at.button_group(key=vw.PHASOR_CATEGORY_KEY).value == "N/A"
+    source = inspect.getsource(plot_layout.dimension_reduction_chart)
+    script = re.search(r"<script>(.*?)</script>", source, re.DOTALL).group(1)
+    assert "__CONTAINER_KEY__" in script
+    assert "__META_KEY__" in script
+    assert "__CLEANUP_GLOBAL__" in script
 
+    def wrapper_app():
+        import plotly.graph_objects as go
+        import streamlit as st
 
-def test_empty_category_data_has_no_selector():
-    at = category_new({"categories": []})
-    assert at.session_state.result is None
-    assert not at.button_group
-    assert len(at.selectbox) == 1
+        from src.widgets.plot_layout import dimension_reduction_chart
+
+        spec = go.Figure(layout={"meta": {"distribution_facet_layout": {"plot_height": .5}}})
+        dimension_reduction_chart(spec, key="fd", container_key="distribution_facet_plot",
+                                  meta_key="distribution_facet_layout")
+        st.session_state.rendered = True
+
+    at = run(AppTest.from_function(wrapper_app))
+    html = at.get("html")[0].proto.body
+    assert ".st-key-distribution_facet_plot" in html
+    assert "distribution_facet_layout" in html
+    assert "_flim_distribution_facet_plot_cleanup" in html
+    assert "dimension_reduction_plot" not in html

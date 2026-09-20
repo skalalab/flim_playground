@@ -8,7 +8,6 @@ import streamlit as st
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from src.classify import run_classification
 from src.collapse import collapse_rows
-from src.export_labels import EXPORT_METHODS, apply_export_labels, available_label_column
 from src.dataset_io import (
     SUPPORTED_SUFFIXES,
     _render_reject,
@@ -19,13 +18,20 @@ from src.dataset_io import (
     resolve_effective_fov_col,
 )
 from src.emojis import happy_emoji, sad_emoji
+from src.export_labels import (
+    EXPORT_METHODS,
+    apply_export_labels,
+    available_label_column,
+)
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import DESKTOP_APP_URL, data_extraction_available, render_top_menu
 from src.vis.bivar import (
-    distribution_controls, feature_2d_distribution_plot, phasor_plot,
-    select_distribution_category, select_phasor_category,
+    distribution_controls,
+    feature_2d_distribution_plot,
+    phasor_plot,
+    render_distribution_component_tables,
+    select_phasor_category,
 )
-from src.widgets.plot_layout import dimension_reduction_chart, phasor_chart, square_2d_plot
 from src.vis.helpers import apply_plot_styling, log_negative_error
 from src.vis.multivar import dimension_reduction_plot
 from src.vis.plot_defaults import (
@@ -46,6 +52,11 @@ from src.widgets.analysis_config_widgets import (
     get_unique_row_id_col,
     working_copy_arguments,
 )
+from src.widgets.analysis_widget_state import (
+    control_default,
+    derived_fit_control_keys,
+    preserve_analysis_controls,
+)
 from src.widgets.classification_widgets import (
     CLASSIFIER_OPTIONS,
     classification_plot_widget,
@@ -56,10 +67,14 @@ from src.widgets.encoding_state import (
     drop_varying_channels,
     dropped_channel_note,
 )
-from src.widgets.filter_widgets import filters_widget, selection_key
 from src.widgets.export_labels_widgets import export_labels_widget
-from src.widgets.analysis_widget_state import control_default, derived_fit_control_keys, preserve_analysis_controls
+from src.widgets.filter_widgets import filters_widget, selection_key
 from src.widgets.multiselect_modes import ALL_LABEL, chosen_items
+from src.widgets.plot_layout import (
+    dimension_reduction_chart,
+    phasor_chart,
+    square_2d_plot,
+)
 from src.widgets.review_table_widget import (
     applied_summary,
     configured_row_id,
@@ -75,7 +90,6 @@ from src.widgets.visualization_widgets import (
     HISTOGRAM_BIN_WIDTH_PREFIX,
     SEPARATION_KEYS,
     _compute_channel_harmonics,
-    distribution_category_widget,
     get_visual_group_keys,
     histogram_bin_width_key,
     phasor_category_widget,
@@ -145,7 +159,7 @@ def _distribution_options(selected_x, selected_y):
     return dict(
         log_x=st.session_state.get(f"log_x_2d_{suffix}", False),
         log_y=st.session_state.get(f"log_y_2d_{suffix}", False),
-        marginal_plot_type=st.session_state.get(f"marginal_plot_type_selector_{suffix}", "gaussian fit"),
+        marginal_plot_type=st.session_state.get(f"marginal_plot_type_selector_{suffix}", "None"),
         fit_regression=st.session_state.get(f"fit_regression_2d_{suffix}", False),
         fit_gmm=st.session_state.get(f"fit_gmm_2d_{suffix}", False),
         max_components=int(st.session_state.get("fit_gmm_max_components", 3)),
@@ -248,10 +262,9 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
             "selected_x": sx,
             "selected_y": sy,
             "collapse_by": extra_params.get("collapse_by"),
-            "distribution_category": extra_params.get("distribution_category"),
             "log_x": st.session_state.get(f"log_x_2d_{sx}_{sy}", False) if sx and sy else False,
             "log_y": st.session_state.get(f"log_y_2d_{sx}_{sy}", False) if sx and sy else False,
-            "marginal_plot_type": st.session_state.get(f"marginal_plot_type_selector_{sx}_{sy}", "gaussian fit") if sx and sy else "gaussian fit",
+            "marginal_plot_type": st.session_state.get(f"marginal_plot_type_selector_{sx}_{sy}", "None") if sx and sy else "None",
             "fit_regression": st.session_state.get(f"fit_regression_2d_{sx}_{sy}", False) if sx and sy else False,
             "fit_gmm_2d": st.session_state.get(f"fit_gmm_2d_{sx}_{sy}", False) if sx and sy else False,
             "gmm_max_components": int(st.session_state.get("fit_gmm_max_components", 3)),
@@ -723,21 +736,19 @@ with col2:
                     # so fragment reruns do not accumulate those changes.
                     fig = go.Figure(base_fig)
                     phasor_category = None
-                    distribution_category = None
                     component_tables = None
                     component_table_layout = None
                     display_table = table_md if method == "2D Feature Distribution" else None
                     if method == "2D Feature Distribution":
-                        if separate_by:
-                            distribution_category = distribution_category_widget(
-                                fig.layout.meta["distribution_categories"], separate_by)
-                            select_distribution_category(fig, distribution_category)
-                            display_table = fig.layout.meta["distribution_summary"]
                         meta = fig.layout.meta if isinstance(fig.layout.meta, dict) else {}
                         if "gmm_component_tables" in meta:
-                            component_tables = [table for table in meta["gmm_component_tables"]
-                                                if table["category"] == distribution_category]
+                            # Every level's tables reach the editor; the grid shows them all.
+                            component_tables = meta["gmm_component_tables"]
                             display_table = meta["distribution_statistics"]
+                            if separate_by:
+                                def component_table_layout(editor):
+                                    return render_distribution_component_tables(
+                                        component_tables, separate_by, editor)
                         distribution_controls(selected_x, selected_y)
                     if method == "Phasor Plot" and separate_by:
                         phasor_category = phasor_category_widget(
@@ -745,7 +756,13 @@ with col2:
                         select_phasor_category(fig, phasor_category)
                     fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
                     if method == "2D Feature Distribution":
-                        square_2d_plot(fig, key=f"plot_chart_2d_{method}")
+                        if separate_by:
+                            dimension_reduction_chart(
+                                fig, key=f"plot_chart_2d_{method}",
+                                container_key="distribution_facet_plot",
+                                meta_key="distribution_facet_layout")
+                        else:
+                            square_2d_plot(fig, key=f"plot_chart_2d_{method}")
                         if display_table:
                             st.markdown(display_table, unsafe_allow_html=True)
                     elif method == "Dimension Reduction":
@@ -816,7 +833,6 @@ with col2:
                             _extra["selected_x"] = selected_x
                             _extra["selected_y"] = selected_y
                             _extra["collapse_by"] = collapse_by
-                            _extra["distribution_category"] = distribution_category
                         elif method == "Phasor Plot":
                             _extra["selected_channel"] = selected_channel
                             _extra["phasor_harmonic"] = selected_harmonic

@@ -66,9 +66,8 @@ def _source():
 def _state(method, category, color_by, mixed_encodings):
     params = ({
         "selected_x": "x", "selected_y": "y",
-        "marginal_plot_type": "none", "fit_regression": False,
+        "marginal_plot_type": "None", "fit_regression": False,
         "fit_gmm_2d": False, "log_x": False, "log_y": False,
-        "distribution_category": category,
     } if method == "2D Feature Distribution" else {
         "selected_channel": "Ch1", "phasor_harmonic": 1,
         "phasor_f": .08, "phasor_category": category,
@@ -113,12 +112,9 @@ def _app_plot(frame, state, *, separated):
         figure, _, _ = bivar.feature_2d_distribution_plot(
             frame.copy(), "id", None, "x", "y", **channels,
             analysis_options={
-                "marginal_plot_type": "none", "fit_regression": False,
+                "marginal_plot_type": "None", "fit_regression": False,
                 "fit_gmm": False, "log_x": False, "log_y": False,
             })
-        if separated:
-            bivar.select_distribution_category(
-                figure, state["method_params"]["distribution_category"])
     else:
         figure, _ = bivar.phasor_plot(frame.copy(), "id", None, "Ch1", **channels)
         if separated:
@@ -184,6 +180,21 @@ def test_export_preserves_app_point_draw_order_and_global_category_batches(
 
     if category is None:
         figure, visible = global_figure, retained
+        traces = _app_traces(figure)
+    elif method == "2D Feature Distribution":
+        # The grid's overview keeps every point in the global batch order; the
+        # per-level highlight maps are a second copy that never reaches ax_main.
+        figure = _app_plot(frame, state, separated=True)
+        visible = retained
+        traces = [trace for trace in _app_traces(figure)
+                  if getattr(trace, "xaxis", None) in (None, "x")]
+        assert [list(trace.text) for trace in traces] == [
+            list(trace.text) for trace in global_traces]
+        panelled = {identifier
+                    for trace in _app_traces(figure)
+                    if getattr(trace, "xaxis", None) not in (None, "x")
+                    for identifier in trace.text}
+        assert panelled == set(retained["id"])
     else:
         figure = _app_plot(frame, state, separated=True)
         visible = retained[retained["day"] == category]
@@ -194,8 +205,7 @@ def test_export_preserves_app_point_draw_order_and_global_category_batches(
             for trace in global_traces]
         assert [list(trace.text) for trace in _app_traces(figure)] == [
             batch for batch in subset_batches if batch]
-
-    traces = _app_traces(figure)
+        traces = _app_traces(figure)
     expected = [identifier for trace in traces for identifier in trace.text]
     axis = namespace["ax_main"] if method == "2D Feature Distribution" else namespace["ax"]
     drawn, styles = _exported_points(axis, coordinate_ids)
@@ -228,10 +238,16 @@ def test_export_preserves_app_point_draw_order_and_global_category_batches(
     assert counted_labels == expected_labels
 
     if category is not None:
+        # 2D grey context moved off the overview and onto each highlight map.
+        context_axis, highlighted = axis, visible
+        if method == "2D Feature Distribution":
+            levels = [level for level, _positions in namespace["distribution_panels"]]
+            context_axis = namespace["facet_axes"][levels.index(category)]
+            highlighted = retained[retained["day"] == category]
         context_ids = {
             coordinate_ids[_coordinate_key(point)]
-            for collection in axis.collections if collection.get_zorder() < 2
+            for collection in context_axis.collections if collection.get_zorder() < 2
             for point in collection.get_offsets()}
-        assert context_ids == set(retained["id"]) - set(visible["id"])
+        assert context_ids == set(retained["id"]) - set(highlighted["id"])
 
     assert drawn == expected, "Export must retain the app's global shuffled batch draw order"

@@ -193,7 +193,7 @@ def test_ordinary_point_sizes_follow_the_app_diameter_control(
     tmp_path, monkeypatch, point_size, method, overlay
 ):
     params = dict(selected_var="x", selected_x="x", selected_y="y", overlay=overlay,
-                  marginal_plot_type="none", selected_channel="Ch1", phasor_harmonic=1, phasor_f=.08)
+                  marginal_plot_type="None", selected_channel="Ch1", phasor_harmonic=1, phasor_f=.08)
     app_df, ns = _run(tmp_path, monkeypatch, _source(),
                       _state(method, point_size=point_size, method_params=params))
     if method == "Feature Comparison":
@@ -202,7 +202,7 @@ def test_ordinary_point_sizes_follow_the_app_diameter_control(
     elif method == "2D Feature Distribution":
         fig, _, _ = bivar.feature_2d_distribution_plot(
             app_df, "id", None, "x", "y", color_by=["treatment"],
-            analysis_options={"marginal_plot_type": "none"})
+            analysis_options={"marginal_plot_type": "None"})
     else:
         fig, _ = bivar.phasor_plot(app_df, "id", None, "Ch1", color_by=["treatment"])
     fig = apply_plot_styling(fig, point_size, 12, 10)
@@ -224,12 +224,12 @@ def test_unseparated_2d_reports_each_groups_regression_and_gmm_statistics(
     state = _state("2D Feature Distribution", method_params={
         "selected_x": "x", "selected_y": "y", "fit_regression": True,
         "fit_gmm_2d": True, "gmm_max_components": 2, "gmm_min_weight_threshold": .1,
-        "marginal_plot_type": "none"})
+        "marginal_plot_type": "None"})
     app_df, ns = _run(tmp_path, monkeypatch, source, state, save=True)
     _, _, expected_df = bivar.feature_2d_distribution_plot(
         app_df, "id", None, "x", "y", color_by=["treatment"], analysis_options={
             "fit_regression": True, "fit_gmm": True, "max_components": 2,
-            "min_weight_threshold": .1, "marginal_plot_type": "none"})
+            "min_weight_threshold": .1, "marginal_plot_type": "None"})
     pd.testing.assert_series_equal(ns["df"]["2D_GMM_group"], expected_df["2D_GMM_group"])
     output = capsys.readouterr().out
     assert output.count("slope=") == output.count("intercept=") == 2

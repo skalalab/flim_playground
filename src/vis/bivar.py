@@ -4,11 +4,13 @@ import streamlit as st
 from scipy.stats import chi2, gaussian_kde, pearsonr
 from sklearn.linear_model import LinearRegression
 
-from src.feature_labels import format_feature_label
+from src.column_roles import code_span
 from src.export_labels import available_label_column, format_export_group_labels
+from src.feature_labels import format_feature_label
 from src.widgets.gmm_tables import gmm_component_table, gmm_tables_html
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 
+from .dimension_facets import category_facet_groups, dimension_facet_layout
 from .helpers import (
     _find_best_gmm,
     add_interleaved_points_trace,
@@ -20,10 +22,12 @@ from .helpers import (
     natural_tuple_sort,
 )
 
+MARGINAL_OPTIONS = ['None', 'gaussian fit', 'boxplot', 'violin']
+
 
 def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, plotly_axis_params):
     """Helper function to plot marginal densities."""
-    if data.empty or data.nunique() < 2:
+    if plot_type in (None, 'None') or data.empty or data.nunique() < 2:
         return
 
     if plot_type == 'gaussian fit':
@@ -251,8 +255,8 @@ def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i, scatter_c
         hoverinfo='skip'   # Don't show hover for ellipse lines
     ))
 
-def distribution_controls(selected_x, selected_y, marginal_plot_type='gaussian fit'):
-    """Render analysis settings separately so changing category never refits."""
+def distribution_controls(selected_x, selected_y, marginal_plot_type='None'):
+    """Render analysis settings separately so changing a setting never refits twice."""
     col_log_x, col_log_y, col1, col2, col3 = st.columns([0.8, 0.8, 2, 2, 2])
     with col_log_x:
         st.write("")
@@ -263,10 +267,14 @@ def distribution_controls(selected_x, selected_y, marginal_plot_type='gaussian f
         st.write("")
         log_y = st.checkbox("Log Y", value=False, key=f"log_y_2d_{selected_x}_{selected_y}")
     with col1:
+        marginal_key = f'marginal_plot_type_selector_{selected_x}_{selected_y}'
+        # Prune before the keyed widget renders: a session value Streamlit cannot
+        # offer raises instead of falling back.
+        if st.session_state.get(marginal_key) not in (None, *MARGINAL_OPTIONS):
+            st.session_state[marginal_key] = 'None'
         marginal = st.selectbox(
-            'Marginal Plot Type', ['gaussian fit', 'boxplot', 'violin'],
-            index=['gaussian fit', 'boxplot', 'violin'].index(marginal_plot_type),
-            key=f'marginal_plot_type_selector_{selected_x}_{selected_y}')
+            'Marginal Plot Type', MARGINAL_OPTIONS,
+            index=MARGINAL_OPTIONS.index(marginal_plot_type), key=marginal_key)
     with col2:
         st.write("")
         st.write("")
@@ -364,32 +372,37 @@ def distribution_ranges(df, x_col, y_col, results):
     return bounds
 
 
-def select_distribution_category(fig, category=None):
-    """Select prepared points, marginals, fits, and summary without computation."""
-    meta = fig.layout.meta
-    if not isinstance(meta, dict) or not meta.get('distribution_categories'):
-        return fig
-    categories = meta['distribution_categories']
-    category = category if category in categories else categories[0]
-    for trace in fig.data:
-        info = trace.meta
-        if not isinstance(info, dict) or 'distribution_role' not in info:
-            continue
-        active = info['category'] == category
-        role = info['distribution_role']
-        trace.visible = not active if role == 'context' else active
-        trace.showlegend = active and role == 'points' and info.get('legend', False)
-    fig.update_layout(
-        meta={**meta, 'distribution_category': category,
-              'distribution_summary': meta['distribution_summaries'][category],
-              'distribution_statistics': meta['distribution_statistics_summaries'][category]},
-        legend_uirevision=f"{meta['distribution_separate_by']}:{category}")
-    return fig
+def _join_level_blocks(blocks, panels, separate_by):
+    """List every level in panel order, each headed by ``separate_by: level``."""
+    if not separate_by:
+        return blocks[None]
+
+    return '\n'.join(
+        f"\n**{code_span(separate_by)}: {code_span(level)}**\n{blocks[level]}"
+        for level, _positions in panels)
+
+
+def render_distribution_component_tables(tables, separate_by, component_editor):
+    """Head each level's component tables the way its statistics block is headed.
+
+    The grid shows every level at once, so a table headed by its colour group
+    alone repeats that name once per level. Group the tables by level and reuse
+    the ``separate_by: level`` heading ``_join_level_blocks`` puts above the
+    statistics, so both halves of a level read as one section.
+    """
+    names = {}
+    for level in dict.fromkeys(table['category'] for table in tables):
+        st.markdown(f"**{code_span(separate_by)}: {code_span(level)}**",
+                    unsafe_allow_html=True)
+        if component_editor is not None:
+            names.update(component_editor(
+                [table for table in tables if table['category'] == level]))
+    return names
 
 
 def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x,
                                  selected_y, color_by=None, shape_by=None, opacity_by=None,
-                                 marginal_plot_type='gaussian fit', colormap="tab10",
+                                 marginal_plot_type='None', colormap="tab10",
                                  row_id_label="ID", separate_by=None, analysis_options=None,
                                  label_column=None):
     """One joint distribution per category, with shared coordinates and encodings."""
@@ -447,20 +460,36 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         base, grouped, color_map, shape_map, opacity_map, [selected_x, selected_y],
         point_id, fov_name_col, hovertemplate=''.join(hover), show_counts=show_counts)
     fig = go.Figure() if separate_by else base
+    composition = None
+    panel_axis = {}
     if separate_by:
-        # A single copy per category makes context linear in the number of rows.
-        for level, positions in panels:
-            fig.add_trace(point_cls(
-                x=df.iloc[positions][selected_x], y=df.iloc[positions][selected_y],
-                mode='markers', marker=dict(color='#b8b8b8', opacity=.18, symbol='circle', size=3),
-                hoverinfo='skip', showlegend=False,
-                meta=dict(distribution_role='context', category=level)))
-        for level, positions in panels:
-            counts = {result['color_group']: len(result['positions']) for result in results
-                      if result['category'] == level}
-            seen = set()
+        x_range, y_range = distribution_ranges(df, selected_x, selected_y, results)
+        composition = dimension_facet_layout(
+            category_facet_groups(panels), x_range, y_range, aspect=1.)
+        # Overview first, then one panel per level. Panel p owns x{p+4}/y{p+4};
+        # 2 and 3 stay reserved for the overview's marginal strips.
+        slots = [(None, np.arange(len(df)), 'x', 'y', True)]
+        for index, (level, positions) in enumerate(panels):
+            suffix = str(index + 4)
+            panel_axis[level] = (f'x{suffix}', f'y{suffix}')
+            slots.append((level, positions, f'x{suffix}', f'y{suffix}', False))
+        for level, positions, xaxis, yaxis, overview in slots:
+            if not overview:
+                # Each panel gets its own "everyone else" context trace of
+                # N - n_level points, rather than one shared trace toggled by
+                # visibility. That is O(levels x rows), not O(rows): the figure
+                # ends up drawing (levels + 1) x N points across the overview
+                # and every panel's own copy plus its context.
+                other = np.setdiff1d(np.arange(len(df)), positions, assume_unique=False)
+                if len(other):
+                    fig.add_trace(point_cls(
+                        x=df.iloc[other][selected_x], y=df.iloc[other][selected_y],
+                        xaxis=xaxis, yaxis=yaxis, mode='markers',
+                        marker=dict(color='#b8b8b8', opacity=.25, symbol='circle'),
+                        hoverinfo='skip', showlegend=False,
+                        meta=dict(distribution_role='context', category=level)))
             for trace in base.data:
-                if trace.text is None:
+                if trace.text is None:  # Shape/opacity legend swatches carry no points.
                     continue
                 row_positions = np.asarray(trace.text, dtype=int)
                 keep = np.isin(row_positions, positions)
@@ -468,6 +497,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                     continue
                 spec = trace.to_plotly_json()
                 spec.pop('type')
+                # Read the original arrays: to_plotly_json may serialize numerics.
                 for field in ('x', 'y', 'customdata'):
                     value = getattr(trace, field)
                     if value is not None:
@@ -475,11 +505,11 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                 spec['text'] = result_df.iloc[row_positions[keep]][unique_row_id_col].to_numpy()
                 for field in ('symbol', 'opacity'):
                     spec['marker'][field] = np.asarray(getattr(trace.marker, field))[keep]
-                group = trace.legendgroup
-                spec.update(name=format_group_label(group, counts[group], show_counts),
-                            showlegend=False, meta=dict(distribution_role='points', category=level,
-                                                        legend=group not in seen))
-                seen.add(group)
+                # One shared legend on the overview reports whole-dataset counts,
+                # so the base trace's name and legend flag are kept verbatim.
+                spec.update(xaxis=xaxis, yaxis=yaxis,
+                            showlegend=bool(overview and trace.showlegend),
+                            meta=dict(distribution_role='points', category=level))
                 fig.add_trace(type(trace)(**spec))
         for trace in base.data:
             if trace.text is None and trace.showlegend:
@@ -495,7 +525,10 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                 continue
             group = result['color_group']
             label = html.escape(str(group))
-            group_df = df.iloc[result['positions']]
+            # A model belongs to its own panel; colour already encodes Color by
+            # and leaves no channel to attribute an overlay on the overview.
+            overlay_axes = dict(zip(('xaxis', 'yaxis'), panel_axis[level])) if separate_by else {}
+            overlay_width = 1 if separate_by else 2
             if result['pearson'] is not None:
                 coefficient, p_value = result['pearson']
                 lines.append(f"\n**{label}:** Pearson r = **{coefficient:.2f}** (p = {p_value:.3g})")
@@ -504,21 +537,13 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                 lines[-1] += (f" · Regression R² = **{regression['r2']:.3f}** "
                               f"(slope = {regression['slope']:.3f}, intercept = {regression['intercept']:.3f})")
                 fig.add_trace(point_cls(
-                    x=regression['x'], y=regression['y'], mode='lines',
-                    line=dict(color=color_map[group], width=2), showlegend=False, legendgroup=str(group),
+                    x=regression['x'], y=regression['y'], mode='lines', **overlay_axes,
+                    line=dict(color=color_map[group], width=overlay_width),
+                    showlegend=False, legendgroup=str(group),
                     hovertemplate=(f"<b>Regression Line</b><br>R² = {regression['r2']:.3f}"
                                    f"<br>Slope = {regression['slope']:.3f}"
                                    f"<br>Intercept = {regression['intercept']:.3f}<extra></extra>"),
                     meta=dict(distribution_role='regression', category=level) if separate_by else None))
-            start = len(fig.data)
-            _plot_marginal_density(fig, group_df[selected_x], 'x', color_map[group], group,
-                                   marginal, {'yaxis': 'y2'})
-            _plot_marginal_density(fig, group_df[selected_y], 'y', color_map[group], group,
-                                   marginal, {'xaxis': 'x2', 'yaxis': 'y3'})
-            for trace in fig.data[start:]:
-                trace.legendgroup = str(group)
-                if separate_by:
-                    trace.meta = dict(distribution_role='marginal', category=level)
             component_rows = []
             metadata_rows = []
             for index, component in enumerate(result['components'], 1):
@@ -541,7 +566,10 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                                   scatter_cls=point_cls)
                 for trace in fig.data[start:]:
                     trace.legendgroup = str(group)
+                    trace.line.width = overlay_width
                     if separate_by:
+                        trace.update(**{f'{name}axis': value
+                                        for name, value in zip('xy', panel_axis[level])})
                         trace.meta = dict(distribution_role='fit', category=level)
             if component_rows:
                 tables.append(gmm_component_table(group, component_rows, [selected_x, selected_y]))
@@ -558,45 +586,93 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
             lines.append(gmm_tables_html(tables))
         summaries[level] = '\n'.join(lines)
 
+    # The overview is the only place strips appear; they describe the whole
+    # dataset per colour group, so no cross-level amplitude scaling is needed.
+    for group in color_map:
+        group_df = df[df[group_column] == group]
+        start = len(fig.data)
+        _plot_marginal_density(fig, group_df[selected_x], 'x', color_map[group], group,
+                               marginal, {'yaxis': 'y2'})
+        _plot_marginal_density(fig, group_df[selected_y], 'y', color_map[group], group,
+                               marginal, {'xaxis': 'x2', 'yaxis': 'y3'})
+        for trace in fig.data[start:]:
+            trace.legendgroup = str(group)
+            if separate_by:
+                trace.meta = dict(distribution_role='marginal', category=None)
+
     theme_color = get_context_theme_color()
     x_label = f"log₁₀({pretty_x})" if options.get('log_x') else pretty_x
     y_label = f"log₁₀({pretty_y})" if options.get('log_y') else pretty_y
+    block_x = composition['overview']['x_domain'] if separate_by else [0., 1.]
+    block_y = composition['overview']['y_domain'] if separate_by else [0., 1.]
+    span = .9 if marginal not in (None, 'None') else 1.
+    main_x = block_x[0] + span * (block_x[1] - block_x[0])
+    main_y = block_y[0] + span * (block_y[1] - block_y[0])
+    axis_layout = dict(
+        xaxis=dict(title=dict(text=x_label, font=dict(color=theme_color)),
+                   tickfont=dict(color=theme_color), domain=[block_x[0], main_x],
+                   showgrid=False, zeroline=False),
+        yaxis=dict(title=dict(text=y_label, font=dict(color=theme_color)),
+                   tickfont=dict(color=theme_color), domain=[block_y[0], main_y],
+                   showgrid=True, zeroline=False))
+    if marginal not in (None, 'None'):
+        axis_layout.update(
+            xaxis2=dict(domain=[main_x, block_x[1]], anchor='y3', showgrid=False,
+                        zeroline=False, showticklabels=False),
+            yaxis2=dict(domain=[main_y, block_y[1]], showgrid=False, zeroline=False,
+                        showticklabels=False),
+            yaxis3=dict(domain=[block_y[0], main_y], anchor='x2', matches='y',
+                        showgrid=False, zeroline=False, showline=False,
+                        showticklabels=False))
+    if separate_by:
+        axis_layout['xaxis']['range'] = x_range
+        axis_layout['yaxis']['range'] = y_range
+        for index, panel in enumerate(composition['panels']):
+            suffix = str(index + 4)
+            for dimension, bounds, domain in (('x', x_range, panel['x_domain']),
+                                              ('y', y_range, panel['y_domain'])):
+                other = 'y' if dimension == 'x' else 'x'
+                axis_layout[f'{dimension}axis{suffix}'] = dict(
+                    domain=domain, anchor=f'{other}{suffix}', range=bounds, matches=dimension,
+                    tickfont=dict(color=theme_color), showticklabels=False,
+                    showgrid=False, zeroline=False,
+                    showline=True, linecolor='black', linewidth=1, mirror=False, ticks='')
     fig.update_layout(
         title=dict(text=f'2D Distribution of {pretty_x} and {pretty_y} by {", ".join(color_by)}',
                    font=dict(color=theme_color)),
-        xaxis=dict(title=dict(text=x_label, font=dict(color=theme_color)),
-                   tickfont=dict(color=theme_color), domain=[0, .9], showgrid=False, zeroline=False),
-        yaxis=dict(title=dict(text=y_label, font=dict(color=theme_color)),
-                   tickfont=dict(color=theme_color), domain=[0, .9], showgrid=True, zeroline=False),
-        xaxis2=dict(domain=[.9, 1], anchor='y3', showgrid=False, zeroline=False, showticklabels=False),
-        yaxis2=dict(domain=[.9, 1], showgrid=False, zeroline=False, showticklabels=False),
-        yaxis3=dict(domain=[0, .9], anchor='x2', matches='y', showgrid=False,
-                    zeroline=False, showline=False, showticklabels=False),
-        hovermode='closest', legend=dict(groupclick='togglegroup'))
+        hovermode='closest', legend=dict(groupclick='togglegroup'), **axis_layout)
+    statistics = _join_level_blocks(statistics_summaries, panels, separate_by)
+    table_md = _join_level_blocks(summaries, panels, separate_by)
+    meta = dict(gmm_component_tables=component_tables, distribution_statistics=statistics)
     if separate_by:
-        x_range, y_range = distribution_ranges(df, selected_x, selected_y, results)
+        for panel in composition['panels']:
+            fig.add_annotation(
+                x=panel['x_domain'][1], y=sum(panel['y_domain']) / 2,
+                xref='paper', yref='paper', text=html.escape(str(panel['values'][0])),
+                showarrow=False, xanchor='left', yanchor='middle', xshift=6,
+                font=dict(color=theme_color, size=14))
         fig.update_layout(
-            xaxis=dict(range=x_range), yaxis=dict(range=y_range),
-            uirevision=f'distribution:{separate_by}:{selected_x}:{selected_y}:{bool(options.get("log_x"))}:{bool(options.get("log_y"))}',
-            meta=dict(distribution_categories=[level for level, _ in panels],
-                      distribution_separate_by=separate_by, distribution_summaries=summaries,
-                      distribution_statistics_summaries=statistics_summaries,
-                      gmm_component_tables=component_tables))
-        # Keep density amplitudes comparable as well as measurement coordinates.
-        if marginal == 'gaussian fit':
-            for marginal_axis, coordinate in [('yaxis2', 'y'), ('xaxis2', 'x')]:
-                peaks = [max(getattr(trace, coordinate)) for trace in fig.data
-                         if isinstance(trace.meta, dict) and trace.meta.get('distribution_role') == 'marginal'
-                         and getattr(trace, coordinate + 'axis') == marginal_axis.replace('axis', '')]
-                if peaks:
-                    fig.update_layout(**{marginal_axis: dict(range=[0, max(peaks) * 1.05])})
-        select_distribution_category(fig)
-        table_md = fig.layout.meta['distribution_summary']
-    else:
-        meta = fig.layout.meta if isinstance(fig.layout.meta, dict) else {}
-        fig.update_layout(meta={**meta, 'gmm_component_tables': component_tables,
-                                'distribution_statistics': statistics_summaries[None]})
-        table_md = summaries[None]
+            height=round(1000 * composition['plot_height'] + 160),
+            margin=dict(l=80, r=140, t=70, b=90, pad=0, autoexpand=True),
+            # Reserve the legend's measured height below the axis title.
+            legend=dict(orientation='h', yref='container', y=0, yanchor='bottom',
+                        xref='paper', x=0, groupclick='togglegroup'),
+            uirevision=f'distribution:{separate_by}:{selected_x}:{selected_y}:'
+                       f'{bool(options.get("log_x"))}:{bool(options.get("log_y"))}')
+        meta.update(
+            distribution_categories=[level for level, _ in panels],
+            distribution_separate_by=separate_by,
+            # Canonical geometry lets the chart wrapper refit the composition
+            # without accumulating drift or touching the user's zoom ranges.
+            distribution_facet_layout={
+                'plot_height': composition['plot_height'],
+                # Insertion order of axis_layout is the composition's own order;
+                # iterating fig.layout would hand back an unordered property set.
+                'axes': {name: list(fig.layout[name].domain) for name in axis_layout},
+                'annotations': [{'x': item.x, 'y': item.y,
+                                 'xref': item.xref, 'yref': item.yref}
+                                for item in fig.layout.annotations]})
+    fig.update_layout(meta=meta)
     return fig, table_md, result_df
 
 def category_panel_rows(df, separate_by=None, color_by=None):

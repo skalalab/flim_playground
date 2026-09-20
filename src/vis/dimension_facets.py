@@ -107,16 +107,22 @@ def dimension_ranges(x, y, panel_aspect=0.72):
                  for (low, high), half_span in zip(ranges, (half_width, half_width * panel_aspect)))
 
 
-def dimension_facet_layout(groups, x_range, y_range):
+def dimension_facet_layout(groups, x_range, y_range, aspect=None):
     """Proportional panel domains; plot_height is measured in plotting-width units.
 
     The overview and the complete grid share their top and bottom edges. With
     contiguous rows and the same aspect in every panel, the overview must be
     nrows times as wide as one small map. The chart wrapper uses plot_height to
     preserve equal coordinate scales as the available width changes.
+
+    ``aspect`` overrides the ratio taken from the coordinate ranges. Dimension
+    Reduction leaves it None because both axes share one embedding's units; 2D
+    Distribution passes 1.0 because X and Y carry independent units and only a
+    square frame reads the same in every panel.
     """
     overview = dict(x_domain=[0., 1.], y_domain=[0., 1.])
-    aspect = (y_range[1] - y_range[0]) / (x_range[1] - x_range[0])
+    if aspect is None:
+        aspect = (y_range[1] - y_range[0]) / (x_range[1] - x_range[0])
     if not groups["panels"]:
         return dict(overview=overview, panels=[], plot_height=aspect)
     width = 0.96 / (groups["nrows"] + groups["ncols"])
@@ -134,3 +140,15 @@ def dimension_facet_layout(groups, x_range, y_range):
                            y_domain=[1. - (panel["row"] + 1) / groups["nrows"],
                                      1. - panel["row"] / groups["nrows"]]))
     return dict(overview=overview, panels=panels, plot_height=plot_height)
+
+
+def category_facet_groups(panels):
+    """One column of panels from ordered ``category_panel_rows`` memberships.
+
+    2D Distribution separates on exactly one column, so its layout is the
+    single-column case of the Dimension Reduction grid. Positions stay with the
+    caller; only the geometry needs row/column slots.
+    """
+    return dict(nrows=len(panels), ncols=1,
+                panels=[dict(row=index, col=0, values=(level,))
+                        for index, (level, _positions) in enumerate(panels)])

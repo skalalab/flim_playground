@@ -1,4 +1,4 @@
-"""Execute standalone FD exports to verify category-view and saved-data parity."""
+"""Execute standalone FD exports to verify separation-grid and saved-data parity."""
 
 import runpy
 
@@ -14,7 +14,7 @@ from scipy.stats import gaussian_kde
 from src.export_script import generate_script
 
 
-def _state(*, category="Day 2", separate_by="day", marginal="gaussian fit",
+def _state(*, separate_by="day", marginal="gaussian fit",
            regression=True, gmm=False, collapse=False, logged=False):
     return {
         "csv_filename": "distribution.csv",
@@ -36,7 +36,6 @@ def _state(*, category="Day 2", separate_by="day", marginal="gaussian fit",
         "method_params": {
             "selected_x": "feature_x",
             "selected_y": "feature_y",
-            "distribution_category": category,
             "marginal_plot_type": marginal,
             "fit_regression": regression,
             "fit_gmm_2d": gmm,
@@ -94,10 +93,17 @@ def _points(ax):
 
 def _foreground(ax):
     return [collection for collection in _points(ax)
-            if not (np.isscalar(collection.get_alpha()) and collection.get_alpha() == 0.18)]
+            if not (np.isscalar(collection.get_alpha()) and collection.get_alpha() == 0.25)]
 
 
-def test_category_view_retains_global_encodings_and_draws_local_points_and_fits(
+def _offsets(ax, *, foreground=True):
+    collections = _foreground(ax) if foreground else [
+        collection for collection in _points(ax)
+        if np.isscalar(collection.get_alpha()) and collection.get_alpha() == 0.25]
+    return sum(len(collection.get_offsets()) for collection in collections)
+
+
+def test_grid_retains_global_encodings_and_draws_each_levels_points_and_fits(
     tmp_path, monkeypatch, capsys
 ):
     from sklearn.linear_model import LinearRegression
@@ -110,78 +116,87 @@ def test_category_view_retains_global_encodings_and_draws_local_points_and_fits(
         return original_fit(self, x, y, **kwargs)
 
     monkeypatch.setattr(LinearRegression, "fit", record_fit)
-    ns = _run(tmp_path, monkeypatch, _state(category="Day 10"), _source())
-    assert ns["distribution_category"] == "Day 10"
+    ns = _run(tmp_path, monkeypatch, _state(), _source())
     assert sorted(fit_rows) == [12] * 6
     assert len(ns["df"]) == 72
     assert set(ns["color_map"]) == {"ctrl", "drug"}
     assert set(ns["shape_map"]) == {"A", "B"}
     assert ns["opacity_map"] == {"high": 0.3, "low": 1.0}
     assert ns["BASE_ALPHA"] == 0.8
-    foreground = _foreground(ns["ax_main"])
-    assert sum(len(collection.get_offsets()) for collection in foreground) == 24
-    assert all(collection.get_sizes().tolist() == [25] for collection in foreground)
-    assert {alpha for collection in foreground for alpha in collection.get_alpha()} == {0.3, 1.0}
-    background = [collection for collection in _points(ns["ax_main"])
-                  if np.isscalar(collection.get_alpha()) and collection.get_alpha() == 0.18]
-    assert len(background) == 1
-    assert len(background[0].get_offsets()) == 48
-    assert background[0].get_facecolors()[0, :3] == pytest.approx(
-        matplotlib.colors.to_rgb("#b8b8b8"))
+    assert _offsets(ns["ax_main"]) == 72
+    assert _offsets(ns["ax_main"], foreground=False) == 0
+    assert all(collection.get_sizes().tolist() == [25]
+               for collection in _foreground(ns["ax_main"]))
+    assert {alpha for collection in _foreground(ns["ax_main"])
+            for alpha in collection.get_alpha()} == {0.3, 1.0}
+    levels = [level for level, _positions in ns["distribution_panels"]]
+    assert levels == ["Day 2", "Day 10", "N/A"]
+    for level, panel_ax in zip(levels, ns["facet_axes"]):
+        assert _offsets(panel_ax) == 24
+        assert _offsets(panel_ax, foreground=False) == 48
+        context = [collection for collection in _points(panel_ax)
+                   if np.isscalar(collection.get_alpha()) and collection.get_alpha() == 0.25]
+        assert context[0].get_facecolors()[0, :3] == pytest.approx(
+            matplotlib.colors.to_rgb("#b8b8b8"))
+        assert all(collection.get_sizes().tolist() == [9]
+                   for collection in _foreground(panel_ax))
+        regressions = [line for line in panel_ax.lines if line.get_linestyle() == "--"]
+        assert len(regressions) == 2
+        assert all(line.get_linewidth() == 1 for line in regressions)
+    assert not [line for line in ns["ax_main"].lines if line.get_linestyle() == "--"]
     labels = [text.get_text() for text in ns["ax_main"].get_legend().get_texts()]
-    assert labels[:2] == ["ctrl\nn=12", "drug\nn=12"]
-    regressions = [line for line in ns["ax_main"].lines if line.get_linestyle() == "--"]
-    assert len(regressions) == 2
-    for line in regressions:
-        assert np.polyfit(line.get_xdata(), line.get_ydata(), 1)[0] == pytest.approx(-3)
+    assert labels[:2] == ["ctrl\nn=36", "drug\nn=36"]
+    slopes = {round(np.polyfit(line.get_xdata(), line.get_ydata(), 1)[0])
+              for panel_ax in ns["facet_axes"]
+              for line in panel_ax.lines if line.get_linestyle() == "--"}
+    assert slopes == {-3, 2, 1}
     output = capsys.readouterr().out
-    assert output.count("Pearson r=") == 2
-    assert "day=Day 10 | ctrl" in output
-    assert "slope=-3.0000" in output
-    assert "day=Day 2 |" not in output
-    assert "day=N/A |" not in output
-    assert "day: Day 10" in (tmp_path / "2d_feature_distribution.svg").read_text()
+    assert output.count("Pearson r=") == 6
+    for level in levels:
+        for treatment in ("ctrl", "drug"):
+            assert f"day={level} | {treatment}" in output
+    svg = (tmp_path / "2d_feature_distribution.svg").read_text()
+    assert all(level in svg for level in levels)
 
 
-@pytest.mark.parametrize("category", [None, "missing", "N/A"])
-def test_category_fallback_is_natural_and_missing_values_form_a_category(
-    tmp_path, monkeypatch, category
-):
-    ns = _run(tmp_path, monkeypatch, _state(category=category), _source())
-    assert ns["distribution_category"] == ("N/A" if category == "N/A" else "Day 2")
-    assert ns["panel_levels"] == ["Day 2", "Day 10", "N/A"]
+def test_panel_levels_are_natural_and_missing_values_form_their_own_panel(tmp_path, monkeypatch):
+    ns = _run(tmp_path, monkeypatch, _state(), _source())
+    assert [level for level, _positions in ns["distribution_panels"]] == [
+        "Day 2", "Day 10", "N/A"]
+    assert len(ns["facet_axes"]) == 3
 
 
-def test_marginals_use_local_samples_with_global_coordinate_and_density_scales(
-    tmp_path, monkeypatch
-):
+def test_marginals_describe_the_whole_dataset_on_the_overview_only(tmp_path, monkeypatch):
     source = _source()
-    views = [_run(tmp_path / day, monkeypatch, _state(category=day), source)
-             for day in ["Day 2", "Day 10"]]
-    for ns in views:
-        assert len(ns["fig"].axes) == 3
-        ns["fig"].canvas.draw()
-        main_box = ns["ax_main"].get_window_extent()
-        top_box = ns["ax_top"].get_window_extent()
-        right_box = ns["ax_right"].get_window_extent()
-        assert main_box.width == pytest.approx(main_box.height, abs=0.1)
-        assert top_box.x0 == pytest.approx(main_box.x0, abs=0.1)
-        assert top_box.x1 == pytest.approx(main_box.x1, abs=0.1)
-        assert right_box.y0 == pytest.approx(main_box.y0, abs=0.1)
-        assert right_box.y1 == pytest.approx(main_box.y1, abs=0.1)
-        assert len(ns["ax_top"].lines) == len(ns["ax_right"].lines) == 2
-        selected = source[source["day"] == ns["distribution_category"]].dropna(
-            subset=["feature_x", "feature_y"])
-        for i, treatment in enumerate(["ctrl", "drug"]):
-            group = selected[selected["treatment"] == treatment]
-            xline, yline = ns["ax_top"].lines[i], ns["ax_right"].lines[i]
-            np.testing.assert_allclose(xline.get_ydata(), gaussian_kde(group["feature_x"])(xline.get_xdata()))
-            np.testing.assert_allclose(yline.get_xdata(), gaussian_kde(group["feature_y"])(yline.get_ydata()))
-    for name, getter in [("ax_main", "get_xlim"), ("ax_main", "get_ylim"),
-                         ("ax_top", "get_ylim"), ("ax_right", "get_xlim")]:
-        assert getattr(views[0][name], getter)() == pytest.approx(getattr(views[1][name], getter)())
-    assert views[0]["ax_main"].get_xlim() != views[0]["ax_main"].get_ylim()
-    assert views[0]["color_map"] == views[1]["color_map"]
+    ns = _run(tmp_path, monkeypatch, _state(), source)
+    assert len(ns["fig"].axes) == 6  # overview, two strips, three panels
+    ns["fig"].canvas.draw()
+    main_box = ns["ax_main"].get_window_extent()
+    top_box = ns["ax_top"].get_window_extent()
+    right_box = ns["ax_right"].get_window_extent()
+    assert main_box.width == pytest.approx(main_box.height, abs=0.5)
+    assert top_box.x0 == pytest.approx(main_box.x0, abs=0.5)
+    assert top_box.x1 == pytest.approx(main_box.x1, abs=0.5)
+    assert right_box.y0 == pytest.approx(main_box.y0, abs=0.5)
+    assert right_box.y1 == pytest.approx(main_box.y1, abs=0.5)
+    assert len(ns["ax_top"].lines) == len(ns["ax_right"].lines) == 2
+    # Those four lines are the only artists on the strips, so this covers every
+    # density curve: each carries the app's opacity=0.7 (_plot_marginal_density).
+    assert {line.get_alpha() for line in [*ns["ax_top"].lines, *ns["ax_right"].lines]} == {0.7}
+    # A panel's own dashed regression is also a long line, so density curves are
+    # identified by their solid style.
+    for panel_ax in ns["facet_axes"]:
+        assert not [line for line in panel_ax.lines
+                    if line.get_linestyle() == "-" and len(line.get_xdata()) > 2]
+    complete = source.dropna(subset=["feature_x", "feature_y"])
+    for index, treatment in enumerate(["ctrl", "drug"]):
+        group = complete[complete["treatment"] == treatment]
+        xline, yline = ns["ax_top"].lines[index], ns["ax_right"].lines[index]
+        np.testing.assert_allclose(
+            xline.get_ydata(), gaussian_kde(group["feature_x"])(xline.get_xdata()))
+        np.testing.assert_allclose(
+            yline.get_xdata(), gaussian_kde(group["feature_y"])(yline.get_ydata()))
+    assert ns["ax_main"].get_xlim() != ns["ax_main"].get_ylim()
 
 
 @pytest.mark.parametrize("logged", [False, True])
@@ -203,7 +218,8 @@ def test_collapse_keeps_reused_replicates_distinct_by_category_before_logs(
     assert not ns["shape_map"] and not ns["opacity_map"]
     assert len(ns["distribution_results"]) == 6
     assert all(len(result["positions"]) == 6 for result in ns["distribution_results"])
-    assert sum(len(collection.get_offsets()) for collection in _foreground(ns["ax_main"])) == 12
+    assert _offsets(ns["ax_main"]) == 36
+    assert all(_offsets(panel_ax) == 12 for panel_ax in ns["facet_axes"])
     if logged:
         assert ns["ax_main"].get_xlabel() == "log₁₀(feature_x)"
         assert ns["ax_main"].get_ylabel() == "log₁₀(feature_y)"
@@ -227,7 +243,7 @@ def test_gmm_csv_contains_all_categories_and_qualified_labels_with_only_local_el
     tmp_path, monkeypatch, capsys, collapse, logged
 ):
     source = _gmm_source()
-    state = _state(category="Day 2", gmm=True, collapse=collapse, logged=logged)
+    state = _state(gmm=True, collapse=collapse, logged=logged)
     ns = _run(tmp_path, monkeypatch, state, source, save=True)
     saved = pd.read_csv(tmp_path / "2D_gmm_data.csv", keep_default_na=False)
     assert len(saved) == (36 if collapse else 72)
@@ -236,10 +252,13 @@ def test_gmm_csv_contains_all_categories_and_qualified_labels_with_only_local_el
                for day, treatment, label in saved[["day", "treatment", "2D_GMM_group"]].itertuples(index=False))
     assert not any(column.startswith("_color_group") for column in saved)
     assert not any(column.startswith("__distribution") for column in saved)
-    assert len(ns["ax_main"].patches) == 4
+    assert not ns["ax_main"].patches
+    assert all(len(panel_ax.patches) == 4 for panel_ax in ns["facet_axes"])
+    assert all(patch.get_linewidth() == 1
+               for panel_ax in ns["facet_axes"] for patch in panel_ax.patches)
     assert all(len(result["components"]) == 2 for result in ns["distribution_results"])
     output = capsys.readouterr().out
-    assert "day=Day 10 |" not in output and "day=N/A |" not in output
+    assert "day=Day 10 |" in output and "day=N/A |" in output
     assert "Weight" in output and "Component" in output
     expected = source.copy()
     expected["day"] = expected["day"].fillna("N/A")
@@ -263,27 +282,31 @@ def test_sparse_and_constant_groups_keep_points_and_available_marginal_with_noti
     drug = (source["day"] == "Day 2") & (source["treatment"] == "drug")
     source = source.drop(source[drug].index[1:])
     ns = _run(tmp_path, monkeypatch, _state(gmm=True), source, save=True)
-    assert sum(len(collection.get_offsets()) for collection in _foreground(ns["ax_main"])) == 13
-    assert len(ns["ax_top"].lines) == 1 and len(ns["ax_right"].lines) == 0
+    assert _offsets(ns["ax_main"]) == len(ns["df"])
+    # Both strips describe the whole dataset, where the Day 2 flattening of ctrl's
+    # Y and the single remaining Day 2 drug row leave every colour group varying.
+    assert len(ns["ax_top"].lines) == 2 and len(ns["ax_right"].lines) == 2
     assert not ns["ax_main"].lines and not ns["ax_main"].patches
+    day_2 = ns["facet_axes"][[level for level, _ in ns["distribution_panels"]].index("Day 2")]
+    assert not day_2.lines and not day_2.patches
     output = capsys.readouterr().out
     assert "constant X or Y" in output and "fewer than two observations" in output
-    assert "day=Day 10 |" not in output
+    assert "day=Day 10 |" in output
     saved = pd.read_csv(tmp_path / "2D_gmm_data.csv")
     assert saved.loc[saved["day"] == "Day 2", "2D_GMM_group"].isna().all()
 
 
-def test_no_color_by_uses_one_local_population_and_opaque_color_mapping(tmp_path, monkeypatch):
+def test_no_color_by_uses_one_population_and_opaque_color_mapping(tmp_path, monkeypatch):
     state = _state()
     state.update(color_by=[], shape_by=None, opacity_by=None)
     ns = _run(tmp_path, monkeypatch, state, _source())
     assert set(ns["color_map"]) == {"all_data"}
     assert len(ns["distribution_results"]) == 3
     foreground = _foreground(ns["ax_main"])
-    assert sum(len(collection.get_offsets()) for collection in foreground) == 24
+    assert _offsets(ns["ax_main"]) == 72
     assert all(collection.get_alpha() == 0.8 for collection in foreground)
     assert [text.get_text() for text in ns["ax_main"].get_legend().get_texts()] == [
-        "all_data\nn=24"]
+        "all_data\nn=72"]
 
 
 def test_internal_group_columns_preserve_uploaded_names_and_categories(tmp_path, monkeypatch):
@@ -298,7 +321,8 @@ def test_internal_group_columns_preserve_uploaded_names_and_categories(tmp_path,
     assert saved["_color_group_"].tolist() == source["_color_group_"].fillna("N/A").tolist()
     assert saved["_color_group__"].tolist() == ["original metadata"] * len(source)
     assert "_color_group___" not in saved
-    assert ns["distribution_category"] == "Day 2"
+    assert [level for level, _positions in ns["distribution_panels"]] == [
+        "Day 2", "Day 10", "N/A"]
 
 
 @pytest.mark.parametrize("separator,match", [
@@ -311,18 +335,18 @@ def test_invalid_separators_fail_before_collapse(tmp_path, monkeypatch, separato
         _run(tmp_path, monkeypatch, _state(separate_by=separator, collapse=True), _source())
 
 
-@pytest.mark.parametrize("marginal", ["gaussian fit", "boxplot", "violin", "none"])
+@pytest.mark.parametrize("marginal", ["gaussian fit", "boxplot", "violin", "None"])
 def test_each_marginal_mode_executes_in_a_standalone_script(tmp_path, monkeypatch, marginal):
     state = _state(marginal=marginal, regression=False)
     ns = _run(tmp_path, monkeypatch, state, _source())
-    assert ns["distribution_category"] == "Day 2"
-    assert len(ns["fig"].axes) == (1 if marginal == "none" else 3)
+    assert len(ns["fig"].axes) == (4 if marginal == "None" else 6)
     assert "from src." not in generate_script(state)
 
 
 def test_unseparated_export_emits_none_separator_and_uses_fd_point_alpha(tmp_path, monkeypatch):
-    state = _state(separate_by=None, category=None)
+    state = _state(separate_by=None)
     state.update(shape_by=None, opacity_by=None)
     ns = _run(tmp_path, monkeypatch, state, _source())
-    assert ns["SEPARATE_BY"] is ns["DISTRIBUTION_CATEGORY"] is None
+    assert ns["SEPARATE_BY"] is None
+    assert ns["facet_axes"] == []
     assert {collection.get_alpha() for collection in _points(ns["ax_main"])} == {0.8}

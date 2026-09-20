@@ -230,15 +230,12 @@ def test_separated_page_collapses_reused_dishes_inside_each_category_and_color(p
     pd.testing.assert_frame_equal(seen["data"][expected.columns], expected)
     assert len(seen["data"]) == 16
     assert seen["state"]["separate_by"] == "day"
-    assert seen["state"]["method_params"]["distribution_category"] == "Day 0"
+    assert "distribution_category" not in seen["state"]["method_params"]
     for _, group in expected.groupby(["day", "treatment"]):
         values = group[[X, Y]].to_numpy()
         assert any(np.array_equal(call, values) for call in seen["pearson"])
         assert any(np.array_equal(call, values) for call in seen["gmm"])
-    selector = next(w for w in at.button_group if w.key == "vis_encoding_fd_category")
-    selector.set_value("Day 10").run(timeout=90)
-    assert not at.exception
-    assert seen["state"]["method_params"]["distribution_category"] == "Day 10"
+    assert not [w for w in at.button_group if w.key == "vis_encoding_fd_category"]
 
 
 def test_only_active_merged_decoration_is_disabled_when_collapse_drops_it(page):

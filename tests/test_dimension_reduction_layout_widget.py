@@ -2,10 +2,10 @@
 
 import inspect
 import json
-from pathlib import Path
 import re
 import shutil
 import subprocess
+from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
@@ -40,6 +40,7 @@ def _figure():
 
 def _widget_app(spec):
     import plotly.graph_objects as go
+
     from src.widgets.plot_layout import dimension_reduction_chart
 
     dimension_reduction_chart(go.Figure(spec), key="test_dimension_reduction")
@@ -195,7 +196,7 @@ if (input.scenario === 'normal_resize') {
     result = {rebound, listener: graph.events.has('plotly_afterplot'),
               resizeDisconnected: resizeObservers.every(o => o.disconnected),
               mutationDisconnected: mutationObservers.every(o => o.disconnected),
-              cleanupPresent: !!window._flimDimensionReductionCleanup, pendingFrames: frames.size,
+              cleanupPresent: !!window._flim_dimension_reduction_plot_cleanup, pendingFrames: frames.size,
               resizeListeners: windowListeners.get('resize')?.size || 0};
 } else if (input.scenario === 'duplicate_script') {
     eval(input.script); flush();
@@ -223,7 +224,10 @@ def _browser(scenario, *, layout=None, annotation_boxes=None, viewport_height=20
     if node is None:
         pytest.skip("Node is needed to exercise the chart sizing JavaScript")
     source = inspect.getsource(plot_layout.dimension_reduction_chart)
-    script = re.search(r"<script>(.*?)</script>", source, re.S).group(1)
+    script = (re.search(r"<script>(.*?)</script>", source, re.DOTALL).group(1)
+              .replace("__CONTAINER_KEY__", "dimension_reduction_plot")
+              .replace("__META_KEY__", "dimension_reduction_layout")
+              .replace("__CLEANUP_GLOBAL__", "_flim_dimension_reduction_plot_cleanup"))
     if layout is None:
         layout = _figure().to_plotly_json()["layout"]
         layout["_size"] = dict(w=800, h=360, l=60, r=20, t=36, b=44)

@@ -789,7 +789,9 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
     """
     meta = fig.layout.meta
     theme_color = get_context_theme_color()
-    dimension_reduction = isinstance(meta, dict) and 'dimension_reduction_layout' in meta
+    # Either facet grid: one overview beside smaller panels on extra axes.
+    facet_grid = isinstance(meta, dict) and (
+        'dimension_reduction_layout' in meta or 'distribution_facet_layout' in meta)
     if isinstance(meta, dict) and meta.get('histogram'):
         panels = meta.get('histogram_summaries', [])
         legend_heights = []
@@ -832,7 +834,7 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
                 font=dict(size=legend_size, color=theme_color),
                 bgcolor=('rgba(255,255,255,0.85)' if theme_color == 'black'
                          else 'rgba(30,30,30,0.85)'))})
-    if dimension_reduction:
+    if facet_grid:
         # Keep method-specific numeric tick widths from changing the frame.
         # The shared font setting determines room for the vertical axis/title.
         fig.update_layout(margin=dict(l=max(80, 4 * axis_label_size + 8)))
@@ -845,7 +847,7 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
         if hasattr(trace, 'marker') and trace.marker:
             # Style both SVG and WebGL point traces.
             if trace.type in ('scatter', 'scattergl') or trace.type == 'box' and trace.marker:
-                is_facet = dimension_reduction and getattr(trace, 'xaxis', None) not in (None, 'x')
+                is_facet = facet_grid and getattr(trace, 'xaxis', None) not in (None, 'x')
                 is_context = isinstance(trace.meta, dict) and (
                     trace.meta.get('phasor_role') == 'context'
                     or trace.meta.get('distribution_role') == 'context')
@@ -857,8 +859,8 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
                                      if superplot_role == 'replicate' else
                                      max(1, point_size - 2) if is_facet or is_context else point_size)
 
-    # DR row/column labels share the legend's font control.
-    annotation_size = legend_size if dimension_reduction else axis_label_size
+    # Facet-grid row labels share the legend's font control.
+    annotation_size = legend_size if facet_grid else axis_label_size
     if isinstance(meta, dict) and meta.get('histogram_separator'):
         # Category headings remain compact as the axes grow.
         annotation_size = min(axis_label_size, 24)

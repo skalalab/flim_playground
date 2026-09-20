@@ -228,8 +228,9 @@ def feature_comparison(separate_by, effect_size, statistical_test="Welch's t-tes
 
 
 # ---------------------------------------------------------------- 2D distribution
-def two_d(marginal, fit_gmm):
-    print(f"\n=== 2D Feature Distribution (marginal={marginal}, gmm={fit_gmm}) ===")
+def two_d(marginal, fit_gmm, separate_by=None):
+    print(f"\n=== 2D Feature Distribution (marginal={marginal}, gmm={fit_gmm}, "
+          f"separate_by={separate_by}) ===")
     # Exercise only marginal types offered by the app.
     patch_streamlit({"2D Gaussian Mixture Model": fit_gmm, "Marginal Plot Type": marginal})
     from src.vis.bivar import feature_2d_distribution_plot
@@ -237,17 +238,20 @@ def two_d(marginal, fit_gmm):
     df, _ = load_app_df(CSV, CATS, "cell_id", "image_name")
     fig, _table_md, _app_out = feature_2d_distribution_plot(
         df.copy(), unique_row_id_col="cell_id", fov_name_col="image_name",
-        selected_x=VAR, selected_y=VAR2, color_by=["treatment"], colormap="tab10")
+        selected_x=VAR, selected_y=VAR2, color_by=["treatment"], colormap="tab10",
+        separate_by=separate_by)
 
     state = base_state("2D Feature Distribution", "inhibitors.csv", CATS,
-                       color_by=["treatment"], analysis_columns=list(df.columns),
+                       color_by=["treatment"], separate_by=separate_by,
+                       analysis_columns=list(df.columns),
                        method_params={"selected_x": VAR, "selected_y": VAR2,
                                       "log_x": False, "log_y": False,
                                       "marginal_plot_type": marginal,
                                       "fit_regression": False, "fit_gmm_2d": fit_gmm,
                                       "gmm_max_components": 3,
                                       "gmm_min_weight_threshold": 0.1})
-    wd = WORK / f"2d_{marginal.replace(' ', '')}_{int(fit_gmm)}"
+    tag = f"2d_{marginal.replace(' ', '')}_{int(fit_gmm)}_{separate_by or 'none'}"
+    wd = WORK / tag
     ns, _ = run_export(state, CSV, wd, transform=enable_derived if fit_gmm else None)
 
     ax_main = ns["ax_main"]
@@ -257,6 +261,26 @@ def two_d(marginal, fit_gmm):
     same = app_pts.shape == exp_pts.shape and np.allclose(sorted_rows(app_pts), sorted_rows(exp_pts))
     R.check(f"scatter point cloud ({len(app_pts)})", same,
             "" if same else f"app={app_pts.shape} exp={exp_pts.shape}")
+
+    if separate_by:
+        app_levels = fig.layout.meta["distribution_categories"]
+        exp_levels = [level for level, _positions in ns["distribution_panels"]]
+        R.check(f"panel levels ({exp_levels})", app_levels == exp_levels,
+                f"app={app_levels} exp={exp_levels}")
+        for index, level in enumerate(exp_levels):
+            axis = f"x{index + 4}"
+            app_panel = sum(len(t.x) for t in fig.data
+                            if isinstance(t.meta, dict)
+                            and t.meta.get("distribution_role") == "points"
+                            and (getattr(t, "xaxis", None) or "x") == axis)
+            # matplotlib gives every collection on the panel axis, including the grey
+            # "everyone else" context scatter (zorder=1); only the zorder=2 collections
+            # are this level's highlighted points, matching the app's "points" role.
+            panel_ax = ns["facet_axes"][index]
+            exp_panel = sum(len(c.get_offsets()) for c in panel_ax.collections
+                            if c.get_zorder() == 2)
+            R.check(f"panel {level} points ({app_panel} app / {exp_panel} export)",
+                    app_panel == exp_panel)
 
     def n_artists(axis):
         """One marginal per group, drawn as a line / box / violin depending on type."""
@@ -278,9 +302,10 @@ def two_d(marginal, fit_gmm):
     app_right = len([t for t in fig.data if t.xaxis == "x2"])
     R.check(f"marginal count top ({app_top} app / {n_top} export)", app_top == n_top)
     R.check(f"marginal count right ({app_right} app / {n_right} export)", app_right == n_right)
-    R.check("title", ax_main.get_title() ==
-            f"2D Distribution of {mpl_label(VAR)} and {mpl_label(VAR2)} by treatment",
-            ax_main.get_title())
+    want = f"2D Distribution of {mpl_label(VAR)} and {mpl_label(VAR2)} by treatment"
+    # The grid titles the whole figure; the single plot titles its axes.
+    got = (ns["fig"].get_suptitle() if separate_by else ax_main.get_title())
+    R.check("title", got == want, got)
 
 
 # ---------------------------------------------------------------- Dimension reduction
@@ -374,6 +399,8 @@ def main(which="all"):
         two_d("gaussian fit", True)
         two_d("boxplot", False)
         two_d("violin", False)
+        two_d("None", False)
+        two_d("gaussian fit", True, separate_by="cell_line")
     if which in ("all", "dr"):
         dimension_reduction("PCA")
         dimension_reduction("UMAP")

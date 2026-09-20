@@ -3,8 +3,8 @@ densities) must key on COLOR groups only — never fan out across shape/opacity
 sub-groups. This matches the plot's own GMM block (bivar.py), the phasor
 k-means block, feature-comparison statistics, and the exported script.
 """
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -65,7 +65,8 @@ def test_correlation_is_reported_once_per_color_group():
 
 
 def test_marginal_densities_drawn_once_per_color_group():
-    fig, _, _ = _run_2d_plot(_two_color_two_shape_df())
+    # Explicit: the "None" default draws no marginals at all, which this test doesn't cover.
+    fig, _, _ = _run_2d_plot(_two_color_two_shape_df(), marginal_plot_type="gaussian fit")
 
     x_marginals = [
         t for t in fig.data

@@ -53,7 +53,7 @@ def _run(tmp_path, monkeypatch, marginal, category, *, collapse=False, logged=Fa
         "separate_by": "day" if category is not None else None,
         "show_group_counts": True,
         "method_params": {
-            "selected_x": "x", "selected_y": "y", "distribution_category": category,
+            "selected_x": "x", "selected_y": "y",
             "marginal_plot_type": marginal, "fit_regression": False, "fit_gmm_2d": False,
             "collapse_by": "dish" if collapse else None,
             "log_x": logged, "log_y": logged,
@@ -83,8 +83,6 @@ def _run(tmp_path, monkeypatch, marginal, category, *, collapse=False, logged=Fa
         shape_by=shape, opacity_by=opacity, separate_by=state["separate_by"],
         analysis_options={"marginal_plot_type": marginal, "fit_regression": False,
                           "fit_gmm": False, "log_x": logged, "log_y": logged})
-    if category is not None:
-        bivar.select_distribution_category(app, category)
     return app, namespace
 
 
@@ -94,8 +92,10 @@ def _assert_separate_positions(app, namespace, marginal):
         ("ax_top", 1, "yaxis", "y2"), ("ax_right", 0, "xaxis", "x2")
     ]:
         axis = namespace[axis_name]
+        # The grid hides nothing: every colour group's marginal describes the
+        # whole dataset and lives on the overview's strips.
         traces = [trace for trace in app.data if trace.type == trace_type
-                  and trace.visible is not False and getattr(trace, app_axis) == app_axis_name]
+                  and getattr(trace, app_axis) == app_axis_name]
         # Plotly gives distinct trace names consecutive category positions when
         # their box/violin coordinate is omitted. The app deliberately uses that layout.
         assert len({trace.name for trace in traces}) == len(traces) >= 2
@@ -136,3 +136,14 @@ def test_marginal_positions_survive_replicate_collapse_and_log_transforms(
     app, namespace = _run(tmp_path, monkeypatch, marginal, "Day 2",
                           collapse=True, logged=logged)
     _assert_separate_positions(app, namespace, marginal)
+
+
+def test_marginal_none_exports_a_single_full_frame_axes(tmp_path, monkeypatch):
+    app, namespace = _run(tmp_path, monkeypatch, "None", None)
+    assert namespace["MARGINAL_PLOT_TYPE"] is None
+    assert namespace["ax_top"] is None
+    assert namespace["ax_right"] is None
+    assert "MARGINAL_PLOT_TYPE = None" in (tmp_path / "analysis.py").read_text()
+    assert not [trace for trace in app.data
+                if getattr(trace, "yaxis", None) in ("y2", "y3")
+                or getattr(trace, "xaxis", None) == "x2"]

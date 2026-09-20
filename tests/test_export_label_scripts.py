@@ -49,9 +49,8 @@ def _state(method, separate_by):
         },
         "2D Feature Distribution": {
             "selected_x": "feature_x", "selected_y": "feature_y",
-            "marginal_plot_type": "none", "fit_gmm_2d": True,
+            "marginal_plot_type": "None", "fit_gmm_2d": True,
             "gmm_max_components": 2, "gmm_min_weight_threshold": 0.1,
-            "distribution_category": "Day 1",
         },
     }
     return {

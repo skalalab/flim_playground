@@ -188,6 +188,7 @@ def scatter_interleaved_points(ax, df, x_col, y_col, group_column, color_groups,
     position. Return one legend handle per visible color in natural group order.
     """
     import numpy as np
+
     from src.vis.dimension_facets import dimension_interleaved_indices
     from src.vis.helpers import format_group_label
 
@@ -215,6 +216,48 @@ def scatter_interleaved_points(ax, df, x_col, y_col, group_column, color_groups,
             opacity_map=point_opacity_map, base_alpha=base_alpha)
         first_handles.setdefault(group, handle)
     return [first_handles[group] for group in color_groups if group in first_handles]
+
+
+def place_facet_legend(fig, ax, legend_size, left_margin, figure_width, figure_height,
+                       legend_y=0.015):
+    """One horizontal legend under the overview's axis title, sized to real text.
+
+    Measure before reserving space: large fonts and short grids can make the
+    legend taller than the initial margin estimate. Wrap long combination labels
+    within the canvas instead of widening the saved SVG, then grow only the
+    bottom margin so every panel keeps its physical size and shared geometry.
+    """
+    def make_legend(columns):
+        legend = ax.legend(fontsize=legend_size, loc='lower left', ncol=columns, frameon=False,
+                           bbox_to_anchor=(left_margin / figure_width, legend_y),
+                           bbox_transform=fig.transFigure)
+        for handle in legend.legend_handles:
+            handle.set_sizes([legend_size ** 2])
+        return legend
+
+    legend_columns = min(5, len(ax.get_legend_handles_labels()[0]))
+    legend = make_legend(legend_columns)
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    while (legend_columns > 1 and
+           legend.get_window_extent(renderer).x1 > fig.bbox.width - 0.15 * fig.dpi):
+        legend_columns -= 1
+        legend = make_legend(legend_columns)
+    legend_top = legend.get_window_extent(renderer).y1
+    title_bottom = ax.xaxis.label.get_window_extent(renderer).y0
+    extra_bottom = max(0., (legend_top + 0.15 * fig.dpi - title_bottom)
+                       / (fig.dpi * (1 - legend_y)))
+    if extra_bottom:
+        positions = [panel_ax.get_position().frozen() for panel_ax in fig.axes]
+        old_height = figure_height
+        figure_height += extra_bottom
+        fig.set_size_inches(figure_width, figure_height)
+        for panel_ax, position in zip(fig.axes, positions):
+            panel_ax.set_position([
+                position.x0, (position.y0 * old_height + extra_bottom) / figure_height,
+                position.width, position.height * old_height / figure_height,
+            ])
+    return figure_height
 
 
 def _print_distribution_statistics(result, label):
@@ -319,8 +362,9 @@ def _build_preamble(state: dict) -> str:
                   "from scipy.stats import norm", "from scipy.optimize import brentq"]
     elif method == "2D Feature Distribution":
         extra.append("from scipy.stats import gaussian_kde")
-        if state.get("separate_by") is not None:
-            extra.append("from scipy.stats import chi2")
+        # distribution_ranges() widens the shared bounds with a chi2 radius in
+        # every layout, so chi2 is no longer tied to separation or GMM.
+        extra.append("from scipy.stats import chi2")
         # Pearson r + p is reported for every color group (like the app), so import
         # it unconditionally; only the regression line itself is gated.
         extra.append("from scipy.stats import pearsonr")
@@ -441,13 +485,14 @@ def _build_config_section(state: dict) -> str:
         lines.append(f"GMM_MIN_WEIGHT_THRESHOLD = {mp.get('gmm_min_weight_threshold', 0.1)!r}")
         lines.append("SAVE_DERIVED_DATA = False  # True → also write gmm_grouped_data.csv when APPLY_GMM is enabled (the app's download button)")
     elif method == "2D Feature Distribution":
-        lines.append(f"SEPARATE_BY = {state.get('separate_by')!r}")
-        lines.append(f"DISTRIBUTION_CATEGORY = {mp.get('distribution_category')!r}")
+        lines.append(f"SEPARATE_BY = {state.get('separate_by')!r}  # one highlight map per category, beside the overview")
         lines.append(f"SELECTED_X = {mp.get('selected_x')!r}")
         lines.append(f"SELECTED_Y = {mp.get('selected_y')!r}")
         lines.append(f"LOG_X = {mp.get('log_x', False)!r}")
         lines.append(f"LOG_Y = {mp.get('log_y', False)!r}")
-        lines.append(f"MARGINAL_PLOT_TYPE = {mp.get('marginal_plot_type', 'gaussian fit')!r}")
+        # The script reads better with a real None, and its guards test identity.
+        marginal = mp.get('marginal_plot_type', 'None')
+        lines.append(f"MARGINAL_PLOT_TYPE = {None if marginal == 'None' else marginal!r}")
         lines.append(f"FIT_REGRESSION = {mp.get('fit_regression', False)!r}")
         lines.append(f"FIT_GMM_2D = {mp.get('fit_gmm_2d', False)!r}")
         lines.append(f"GMM_MAX_COMPONENTS = {mp.get('gmm_max_components', 3)!r}")
@@ -571,7 +616,9 @@ def _build_derived_export_helpers(state: dict) -> str:
     if state["method"] not in ("Feature Histogram", "2D Feature Distribution"):
         return ""
     from src.export_labels import (
-        apply_export_labels, available_label_column, format_export_group_labels,
+        apply_export_labels,
+        available_label_column,
+        format_export_group_labels,
         normalize_export_labels,
     )
 
@@ -669,12 +716,20 @@ print("Figure saved to {fname}.svg")
 def _build_feature_histogram(state: dict) -> str:
     """Render every prepared category, sharing calculations with the app."""
     from src.vis.helpers import (
-        _find_best_gmm, find_intersection,
-        natural_key, natural_tuple_sort, tuple_natural_key,
+        _find_best_gmm,
+        find_intersection,
+        natural_key,
+        natural_tuple_sort,
+        tuple_natural_key,
     )
     from src.vis.histogram import (
-        _assign_subpopulation_labels, histogram_bin_edges, histogram_bin_settings,
-        histogram_gmm, histogram_legend_label, histogram_skewness, prepare_histogram,
+        _assign_subpopulation_labels,
+        histogram_bin_edges,
+        histogram_bin_settings,
+        histogram_gmm,
+        histogram_legend_label,
+        histogram_skewness,
+        prepare_histogram,
     )
 
     helpers = [natural_key, tuple_natural_key, natural_tuple_sort,
@@ -916,7 +971,6 @@ if LOG_Y:
 def _build_feature_comparison(state: dict) -> str:
     from src.export_labels import available_label_column
     from src.vis import subcolor_palette
-    from src.vis.superplot import summarize_superplot
     from src.vis.helpers import (
         _compute_bracket_position,
         _density_at_points,
@@ -928,6 +982,7 @@ def _build_feature_comparison(state: dict) -> str:
         glass_delta,
         interleave_point_batches,
     )
+    from src.vis.superplot import summarize_superplot
 
     # Inline the app's density helpers for identical sina jitter and degenerate-data
     # handling. Include the palette module before its callers and name _sorted_levels
@@ -1317,30 +1372,124 @@ if section_headers:
 
 
 def _build_2d_distribution(state: dict) -> str:
-    if state.get("separate_by") is not None:
-        return _build_separated_2d_distribution(state)
+    """One builder for both layouts: the separation only adds panels beside the overview."""
+    from src.vis.bivar import (
+        category_panel_rows,
+        distribution_fit_groups,
+        distribution_ranges,
+    )
+    from src.vis.dimension_facets import category_facet_groups, dimension_facet_layout
 
-    from src.vis.bivar import distribution_fit_groups
-
-    helpers = [distribution_fit_groups, _print_distribution_statistics]
+    helpers = [category_panel_rows, distribution_fit_groups, distribution_ranges,
+               category_facet_groups, dimension_facet_layout, place_facet_legend,
+               _print_distribution_statistics]
     if state.get("method_params", {}).get("fit_gmm_2d"):
         from src.vis.helpers import _find_best_gmm
 
         helpers.append(_find_best_gmm)
     fit_src = _extract_source(*helpers)
 
-    group_preparation = '\nFD_GROUP_COLUMN = available_label_column(df.columns, "_color_group")\n'
-    return _build_collapse(state) + group_preparation + _build_visual_encoding(
-        state, overlap_point=False, group_column_expr="FD_GROUP_COLUMN"
-    ) + f"""
+    preparation = """
+if df.empty:
+    raise ValueError("No complete X/Y observations remain for 2D Feature Distribution.")
+DERIVED_LABEL_COLUMN = available_label_column(df.columns, "2D_GMM_group")
+# Preserve retained metadata for CSV; normalize only the rendering copy.
+distribution_data = df.copy()
+if SEPARATE_BY:
+    for column in dict.fromkeys([*COLOR_BY, SHAPE_BY, OPACITY_BY]):
+        if column:
+            df[column] = df[column].astype(str).where(df[column].notna(), "N/A")
+FD_GROUP_COLUMN = available_label_column(df.columns, "_color_group")
+"""
+    return (_build_collapse(state) + preparation
+            + _build_visual_encoding(state, overlap_point=False,
+                                     group_column_expr="FD_GROUP_COLUMN")
+            + "\n# Shared 2D panel and fit helpers\n" + fit_src + """
 # ============================================================
 # 2D Feature Distribution
 # ============================================================
-{fit_src}
-DERIVED_LABEL_COLUMN = available_label_column(df.columns, "2D_GMM_group")
+# --- Grid constants ------------------------------------------------------
+# The app applies these two numbers from code this script never runs, so they
+# are restated here by hand. Change them together with the app or the figures
+# drift apart:
+#   PANEL_POINT_SIZE  <- src/vis/helpers.py apply_plot_styling()
+#                        max(1, point_size - 2) for every faceted or context trace
+#   PANEL_MODEL_WIDTH <- src/vis/bivar.py feature_2d_distribution_plot()
+#                        overlay_width = 1 if separate_by else 2
+#   PANEL_CONTEXT_*   <- src/vis/bivar.py, the grey '#b8b8b8' / opacity .25 trace
+PANEL_POINT_SIZE = max(1, POINT_SIZE - 2)
+PANEL_MODEL_WIDTH = 1
+OVERVIEW_MODEL_WIDTH = 2
+PANEL_CONTEXT_COLOR = '#b8b8b8'
+PANEL_CONTEXT_ALPHA = 0.25
+# -------------------------------------------------------------------------
 
-# Create figure with marginal axes
-if MARGINAL_PLOT_TYPE != 'none':
+distribution_panels = category_panel_rows(df, SEPARATE_BY, COLOR_BY)
+
+# Shape and opacity describe points; they never partition a statistical fit.
+distribution_results, distribution_assignments = distribution_fit_groups(
+    df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups,
+    distribution_panels, separate_by=SEPARATE_BY, fit_regression=FIT_REGRESSION,
+    fit_gmm=FIT_GMM_2D, max_components=GMM_MAX_COMPONENTS,
+    min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD, color_by=COLOR_BY,
+)
+x_range, y_range = distribution_ranges(df, SELECTED_X, SELECTED_Y, distribution_results)
+facet_layout = dimension_facet_layout(
+    category_facet_groups(distribution_panels if SEPARATE_BY else []),
+    x_range, y_range, aspect=1.0,
+)
+
+if FIT_GMM_2D and (SEPARATE_BY or any(value is not None for value in distribution_assignments)):
+    # distribution_data is the CSV copy; df keeps the same labels for inspection.
+    distribution_data[DERIVED_LABEL_COLUMN] = distribution_assignments
+    df[DERIVED_LABEL_COLUMN] = distribution_assignments
+    if SAVE_DERIVED_DATA:
+        apply_export_labels(
+            distribution_data, DERIVED_LABEL_COLUMN, DERIVED_EXPORT
+        ).to_csv("2D_gmm_data.csv", index=False)
+        print("2D GMM data saved to 2D_gmm_data.csv")
+
+facet_axes = []
+if SEPARATE_BY:
+    # Keep the helper's physical geometry while reserving room for the row
+    # labels and one shared legend below the whole composition.
+    plot_width = 10.0
+    plot_height = plot_width * facet_layout["plot_height"]
+    legend_rows = max(1, int(np.ceil((len(color_groups) + len(shape_map) + len(opacity_map)) / 5)))
+    left_margin, right_margin = 0.85, 0.8
+    bottom_margin, top_margin = 0.85 + 0.35 * legend_rows, 0.55
+    figure_width = left_margin + plot_width + right_margin
+    figure_height = bottom_margin + plot_height + top_margin
+    fig = plt.figure(figsize=(figure_width, figure_height))
+
+    def place_panel(x0, x1, y0, y1):
+        return fig.add_axes([
+            (left_margin + x0 * plot_width) / figure_width,
+            (bottom_margin + y0 * plot_height) / figure_height,
+            (x1 - x0) * plot_width / figure_width,
+            (y1 - y0) * plot_height / figure_height,
+        ])
+
+    overview_x = facet_layout["overview"]["x_domain"]
+    overview_y = facet_layout["overview"]["y_domain"]
+    if MARGINAL_PLOT_TYPE is not None:
+        # Strips take the outer tenth of the overview block in both directions,
+        # so the main axes stay square.
+        main_x = overview_x[0] + 0.9 * (overview_x[1] - overview_x[0])
+        main_y = overview_y[0] + 0.9 * (overview_y[1] - overview_y[0])
+        ax_main = place_panel(overview_x[0], main_x, overview_y[0], main_y)
+        ax_top = place_panel(overview_x[0], main_x, main_y, overview_y[1])
+        ax_right = place_panel(main_x, overview_x[1], overview_y[0], main_y)
+        ax_top.sharex(ax_main)
+        ax_right.sharey(ax_main)
+        ax_top.tick_params(labelbottom=False, labelleft=False)
+        ax_right.tick_params(labelleft=False, labelbottom=False)
+    else:
+        ax_main = place_panel(*overview_x, *overview_y)
+        ax_top = ax_right = None
+    for panel in facet_layout["panels"]:
+        facet_axes.append(place_panel(*panel["x_domain"], *panel["y_domain"]))
+elif MARGINAL_PLOT_TYPE is not None:
     from matplotlib.gridspec import GridSpec
     fig = plt.figure(figsize=(10, 10))
     gs = GridSpec(2, 2, figure=fig, height_ratios=[1, 9], width_ratios=[9, 1],
@@ -1364,26 +1513,51 @@ point_legend_handles = scatter_interleaved_points(
     base_alpha=BASE_ALPHA, show_counts=SHOW_GROUP_COUNTS,
 )
 
+# Each highlight map shows its level in colour over every other cell in grey,
+# both one size smaller than the overview's points (PANEL_POINT_SIZE above).
+panel_point_area = PANEL_POINT_SIZE ** 2
+for panel_ax, (level, positions) in zip(facet_axes, distribution_panels):
+    membership = np.zeros(len(df), dtype=bool)
+    membership[positions] = True
+    if (~membership).any():
+        background = df.loc[~membership]
+        panel_ax.scatter(background[SELECTED_X], background[SELECTED_Y],
+                         color=PANEL_CONTEXT_COLOR, alpha=PANEL_CONTEXT_ALPHA,
+                         s=panel_point_area, edgecolors='none', linewidths=0, zorder=1)
+    scatter_interleaved_points(
+        panel_ax, df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups, color_map,
+        panel_point_area, shape_by=SHAPE_BY, shape_map=shape_map,
+        opacity_by=OPACITY_BY, opacity_map=opacity_map,
+        base_alpha=BASE_ALPHA, show_counts=SHOW_GROUP_COUNTS,
+        active_positions=positions,
+    )
+
+# Marginals describe the whole dataset per colour group, on the overview only,
+# so no cross-level density rescaling is needed (the app dropped it too).
 # Each visible box/violin gets its own categorical position on each axis.
-marginal_positions = {{"x": 0, "y": 0}}
+marginal_positions = {"x": 0, "y": 0}
 for g in color_groups:
     gdf = df[df[FD_GROUP_COLUMN] == g]
 
     # Guard each marginal on its own axis, as the app does (_plot_marginal_density
     # in src/vis/bivar.py returns early per axis), so a constant y still draws x.
     if ax_top is not None and gdf[SELECTED_X].nunique() > 1:
-        from scipy.stats import gaussian_kde
         try:
             x_vals = gdf[SELECTED_X].dropna().values
             kde_x = gaussian_kde(x_vals)
-            x_range = np.linspace(x_vals.min(), x_vals.max(), 200)
+            x_curve = np.linspace(x_vals.min(), x_vals.max(), 200)
             if MARGINAL_PLOT_TYPE == 'gaussian fit':
-                ax_top.plot(x_range, kde_x(x_range), color=color_map[g][:3], linewidth=1.5)
+                # alpha matches the app's opacity=0.7 on both density traces
+                # (_plot_marginal_density in src/vis/bivar.py).
+                ax_top.plot(x_curve, kde_x(x_curve), color=color_map[g][:3], linewidth=1.5,
+                            alpha=0.7)
             elif MARGINAL_PLOT_TYPE == 'boxplot':
-                ax_top.boxplot(x_vals, vert=False, positions=[marginal_positions["x"]], widths=0.5,
-                             patch_artist=True, boxprops=dict(facecolor=(*color_map[g][:3], 0.3)))
+                ax_top.boxplot(x_vals, orientation='horizontal', positions=[marginal_positions["x"]],
+                               widths=0.5, patch_artist=True,
+                               boxprops=dict(facecolor=(*color_map[g][:3], 0.3)))
             elif MARGINAL_PLOT_TYPE == 'violin':
-                parts = ax_top.violinplot(x_vals, vert=False, positions=[marginal_positions["x"]], showmedians=True)
+                parts = ax_top.violinplot(x_vals, orientation='horizontal',
+                                          positions=[marginal_positions["x"]], showmedians=True)
                 for pc in parts.get('bodies', []):
                     pc.set_facecolor((*color_map[g][:3], 0.3))
             if MARGINAL_PLOT_TYPE in ('boxplot', 'violin'):
@@ -1395,14 +1569,17 @@ for g in color_groups:
         try:
             y_vals = gdf[SELECTED_Y].dropna().values
             kde_y = gaussian_kde(y_vals)
-            y_range = np.linspace(y_vals.min(), y_vals.max(), 200)
+            y_curve = np.linspace(y_vals.min(), y_vals.max(), 200)
             if MARGINAL_PLOT_TYPE == 'gaussian fit':
-                ax_right.plot(kde_y(y_range), y_range, color=color_map[g][:3], linewidth=1.5)
+                ax_right.plot(kde_y(y_curve), y_curve, color=color_map[g][:3], linewidth=1.5,
+                              alpha=0.7)
             elif MARGINAL_PLOT_TYPE == 'boxplot':
-                ax_right.boxplot(y_vals, vert=True, positions=[marginal_positions["y"]], widths=0.5,
-                               patch_artist=True, boxprops=dict(facecolor=(*color_map[g][:3], 0.3)))
+                ax_right.boxplot(y_vals, orientation='vertical', positions=[marginal_positions["y"]],
+                                 widths=0.5, patch_artist=True,
+                                 boxprops=dict(facecolor=(*color_map[g][:3], 0.3)))
             elif MARGINAL_PLOT_TYPE == 'violin':
-                parts = ax_right.violinplot(y_vals, vert=True, positions=[marginal_positions["y"]], showmedians=True)
+                parts = ax_right.violinplot(y_vals, orientation='vertical',
+                                            positions=[marginal_positions["y"]], showmedians=True)
                 for pc in parts.get('bodies', []):
                     pc.set_facecolor((*color_map[g][:3], 0.3))
             if MARGINAL_PLOT_TYPE in ('boxplot', 'violin'):
@@ -1410,234 +1587,63 @@ for g in color_groups:
         except Exception:
             pass
 
-# Use the app's category/color computation for correlations, fits, and labels.
-distribution_results, distribution_assignments = distribution_fit_groups(
-    df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups,
-    [(None, np.arange(len(df)))], fit_regression=FIT_REGRESSION,
-    fit_gmm=FIT_GMM_2D, max_components=GMM_MAX_COMPONENTS,
-    min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD, color_by=COLOR_BY,
-)
-if FIT_GMM_2D and any(value is not None for value in distribution_assignments):
-    df[DERIVED_LABEL_COLUMN] = distribution_assignments
-
+# Every level's model is drawn in that level's own panel, never on the overview,
+# and every level's statistics are printed (the app lists them all as well).
+panel_by_level = {level: panel_ax
+                  for panel_ax, (level, _positions) in zip(facet_axes, distribution_panels)}
+model_width = PANEL_MODEL_WIDTH if SEPARATE_BY else OVERVIEW_MODEL_WIDTH
 for result in distribution_results:
     color = color_map[result["color_group"]][:3]
-    _print_distribution_statistics(result, result["color_group"])
-    regression = result["regression"]
-    if regression is not None:
-        ax_main.plot(regression["x"], regression["y"], '--', color=color, linewidth=2)
-    for component in result["components"]:
-        mean, covariance = component["mean"], component["covariance"]
-        eigenvalues, eigenvectors = np.linalg.eigh(covariance)
-        angle = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
-        width, height = 2 * np.sqrt(eigenvalues * chi2.ppf(0.95, 2))
-        ax_main.add_patch(Ellipse(
-            xy=mean, width=width, height=height, angle=angle, fill=False,
-            edgecolor=color, linewidth=2, linestyle='--',
-        ))
-        ax_main.plot(*mean, '+', color=color, markersize=15, markeredgewidth=2)
-
-if FIT_GMM_2D and SAVE_DERIVED_DATA:
-    apply_export_labels(
-        df.drop(columns=[FD_GROUP_COLUMN]), DERIVED_LABEL_COLUMN, DERIVED_EXPORT
-    ).to_csv("2D_gmm_data.csv", index=False)
-    print("2D GMM data saved to 2D_gmm_data.csv")
-
-ax_main.set_xlabel(f"log₁₀({{format_feature_label(SELECTED_X, engine='mpl')}})" if LOG_X else format_feature_label(SELECTED_X, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
-ax_main.set_ylabel(f"log₁₀({{format_feature_label(SELECTED_Y, engine='mpl')}})" if LOG_Y else format_feature_label(SELECTED_Y, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
-ax_main.set_title(f"2D Distribution of {{format_feature_label(SELECTED_X, engine='mpl')}} and {{format_feature_label(SELECTED_Y, engine='mpl')}} by {{', '.join(COLOR_BY)}}", fontsize=AXIS_LABEL_SIZE)
-ax_main.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
-encoding_legend_handles = add_encoding_legend_entries(
-    ax_main, shape_map, opacity_map, POINT_SIZE ** 2)
-ax_main.legend(handles=point_legend_handles + encoding_legend_handles, fontsize=LEGEND_SIZE)
-"""
-
-
-def _build_separated_2d_distribution(state: dict) -> str:
-    """Export the active FD category using globally prepared fits and encodings."""
-    from src.vis.bivar import (
-        category_panel_rows,
-        distribution_fit_groups,
-        distribution_ranges,
-    )
-
-    helper_functions = [category_panel_rows, distribution_fit_groups, distribution_ranges,
-                        _print_distribution_statistics]
-    if state.get("method_params", {}).get("fit_gmm_2d"):
-        from src.vis.helpers import _find_best_gmm
-
-        helper_functions.append(_find_best_gmm)
-    helper_src = _extract_source(*helper_functions)
-    preparation = """
-if df.empty:
-    raise ValueError("No complete X/Y observations remain for 2D Feature Distribution.")
-DERIVED_LABEL_COLUMN = available_label_column(df.columns, "2D_GMM_group")
-# Preserve retained metadata for CSV; normalize only the rendering copy.
-distribution_data = df.copy()
-for column in dict.fromkeys([*COLOR_BY, SHAPE_BY, OPACITY_BY]):
-    if column:
-        df[column] = df[column].astype(str).where(df[column].notna(), "N/A")
-FD_GROUP_COLUMN = "_color_group"
-while FD_GROUP_COLUMN in df.columns:
-    FD_GROUP_COLUMN += "_"
-"""
-    return (_build_collapse(state) + preparation
-            + _build_visual_encoding(state, overlap_point=False,
-                                     group_column_expr="FD_GROUP_COLUMN")
-            + "\n# Shared FD category and fit helpers\n" + helper_src + """
-# ============================================================
-# 2D Feature Distribution — selected category with context
-# ============================================================
-distribution_panels = category_panel_rows(df, SEPARATE_BY, COLOR_BY)
-panel_levels = [level for level, _positions in distribution_panels]
-distribution_category = DISTRIBUTION_CATEGORY
-if distribution_category not in panel_levels:
-    distribution_category = panel_levels[0]
-active_positions = distribution_panels[panel_levels.index(distribution_category)][1]
-
-# Every category/color fit is computed once, before selecting rendered overlays.
-# Shape and opacity describe points; they never partition a statistical fit.
-distribution_results, distribution_assignments = distribution_fit_groups(
-    df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups,
-    distribution_panels, separate_by=SEPARATE_BY, fit_regression=FIT_REGRESSION,
-    fit_gmm=FIT_GMM_2D, max_components=GMM_MAX_COMPONENTS,
-    min_weight_threshold=GMM_MIN_WEIGHT_THRESHOLD, color_by=COLOR_BY,
-)
-x_range, y_range = distribution_ranges(
-    df, SELECTED_X, SELECTED_Y, distribution_results,
-)
-
-# Prepare each available marginal independently. Its measurement range and the
-# density amplitude limits remain unchanged when DISTRIBUTION_CATEGORY changes.
-density_peaks = {"x": [], "y": []}
-for result in distribution_results:
-    group_df = df.iloc[result["positions"]]
-    result["marginals"] = {}
-    for axis, column in [("x", SELECTED_X), ("y", SELECTED_Y)]:
-        values = group_df[column].to_numpy()
-        if MARGINAL_PLOT_TYPE == 'none' or len(np.unique(values)) < 2:
-            continue
-        marginal = {"values": values}
-        if MARGINAL_PLOT_TYPE == 'gaussian fit':
-            try:
-                coordinates = np.linspace(values.min(), values.max(), 200)
-                density = gaussian_kde(values)(coordinates)
-            except (ValueError, np.linalg.LinAlgError):
-                result["notices"].append(f"{axis.upper()} marginal unavailable: insufficient variation.")
-                continue
-            marginal.update(coordinates=coordinates, density=density)
-            density_peaks[axis].append(float(density.max()))
-        result["marginals"][axis] = marginal
-
-if FIT_GMM_2D:
-    df[DERIVED_LABEL_COLUMN] = distribution_assignments
-    distribution_data[DERIVED_LABEL_COLUMN] = distribution_assignments
-    if SAVE_DERIVED_DATA:
-        apply_export_labels(
-            distribution_data, DERIVED_LABEL_COLUMN, DERIVED_EXPORT
-        ).to_csv("2D_gmm_data.csv", index=False)
-        print("2D GMM data saved to 2D_gmm_data.csv")
-
-fig = plt.figure(figsize=(10, 10))
-if MARGINAL_PLOT_TYPE != 'none':
-    from matplotlib.gridspec import GridSpec
-
-    gs = GridSpec(2, 2, figure=fig, height_ratios=[1, 9], width_ratios=[9, 1],
-                  hspace=0.05, wspace=0.05)
-    ax_main = fig.add_subplot(gs[1, 0], box_aspect=1, anchor='NE')
-    ax_top = fig.add_subplot(gs[0, 0], sharex=ax_main, box_aspect=1/9, anchor='SE')
-    ax_right = fig.add_subplot(gs[1, 1], sharey=ax_main, box_aspect=9, anchor='NW')
-    ax_top.tick_params(labelbottom=False, labelleft=False)
-    ax_right.tick_params(labelleft=False, labelbottom=False)
-else:
-    ax_main = fig.add_subplot(111, box_aspect=1)
-    ax_top = ax_right = None
-fig.subplots_adjust(left=0.10, right=0.80, bottom=0.14, top=0.94)
-
-other_positions = np.setdiff1d(np.arange(len(df)), active_positions, assume_unique=True)
-if len(other_positions):
-    other_df = df.iloc[other_positions]
-    ax_main.scatter(
-        other_df[SELECTED_X], other_df[SELECTED_Y], color='#b8b8b8', alpha=0.18,
-        s=max(1, POINT_SIZE - 2) ** 2, edgecolors='none', linewidths=0,
-        label='_nolegend_', zorder=0,
-    )
-
-point_legend_handles = scatter_interleaved_points(
-    ax_main, df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups, color_map,
-    POINT_SIZE ** 2, shape_by=SHAPE_BY, shape_map=shape_map,
-    opacity_by=OPACITY_BY, opacity_map=opacity_map,
-    base_alpha=BASE_ALPHA, show_counts=SHOW_GROUP_COUNTS,
-    active_positions=active_positions,
-)
-
-# Count only available marginals in the selected category, independently per axis.
-marginal_positions = {"x": 0, "y": 0}
-for result in distribution_results:
-    if result["category"] != distribution_category:
-        continue
-    group = result["color_group"]
-    color = color_map[group][:3]
-    label = f"{SEPARATE_BY}={distribution_category} | {group}"
+    label = (f"{SEPARATE_BY}={result['category']} | {result['color_group']}"
+             if SEPARATE_BY else result["color_group"])
     _print_distribution_statistics(result, label)
+    model_ax = panel_by_level.get(result["category"], ax_main)
     regression = result["regression"]
     if regression is not None:
-        ax_main.plot(regression["x"], regression["y"], '--', color=color, linewidth=2)
-
-    for axis, marginal_ax in [("x", ax_top), ("y", ax_right)]:
-        marginal = result["marginals"].get(axis)
-        if marginal_ax is None or marginal is None:
-            continue
-        horizontal = axis == "x"
-        orientation = 'horizontal' if horizontal else 'vertical'
-        if MARGINAL_PLOT_TYPE == 'gaussian fit':
-            coordinates, density = marginal["coordinates"], marginal["density"]
-            marginal_ax.plot(coordinates if horizontal else density,
-                             density if horizontal else coordinates,
-                             color=color, linewidth=1.5, alpha=0.7)
-        elif MARGINAL_PLOT_TYPE == 'boxplot':
-            marginal_ax.boxplot(
-                marginal["values"], orientation=orientation, positions=[marginal_positions[axis]], widths=0.5,
-                patch_artist=True, boxprops=dict(facecolor=(*color, 0.3)),
-            )
-        elif MARGINAL_PLOT_TYPE == 'violin':
-            violin = marginal_ax.violinplot(
-                marginal["values"], orientation=orientation, positions=[marginal_positions[axis]], showmedians=True,
-            )
-            for body in violin.get('bodies', []):
-                body.set_facecolor((*color, 0.3))
-        if MARGINAL_PLOT_TYPE in ('boxplot', 'violin'):
-            marginal_positions[axis] += 1
-
+        model_ax.plot(regression["x"], regression["y"], '--', color=color, linewidth=model_width)
     for component in result["components"]:
         mean, covariance = component["mean"], component["covariance"]
         eigenvalues, eigenvectors = np.linalg.eigh(covariance)
         angle = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
         width, height = 2 * np.sqrt(eigenvalues * chi2.ppf(0.95, 2))
-        ax_main.add_patch(Ellipse(
+        model_ax.add_patch(Ellipse(
             xy=mean, width=width, height=height, angle=angle, fill=False,
-            edgecolor=color, linewidth=2, linestyle='--',
+            edgecolor=color, linewidth=model_width, linestyle='--',
         ))
-        ax_main.plot(*mean, '+', color=color, markersize=15, markeredgewidth=2)
+        model_ax.plot(*mean, '+', color=color, markersize=15, markeredgewidth=model_width)
 
-ax_main.set_xlim(x_range)
-ax_main.set_ylim(y_range)
-if MARGINAL_PLOT_TYPE == 'gaussian fit':
-    ax_top.set_ylim(0, max(density_peaks["x"], default=1.0) * 1.05)
-    ax_right.set_xlim(0, max(density_peaks["y"], default=1.0) * 1.05)
+if SEPARATE_BY:
+    for panel_ax, (level, _positions) in zip(facet_axes, distribution_panels):
+        panel_ax.text(1.04, 0.5, str(level), transform=panel_ax.transAxes,
+                      ha='left', va='center', fontsize=LEGEND_SIZE)
+    for panel_ax in [ax_main, *facet_axes]:
+        panel_ax.set_xlim(x_range)
+        panel_ax.set_ylim(y_range)
+        panel_ax.grid(False, which='both')
+        for side in ('left', 'bottom'):
+            panel_ax.spines[side].set_visible(True)
+            panel_ax.spines[side].set_color('black')
+            panel_ax.spines[side].set_linewidth(1)
+        for side in ('top', 'right'):
+            panel_ax.spines[side].set_visible(False)
+    for panel_ax in facet_axes:
+        panel_ax.tick_params(axis='both', which='both', bottom=False, left=False,
+                             labelbottom=False, labelleft=False)
+
 ax_main.set_xlabel(f"log₁₀({format_feature_label(SELECTED_X, engine='mpl')})" if LOG_X else format_feature_label(SELECTED_X, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
 ax_main.set_ylabel(f"log₁₀({format_feature_label(SELECTED_Y, engine='mpl')})" if LOG_Y else format_feature_label(SELECTED_Y, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
-fig.suptitle(f"2D Distribution of {format_feature_label(SELECTED_X, engine='mpl')} and {format_feature_label(SELECTED_Y, engine='mpl')} by {', '.join(COLOR_BY)}", fontsize=AXIS_LABEL_SIZE)
 ax_main.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
-ax_main.text(
-    0.5, -0.15, f"{SEPARATE_BY}: {distribution_category}", transform=ax_main.transAxes,
-    ha='center', va='top', fontsize=AXIS_LABEL_SIZE, fontweight='bold', clip_on=False,
-)
+_2d_title = (f"2D Distribution of {format_feature_label(SELECTED_X, engine='mpl')} and "
+             f"{format_feature_label(SELECTED_Y, engine='mpl')} by {', '.join(COLOR_BY)}")
 encoding_legend_handles = add_encoding_legend_entries(
     ax_main, shape_map, opacity_map, POINT_SIZE ** 2)
-ax_main.legend(handles=point_legend_handles + encoding_legend_handles,
-               fontsize=LEGEND_SIZE, loc='upper left', bbox_to_anchor=(1.18, 1),
-               borderaxespad=0, frameon=False)
+if SEPARATE_BY:
+    fig.suptitle(_2d_title, fontsize=AXIS_LABEL_SIZE)
+    figure_height = place_facet_legend(fig, ax_main, LEGEND_SIZE, left_margin,
+                                       figure_width, figure_height)
+else:
+    ax_main.set_title(_2d_title, fontsize=AXIS_LABEL_SIZE)
+    ax_main.legend(handles=point_legend_handles + encoding_legend_handles, fontsize=LEGEND_SIZE)
 """)
 
 
@@ -1664,7 +1670,7 @@ PHASOR_GROUP_COLUMN = available_label_column(df.columns, "_color_group")
 
 def _build_separated_phasor_plot(state: dict) -> str:
     """Build one full-size Phasor category view with gray context points."""
-    from src.vis.bivar import category_panel_rows, _phasor_panel_rows
+    from src.vis.bivar import _phasor_panel_rows, category_panel_rows
 
     helper_src = _extract_source(category_panel_rows, _phasor_panel_rows)
 
@@ -1879,7 +1885,7 @@ def _build_dimension_reduction(state: dict) -> str:
     facet_src = _extract_source(normalize_dimension_categories,
                                 dimension_facet_groups, dimension_ranges,
                                 dimension_facet_layout, dimension_interleaved_indices,
-                                scatter_dimension_batch)
+                                scatter_dimension_batch, place_facet_legend)
     # Encoding maps and facet levels describe the observations that are actually
     # reduced. No facet changes the scaler, fit, color, shape, or opacity maps.
     retained = """
@@ -2029,42 +2035,8 @@ ax.set_ylabel(ylabel, fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
 add_encoding_legend_entries(ax, shape_map, opacity_map, LEGEND_SIZE ** 2)
 if SEPARATE_BY:
-    legend_y = 0.015
-    def make_dimension_legend(columns):
-        legend = ax.legend(fontsize=LEGEND_SIZE, loc='lower left', ncol=columns, frameon=False,
-                           bbox_to_anchor=(left_margin / figure_width, legend_y),
-                           bbox_transform=fig.transFigure)
-        for handle in legend.legend_handles:
-            handle.set_sizes([LEGEND_SIZE ** 2])
-        return legend
-
-    legend_columns = min(5, len(ax.get_legend_handles_labels()[0]))
-    legend = make_dimension_legend(legend_columns)
-    # Measure real text before reserving space: large fonts and short grids can
-    # make the legend taller than the initial margin estimate. Grow only the
-    # bottom margin, retaining every map's physical size and shared geometry.
-    fig.canvas.draw()
-    renderer = fig.canvas.get_renderer()
-    # Wrap long combination labels within the canvas instead of widening the
-    # saved SVG and leaving a large empty region beside the maps.
-    while (legend_columns > 1 and
-           legend.get_window_extent(renderer).x1 > fig.bbox.width - 0.15 * fig.dpi):
-        legend_columns -= 1
-        legend = make_dimension_legend(legend_columns)
-    legend_top = legend.get_window_extent(renderer).y1
-    title_bottom = ax.xaxis.label.get_window_extent(renderer).y0
-    extra_bottom = max(0., (legend_top + 0.15 * fig.dpi - title_bottom)
-                       / (fig.dpi * (1 - legend_y)))
-    if extra_bottom:
-        positions = [panel_ax.get_position().frozen() for panel_ax in fig.axes]
-        old_height = figure_height
-        figure_height += extra_bottom
-        fig.set_size_inches(figure_width, figure_height)
-        for panel_ax, position in zip(fig.axes, positions):
-            panel_ax.set_position([
-                position.x0, (position.y0 * old_height + extra_bottom) / figure_height,
-                position.width, position.height * old_height / figure_height,
-            ])
+    figure_height = place_facet_legend(fig, ax, LEGEND_SIZE, left_margin,
+                                       figure_width, figure_height)
 else:
     legend = ax.legend(fontsize=LEGEND_SIZE, loc='upper left', frameon=False,
                        bbox_to_anchor=(1.02, 1), borderaxespad=0)

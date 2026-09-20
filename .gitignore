@@ -23,3 +23,6 @@ docs/*
 coverage.xml
 htmlcov/
 .pytest_cache/
+
+# Subagent-driven-development scratch (uncommitted session state)
+.superpowers/

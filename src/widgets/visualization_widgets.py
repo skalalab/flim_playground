@@ -8,6 +8,11 @@ from src.vis.plot_defaults import (
     DEFAULT_LEGEND_FONT_SIZE,
     DEFAULT_POINT_SIZE,
 )
+from src.widgets.analysis_widget_state import (
+    control_default,
+    number_input_default,
+    preserve_analysis_controls,
+)
 from src.widgets.encoding_state import (
     POINT_MODES,
     color_multiselect_label,
@@ -15,9 +20,6 @@ from src.widgets.encoding_state import (
     point_encoding_channels,
     prune_to_options,
     resolve_point_mode,
-)
-from src.widgets.analysis_widget_state import (
-    control_default, number_input_default, preserve_analysis_controls,
 )
 from src.widgets.laser_rate_widget import laser_rate_input
 
@@ -51,13 +53,9 @@ PHASOR_CATEGORY_KEY = "vis_encoding_phasor_category"
 _PHASOR_CATEGORY_COLUMN_KEY = "vis_encoding_phasor_category_column"
 _PHASOR_LAST_CATEGORY_KEY = "vis_encoding_phasor_last_category"
 FD_SEPARATE_BY_KEY = "vis_encoding_fd_separate_by"
-FD_CATEGORY_KEY = "vis_encoding_fd_category"
-_FD_CATEGORY_COLUMN_KEY = "vis_encoding_fd_category_column"
-_FD_LAST_CATEGORY_KEY = "vis_encoding_fd_last_category"
 SEPARATION_KEYS = (*DR_FACET_KEYS, PHASOR_SEPARATE_BY_KEY, PHASOR_CATEGORY_KEY,
                    _PHASOR_CATEGORY_COLUMN_KEY, _PHASOR_LAST_CATEGORY_KEY,
-                   FD_SEPARATE_BY_KEY, FD_CATEGORY_KEY, _FD_CATEGORY_COLUMN_KEY,
-                   _FD_LAST_CATEGORY_KEY, FD_POINT_MODE_KEY, _FD_LAST_POINT_MODE_KEY,
+                   FD_SEPARATE_BY_KEY, FD_POINT_MODE_KEY, _FD_LAST_POINT_MODE_KEY,
                    HISTOGRAM_SEPARATE_BY_KEY)
 
 
@@ -95,12 +93,6 @@ def phasor_category_widget(categories, separate_by):
     """Switch the full-size Phasor view directly below the encoding controls."""
     return _category_widget(categories, separate_by, PHASOR_CATEGORY_KEY,
                             _PHASOR_CATEGORY_COLUMN_KEY, _PHASOR_LAST_CATEGORY_KEY)
-
-
-def distribution_category_widget(categories, separate_by):
-    """Switch the full-size 2D Feature Distribution view independently of Phasor."""
-    return _category_widget(categories, separate_by, FD_CATEGORY_KEY,
-                            _FD_CATEGORY_COLUMN_KEY, _FD_LAST_CATEGORY_KEY)
 
 
 def _pruned_selectbox(label, options, key, **kwargs):
@@ -315,10 +307,10 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                          "category and color group. The separation column cannot also be "
                          "used for Color by."
                          if histogram else
-                         "View one category at a time in a full-size plot. Statistical "
-                         "models are calculated within each category and color group "
-                         "after any Collapse by aggregation. The separation column "
-                         "cannot also be used for Color by or Collapse by."
+                         "Show one small map per value beside a full-size overview. "
+                         "Statistical models are calculated within each category and "
+                         "color group after any Collapse by aggregation. The separation "
+                         "column cannot also be used for Color by or Collapse by."
                          if distribution else
                          "View one category at a time in a full-size plot. Other categories "
                          "remain visible as gray context points. The separation column "
@@ -588,7 +580,7 @@ def phasor_params_widget(feature_groups_dict):
     if len(channel_harmonics.keys()) > 1:
         selected_channel = st.selectbox("Channel", channel_harmonics.keys(), key="analysis_control_phasor_channel")
     elif len(channel_harmonics.keys()) == 1:
-        selected_channel = list(channel_harmonics.keys())[0]
+        selected_channel = next(iter(channel_harmonics.keys()))
     else:
         st.error(f"No available channels found for phasor plot {sad_emoji}")
         return None, None, None
@@ -687,7 +679,7 @@ def reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by):
     """
     from src.vis.helpers import natural_tuple_sort
 
-    session_key_sep, session_key_cmp = get_visual_group_keys(filtered_df, selected_var, color_by, separate_by)
+    _session_key_sep, session_key_cmp = get_visual_group_keys(filtered_df, selected_var, color_by, separate_by)
 
     # Mount the component only when visible; a collapsed expander gives it zero height.
     show_order_config = st.checkbox("Reorder X-axis Groups", value=False, key="analysis_control_reorder_groups")

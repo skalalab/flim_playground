@@ -503,7 +503,7 @@ def _marker_signatures(collections):
             for collection in collections for path in collection.get_paths()}
 
 
-@pytest.mark.parametrize("marginal", ["gaussian fit", "boxplot", "violin", "none"])
+@pytest.mark.parametrize("marginal", ["gaussian fit", "boxplot", "violin", "None"])
 def test_2d_script_has_square_axes_and_aligned_marginals(tmp_path, monkeypatch, marginal):
     state = _base_state(
         "2D Feature Distribution",
@@ -541,7 +541,7 @@ def test_2d_script_applies_shape_and_opacity_per_point(tmp_path, monkeypatch):
             "selected_y": "feature_b",
             "log_x": False,
             "log_y": False,
-            "marginal_plot_type": "none",
+            "marginal_plot_type": "None",
             "fit_regression": False,
             "fit_gmm_2d": False,
         },
@@ -596,7 +596,7 @@ def _2d_corr_state(fit_regression):
             "selected_y": "feature_b",
             "log_x": False,
             "log_y": False,
-            "marginal_plot_type": "none",
+            "marginal_plot_type": "None",
             "fit_regression": fit_regression,
             "fit_gmm_2d": False,
         },
@@ -811,7 +811,7 @@ def test_2d_gmm_derived_data_saved_behind_flag(tmp_path, monkeypatch):
             "selected_y": "feature_b",
             "log_x": False,
             "log_y": False,
-            "marginal_plot_type": "none",
+            "marginal_plot_type": "None",
             "fit_regression": False,
             "fit_gmm_2d": True,
             "gmm_max_components": 2,
@@ -1080,7 +1080,7 @@ def _2d_gmm_state():
         color_by=["treatment"],
         method_params={
             "selected_x": "feature_a", "selected_y": "feature_b",
-            "log_x": False, "log_y": False, "marginal_plot_type": "none",
+            "log_x": False, "log_y": False, "marginal_plot_type": "None",
             "fit_regression": False, "fit_gmm_2d": True,
             "gmm_max_components": 3, "gmm_min_weight_threshold": 0.1,
         },
@@ -1209,7 +1209,7 @@ def test_2d_skips_constant_column_group_like_app(tmp_path, monkeypatch, capsys):
     state = _base_state(
         "2D Feature Distribution", categorical_cols=["treatment"], color_by=["treatment"],
         method_params={"selected_x": "feature_a", "selected_y": "feature_b",
-                       "log_x": False, "log_y": False, "marginal_plot_type": "none",
+                       "log_x": False, "log_y": False, "marginal_plot_type": "None",
                        "fit_regression": False, "fit_gmm_2d": False})
     _run_script(tmp_path, state, df, monkeypatch)
     out = capsys.readouterr().out
@@ -1258,7 +1258,7 @@ def test_2d_log_axis_labels_match_app(tmp_path, monkeypatch):
     state = _base_state(
         "2D Feature Distribution", categorical_cols=["treatment"], color_by=["treatment"],
         method_params={"selected_x": "feature_a", "selected_y": "feature_b",
-                       "log_x": True, "log_y": False, "marginal_plot_type": "none",
+                       "log_x": True, "log_y": False, "marginal_plot_type": "None",
                        "fit_regression": False, "fit_gmm_2d": False})
     ns = _run_script(tmp_path, state, df, monkeypatch)
     assert ns["ax_main"].get_xlabel() == "log₁₀(feature_a)"
@@ -1349,7 +1349,7 @@ def test_2d_point_alpha_matches_app_effective(tmp_path, monkeypatch):
     state = _base_state(
         "2D Feature Distribution", categorical_cols=["treatment"], color_by=["treatment"],
         method_params={"selected_x": "feature_a", "selected_y": "feature_b",
-                       "log_x": False, "log_y": False, "marginal_plot_type": "none",
+                       "log_x": False, "log_y": False, "marginal_plot_type": "None",
                        "fit_regression": False, "fit_gmm_2d": False})
     ns = _run_script(tmp_path, state, df, monkeypatch)
     points = _nonempty_collections(ns["ax_main"])
@@ -1414,7 +1414,7 @@ def test_export_2d_axis_labels_match_app_including_log(tmp_path, monkeypatch):
     state = _base_state(
         "2D Feature Distribution", categorical_cols=["treatment"], color_by=["treatment"],
         method_params={"selected_x": x, "selected_y": y, "log_x": True, "log_y": False,
-                       "marginal_plot_type": "none", "fit_regression": False,
+                       "marginal_plot_type": "None", "fit_regression": False,
                        "fit_gmm_2d": False})
     ns = _run_script(tmp_path, state, _flim_df(), monkeypatch)
     # log axis wraps the pretty label; non-log axis is the pretty label itself
@@ -2152,7 +2152,7 @@ def test_shape_and_opacity_legend_entries_never_carry_counts(tmp_path, monkeypat
         color_by=["treatment"], shape_by="cell_line", opacity_by="day",
         show_group_counts=True,
         method_params={"selected_x": "feature_a", "selected_y": "feature_b",
-                       "log_x": False, "log_y": False, "marginal_plot_type": "none",
+                       "log_x": False, "log_y": False, "marginal_plot_type": "None",
                        "fit_regression": False, "fit_gmm_2d": False},
     )
     ns = _run_script(tmp_path, state, df, monkeypatch)
@@ -2181,7 +2181,7 @@ def test_export_inlines_the_apps_group_label_helper_rather_than_copying_it():
                            "apply_gmm": False, "bin_width": None}),
     ("2D Feature Distribution", {"selected_x": "feature_a", "selected_y": "feature_b",
                                  "log_x": False, "log_y": False,
-                                 "marginal_plot_type": "none", "fit_regression": False,
+                                 "marginal_plot_type": "None", "fit_regression": False,
                                  "fit_gmm_2d": False}),
     ("Phasor Plot", {"selected_channel": "Ch1", "phasor_harmonic": 1, "phasor_f": 0.08}),
     ("Dimension Reduction", {"selected_features": ["feature_a", "feature_b"],

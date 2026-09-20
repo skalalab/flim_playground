@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 import streamlit as st
 
+from src.column_roles import code_span
 from src.vis import bivar
 
 
@@ -46,9 +47,9 @@ def frame():
 
 
 def options(**overrides):
-    values = dict(log_x=False, log_y=False, marginal_plot_type="boxplot",
-                  fit_regression=True, fit_gmm=True,
-                  max_components=3, min_weight_threshold=.1)
+    values = {"log_x": False, "log_y": False, "marginal_plot_type": "boxplot",
+              "fit_regression": True, "fit_gmm": True,
+              "max_components": 3, "min_weight_threshold": .1}
     values.update(overrides)
     return values
 
@@ -101,22 +102,24 @@ def test_separated_metadata_uses_fitted_stats_and_canonical_source_labels(monkey
     assert "flim-gmm-table" in legacy_summary
 
 
-def test_category_switch_updates_stats_only_text_and_keeps_legacy_summary(monkeypatch):
+def test_separated_statistics_list_every_level_and_keep_the_legacy_summary(monkeypatch):
     monkeypatch.setattr(bivar, "_find_best_gmm", lambda values, **_kwargs: StubGMM(values, 2))
-    fig, _, _ = bivar.feature_2d_distribution_plot(
+    fig, legacy_summary, _ = bivar.feature_2d_distribution_plot(
         frame(), "id", None, "x", "y", color_by=["treatment"], separate_by="day",
         analysis_options=options())
 
     meta = fig.layout.meta
-    assert set(meta["distribution_statistics_summaries"]) == {"Day 2", "Day 10"}
-    for category in meta["distribution_categories"]:
-        bivar.select_distribution_category(fig, category)
-        meta = fig.layout.meta
-        assert meta["distribution_statistics"] == meta["distribution_statistics_summaries"][category]
-        assert "Pearson r" in meta["distribution_statistics"]
-        assert "Regression R²" in meta["distribution_statistics"]
-        assert "flim-gmm-table" not in meta["distribution_statistics"]
-        assert "flim-gmm-table" in meta["distribution_summary"]
+    assert meta["distribution_categories"] == ["Day 2", "Day 10"]
+    statistics = meta["distribution_statistics"]
+    for level in meta["distribution_categories"]:
+        heading = f"**{code_span('day')}: {code_span(level)}**"
+        assert heading in statistics
+        assert heading in legacy_summary
+    assert "Pearson r" in statistics
+    assert "Regression R²" in statistics
+    assert "flim-gmm-table" not in statistics
+    assert "flim-gmm-table" in legacy_summary
+    assert {table["category"] for table in meta["gmm_component_tables"]} == {"Day 2", "Day 10"}
 
 
 def test_combined_metadata_has_none_category_and_stats_without_gmm_html(monkeypatch):
