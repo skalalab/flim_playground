@@ -1,7 +1,7 @@
 {
   "upload_type": "software",
-  "title": "FLIM Playground: An interactive, end-to-end graphical user interface for analyzing single-cell fluorescence lifetime data",
-  "description": "FLIM Playground extracts single-cell features from fluorescence lifetime imaging microscopy (FLIM) raw data (Data Extraction) and analyzes extracted features or user-supplied datasets with built-in visual-analytic modules (Data Analysis). See README for details.",
+  "title": "FLIM Playground: A FLIM-focused framework for multimodal single-cell imaging",
+  "description": "FLIM Playground is an interactive framework for extracting and analyzing single-cell measurements, centered on fluorescence lifetime imaging microscopy (FLIM). It extracts features from FLIM data, supports quantitative phase imaging (QPI) as an additional modality, and analyzes user-supplied CSV, TSV/TXT, Excel, and OpenDocument tables through interactive visual-analytic modules. The framework is designed to expand to additional imaging modalities. See the README for details.",
   "creators": [
     {
       "name": "Zhao, Wenxuan",
@@ -29,7 +29,13 @@
   "keywords": [
     "FLIM",
     "fluorescence lifetime imaging",
+    "multimodal imaging",
+    "multimodal analysis",
+    "single-cell imaging",
     "single-cell analysis",
+    "quantitative phase imaging",
+    "feature extraction",
+    "tabular data analysis",
     "phasor analysis",
     "curve fitting",
     "morphology analysis",
@@ -38,7 +44,9 @@
     "data extraction",
     "classification",
     "interactive visualization",
-    "bioimage analysis"
+    "bioimage analysis",
+    "Python",
+    "Streamlit"
   ],
   "related_identifiers": [
     {
