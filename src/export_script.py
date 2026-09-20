@@ -497,6 +497,8 @@ def _build_config_section(state: dict) -> str:
         lines.append(f"FIT_GMM_2D = {mp.get('fit_gmm_2d', False)!r}")
         lines.append(f"GMM_MAX_COMPONENTS = {mp.get('gmm_max_components', 3)!r}")
         lines.append(f"GMM_MIN_WEIGHT_THRESHOLD = {mp.get('gmm_min_weight_threshold', 0.1)!r}")
+        lines.append(f"FOCUS_CATEGORY = {mp.get('facet_focus')!r}"
+                     "  # category promoted into the overview slot; None → the whole dataset")
         if mp.get("fit_gmm_2d"):
             lines.append("SAVE_DERIVED_DATA = False  # True → also write 2D_gmm_data.csv (the app's download button)")
     elif method == "Phasor Plot":
@@ -510,6 +512,9 @@ def _build_config_section(state: dict) -> str:
         lines.append(f"DR_METHOD = {mp.get('dr_method', 'PCA')!r}")
         lines.append(f"HYPER_PARAMS = {mp.get('hyperParam_dict', {})!r}")
         lines.append(f"SEPARATE_BY = {state.get('separate_by') or []!r}  # ordered row and column categories")
+        focus = mp.get("facet_focus")
+        lines.append(f"FOCUS_CATEGORY = {tuple(focus) if focus else None!r}"
+                     "  # panel promoted into the overview slot; None → the whole dataset")
     elif method == "Classification":
         lines.append(f"SELECTED_FEATURES = {mp.get('selected_features', [])!r}")
         lines.append(f"CLASSIFICATION_METHOD = {mp.get('classification_method')!r}")
@@ -1378,11 +1383,16 @@ def _build_2d_distribution(state: dict) -> str:
         distribution_fit_groups,
         distribution_ranges,
     )
-    from src.vis.dimension_facets import category_facet_groups, dimension_facet_layout
+    from src.vis.dimension_facets import (
+        MAIN_PLOT_LABEL,
+        category_facet_groups,
+        dimension_facet_layout,
+        focus_slot_keys,
+    )
 
     helpers = [category_panel_rows, distribution_fit_groups, distribution_ranges,
-               category_facet_groups, dimension_facet_layout, place_facet_legend,
-               _print_distribution_statistics]
+               category_facet_groups, dimension_facet_layout, focus_slot_keys,
+               place_facet_legend, _print_distribution_statistics]
     if state.get("method_params", {}).get("fit_gmm_2d"):
         from src.vis.helpers import _find_best_gmm
 
@@ -1417,11 +1427,14 @@ FD_GROUP_COLUMN = available_label_column(df.columns, "_color_group")
 #   PANEL_MODEL_WIDTH <- src/vis/bivar.py feature_2d_distribution_plot()
 #                        overlay_width = 1 if separate_by else 2
 #   PANEL_CONTEXT_*   <- src/vis/bivar.py, the grey '#b8b8b8' / opacity .25 trace
+# MAIN_PLOT_LABEL is embedded from src/vis/dimension_facets.py, so it cannot
+# drift; the four above are restated by hand.
 PANEL_POINT_SIZE = max(1, POINT_SIZE - 2)
 PANEL_MODEL_WIDTH = 1
 OVERVIEW_MODEL_WIDTH = 2
 PANEL_CONTEXT_COLOR = '#b8b8b8'
 PANEL_CONTEXT_ALPHA = 0.25
+MAIN_PLOT_LABEL = """ + repr(MAIN_PLOT_LABEL) + """
 # -------------------------------------------------------------------------
 
 distribution_panels = category_panel_rows(df, SEPARATE_BY, COLOR_BY)
@@ -1506,38 +1519,47 @@ else:
     ax_top = None
     ax_right = None
 
-point_legend_handles = scatter_interleaved_points(
-    ax_main, df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups, color_map,
-    POINT_SIZE ** 2, shape_by=SHAPE_BY, shape_map=shape_map,
-    opacity_by=OPACITY_BY, opacity_map=opacity_map,
-    base_alpha=BASE_ALPHA, show_counts=SHOW_GROUP_COUNTS,
-)
-
-# Each highlight map shows its level in colour over every other cell in grey,
-# both one size smaller than the overview's points (PANEL_POINT_SIZE above).
+# Each slot draws one membership: the level promoted into the overview block if
+# any, every other level in its own map, and the whole dataset wherever the
+# overview sits. focus_slot_keys is the app's own arrangement rule.
+panel_positions = {level: positions for level, positions in distribution_panels}
+slot_keys = focus_slot_keys(list(panel_positions), FOCUS_CATEGORY if SEPARATE_BY else None)
+promoted_category = slot_keys[0]
+slot_axes = [ax_main, *facet_axes]
 panel_point_area = PANEL_POINT_SIZE ** 2
-for panel_ax, (level, positions) in zip(facet_axes, distribution_panels):
-    membership = np.zeros(len(df), dtype=bool)
-    membership[positions] = True
-    if (~membership).any():
-        background = df.loc[~membership]
-        panel_ax.scatter(background[SELECTED_X], background[SELECTED_Y],
-                         color=PANEL_CONTEXT_COLOR, alpha=PANEL_CONTEXT_ALPHA,
-                         s=panel_point_area, edgecolors='none', linewidths=0, zorder=1)
-    scatter_interleaved_points(
-        panel_ax, df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups, color_map,
-        panel_point_area, shape_by=SHAPE_BY, shape_map=shape_map,
+point_legend_handles = []
+for slot, (slot_ax, slot_key) in enumerate(zip(slot_axes, slot_keys)):
+    # Points follow the slot, not the level: the main block keeps POINT_SIZE.
+    slot_area = POINT_SIZE ** 2 if slot == 0 else panel_point_area
+    positions = None if slot_key is None else panel_positions[slot_key]
+    if positions is not None:
+        membership = np.zeros(len(df), dtype=bool)
+        membership[positions] = True
+        if (~membership).any():
+            background = df.loc[~membership]
+            slot_ax.scatter(background[SELECTED_X], background[SELECTED_Y],
+                            color=PANEL_CONTEXT_COLOR, alpha=PANEL_CONTEXT_ALPHA,
+                            s=slot_area, edgecolors='none', linewidths=0, zorder=1)
+    handles = scatter_interleaved_points(
+        slot_ax, df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups, color_map,
+        slot_area, shape_by=SHAPE_BY, shape_map=shape_map,
         opacity_by=OPACITY_BY, opacity_map=opacity_map,
         base_alpha=BASE_ALPHA, show_counts=SHOW_GROUP_COUNTS,
         active_positions=positions,
     )
+    if slot_key is None:
+        # One shared legend, counted over the whole dataset, wherever it sits.
+        point_legend_handles = handles
 
-# Marginals describe the whole dataset per colour group, on the overview only,
-# so no cross-level density rescaling is needed (the app dropped it too).
+# Marginals belong to the main block and describe whatever occupies it: the
+# whole dataset, or the promoted category. One set is drawn, so no cross-level
+# density rescaling is needed (the app draws one set at a time as well).
 # Each visible box/violin gets its own categorical position on each axis.
+marginal_frame = (df if promoted_category is None
+                  else df.iloc[panel_positions[promoted_category]])
 marginal_positions = {"x": 0, "y": 0}
 for g in color_groups:
-    gdf = df[df[FD_GROUP_COLUMN] == g]
+    gdf = marginal_frame[marginal_frame[FD_GROUP_COLUMN] == g]
 
     # Guard each marginal on its own axis, as the app does (_plot_marginal_density
     # in src/vis/bivar.py returns early per axis), so a constant y still draws x.
@@ -1589,8 +1611,9 @@ for g in color_groups:
 
 # Every level's model is drawn in that level's own panel, never on the overview,
 # and every level's statistics are printed (the app lists them all as well).
-panel_by_level = {level: panel_ax
-                  for panel_ax, (level, _positions) in zip(facet_axes, distribution_panels)}
+panel_by_level = {slot_key: slot_ax
+                  for slot_ax, slot_key in zip(slot_axes, slot_keys)
+                  if slot_key is not None}
 model_width = PANEL_MODEL_WIDTH if SEPARATE_BY else OVERVIEW_MODEL_WIDTH
 for result in distribution_results:
     color = color_map[result["color_group"]][:3]
@@ -1613,8 +1636,10 @@ for result in distribution_results:
         model_ax.plot(*mean, '+', color=color, markersize=15, markeredgewidth=model_width)
 
 if SEPARATE_BY:
-    for panel_ax, (level, _positions) in zip(facet_axes, distribution_panels):
-        panel_ax.text(1.04, 0.5, str(level), transform=panel_ax.transAxes,
+    for panel_ax, slot_key in zip(facet_axes, slot_keys[1:]):
+        panel_ax.text(1.04, 0.5,
+                      MAIN_PLOT_LABEL if slot_key is None else str(slot_key),
+                      transform=panel_ax.transAxes,
                       ha='left', va='center', fontsize=LEGEND_SIZE)
     for panel_ax in [ax_main, *facet_axes]:
         panel_ax.set_xlim(x_range)
@@ -1635,6 +1660,9 @@ ax_main.set_ylabel(f"log₁₀({format_feature_label(SELECTED_Y, engine='mpl')})
 ax_main.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
 _2d_title = (f"2D Distribution of {format_feature_label(SELECTED_X, engine='mpl')} and "
              f"{format_feature_label(SELECTED_Y, engine='mpl')} by {', '.join(COLOR_BY)}")
+if promoted_category is not None:
+    # A promotion names itself in the title, as it does in the app.
+    _2d_title += f" ({SEPARATE_BY}: {promoted_category})"
 encoding_legend_handles = add_encoding_legend_entries(
     ax_main, shape_map, opacity_map, POINT_SIZE ** 2)
 if SEPARATE_BY:
@@ -1875,17 +1903,21 @@ ax.legend(handles=point_legend_handles + encoding_legend_handles, fontsize=LEGEN
 
 def _build_dimension_reduction(state: dict) -> str:
     from src.vis.dimension_facets import (
+        MAIN_PLOT_LABEL,
         dimension_facet_groups,
         dimension_facet_layout,
         dimension_interleaved_indices,
         dimension_ranges,
+        focus_slot_keys,
         normalize_dimension_categories,
     )
 
     facet_src = _extract_source(normalize_dimension_categories,
                                 dimension_facet_groups, dimension_ranges,
                                 dimension_facet_layout, dimension_interleaved_indices,
-                                scatter_dimension_batch, place_facet_legend)
+                                focus_slot_keys, scatter_dimension_batch,
+                                place_facet_legend)
+    facet_src += f"\nMAIN_PLOT_LABEL = {MAIN_PLOT_LABEL!r}\n"  # embedded, never restated
     # Encoding maps and facet levels describe the observations that are actually
     # reduced. No facet changes the scaler, fit, color, shape, or opacity maps.
     retained = """
@@ -1975,14 +2007,21 @@ all_rows = np.ones(len(df), dtype=bool)
 point_batches = dimension_interleaved_indices(
     df, DR_GROUP_COLUMN, color_groups, SHAPE_BY, shape_map, OPACITY_BY, opacity_map)
 group_counts = df[DR_GROUP_COLUMN].value_counts().to_dict()
-for panel_ax, membership, is_overview in [
-        (ax, all_rows, True),
-        *[(facet_ax, panel["mask"], False)
-          for facet_ax, panel in zip(facet_axes, facet_layout["panels"])]]:
+# Each slot draws one membership: the promoted panel in the overview block if
+# any, every other panel its own, and the whole dataset wherever the overview
+# sits. focus_slot_keys is the app's own arrangement rule.
+panel_keys = [tuple(panel["values"]) for panel in facet_layout["panels"]]
+panel_masks = dict(zip(panel_keys, (panel["mask"] for panel in facet_layout["panels"])))
+slot_keys = focus_slot_keys(panel_keys, tuple(FOCUS_CATEGORY) if FOCUS_CATEGORY else None)
+promoted_key = slot_keys[0]
+for slot, (panel_ax, slot_key) in enumerate(zip([ax, *facet_axes], slot_keys)):
+    is_overview = slot == 0
+    membership = all_rows if slot_key is None else panel_masks[slot_key]
+    # Points follow the slot, not the panel: the main block keeps POINT_SIZE.
     panel_point_size = POINT_SIZE if is_overview else max(1, POINT_SIZE - 2)
     # The app's point-size control is a diameter; Matplotlib scatter uses area.
     panel_point_area = panel_point_size ** 2
-    if not is_overview and (~membership).any():
+    if (~membership).any():
         background = df.loc[~membership]
         panel_ax.scatter(background[DR_X_COLUMN], background[DR_Y_COLUMN],
                          color='#b8b8b8', alpha=0.25, s=panel_point_area,
@@ -1992,8 +2031,9 @@ for panel_ax, membership, is_overview in [
         gdf = df.iloc[global_indices[membership[global_indices]]]
         if gdf.empty:
             continue
+        # One shared legend, counted over the whole dataset, wherever it sits.
         label = (format_group_label(g, group_counts[g], SHOW_GROUP_COUNTS, engine='mpl')
-                 if is_overview and g not in labeled_groups else None)
+                 if slot_key is None and g not in labeled_groups else None)
         labeled_groups.add(g)
         # Plotly multiplies color alpha by marker opacity. Preserve that same
         # effective per-point alpha while keeping the legend's opacity map raw.
@@ -2018,9 +2058,11 @@ for panel_ax, membership, is_overview in [
         panel_ax.tick_params(axis='both', which='both', bottom=False, left=False,
                              labelbottom=False, labelleft=False)
 
-for facet_ax, panel in zip(facet_axes, facet_layout["panels"]):
+for facet_ax, panel, slot_key in zip(facet_axes, facet_layout["panels"], slot_keys[1:]):
     if len(SEPARATE_BY) == 1:
-        facet_ax.text(1.04, 0.5, panel["values"][0], transform=facet_ax.transAxes,
+        facet_ax.text(1.04, 0.5,
+                      MAIN_PLOT_LABEL if slot_key is None else panel["values"][0],
+                      transform=facet_ax.transAxes,
                       ha='left', va='center', fontsize=LEGEND_SIZE)
     else:
         if panel["row"] == 0:
@@ -2029,6 +2071,18 @@ for facet_ax, panel in zip(facet_axes, facet_layout["panels"]):
         if panel["col"] == facet_groups["ncols"] - 1:
             facet_ax.text(1.04, 0.5, panel["values"][0], transform=facet_ax.transAxes,
                           ha='left', va='center', fontsize=LEGEND_SIZE)
+        if slot_key is None:
+            # A cell is named by its row and column, so the overview is marked
+            # inside the cell it now occupies instead of renaming an edge.
+            facet_ax.text(0.5, 0.97, MAIN_PLOT_LABEL, transform=facet_ax.transAxes,
+                          ha='center', va='top', fontsize=LEGEND_SIZE,
+                          bbox=dict(facecolor='white', alpha=0.75,
+                                    edgecolor='none', pad=2))
+if promoted_key is not None:
+    # Dimension Reduction draws no title of its own, so the promotion is it.
+    fig.suptitle(" · ".join(f"{column}: {value}"
+                            for column, value in zip(SEPARATE_BY, promoted_key)),
+                 fontsize=AXIS_LABEL_SIZE)
 
 ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel(ylabel, fontsize=AXIS_LABEL_SIZE)

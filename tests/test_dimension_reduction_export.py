@@ -32,7 +32,7 @@ def _frame():
     })
 
 
-def _state(separate_by=(), *, counts=True, method="PCA"):
+def _state(separate_by=(), *, counts=True, method="PCA", focus=None):
     return {
         "method": "Dimension Reduction", "csv_filename": "data.csv",
         "unique_row_id_col": "id", "fov_name_col": None,
@@ -47,6 +47,7 @@ def _state(separate_by=(), *, counts=True, method="PCA"):
             "dr_method": method,
             "hyperParam_dict": {"n_neighbors": 3, "min_dist": .2,
                                 "perplexity": 2, "early_exaggeration": 8},
+            "facet_focus": focus,
         },
     }
 
@@ -465,3 +466,50 @@ def test_export_inlines_the_apps_shared_facet_helpers():
     assert "SHOW_FACET_BACKGROUND" not in script
     assert "FACET_COLUMNS" not in script
     assert "SEPARATE_BY = ['row', 'column']" in script
+
+
+def test_a_promoted_panel_takes_the_overview_slot(tmp_path, monkeypatch):
+    namespace = _run(tmp_path, monkeypatch, _state(["row"], focus=("row10",)))
+    assert "FOCUS_CATEGORY = ('row10',)" in (tmp_path / "analysis.py").read_text()
+    overview, *facets = namespace["fig"].axes
+    df = namespace["df"]
+    membership = df["row"].eq("row10")
+    assert _rows(_points(overview)) == _rows(df.loc[membership, ["_dr_x", "_dr_y"]].values)
+    assert _rows(_points(overview, 1)) == _rows(df.loc[~membership, ["_dr_x", "_dr_y"]].values)
+    for style in _point_styles(overview).values():
+        np.testing.assert_allclose(np.sqrt(style[2]), namespace["POINT_SIZE"])
+    # Levels stack row2, row10, N/A, so the middle map is the vacated one.
+    vacated = facets[1]
+    assert _rows(_points(vacated)) == _rows(df[["_dr_x", "_dr_y"]].values)
+    assert not len(_points(vacated, 1))
+    for style in _point_styles(vacated).values():
+        np.testing.assert_allclose(np.sqrt(style[2]), max(1, namespace["POINT_SIZE"] - 2))
+    assert [text.get_text() for text in vacated.texts] == ["Main plot"]
+    assert [text.get_text() for text in facets[0].texts] == ["row2"]
+    assert [text.get_text() for text in namespace["fig"].texts] == ["row: row10"]
+
+
+def test_a_promoted_matrix_cell_keeps_the_edge_labels_and_is_stamped(tmp_path, monkeypatch):
+    namespace = _run(tmp_path, monkeypatch,
+                     _state(["row", "column"], focus=("row2", "col1")))
+    overview, *facets = namespace["fig"].axes
+    df = namespace["df"]
+    membership = df["row"].eq("row2") & df["column"].eq("col1")
+    assert _rows(_points(overview)) == _rows(df.loc[membership, ["_dr_x", "_dr_y"]].values)
+    stamped = [ax for ax in facets
+               if any(text.get_text() == "Main plot" for text in ax.texts)]
+    assert len(stamped) == 1
+    assert _rows(_points(stamped[0])) == _rows(df[["_dr_x", "_dr_y"]].values)
+    # The cell is named by its row and column, and those labels are untouched.
+    assert {text.get_text() for text in stamped[0].texts} == {"col1", "Main plot"}
+    assert [text.get_text() for text in namespace["fig"].texts] == [
+        "row: row2 · column: col1"]
+
+
+def test_without_a_promotion_the_grid_is_unchanged(tmp_path, monkeypatch):
+    namespace = _run(tmp_path, monkeypatch, _state(["row"]))
+    overview, *facets = namespace["fig"].axes
+    assert _rows(_points(overview)) == _rows(namespace["df"][["_dr_x", "_dr_y"]].values)
+    assert not any("Main plot" in text.get_text()
+                   for ax in [overview, *facets] for text in ax.texts)
+    assert not namespace["fig"].texts

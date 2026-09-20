@@ -58,6 +58,63 @@ SEPARATION_KEYS = (*DR_FACET_KEYS, PHASOR_SEPARATE_BY_KEY, PHASOR_CATEGORY_KEY,
                    FD_SEPARATE_BY_KEY, FD_POINT_MODE_KEY, _FD_LAST_POINT_MODE_KEY,
                    HISTOGRAM_SEPARATE_BY_KEY)
 
+# Each grid remembers the panel it promoted into the main slot, and the click
+# that promoted it. Plotly dims everything outside a selection and selection
+# state cannot be written through Session State, so a handled click moves the
+# chart key instead, remounting the chart without the selection.
+FACET_FOCUS_KEYS = {"2D Feature Distribution": "vis_facet_focus_2d",
+                    "Dimension Reduction": "vis_facet_focus_dr"}
+
+
+def _facet_focus_block(fig):
+    meta = fig.layout.meta
+    return (meta.get("facet_focus") or {}) if isinstance(meta, dict) else {}
+
+
+def facet_focus_selection(fig, state_key):
+    """The promotion to draw: the stored one while this grid still offers it.
+
+    A level a filter removed, or a different separation column, forgets it —
+    two columns can share a value, so the level alone does not identify it.
+    """
+    from src.vis.dimension_facets import as_facet_key
+
+    block = _facet_focus_block(fig)
+    keys = [as_facet_key(key) for key in block.get("keys") or []]
+    focus = as_facet_key(st.session_state.get(state_key))
+    if focus not in keys or st.session_state.get(f"{state_key}_column") != block.get("separate_by"):
+        focus = None
+    st.session_state[state_key] = focus
+    st.session_state[f"{state_key}_column"] = block.get("separate_by")
+    return focus
+
+
+def facet_chart_suffix(state_key):
+    """The handled-click counter that keeps a clicked chart from staying dimmed."""
+    return f"_{st.session_state.get(f'{state_key}_nonce', 0)}"
+
+
+def facet_click_focus(fig, event, state_key):
+    """Store what a click asks of the grid. True when it must be drawn again.
+
+    Clicking the promoted panel changes nothing and still redraws: the chart has
+    to be remounted for Plotly to stop dimming everything the click left out.
+    """
+    from src.vis.dimension_facets import facet_focus_from_click
+
+    selection = getattr(event, "selection", None) if event is not None else None
+    points = (selection or {}).get("points") or []
+    mark = tuple((point.get("curve_number"), point.get("point_index")) for point in points)
+    if mark == st.session_state.get(f"{state_key}_click"):
+        return False
+    st.session_state[f"{state_key}_click"] = mark
+    if not mark:
+        return False
+    st.session_state[state_key] = facet_focus_from_click(
+        fig, selection, st.session_state.get(state_key))
+    st.session_state[f"{state_key}_nonce"] = st.session_state.get(f"{state_key}_nonce", 0) + 1
+    return True
+
 
 def _retain_category(category_key, last_category_key):
     """A single-category view always keeps one category selected."""

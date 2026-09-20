@@ -172,7 +172,7 @@ def square_2d_plot(fig, *, key):
 
 
 def dimension_reduction_chart(fig, *, key, container_key="dimension_reduction_plot",
-                              meta_key="dimension_reduction_layout"):
+                              meta_key="dimension_reduction_layout", **chart_kwargs):
     """Fit canonical facet-grid geometry using Plotly's measured browser margins.
 
     Normal charts fit the available width and most of the viewport height, with
@@ -182,11 +182,24 @@ def dimension_reduction_chart(fig, *, key, container_key="dimension_reduction_pl
     cannot accumulate coordinate drift or alter the user's zoom ranges.
     ``container_key``/``meta_key`` let Dimension Reduction and the 2D separation
     grid mount the same script without clobbering each other's globals.
+    ``chart_kwargs`` reach ``st.plotly_chart`` unchanged — ``on_select`` and
+    ``selection_mode`` for click-to-promote — and both paths return its event,
+    since a figure carrying no facet geometry is still a clickable chart.
     """
+    if chart_kwargs.get("on_select") and fig.layout.clickmode is None:
+        # Streamlit only supplies these when the spec carries neither, and on this
+        # page it does not, so a point click never selected anything. Setting them
+        # here makes the click select and keeps drag zooming, where Streamlit's own
+        # default for a selectable chart would switch drag to panning.
+        # selectionrevision follows the key: uirevision preserves a zoom across
+        # redraws and would preserve the click's own selection too, leaving the
+        # next click on the same point to merely deselect it.
+        fig.update_layout(clickmode="event+select", dragmode="zoom",
+                          selectionrevision=key)
+
     meta = fig.layout.meta
     if not isinstance(meta, dict) or not meta.get(meta_key):
-        st.plotly_chart(fig, width="stretch", key=key)
-        return
+        return st.plotly_chart(fig, width="stretch", key=key, **chart_kwargs)
 
     st.html("""
         <style>
@@ -327,4 +340,5 @@ def dimension_reduction_chart(fig, *, key, container_key="dimension_reduction_pl
        .replace("__CLEANUP_GLOBAL__", f"_flim_{container_key}_cleanup"),
        unsafe_allow_javascript=True)
     with st.container(key=container_key):
-        st.plotly_chart(fig, width="stretch", height="stretch", key=key)
+        return st.plotly_chart(fig, width="stretch", height="stretch", key=key,
+                               **chart_kwargs)

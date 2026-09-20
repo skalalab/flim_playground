@@ -392,7 +392,7 @@ def test_data_analysis_routes_dimension_reduction_through_responsive_wrapper(mon
     monkeypatch.setattr(export_script, "generate_script", lambda state: "# test")
     seen = []
     monkeypatch.setattr(plot_layout, "dimension_reduction_chart",
-                        lambda fig, *, key: seen.append((fig, key)))
+                        lambda fig, *, key, **kwargs: seen.append((fig, key, kwargs)))
     page = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
     at = AppTest.from_file(page).run(timeout=30)
     at.radio[0].set_value("**Multivariate**")
@@ -401,5 +401,64 @@ def test_data_analysis_routes_dimension_reduction_through_responsive_wrapper(mon
     at.run(timeout=30)
     assert not at.exception, [e.value for e in at.exception]
     assert len(seen) == 1
-    assert seen[0][1] == "plot_chart_Dimension Reduction"
+    # The key carries the handled-click counter that clears Plotly's dimming.
+    assert seen[0][1] == "plot_chart_Dimension Reduction_0"
     assert seen[0][0].layout.meta == _figure().layout.meta
+    # Click-to-promote needs the chart to report its selections.
+    assert seen[0][2] == {"on_select": "rerun", "selection_mode": "points"}
+
+
+def _selection_app(spec):
+    import plotly.graph_objects as go
+    import streamlit as st
+
+    from src.widgets.plot_layout import dimension_reduction_chart
+
+    event = dimension_reduction_chart(go.Figure(spec), key="test_dimension_reduction",
+                                      on_select="rerun", selection_mode="points")
+    st.text(f"event={None if event is None else sorted(event.selection)}")
+
+
+def _plain_app(spec):
+    import plotly.graph_objects as go
+
+    from src.widgets.plot_layout import dimension_reduction_chart
+
+    dimension_reduction_chart(go.Figure(spec), key="test_dimension_reduction")
+
+
+@pytest.mark.parametrize("metadata", [True, False])
+def test_the_wrapper_forwards_selection_and_returns_the_event_either_way(metadata):
+    """Click-to-promote needs the event from the sized path and the plain one."""
+    fig = _figure()
+    if not metadata:
+        fig.layout.meta = None
+    at = AppTest.from_function(_selection_app, args=(fig.to_plotly_json(),)).run(timeout=30)
+    assert not at.exception, [e.value for e in at.exception]
+    chart = at.get("plotly_chart")[0]
+    assert len(chart.proto.selection_mode) == 1
+    assert at.get("text")[0].value == "event=['box', 'lasso', 'point_indices', 'points']"
+
+
+@pytest.mark.parametrize("metadata", [True, False])
+def test_a_selectable_chart_asks_plotly_for_click_selection_and_keeps_zoom(metadata):
+    """Streamlit leaves a clickmode the spec already carries, and only then does a
+    point click select. Pinning dragmode keeps drag zooming rather than panning."""
+    fig = _figure()
+    if not metadata:
+        fig.layout.meta = None
+    at = AppTest.from_function(_selection_app, args=(fig.to_plotly_json(),)).run(timeout=30)
+    assert not at.exception, [e.value for e in at.exception]
+    layout = json.loads(at.get("plotly_chart")[0].proto.spec)["layout"]
+    assert layout["clickmode"] == "event+select"
+    assert layout["dragmode"] == "zoom"
+    # uirevision keeps a zoom across redraws, and would keep the click's own
+    # selection too, so clicking the same point again would only deselect it.
+    assert layout["selectionrevision"] == "test_dimension_reduction"
+
+
+def test_a_chart_without_selection_keeps_plotlys_own_modes():
+    at = AppTest.from_function(_plain_app, args=(_figure().to_plotly_json(),)).run(timeout=30)
+    assert not at.exception, [e.value for e in at.exception]
+    layout = json.loads(at.get("plotly_chart")[0].proto.spec)["layout"]
+    assert not {"clickmode", "dragmode", "selectionrevision"} & set(layout)

@@ -850,7 +850,7 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
                 is_facet = facet_grid and getattr(trace, 'xaxis', None) not in (None, 'x')
                 is_context = isinstance(trace.meta, dict) and (
                     trace.meta.get('phasor_role') == 'context'
-                    or trace.meta.get('distribution_role') == 'context')
+                    or trace.meta.get('facet_role') == 'context')
                 superplot_role = trace.meta.get('superplot_role') if isinstance(trace.meta, dict) else None
                 trace.marker.size = (max(SUPERPLOT_OBSERVATION_MIN_SIZE,
                                         point_size * SUPERPLOT_OBSERVATION_SIZE_SCALE)

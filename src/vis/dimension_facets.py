@@ -152,3 +152,132 @@ def category_facet_groups(panels):
     return dict(nrows=len(panels), ncols=1,
                 panels=[dict(row=index, col=0, values=(level,))
                         for index, (level, _positions) in enumerate(panels)])
+
+
+def focus_slot_keys(keys, focus=None):
+    """Which membership each slot draws once ``focus`` is promoted.
+
+    Slot 0 is the overview block and slots 1..N the panels in composition order;
+    ``None`` means every row. Promotion swaps one panel with the overview, so the
+    composition's domains never move and every other panel keeps its level. A
+    ``focus`` a filter has removed from ``keys`` leaves the arrangement alone.
+    """
+    keys = list(keys)
+    if focus is None or focus not in keys:
+        return [None, *keys]
+    return [focus, *(None if key == focus else key for key in keys)]
+
+
+MAIN_PLOT_LABEL = "Main plot"
+
+
+def as_facet_key(value):
+    """Plotly serialization returns a matrix key as a list; compare them whole."""
+    return tuple(value) if isinstance(value, list) else value
+
+
+def _facet_axis_property(axis):
+    """``'x4'`` names the layout domain ``'xaxis4'``; ``'x'`` names ``'xaxis'``."""
+    return f"{axis[0]}axis{axis[1:]}"
+
+
+def focus_facet_label(separate_by, key):
+    """Name a promoted panel by its own column(s), e.g. ``day: Day 2``."""
+    import html
+
+    columns = [separate_by] if isinstance(separate_by, str) else list(separate_by or [])
+    values = key if isinstance(key, tuple) else (key,)
+    return " · ".join(html.escape(f"{column}: {value}")
+                      for column, value in zip(columns, values))
+
+
+def focus_facet_figure(fig, focus=None):
+    """Promote ``focus`` into the main slot of an already built facet grid.
+
+    Apply to a copy of the base figure, the way ``select_phasor_category`` does.
+    Contents move between slots while every domain, range and axis stays where it
+    was built, so a promotion refits nothing and recomputes no coordinate. The
+    result is always computed from the unpromoted figure, which is what makes
+    restoring "promote nothing" rather than an inverse operation.
+    """
+    meta = fig.layout.meta
+    block = meta.get("facet_focus") if isinstance(meta, dict) else None
+    if not block or not block.get("keys"):
+        return fig
+    keys = [as_facet_key(key) for key in block["keys"]]
+    axes = [tuple(pair) for pair in block["axes"]]
+    slots = focus_slot_keys(keys, as_facet_key(focus))
+    promoted = slots[0]
+    # Exactly one panel slot is vacated, and it is the promoted one. With no
+    # promotion that lookup lands on the overview itself, so nothing trades.
+    vacated = slots.index(None)
+    traded = {0: axes[vacated], vacated: axes[0]}
+    for trace in fig.data:
+        trace_meta = trace.meta
+        if not isinstance(trace_meta, dict) or "facet_slot" not in trace_meta:
+            continue
+        slot = trace_meta["facet_slot"]
+        if trace_meta.get("facet_role") == "marginal":
+            # Strips belong to the main block and describe whatever occupies it.
+            trace.visible = slot == vacated
+        elif slot in traded:
+            trace.update(xaxis=traded[slot][0], yaxis=traded[slot][1])
+
+    annotations = fig.layout.annotations
+    slot_labels = list(block["slot_labels"])
+    for index, label in zip(slot_labels, block["labels"]):
+        if index is not None:
+            annotations[index].text = label
+    layout_block = dict(meta[block["layout_key"]])
+    canonical = [dict(item) for item in layout_block["annotations"]]
+    stamped = vacated and slot_labels[vacated - 1] is None
+    if vacated and not stamped:
+        annotations[slot_labels[vacated - 1]].text = MAIN_PLOT_LABEL
+    stamp = block.get("stamp_annotation")
+    if stamp is not None:
+        placement = dict(text="", x=canonical[stamp]["x"], y=canonical[stamp]["y"])
+        if stamped:
+            # A matrix cell is named by its row and column, so the overview is
+            # marked inside the cell it now occupies instead.
+            domains = layout_block["axes"]
+            x_domain = domains[_facet_axis_property(axes[vacated][0])]
+            y_domain = domains[_facet_axis_property(axes[vacated][1])]
+            placement = dict(text=MAIN_PLOT_LABEL, x=sum(x_domain) / 2, y=y_domain[1])
+        annotations[stamp].update(**placement)
+        canonical[stamp] = {**canonical[stamp], "x": placement["x"], "y": placement["y"]}
+    # The promotion names itself in the plot title: the figure's own title,
+    # augmented, so restoring is simply the title it was built with.
+    base_title = block.get("title") or ""
+    if promoted is not None or base_title:
+        label = focus_facet_label(block.get("separate_by"), promoted) if promoted is not None else ""
+        # A grid with a title of its own is augmented; one without — Dimension
+        # Reduction — is titled by the promotion alone.
+        fig.update_layout(title=dict(
+            text=f"{base_title} ({label})" if base_title and label else label or base_title))
+    layout_block["annotations"] = canonical
+    fig.update_layout(meta={**meta, block["layout_key"]: layout_block,
+                            "facet_focus": {**block, "applied": promoted}})
+    return fig
+
+
+def facet_focus_from_click(fig, selection, current=None):
+    """The promotion a Plotly selection asks for, or ``current`` if it asks none.
+
+    Resolved against the figure the click came from, so the curve index always
+    describes what was on screen. A click on the overview restores the default
+    arrangement; one on a legend swatch or any untagged trace changes nothing.
+    """
+    points = (selection or {}).get("points") or []
+    if not points:
+        return current
+    curve = points[0].get("curve_number")
+    if curve is None or curve >= len(fig.data):
+        return current
+    trace_meta = fig.data[curve].meta
+    if not isinstance(trace_meta, dict) or "facet_slot" not in trace_meta:
+        return current
+    slot = trace_meta["facet_slot"]
+    keys = (fig.layout.meta or {}).get("facet_focus", {}).get("keys") or []
+    if slot == 0:
+        return None
+    return as_facet_key(keys[slot - 1]) if slot <= len(keys) else current

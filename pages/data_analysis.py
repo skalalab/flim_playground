@@ -32,6 +32,7 @@ from src.vis.bivar import (
     render_distribution_component_tables,
     select_phasor_category,
 )
+from src.vis.dimension_facets import focus_facet_figure
 from src.vis.helpers import apply_plot_styling, log_negative_error
 from src.vis.multivar import dimension_reduction_plot
 from src.vis.plot_defaults import (
@@ -87,9 +88,13 @@ from src.widgets.selection_widgets import (
     twod_single_feature_select_widget,
 )
 from src.widgets.visualization_widgets import (
+    FACET_FOCUS_KEYS,
     HISTOGRAM_BIN_WIDTH_PREFIX,
     SEPARATION_KEYS,
     _compute_channel_harmonics,
+    facet_chart_suffix,
+    facet_click_focus,
+    facet_focus_selection,
     get_visual_group_keys,
     histogram_bin_width_key,
     phasor_category_widget,
@@ -269,6 +274,7 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
             "fit_gmm_2d": st.session_state.get(f"fit_gmm_2d_{sx}_{sy}", False) if sx and sy else False,
             "gmm_max_components": int(st.session_state.get("fit_gmm_max_components", 3)),
             "gmm_min_weight_threshold": float(st.session_state.get("fit_gmm_min_weight_threshold", 0.1)),
+            "facet_focus": extra_params.get("facet_focus"),
         }
     elif method == "Phasor Plot":
         ch = extra_params.get("selected_channel")
@@ -283,6 +289,7 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
             "selected_features": extra_params.get("selected_features", []),
             "dr_method": extra_params.get("dr_method", "PCA"),
             "hyperParam_dict": extra_params.get("hyperParam_dict", {}),
+            "facet_focus": extra_params.get("facet_focus"),
         }
     elif method == "Classification":
         # Read classify_by from the classification widget's session state
@@ -754,19 +761,31 @@ with col2:
                         phasor_category = phasor_category_widget(
                             fig.layout.meta["phasor_categories"], separate_by)
                         select_phasor_category(fig, phasor_category)
+                    # A promotion swaps slot contents before styling, so the main
+                    # slot's points take the full size wherever they came from.
+                    focus_key = FACET_FOCUS_KEYS.get(method)
+                    facet_focus = None
+                    if focus_key is not None:
+                        facet_focus = facet_focus_selection(fig, focus_key)
+                        focus_facet_figure(fig, facet_focus)
                     fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
+                    facet_event = None
                     if method == "2D Feature Distribution":
                         if separate_by:
-                            dimension_reduction_chart(
-                                fig, key=f"plot_chart_2d_{method}",
+                            facet_event = dimension_reduction_chart(
+                                fig,
+                                key=f"plot_chart_2d_{method}{facet_chart_suffix(focus_key)}",
                                 container_key="distribution_facet_plot",
-                                meta_key="distribution_facet_layout")
+                                meta_key="distribution_facet_layout",
+                                on_select="rerun", selection_mode="points")
                         else:
                             square_2d_plot(fig, key=f"plot_chart_2d_{method}")
                         if display_table:
                             st.markdown(display_table, unsafe_allow_html=True)
                     elif method == "Dimension Reduction":
-                        dimension_reduction_chart(fig, key=f"plot_chart_{method}")
+                        facet_event = dimension_reduction_chart(
+                            fig, key=f"plot_chart_{method}{facet_chart_suffix(focus_key)}",
+                            on_select="rerun", selection_mode="points")
                     elif method == "Phasor Plot":
                         phasor_chart(fig, key=f"plot_chart_{method}")
                     else:
@@ -833,6 +852,7 @@ with col2:
                             _extra["selected_x"] = selected_x
                             _extra["selected_y"] = selected_y
                             _extra["collapse_by"] = collapse_by
+                            _extra["facet_focus"] = facet_focus
                         elif method == "Phasor Plot":
                             _extra["selected_channel"] = selected_channel
                             _extra["phasor_harmonic"] = selected_harmonic
@@ -842,12 +862,20 @@ with col2:
                         _extra["selected_features"] = selected_features
                         _extra["dr_method"] = dr_method
                         _extra["hyperParam_dict"] = hyperParam_dict
+                        _extra["facet_focus"] = facet_focus
                     _export_script_button(method, uploaded_file, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by, delimiter=delimiter, **_extra)
 
                     # Rerun only after all fragment widgets register; an earlier rerun
                     # lets Streamlit clean up their state and reset their values.
-                    if st.session_state.pop("_plot_needs_rebuild", False) or _plot_build_params() != build_params:
-                        st.rerun(scope="app")
+                    rebuild = (st.session_state.pop("_plot_needs_rebuild", False)
+                               or _plot_build_params() != build_params)
+                    # A click on the grid only changes which slot draws what, so
+                    # it redraws the same figure rather than rebuilding it. Read
+                    # it either way: the click is handled once, whoever reruns.
+                    promoted = focus_key is not None and facet_click_focus(
+                        fig, facet_event, focus_key)
+                    if rebuild or promoted:
+                        st.rerun(scope="app" if rebuild else "fragment")
 
                 if bivar_display_area is not None:
                     with bivar_display_area:

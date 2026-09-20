@@ -6,7 +6,7 @@ import pytest
 import streamlit as st
 
 from src.column_roles import code_span
-from src.vis import bivar, helpers
+from src.vis import bivar, dimension_facets, helpers
 
 
 def frame():
@@ -49,10 +49,16 @@ def plot(data, **kwargs):
 
 def role(fig, name, axes=None):
     traces = [t for t in fig.data if isinstance(t.meta, dict)
-              and t.meta.get("distribution_role") == name]
+              and t.meta.get("facet_role") == name]
     if axes is None:
         return traces
     return [t for t in traces if (getattr(t, "xaxis", None) or "x") == axes]
+
+
+def level_of(fig, trace):
+    """A trace names its level through the slot it was built into."""
+    slot = trace.meta["facet_slot"]
+    return fig.layout.meta["facet_focus"]["keys"][slot - 1] if slot else None
 
 
 def panel_axes(fig):
@@ -76,9 +82,10 @@ def test_every_level_gets_one_panel_in_natural_order_with_a_right_hand_label():
     assert [name for name in composition["axes"] if name.startswith("xaxis")] == [
         "xaxis", "xaxis2", "xaxis4", "xaxis5", "xaxis6"]
     labels = [annotation.text for annotation in fig.layout.annotations]
-    assert labels == ["Day 2", "Day 10", "N/A"]
+    # Three panel labels, then the annotation a promotion stamps a cell with.
+    assert labels == ["Day 2", "Day 10", "N/A", ""]
     assert all(annotation.xanchor == "left" and annotation.xref == "paper"
-               for annotation in fig.layout.annotations)
+               for annotation in fig.layout.annotations[:3])
     axes = panel_axes(fig)
     for level, axis in axes.items():
         expected = result[result.day.fillna("N/A") == level]
@@ -103,7 +110,7 @@ def test_each_panel_puts_its_own_models_over_grey_context_of_everything_else():
     fits = role(fig, "fit")
     # Two of the three levels carry ellipses, so the per-panel checks below are
     # neither vacuous for the levels that have them nor blind to a stray one.
-    assert {t.meta["category"] for t in fits} == {"Day 2", "Day 10"}
+    assert {level_of(fig, t) for t in fits} == {"Day 2", "Day 10"}
     for level, axis in axes.items():
         expected = result[result.day.fillna("N/A") == level]
         context = role(fig, "context", axis)
@@ -114,14 +121,14 @@ def test_each_panel_puts_its_own_models_over_grey_context_of_everything_else():
         assert len(role(fig, "regression", axis)) == groups
         assert all(t.line.width == 1 for t in role(fig, "regression", axis))
         # Every ellipse of this level draws on this level's axes, and only here.
-        assert len(role(fig, "fit", axis)) == sum(t.meta["category"] == level for t in fits)
+        assert len(role(fig, "fit", axis)) == sum(level_of(fig, t) == level for t in fits)
         assert all(t.line.width == 1 for t in role(fig, "fit", axis))
-        assert {t.meta["category"] for t in role(fig, "fit", axis)} <= {level}
+        assert {level_of(fig, t) for t in role(fig, "fit", axis)} <= {level}
 
 
 def test_marginals_describe_the_whole_dataset_once_per_colour_group():
     fig, _, result = plot(frame())
-    marginals = role(fig, "marginal")
+    marginals = [t for t in role(fig, "marginal") if t.meta["facet_slot"] == 0]
     assert len(marginals) == 2 * result.treatment.nunique()
     assert {t.yaxis for t in marginals if t.xaxis in (None, "x")} == {"y2"}
     assert {t.xaxis for t in marginals if t.xaxis == "x2"} == {"x2"}
@@ -277,7 +284,8 @@ def test_constant_group_keeps_points_and_explains_the_missing_model():
     fig, table_md, _ = plot(data)
     assert sum(len(t.x) for t in role(fig, "points")) == 6  # overview plus its one panel
     assert not role(fig, "regression")
-    assert len(role(fig, "marginal")) == 1
+    # One set for the whole dataset and one for its only level.
+    assert len(role(fig, "marginal")) == 2
     assert "constant" in table_md.lower()
 
 
@@ -327,3 +335,55 @@ def test_separated_marginal_none_gives_the_overview_the_whole_block():
     assert "xaxis2" not in composition["axes"]
     assert overview_width == pytest.approx(3 * .96 / 4)
     assert composition["plot_height"] == pytest.approx(overview_width)
+
+
+def test_the_grid_publishes_a_focus_contract():
+    fig, _, _ = plot(frame())
+    block = fig.layout.meta["facet_focus"]
+    assert block["keys"] == ["Day 2", "Day 10", "N/A"]
+    assert block["labels"] == ["Day 2", "Day 10", "N/A"]
+    assert block["axes"] == [["x", "y"], ["x4", "y4"], ["x5", "y5"], ["x6", "y6"]]
+    assert block["separate_by"] == "day"
+    assert block["layout_key"] == "distribution_facet_layout"
+    assert block["applied"] is None
+    # Every panel owns the label naming it, and both reserved slots start empty.
+    assert block["slot_labels"] == [0, 1, 2]
+    assert block["title"] == fig.layout.title.text
+    assert fig.layout.annotations[block["stamp_annotation"]].text == ""
+    canonical = fig.layout.meta["distribution_facet_layout"]["annotations"]
+    assert len(canonical) == len(fig.layout.annotations)
+
+
+def test_every_level_gets_its_own_strips_with_the_whole_dataset_showing():
+    fig, _, result = plot(frame())
+    visible = {}
+    for trace in role(fig, "marginal"):
+        visible.setdefault(trace.meta["facet_slot"], set()).add(trace.visible)
+        assert (trace.xaxis or "x", trace.yaxis) in (("x", "y2"), ("x2", "y3"))
+    assert sorted(visible) == [0, 1, 2, 3]
+    assert visible[0] == {True}
+    assert visible[1] == visible[2] == visible[3] == {False}
+    # A level's curve spans that level's own values, not the whole frame's.
+    day2 = result[result.day == "Day 2"]
+    curve = next(t for t in role(fig, "marginal")
+                 if t.meta["facet_slot"] == 1 and t.name == "ctrl_x_density")
+    assert curve.x[0] == pytest.approx(day2[day2.treatment == "ctrl"].x.min())
+
+
+def test_promoting_a_level_gives_it_the_main_slot_and_its_point_size():
+    fig, _, result = plot(frame())
+    focused = dimension_facets.focus_facet_figure(go.Figure(fig), "Day 10")
+    styled = helpers.apply_plot_styling(focused, 9, 18, 14)
+    promoted = [t for t in role(styled, "points") if level_of(styled, t) == "Day 10"]
+    assert {(t.xaxis, t.yaxis) for t in promoted} == {("x", "y")}
+    assert {t.marker.size for t in promoted} == {9}
+    demoted = [t for t in role(styled, "points") if level_of(styled, t) is None]
+    assert {(t.xaxis, t.yaxis) for t in demoted} == {("x5", "y5")}
+    assert {t.marker.size for t in demoted} == {7}
+    assert sum(len(t.x) for t in demoted) == len(result)
+    strips = {t.meta["facet_slot"] for t in role(styled, "marginal") if t.visible}
+    assert strips == {2}
+    assert styled.layout.annotations[1].text == "Main plot"
+    # The promotion names itself in the title the figure already had.
+    assert styled.layout.title.text == f"{fig.layout.title.text} (day: Day 10)"
+

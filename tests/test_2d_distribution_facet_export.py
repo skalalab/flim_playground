@@ -26,7 +26,7 @@ def _frame():
     return pd.DataFrame(rows)
 
 
-def _state(separate_by, *, marginal="gaussian fit", fit=True):
+def _state(separate_by, *, marginal="gaussian fit", fit=True, focus=None):
     return {
         "method": "2D Feature Distribution", "csv_filename": "data.csv",
         "unique_row_id_col": "id", "fov_name_col": None,
@@ -38,6 +38,7 @@ def _state(separate_by, *, marginal="gaussian fit", fit=True):
             "selected_x": "x", "selected_y": "y", "log_x": False, "log_y": False,
             "marginal_plot_type": marginal, "fit_regression": fit, "fit_gmm_2d": fit,
             "gmm_max_components": 2, "gmm_min_weight_threshold": .1,
+            "facet_focus": focus,
         },
     }
 
@@ -139,3 +140,58 @@ def test_the_unseparated_export_keeps_its_single_square_axes(tmp_path, monkeypat
     renderer = fig.canvas.get_renderer()
     main = namespace["ax_main"].get_window_extent(renderer)
     assert main.width / main.height == pytest.approx(1., abs=.01)
+
+
+def _sizes(ax, zorder=2):
+    return {collection.get_sizes()[0] for collection in ax.collections
+            if len(collection.get_offsets()) and collection.get_zorder() == zorder}
+
+
+def test_a_promoted_level_takes_the_overview_slot(tmp_path, monkeypatch):
+    namespace = _run(tmp_path, monkeypatch, _state("day", focus="Day 10"))
+    assert "FOCUS_CATEGORY = 'Day 10'" in (tmp_path / "analysis.py").read_text()
+    frame, ax_main = namespace["df"], namespace["ax_main"]
+    promoted = frame[frame["day"] == "Day 10"]
+    assert len(_points(ax_main)) == len(promoted)
+    assert len(_points(ax_main, zorder=1)) == len(frame) - len(promoted)
+    assert _sizes(ax_main) == {namespace["POINT_SIZE"] ** 2}
+    # The overview takes the vacated slot: every cell, no grey, and a new name.
+    vacated = namespace["facet_axes"][1]
+    assert len(_points(vacated)) == len(frame)
+    assert not [c for c in vacated.collections if c.get_zorder() == 1]
+    assert _sizes(vacated) == {namespace["PANEL_POINT_SIZE"] ** 2}
+    assert [text.get_text() for text in vacated.texts] == ["Main plot"]
+    assert [text.get_text() for text in namespace["facet_axes"][0].texts] == ["Day 2"]
+
+
+def test_the_promotion_augments_the_plot_title(tmp_path, monkeypatch):
+    namespace = _run(tmp_path, monkeypatch, _state("day", focus="Day 10"))
+    plain = _run(tmp_path, monkeypatch, _state("day"))
+    assert namespace["_2d_title"] == f"{plain['_2d_title']} (day: Day 10)"
+    assert [text.get_text() for text in namespace["fig"].texts] == [namespace["_2d_title"]]
+    assert "day:" not in plain["_2d_title"]
+
+
+def test_the_promoted_levels_strips_describe_it(tmp_path, monkeypatch):
+    namespace = _run(tmp_path, monkeypatch, _state("day", focus="Day 10"))
+    frame = namespace["df"]
+    promoted = frame[frame["day"] == "Day 10"]
+    curves = namespace["ax_top"].lines
+    assert curves
+    assert min(line.get_xdata().min() for line in curves) == pytest.approx(promoted.x.min())
+    assert max(line.get_xdata().max() for line in curves) == pytest.approx(promoted.x.max())
+
+
+def _models(axis):
+    """Whatever this frame's groups support: ellipses, regression lines, or both."""
+    return ([patch for patch in axis.patches if isinstance(patch, Ellipse)]
+            + [line for line in axis.lines if line.get_linestyle() == "--"])
+
+
+def test_models_stay_with_their_own_level_when_one_is_promoted(tmp_path, monkeypatch):
+    namespace = _run(tmp_path, monkeypatch, _state("day", focus="Day 10"))
+    # Day 10's models moved with it; the vacated slot shows the overview, which
+    # never carried models, and the other panels keep their own.
+    assert _models(namespace["ax_main"])
+    assert not _models(namespace["facet_axes"][1])
+    assert _models(namespace["facet_axes"][0]) and _models(namespace["facet_axes"][2])

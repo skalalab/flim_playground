@@ -112,6 +112,8 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
         else:
             spec = trace.to_plotly_json()
             spec.pop("type")
+            # The slot a trace was built into is what a promotion trades on.
+            spec["meta"] = dict(facet_role="points", facet_slot=0)
             fig.add_trace(scatter_cls(**spec, xaxis="x", yaxis="y"))
 
     theme_color = get_context_theme_color()
@@ -134,6 +136,7 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
             )})
         if not small:
             continue
+        slot = index - 1
         mask = panel["mask"]
         if (~mask).any():
             context = df_reduced.loc[~mask]
@@ -142,6 +145,7 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
                 xaxis=xaxis, yaxis=yaxis, mode="markers", name="Other groups",
                 marker=dict(color="#b8b8b8", opacity=0.25),
                 hoverinfo="skip", showlegend=False,
+                meta=dict(facet_role="context", facet_slot=slot),
             ))
         identifiers = df_reduced.loc[mask, unique_row_id_col].to_numpy()
         for trace in overview.data:
@@ -159,11 +163,15 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
                     spec[field] = np.asarray(value)[keep]
             for field in ("symbol", "opacity"):
                 spec["marker"][field] = np.asarray(getattr(trace.marker, field))[keep]
-            spec.update(xaxis=xaxis, yaxis=yaxis, showlegend=False)
+            spec.update(xaxis=xaxis, yaxis=yaxis, showlegend=False,
+                        meta=dict(facet_role="points", facet_slot=slot))
             fig.add_trace(scatter_cls(**spec))
 
     if groups["panels"]:
-        for panel in composition["panels"]:
+        # A matrix cell is named by its row and column, so only a single-column
+        # grid gives a panel a label of its own for a promotion to rewrite.
+        slot_labels = [None] * len(composition["panels"])
+        for slot, panel in enumerate(composition["panels"], 1):
             if len(groups["separate_by"]) == 2 and panel["row"] == 0:
                 label = panel["values"][-1]
                 fig.add_annotation(
@@ -173,12 +181,22 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
                     font=dict(color=theme_color, size=14),
                 )
             if panel["col"] == groups["ncols"] - 1:
+                if len(groups["separate_by"]) == 1:
+                    slot_labels[slot - 1] = len(fig.layout.annotations)
                 fig.add_annotation(
                     x=panel["x_domain"][1], y=sum(panel["y_domain"]) / 2,
                     xref="paper", yref="paper", text=html.escape(str(panel["values"][0])),
                     showarrow=False, xanchor="left", yanchor="middle", xshift=6,
                     font=dict(color=theme_color, size=14),
                 )
+        # Promotion writes into this one; it is created empty so the annotation
+        # count and indices stay frozen for the resize script.
+        fig.add_annotation(
+            x=.5, y=1., xref="paper", yref="paper", text="", showarrow=False,
+            xanchor="center", yanchor="top", yshift=-4,
+            font=dict(color=theme_color, size=14),
+            bgcolor=("rgba(255,255,255,0.75)" if theme_color == "black"
+                     else "rgba(30,30,30,0.75)"))
         fig.update_layout(height=round(1000 * composition["plot_height"] + 160),
                           margin=dict(l=80, r=140, t=70, b=90),
                           # Reserve the legend's measured height below the axis
@@ -194,7 +212,21 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
                       xaxis=dict(automargin="height"), yaxis=dict(automargin=False))
     # Canonical domains also let the native chart fit the whole composition in
     # fullscreen without changing the linked coordinate ranges.
-    fig.update_layout(meta={"dimension_reduction_layout": {
+    facet_focus = {} if not groups["panels"] else {"facet_focus": {
+        "layout_key": "dimension_reduction_layout",
+        "separate_by": groups["separate_by"],
+        "keys": [tuple(panel["values"]) for panel in composition["panels"]],
+        "labels": [html.escape(" · ".join(map(str, panel["values"])))
+                   for panel in composition["panels"]],
+        "axes": [["x", "y"], *([f"x{index + 2}", f"y{index + 2}"]
+                               for index in range(len(composition["panels"])))],
+        "slot_labels": slot_labels if groups["panels"] else [],
+        # Dimension Reduction draws no title of its own for a promotion to augment.
+        "title": fig.layout.title.text or "",
+        "stamp_annotation": len(fig.layout.annotations) - 1,
+        "applied": None,
+    }}
+    fig.update_layout(meta={**facet_focus, "dimension_reduction_layout": {
         "plot_height": composition["plot_height"],
         "axes": {name: list(fig.layout[name].domain) for name in fig.layout
                  if name.startswith(("xaxis", "yaxis"))},

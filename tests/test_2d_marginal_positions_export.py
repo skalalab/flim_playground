@@ -92,10 +92,12 @@ def _assert_separate_positions(app, namespace, marginal):
         ("ax_top", 1, "yaxis", "y2"), ("ax_right", 0, "xaxis", "x2")
     ]:
         axis = namespace[axis_name]
-        # The grid hides nothing: every colour group's marginal describes the
-        # whole dataset and lives on the overview's strips.
+        # The grid prepares one strip set per level and shows the one the main
+        # block holds; a hidden set takes no categorical position, so only the
+        # visible traces line up with the export's.
         traces = [trace for trace in app.data if trace.type == trace_type
-                  and getattr(trace, app_axis) == app_axis_name]
+                  and getattr(trace, app_axis) == app_axis_name
+                  and trace.visible is not False]
         # Plotly gives distinct trace names consecutive category positions when
         # their box/violin coordinate is omitted. The app deliberately uses that layout.
         assert len({trace.name for trace in traces}) == len(traces) >= 2

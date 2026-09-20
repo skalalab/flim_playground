@@ -189,3 +189,80 @@ def test_empty_matrix_cells_stay_mounted_with_gray_context(frame):
 def test_invalid_separation_is_rejected(frame, separate):
     with pytest.raises(ValueError, match="[Ss]eparat"):
         plot(frame, separate_by=separate)
+
+
+def focus_block(fig):
+    return fig.layout.meta["facet_focus"]
+
+
+def test_the_grid_publishes_a_focus_contract(frame):
+    fig = plot(frame, separate_by=["type"])
+    block = focus_block(fig)
+    assert block["layout_key"] == "dimension_reduction_layout"
+    assert block["separate_by"] == ["type"]
+    assert [tuple(key) for key in block["keys"]] == [("T2",), ("T10",), ("N/A",)]
+    assert [list(pair) for pair in block["axes"]] == [
+        ["x", "y"], ["x2", "y2"], ["x3", "y3"], ["x4", "y4"]]
+    assert block["applied"] is None
+    # One column of panels: every cell is named by its own label.
+    labels = [fig.layout.annotations[index].text for index in block["slot_labels"]]
+    assert labels == ["T2", "T10", "N/A"] == block["labels"]
+    assert block["title"] == ""  # nothing of its own for a promotion to augment
+    assert fig.layout.annotations[block["stamp_annotation"]].text == ""
+    canonical = fig.layout.meta["dimension_reduction_layout"]["annotations"]
+    assert len(canonical) == len(fig.layout.annotations)
+
+
+def test_promoting_a_panel_swaps_it_with_the_overview(frame):
+    import plotly.graph_objects as go
+
+    from src.vis import dimension_facets
+
+    fig = plot(frame, separate_by=["type"])
+    keys = [tuple(key) for key in focus_block(fig)["keys"]]
+    vacated = f"x{keys.index(('T10',)) + 2}"
+    focused = dimension_facets.focus_facet_figure(go.Figure(fig), ("T10",))
+    assert set(points(focused, "x")) == {"cell0", "cell3"}
+    assert set(points(focused, vacated)) == set(frame.id[:-1])
+    styled = helpers.apply_plot_styling(focused, 9, 18, 14)
+    assert {t.marker.size for t in foreground(styled, "x")} == {9}
+    assert {t.marker.size for t in foreground(styled, vacated)} == {7}
+    assert styled.layout.annotations[focus_block(fig)["slot_labels"][1]].text == "Main plot"
+    assert styled.layout.title.text == "type: T10"
+
+
+def test_the_promoted_panels_grey_context_follows_it(frame):
+    import plotly.graph_objects as go
+
+    from src.vis import dimension_facets
+
+    fig = plot(frame, separate_by=["type"])
+    focused = dimension_facets.focus_facet_figure(go.Figure(fig), ("T10",))
+    context = [t for t in focused.data if isinstance(t.meta, dict)
+               and t.meta.get("facet_role") == "context"]
+    promoted = [t for t in context if (t.xaxis or "x") == "x"]
+    assert len(promoted) == 1
+    assert len(promoted[0].x) == len(frame) - 1 - 2  # every cell but T10's two
+    styled = helpers.apply_plot_styling(focused, 9, 18, 14)
+    assert styled.data[focused.data.index(promoted[0])].marker.size == 7
+
+
+def test_promoting_a_matrix_cell_keeps_the_edge_labels_and_stamps_the_cell(frame):
+    import plotly.graph_objects as go
+
+    from src.vis import dimension_facets
+
+    fig = plot(frame, separate_by=["type", "state"])
+    block = focus_block(fig)
+    # A cell is named by its row and column, so no annotation names it alone.
+    assert block["slot_labels"] == [None] * len(block["keys"])
+    edges = [item.text for item in fig.layout.annotations[:block["stamp_annotation"]]]
+    focused = dimension_facets.focus_facet_figure(go.Figure(fig), ("T2", "rest"))
+    assert [item.text for item in focused.layout.annotations[:block["stamp_annotation"]]] == edges
+    assert focused.layout.title.text == "type: T2 · state: rest"
+    stamp = focused.layout.annotations[block["stamp_annotation"]]
+    assert stamp.text == "Main plot"
+    slot = [tuple(key) for key in block["keys"]].index(("T2", "rest")) + 1
+    domains = focused.layout.meta["dimension_reduction_layout"]["axes"]
+    x_domain = domains[f"xaxis{slot + 1}"]
+    assert stamp.x == pytest.approx(sum(x_domain) / 2)

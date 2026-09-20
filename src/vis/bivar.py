@@ -467,7 +467,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
             suffix = str(index + 4)
             panel_axis[level] = (f'x{suffix}', f'y{suffix}')
             slots.append((level, positions, f'x{suffix}', f'y{suffix}', False))
-        for level, positions, xaxis, yaxis, overview in slots:
+        panel_slot = {level: index + 1 for index, (level, _positions) in enumerate(panels)}
+        for slot, (level, positions, xaxis, yaxis, overview) in enumerate(slots):
             if not overview:
                 # Each panel gets its own "everyone else" context trace of
                 # N - n_level points, rather than one shared trace toggled by
@@ -481,7 +482,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                         xaxis=xaxis, yaxis=yaxis, mode='markers',
                         marker=dict(color='#b8b8b8', opacity=.25, symbol='circle'),
                         hoverinfo='skip', showlegend=False,
-                        meta=dict(distribution_role='context', category=level)))
+                        meta=dict(facet_role='context', facet_slot=slot)))
             for trace in base.data:
                 if trace.text is None:  # Shape/opacity legend swatches carry no points.
                     continue
@@ -503,7 +504,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                 # so the base trace's name and legend flag are kept verbatim.
                 spec.update(xaxis=xaxis, yaxis=yaxis,
                             showlegend=bool(overview and trace.showlegend),
-                            meta=dict(distribution_role='points', category=level))
+                            meta=dict(facet_role='points', facet_slot=slot))
                 fig.add_trace(type(trace)(**spec))
         for trace in base.data:
             if trace.text is None and trace.showlegend:
@@ -540,7 +541,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                     hovertemplate=(f"<b>Regression Line</b><br>R² = {regression['r2']:.3f}"
                                    f"<br>Slope = {regression['slope']:.3f}"
                                    f"<br>Intercept = {regression['intercept']:.3f}<extra></extra>"),
-                    meta=dict(distribution_role='regression', category=level) if separate_by else None))
+                    meta=dict(facet_role='regression',
+                              facet_slot=panel_slot[level]) if separate_by else None))
             component_rows = []
             metadata_rows = []
             for index, component in enumerate(result['components'], 1):
@@ -567,7 +569,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                     if separate_by:
                         trace.update(**{f'{name}axis': value
                                         for name, value in zip('xy', panel_axis[level])})
-                        trace.meta = dict(distribution_role='fit', category=level)
+                        trace.meta = dict(facet_role='fit', facet_slot=panel_slot[level])
             if component_rows:
                 tables.append(gmm_component_table(gmm_group_title(level, group),
                                                   component_rows, [selected_x, selected_y]))
@@ -584,19 +586,27 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
             lines.append(gmm_tables_html(tables))
         summaries[level] = '\n'.join(lines)
 
-    # The overview is the only place strips appear; they describe the whole
-    # dataset per colour group, so no cross-level amplitude scaling is needed.
-    for group in color_map:
-        group_df = df[df[group_column] == group]
-        start = len(fig.data)
-        _plot_marginal_density(fig, group_df[selected_x], 'x', color_map[group], group,
-                               marginal, {'yaxis': 'y2'})
-        _plot_marginal_density(fig, group_df[selected_y], 'y', color_map[group], group,
-                               marginal, {'xaxis': 'x2', 'yaxis': 'y3'})
-        for trace in fig.data[start:]:
-            trace.legendgroup = str(group)
-            if separate_by:
-                trace.meta = dict(distribution_role='marginal', category=None)
+    # Strips belong to the main block and describe whatever occupies it, so a
+    # separated figure prepares one set per level beside the whole-dataset set
+    # and promotion only changes which one is visible. No cross-level amplitude
+    # scaling is needed: one set is shown at a time.
+    strip_sets = [(0, df)]
+    if separate_by:
+        strip_sets += [(index + 1, df.iloc[positions])
+                       for index, (_level, positions) in enumerate(panels)]
+    for slot, subset in strip_sets:
+        for group in color_map:
+            group_df = subset[subset[group_column] == group]
+            start = len(fig.data)
+            _plot_marginal_density(fig, group_df[selected_x], 'x', color_map[group], group,
+                                   marginal, {'yaxis': 'y2'})
+            _plot_marginal_density(fig, group_df[selected_y], 'y', color_map[group], group,
+                                   marginal, {'xaxis': 'x2', 'yaxis': 'y3'})
+            for trace in fig.data[start:]:
+                trace.legendgroup = str(group)
+                if separate_by:
+                    trace.meta = dict(facet_role='marginal', facet_slot=slot)
+                    trace.visible = slot == 0
 
     theme_color = get_context_theme_color()
     x_label = f"log₁₀({pretty_x})" if options.get('log_x') else pretty_x
@@ -649,6 +659,14 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                 xref='paper', yref='paper', text=html.escape(str(panel['values'][0])),
                 showarrow=False, xanchor='left', yanchor='middle', xshift=6,
                 font=dict(color=theme_color, size=14))
+        # Promotion writes into this one; it is created empty so the annotation
+        # count and indices stay frozen for the resize script.
+        fig.add_annotation(
+            x=.5, y=1., xref='paper', yref='paper', text='', showarrow=False,
+            xanchor='center', yanchor='top', yshift=-4,
+            font=dict(color=theme_color, size=14),
+            bgcolor=('rgba(255,255,255,0.75)' if theme_color == 'black'
+                     else 'rgba(30,30,30,0.75)'))
         fig.update_layout(
             height=round(1000 * composition['plot_height'] + 160),
             margin=dict(l=80, r=140, t=70, b=90, pad=0, autoexpand=True),
@@ -660,6 +678,17 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
         meta.update(
             distribution_categories=[level for level, _ in panels],
             distribution_separate_by=separate_by,
+            facet_focus={
+                'layout_key': 'distribution_facet_layout',
+                'separate_by': separate_by,
+                'keys': [level for level, _ in panels],
+                'labels': [html.escape(str(level)) for level, _ in panels],
+                'axes': [['x', 'y'], *([f'x{index + 4}', f'y{index + 4}']
+                                       for index in range(len(panels)))],
+                'slot_labels': list(range(len(panels))),
+                'title': fig.layout.title.text,
+                'stamp_annotation': len(panels),
+                'applied': None},
             # Canonical geometry lets the chart wrapper refit the composition
             # without accumulating drift or touching the user's zoom ranges.
             distribution_facet_layout={
