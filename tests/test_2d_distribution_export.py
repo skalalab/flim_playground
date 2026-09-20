@@ -154,7 +154,7 @@ def test_grid_retains_global_encodings_and_draws_each_levels_points_and_fits(
     assert output.count("Pearson r=") == 6
     for level in levels:
         for treatment in ("ctrl", "drug"):
-            assert f"day={level} | {treatment}" in output
+            assert f"{level} × {treatment}" in output
     svg = (tmp_path / "2d_feature_distribution.svg").read_text()
     assert all(level in svg for level in levels)
 
@@ -258,7 +258,7 @@ def test_gmm_csv_contains_all_categories_and_qualified_labels_with_only_local_el
                for panel_ax in ns["facet_axes"] for patch in panel_ax.patches)
     assert all(len(result["components"]) == 2 for result in ns["distribution_results"])
     output = capsys.readouterr().out
-    assert "day=Day 10 |" in output and "day=N/A |" in output
+    assert "Day 10 ×" in output and "N/A ×" in output
     assert "Weight" in output and "Component" in output
     expected = source.copy()
     expected["day"] = expected["day"].fillna("N/A")
@@ -291,7 +291,7 @@ def test_sparse_and_constant_groups_keep_points_and_available_marginal_with_noti
     assert not day_2.lines and not day_2.patches
     output = capsys.readouterr().out
     assert "constant X or Y" in output and "fewer than two observations" in output
-    assert "day=Day 10 |" in output
+    assert "Day 10 ×" in output
     saved = pd.read_csv(tmp_path / "2D_gmm_data.csv")
     assert saved.loc[saved["day"] == "Day 2", "2D_GMM_group"].isna().all()
 

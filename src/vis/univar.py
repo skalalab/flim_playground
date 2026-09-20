@@ -213,9 +213,7 @@ def render_histogram_summaries(fig, component_editor=None):
         for table in meta.get("gmm_component_tables", []) if len(table["rows"]) > 1
     } if component_editor is not None else {}
     for panel in meta["histogram_summaries"]:
-        if meta["histogram_separator"]:
-            label = f"{meta['histogram_separator']}={panel['category']}"
-            st.markdown(f"**{code_span(label)}**")
+        # No per-level heading: every title below already names its level.
         tables = []
         editable_tables = []
         for group in panel["groups"]:

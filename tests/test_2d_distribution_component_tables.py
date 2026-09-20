@@ -1,14 +1,13 @@
-"""Direct tests for ``render_distribution_component_tables``: heading, split, and merge.
+"""Direct tests for ``render_distribution_component_tables``: split and merge.
 
 No existing test in ``tests/test_2d_distribution_separation.py`` calls this helper
 directly -- it is only reached through ``feature_2d_distribution_plot`` there, and
 only when GMM produces multi-component tables. These tests call it directly with a
-fake editor so the heading text, the per-level table split, and the name-merge
-behaviour are each pinned on their own.
+fake editor so the per-level table split and the name-merge behaviour are each
+pinned on their own, along with the absence of any heading above them.
 """
 import pytest
 
-from src.column_roles import code_span
 from src.vis import bivar
 
 
@@ -24,16 +23,14 @@ def _table(category, group):
             "rows": [{"source_label": f"{category}::{group}"}]}
 
 
-def test_one_heading_per_level_in_arrival_order_naming_level_and_column(monkeypatch):
+def test_no_heading_is_rendered_above_the_levels(monkeypatch):
+    """``gmm_group_title`` names the level in each table, so a heading would repeat it."""
     events = _events(monkeypatch)
     tables = [_table("Day 2", "ctrl"), _table("Day 2", "drug"), _table("Day 10", "ctrl")]
 
     bivar.render_distribution_component_tables(tables, "day", lambda level_tables: {})
 
-    assert events == [
-        f"**{code_span('day')}: {code_span('Day 2')}**",
-        f"**{code_span('day')}: {code_span('Day 10')}**",
-    ]
+    assert events == []
 
 
 def test_each_editor_call_receives_exactly_that_levels_tables(monkeypatch):
@@ -80,12 +77,14 @@ def test_empty_tables_emits_no_heading_and_returns_empty_dict(monkeypatch):
     assert events == []
 
 
-def test_none_editor_still_headed_the_levels_and_returns_empty_dict(monkeypatch):
+def test_none_editor_renders_nothing_and_returns_empty_dict(monkeypatch):
     """The no-assignments export path calls this with ``component_editor=None``.
 
     ``export_labels_widget`` renders read-only fit details that way; the
     reviewed sibling (``render_histogram_summaries``) guards the same case with
-    ``if component_editor is not None``, and this function must match it.
+    ``if component_editor is not None``, and this function must match it. With
+    no heading left to draw, that guard leaves nothing behind but the notice
+    ``export_labels_widget`` writes itself.
     """
     events = _events(monkeypatch)
     tables = [_table("Day 2", "ctrl"), _table("Day 10", "ctrl")]
@@ -93,7 +92,4 @@ def test_none_editor_still_headed_the_levels_and_returns_empty_dict(monkeypatch)
     result = bivar.render_distribution_component_tables(tables, "day", None)
 
     assert result == {}
-    assert events == [
-        f"**{code_span('day')}: {code_span('Day 2')}**",
-        f"**{code_span('day')}: {code_span('Day 10')}**",
-    ]
+    assert events == []

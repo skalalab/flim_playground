@@ -7,7 +7,7 @@ from sklearn.linear_model import LinearRegression
 from src.column_roles import code_span
 from src.export_labels import available_label_column, format_export_group_labels
 from src.feature_labels import format_feature_label
-from src.widgets.gmm_tables import gmm_component_table, gmm_tables_html
+from src.widgets.gmm_tables import gmm_component_table, gmm_group_title, gmm_tables_html
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 
 from .dimension_facets import category_facet_groups, dimension_facet_layout
@@ -373,27 +373,21 @@ def distribution_ranges(df, x_col, y_col, results):
 
 
 def _join_level_blocks(blocks, panels, separate_by):
-    """List every level in panel order, each headed by ``separate_by: level``."""
+    """List every level in panel order; each line already names its own level."""
     if not separate_by:
         return blocks[None]
 
-    return '\n'.join(
-        f"\n**{code_span(separate_by)}: {code_span(level)}**\n{blocks[level]}"
-        for level, _positions in panels)
+    return '\n'.join(f"\n{blocks[level]}" for level, _positions in panels)
 
 
 def render_distribution_component_tables(tables, separate_by, component_editor):
-    """Head each level's component tables the way its statistics block is headed.
+    """Edit each level's component tables in turn, keeping a level's tables together.
 
-    The grid shows every level at once, so a table headed by its colour group
-    alone repeats that name once per level. Group the tables by level and reuse
-    the ``separate_by: level`` heading ``_join_level_blocks`` puts above the
-    statistics, so both halves of a level read as one section.
+    The grid shows every level at once, and ``gmm_group_title`` names the level
+    in each table's own title, so no heading is needed above them.
     """
     names = {}
     for level in dict.fromkeys(table['category'] for table in tables):
-        st.markdown(f"**{code_span(separate_by)}: {code_span(level)}**",
-                    unsafe_allow_html=True)
         if component_editor is not None:
             names.update(component_editor(
                 [table for table in tables if table['category'] == level]))
@@ -524,7 +518,10 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
             if result['category'] != level:
                 continue
             group = result['color_group']
-            label = html.escape(str(group))
+            # The combined title carries a level name read from the file, which
+            # the removed heading used to neutralise; a code span still does.
+            label = (code_span(gmm_group_title(level, group)) if separate_by
+                     else html.escape(str(group)))
             # A model belongs to its own panel; colour already encodes Color by
             # and leaves no channel to attribute an overlay on the overview.
             overlay_axes = dict(zip(('xaxis', 'yaxis'), panel_axis[level])) if separate_by else {}
@@ -572,7 +569,8 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                                         for name, value in zip('xy', panel_axis[level])})
                         trace.meta = dict(distribution_role='fit', category=level)
             if component_rows:
-                tables.append(gmm_component_table(group, component_rows, [selected_x, selected_y]))
+                tables.append(gmm_component_table(gmm_group_title(level, group),
+                                                  component_rows, [selected_x, selected_y]))
                 component_tables.append({
                     'category': level,
                     'group': group,

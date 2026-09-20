@@ -318,7 +318,7 @@ def run_fc(ctrl, tag):
 def run_2d(ctrl, tag):
     patch_streamlit({"2D Gaussian Mixture Model": ctrl.get("fit_gmm_2d", False),
                      "Regression line": ctrl.get("fit_regression", False),
-                     "Marginal Plot Type": ctrl.get("marginal_plot_type", "gaussian fit"),
+                     "Marginal Plot Type": ctrl.get("marginal_plot_type", "None"),
                      "Log X": ctrl.get("log_x", False),
                      "Log Y": ctrl.get("log_y", False)})
     from src.vis.bivar import feature_2d_distribution_plot
@@ -329,12 +329,12 @@ def run_2d(ctrl, tag):
         selected_x=VAR, selected_y=VAR2,
         color_by=ctrl.get("color_by", ["treatment"]),
         shape_by=ctrl.get("shape_by"), opacity_by=ctrl.get("opacity_by"),
-        marginal_plot_type=ctrl.get("marginal_plot_type", "gaussian fit"),
+        marginal_plot_type=ctrl.get("marginal_plot_type", "None"),
         colormap=ctrl.get("colormap", "tab10"))
     state = _state("2D Feature Distribution", ctrl, {
         "selected_x": VAR, "selected_y": VAR2,
         "log_x": ctrl.get("log_x", False), "log_y": ctrl.get("log_y", False),
-        "marginal_plot_type": ctrl.get("marginal_plot_type", "gaussian fit"),
+        "marginal_plot_type": ctrl.get("marginal_plot_type", "None"),
         "fit_regression": ctrl.get("fit_regression", False),
         "fit_gmm_2d": ctrl.get("fit_gmm_2d", False),
         "gmm_max_components": ctrl.get("gmm_max_components", 3),

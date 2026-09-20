@@ -68,7 +68,8 @@ def test_existing_component_statistics_have_one_editable_name_column(editor_app)
     assert not config["Name"].get("disabled", False)
     assert all(config[col]["disabled"] for col in ["#", *stats, "Weight"])
     if dimensions == 1:
-        assert any(item.value == "<p><strong>ctrl (H-index: 0.490)</strong></p>" for item in at.markdown)
+        assert any(item.value == "<p><strong>Day 1 × ctrl (H-index: 0.490)</strong></p>"
+                   for item in at.markdown)
     assert config[stats[0]]["help"] == "x (log₁₀)"
     assert config["_index"]["hidden"]
     assert [w.label for w in at.text_input] == ["Exported column name"]

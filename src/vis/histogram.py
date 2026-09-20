@@ -179,7 +179,9 @@ def prepare_histogram(df, selected_var, color_by=None, separate_by=None, bin_wid
                 continue
             local = values[local_positions]
             skewness = histogram_skewness(local)
-            label = f"{separate_by}={category} | {color}" if separate_by else color
+            # One combined title per population: no separate heading names the
+            # level, so the level and the colour group travel together here.
+            label = f"{category} × {color}" if separate_by else color
             group = dict(category=category, color_group=color, label=label,
                          positions=local_positions, values=local, count=len(local),
                          counts=np.histogram(local, bins=edges)[0], skewness=skewness)

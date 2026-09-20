@@ -286,8 +286,8 @@ def test_sparse_and_failed_gmm_groups_keep_rows_counts_and_local_notices(
     assert len(ns["fig"].axes) == 3
     assert _legend_labels(ns["fig"].axes[-1]) == ["sparse GMM (n=1)"]
     output = capsys.readouterr().out
-    assert "day=Day 10 | ctrl (n=24)" in output
-    assert "day=N/A | sparse (n=1)" in output
+    assert "Day 10 × ctrl (n=24)" in output
+    assert "N/A × sparse (n=1)" in output
     assert "skewness = undefined" in output
     assert "skewed" not in output and "symmetric" not in output
     assert "GMM fitting failed: singular local fit" in output

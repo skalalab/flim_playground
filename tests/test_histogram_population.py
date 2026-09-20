@@ -85,15 +85,19 @@ def test_page_keeps_individual_units_despite_stale_collapse_settings(
         editable_groups = {name.rsplit("_group", 1)[0]
                            for table in tables for name in table["Name"]}
         markdown = [item.value for item in at.markdown]
+        # No heading names a level; every population's own title does.
+        assert not any(value.startswith("**`day=") for value in markdown)
         for day in ("Day 2", "Day 10", "N/A"):
-            assert f"**`day={day}`**" in markdown
             for treatment in ("ctrl", "drug"):
                 # A single-component fit has a read-only table; multi-component
                 # fits expose editable names. Both must show each population.
                 if f"{day}::{treatment}" not in editable_groups:
-                    caption = f"<caption>day={day} | {treatment} (H-index:"
+                    caption = f"<caption>{day} × {treatment} (H-index:"
                     assert any(caption in html and "Mean ± SD" in html
                                and "Weight" in html for html in markdown)
+                else:
+                    assert any(f"<p><strong>{day} × {treatment} (H-index:" in html
+                               for html in markdown)
         for table in tables:
             assert len(table) >= 2
             assert table["Mean ± SD"].str.contains(" ± ", regex=False).all()

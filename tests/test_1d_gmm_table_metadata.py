@@ -141,14 +141,11 @@ def test_uneditable_fits_and_count_mode_have_no_component_tables(monkeypatch, mo
 
 
 def rendering_events(monkeypatch):
-    """Record visible category headings and the details that follow them."""
-    active = [None]
+    """Record everything the summaries render, in order."""
     events = []
 
     def record(kind, value, **_kwargs):
-        if kind == "markdown" and value.startswith("**`"):
-            active[0] = value
-        events.append((kind, value, active[0]))
+        events.append((kind, value))
 
     monkeypatch.setattr(univar.st, "expander", lambda *a, **k: pytest.fail("GMM details must stay visible"))
     monkeypatch.setattr(univar.st, "info", lambda value: record("info", value))
@@ -184,26 +181,26 @@ def test_callback_renders_matching_tables_in_each_category_and_keeps_other_detai
 
     result = univar.render_histogram_summaries(fig, component_editor=editor)
 
-    callbacks = [(tables, section) for kind, tables, section in events if kind == "editor"]
+    callbacks = [tables for kind, tables in events if kind == "editor"]
     assert len(callbacks) == 2
-    assert [tables[0]["category"] for tables, _section in callbacks] == ["Day 2", "Day 10"]
-    for tables, section in callbacks:
+    assert [tables[0]["category"] for tables in callbacks] == ["Day 2", "Day 10"]
+    for tables in callbacks:
         assert all(table["group"] == "ctrl" for table in tables)
-        assert all(f'day={table["category"]}' in section for table in tables)
         assert all(table["h_index"] is not None for table in tables)
     assert result == {row["source_label"]: f'Population {row["component"]}'
                       for table in fig.layout.meta["gmm_component_tables"] for row in table["rows"]}
-    html_events = [(value, section) for kind, value, section in events
+    html_events = [value for kind, value in events
                    if kind == "markdown" and "flim-gmm-table" in value]
     assert len(html_events) == 1
-    assert "day=Day 2 | drug" in html_events[0][0]
-    assert "day=Day 2" in html_events[0][1]
-    assert "ctrl" not in html_events[0][0]
-    assert "H-index" in html_events[0][0] and "0.000" in html_events[0][0]
-    assert any(kind == "info" and "distinct observations" in value and "Day 10" in section
-               for kind, value, section in events)
-    assert not any(kind == "markdown" and value.startswith("H-index for") for kind, value, _ in events)
-    assert sum(kind == "markdown" and "Threshold" in value for kind, value, _ in events) == 4
+    assert "Day 2 × drug" in html_events[0]
+    assert "ctrl" not in html_events[0]
+    assert "H-index" in html_events[0] and "0.000" in html_events[0]
+    # Nothing heads a category any more: each title and notice names its own level.
+    assert not any(kind == "markdown" and value.startswith("**`") for kind, value in events)
+    assert any(kind == "info" and "distinct observations" in value and "Day 10 ×" in value
+               for kind, value in events)
+    assert not any(kind == "markdown" and value.startswith("H-index for") for kind, value in events)
+    assert sum(kind == "markdown" and "Threshold" in value for kind, value in events) == 4
 
 
 def test_without_callback_keeps_all_static_tables_and_returns_empty_names(monkeypatch):
@@ -212,13 +209,13 @@ def test_without_callback_keeps_all_static_tables_and_returns_empty_names(monkey
 
     assert univar.render_histogram_summaries(fig) == {}
 
-    html_events = [(value, section) for kind, value, section in events
+    html_events = [value for kind, value in events
                    if kind == "markdown" and "flim-gmm-table" in value]
     assert len(html_events) == 2
-    assert "day=Day 2 | ctrl" in html_events[0][0]
-    assert "day=Day 2 | drug" in html_events[0][0]
-    assert "day=Day 10 | ctrl" in html_events[1][0]
-    assert any(kind == "info" for kind, _value, _section in events)
+    assert "Day 2 × ctrl" in html_events[0]
+    assert "Day 2 × drug" in html_events[0]
+    assert "Day 10 × ctrl" in html_events[1]
+    assert any(kind == "info" for kind, _value in events)
 
 
 def test_callback_falls_back_to_static_tables_when_descriptors_are_absent(monkeypatch):
@@ -231,7 +228,7 @@ def test_callback_falls_back_to_static_tables_when_descriptors_are_absent(monkey
 
     assert univar.render_histogram_summaries(fig, component_editor=editor) == {}
     assert sum(kind == "markdown" and "flim-gmm-table" in value
-               for kind, value, _section in events) == 2
+               for kind, value in events) == 2
 
 
 def test_count_summaries_return_empty_mapping_without_rendering(monkeypatch):

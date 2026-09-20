@@ -7,6 +7,8 @@ from html import escape
 import pandas as pd
 import streamlit as st
 
+from src.widgets.gmm_tables import gmm_group_title
+
 
 def gmm_component_names_editor(tables, entry, *, method, context):
     """Return edits keyed by original labels; model statistics stay read-only."""
@@ -51,7 +53,8 @@ def _component_names_table(table, entry, *, method, context):
                 for feature, axis in zip(table["features"], ("log_x", "log_y"))]
     fit_label = f" (H-index: {h_index:.3f})" if h_index is not None else ""
     st.markdown(
-        f"<p><strong>{escape(str(table['group']))}{fit_label}</strong></p>",
+        f"<p><strong>{escape(gmm_group_title(table['category'], table['group']))}"
+        f"{fit_label}</strong></p>",
         unsafe_allow_html=True,
     )
     edited = st.data_editor(

@@ -111,10 +111,11 @@ def test_separated_statistics_list_every_level_and_keep_the_legacy_summary(monke
     meta = fig.layout.meta
     assert meta["distribution_categories"] == ["Day 2", "Day 10"]
     statistics = meta["distribution_statistics"]
+    # Each line carries its own level; no heading names the level separately.
+    assert code_span('day') not in statistics
     for level in meta["distribution_categories"]:
-        heading = f"**{code_span('day')}: {code_span(level)}**"
-        assert heading in statistics
-        assert heading in legacy_summary
+        for text in (statistics, legacy_summary):
+            assert f"**{code_span(f'{level} × ctrl')}:**" in text
     assert "Pearson r" in statistics
     assert "Regression R²" in statistics
     assert "flim-gmm-table" not in statistics

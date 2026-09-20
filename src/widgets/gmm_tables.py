@@ -45,6 +45,16 @@ _TABLE_STYLES = """
 """
 
 
+def gmm_group_title(category, group):
+    """Name one fitted population as ``Separate-by level × Color-by group``.
+
+    A level and a colour group together identify a fit, so the pair travels as
+    one title and no heading above the results has to name the level. Without a
+    Separate by column there is no level, and the colour group stands alone.
+    """
+    return f"{category} × {group}" if category is not None else str(group)
+
+
 def gmm_component_table(group_name, rows, feature_names, *, h_index=None):
     """Format rows of (component, mean ± SD per feature, weight) as one table."""
     labels = ["Mean ± SD"] if len(feature_names) == 1 else ["X (mean ± SD)", "Y (mean ± SD)"]

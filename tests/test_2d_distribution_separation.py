@@ -180,9 +180,10 @@ def test_statistics_list_every_level_in_panel_order_and_no_category_metadata():
         assert key not in meta
     assert not hasattr(bivar, "select_distribution_category")
     statistics = meta["distribution_statistics"]
-    heading = f"**{code_span('day')}: {{level}}**"
+    # No heading names a level; each line's own title does, in panel order.
+    assert code_span("day") not in statistics
     for text in (table_md, statistics):
-        positions = [text.index(heading.format(level=code_span(level)))
+        positions = [text.index(code_span(f"{level} × ctrl"))
                     for level in ["Day 2", "Day 10", "N/A"]]
         assert positions == sorted(positions)
     assert statistics.count("Pearson r =") == 5
@@ -220,10 +221,12 @@ def test_level_names_with_markdown_metacharacters_do_not_leak_formatting():
     statistics = fig.layout.meta["distribution_statistics"]
     for text in (table_md, statistics):
         for name in (linked, starred):
-            assert f"**{code_span('day')}: {code_span(name)}**" in text
-            # Every occurrence of the raw name sits inside its code span, so
+            assert f"**{code_span(f'{name} × ctrl')}:**" in text
+            # Every occurrence of the raw name sits inside a code span, so
             # none is left as loose Markdown for the renderer to interpret.
-            assert text.count(name) == text.count(code_span(name))
+            assert text.count(name) == sum(
+                text.count(code_span(f"{name} × {group}"))
+                for group in ("ctrl", "drug"))
 
 
 def test_models_fit_each_category_colour_group_and_labels_stay_qualified(monkeypatch):

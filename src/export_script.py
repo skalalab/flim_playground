@@ -1594,7 +1594,7 @@ panel_by_level = {level: panel_ax
 model_width = PANEL_MODEL_WIDTH if SEPARATE_BY else OVERVIEW_MODEL_WIDTH
 for result in distribution_results:
     color = color_map[result["color_group"]][:3]
-    label = (f"{SEPARATE_BY}={result['category']} | {result['color_group']}"
+    label = (f"{result['category']} × {result['color_group']}"
              if SEPARATE_BY else result["color_group"])
     _print_distribution_statistics(result, label)
     model_ax = panel_by_level.get(result["category"], ax_main)
