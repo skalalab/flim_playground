@@ -14,7 +14,7 @@ from src.widgets import lifetime_widgets, metadata_widgets, numeric_extraction_w
 
 
 PAGE = str(Path(__file__).resolve().parents[1] / "pages/data_extraction.py")
-CONFIRM = "Confirm Time Gates (if applicable) and Shift for each channel"
+CONFIRM = "Confirm calibration for each channel"
 
 
 def button(app, label):

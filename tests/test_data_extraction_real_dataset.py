@@ -201,7 +201,7 @@ def test_real_tcell_extraction_from_configuration_through_export(
     _button(app, "Optimize for Shifts").click()
     run(app, "optimize_real_irf_shifts")
     no_errors(app)
-    _button(app, "Confirm Time Gates (if applicable) and Shift for each channel").click()
+    _button(app, "Confirm calibration for each channel").click()
     run(app, "confirm_shifts")
     no_errors(app)
     _refresh_after_rerun(app)

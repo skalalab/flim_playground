@@ -230,7 +230,7 @@ def test_real_image_extraction_through_configuration_and_csv_export(
             app.selectbox(key="fitting_metric").set_value("WLS")
         _button(app, "Optimize for Shifts").click()
         run(app, "optimize_irf_shifts")
-        _button(app, "Confirm Time Gates (if applicable) and Shift for each channel").click()
+        _button(app, "Confirm calibration for each channel").click()
         run(app, "confirm_shifts")
         _refresh_after_rerun(app)
         assert not app.error, [e.value for e in app.error]

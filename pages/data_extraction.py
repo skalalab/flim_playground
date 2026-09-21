@@ -473,8 +473,7 @@ def _render_choose_shift(prepared, ctx):
                 st.error(f"{error} {sad_emoji}")
             else:
                 channel_backgrounds[channel] = recipe
-    label = ("Confirm calibration for each channel" if prepared.settings.get("channels_background")
-             else "Confirm Time Gates (if applicable) and Shift for each channel")
+    label = "Confirm calibration for each channel"
     if st.button(label):
         error = prepared.confirm_calibration(channel_shifts, channel_backgrounds)
         if prepared.calibration_confirmed:

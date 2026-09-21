@@ -263,7 +263,7 @@ def test_synthetic_ptu_calibrates_against_measured_irf(tmp_path, monkeypatch):
         assert shift_input.value == estimated_shift
         if case == "known_shift_zero":
             shift_input.set_value(0.0).run(timeout=45)
-        _click(app, "Confirm Time Gates (if applicable) and Shift for each channel")
+        _click(app, "Confirm calibration for each channel")
         _refresh_after_rerun(app)
         _click(app, "Start extraction")
         displayed = [table.value for table in app.dataframe if PREFIX + "Tau_phase" in table.value.columns]
