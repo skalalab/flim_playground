@@ -1,6 +1,8 @@
 name: Build executables
 
 on:
+  push:
+    branches: [main]
   release:
     types: [published]
   workflow_dispatch:
@@ -26,7 +28,7 @@ jobs:
     # staging step read the same value. Release builds get the tag (e.g.
     # 1.11.0); manual workflow_dispatch builds fall back to the dev placeholder.
     env:
-      APP_VERSION: ${{ github.event.release.tag_name || inputs.version || '0.0.0-dev' }}
+      APP_VERSION: ${{ github.event.release.tag_name || inputs.version || '1.14.1' }}
     strategy:
       fail-fast: false
       matrix:
@@ -113,11 +115,11 @@ jobs:
           if-no-files-found: error
 
       - name: Attach to GitHub release
-        if: github.event_name == 'release' || inputs.version != ''
+        if: github.event_name == 'release' || inputs.version != '' || github.event_name == 'push'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload '${{ github.event.release.tag_name || inputs.version }}' release/* --clobber
+        run: gh release upload '${{ github.event.release.tag_name || inputs.version || '1.14.1' }}' release/* --clobber
 
   # The release tag is authoritative. This job synchronizes the default
   # branch's release metadata after publication, while remaining independent
