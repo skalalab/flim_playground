@@ -25,15 +25,6 @@ keywords = [
     "umap",
 ]
 
-[project.urls]
-Homepage = "https://github.com/skalalab/flim_playground"
-Documentation = "https://skalalab.github.io/flim_playground_doc/"
-Demo = "https://flim-playground.streamlit.app/"
-Repository = "https://github.com/skalalab/flim_playground"
-Issues = "https://github.com/skalalab/flim_playground/issues"
-Changelog = "https://github.com/skalalab/flim_playground/blob/main/HISTORY.md"
-DOI = "https://doi.org/10.5281/zenodo.19744706"
-
 requires-python = ">=3.11"
 dependencies = [
     "blinker==1.9.0",
@@ -86,6 +77,15 @@ dependencies = [
     "urllib3==2.7.0",
     "watchdog==6.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/skalalab/flim_playground"
+Documentation = "https://skalalab.github.io/flim_playground_doc/"
+Demo = "https://flim-playground.streamlit.app/"
+Repository = "https://github.com/skalalab/flim_playground"
+Issues = "https://github.com/skalalab/flim_playground/issues"
+Changelog = "https://github.com/skalalab/flim_playground/blob/main/HISTORY.md"
+DOI = "https://doi.org/10.5281/zenodo.19744706"
 
 [dependency-groups]
 dev = [

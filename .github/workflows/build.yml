@@ -52,7 +52,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --locked
 
       - name: Build with PyInstaller
         run: uv run pyinstaller Flim-Playground.spec --clean
@@ -168,22 +168,46 @@ jobs:
           VERSION="$version" python - <<'PY'
           import os
           import re
+          import tomllib
           from pathlib import Path
 
           expected = os.environ["VERSION"]
-          lock = Path("uv.lock").read_text(encoding="utf-8")
-          matches = re.findall(
-              r'^\[\[package\]\]\nname = "flim-playground"\nversion = "([^"]+)"',
-              lock,
-              flags=re.MULTILINE,
-          )
-          if len(matches) != 1:
+          project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+          project_metadata = project.get("project", {})
+          runtime_requirements = project_metadata.get("dependencies")
+          if not runtime_requirements:
               raise SystemExit(
-                  f"expected one flim-playground package entry in uv.lock, found {len(matches)}"
+                  "pyproject.toml has no [project].dependencies; refusing to publish an incomplete lockfile"
               )
-          if matches[0] != expected:
+          if "requires-python" not in project_metadata:
               raise SystemExit(
-                  f"uv.lock has flim-playground {matches[0]}, expected {expected}"
+                  "pyproject.toml has no [project].requires-python; refusing to publish an incomplete lockfile"
+              )
+
+          expected_names = {
+              re.split(r"[<>=!~;\[]", requirement, maxsplit=1)[0]
+              .strip()
+              .lower()
+              .replace("_", "-")
+              for requirement in runtime_requirements
+          }
+          lock = Path("uv.lock").read_text(encoding="utf-8")
+          lock_data = tomllib.loads(lock)
+          roots = [package for package in lock_data.get("package", []) if package.get("name") == "flim-playground"]
+          if len(roots) != 1:
+              raise SystemExit(
+                  f"expected one flim-playground package entry in uv.lock, found {len(roots)}"
+              )
+          root = roots[0]
+          if root.get("version") != expected:
+              raise SystemExit(
+                  f"uv.lock has flim-playground {root.get('version')}, expected {expected}"
+              )
+          locked_names = {dependency["name"] for dependency in root.get("dependencies", [])}
+          missing = sorted(expected_names - locked_names)
+          if missing:
+              raise SystemExit(
+                  "uv.lock is missing runtime dependencies: " + ", ".join(missing)
               )
           PY
           if git diff --quiet -- pyproject.toml uv.lock CITATION.cff; then
