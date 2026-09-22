@@ -79,6 +79,7 @@ def prepare_and_calibrate(app):
     button(app, CONFIRM).click().run(timeout=30)
     run(app)
     assert not app.error, [e.value for e in app.error]
+    assert app.selectbox(key="fitting_mode_update").value == "Local"
 
 
 def test_two_steps_source_folders_only_and_no_manual_metadata_export(workflow, monkeypatch):
@@ -110,15 +111,15 @@ def test_mode_edit_and_recalibration_save_same_csv_and_wait_for_start(workflow):
     assert len(state["calls"]) == 1
     exported = next(folder.glob("single_cell_features_*.csv"))
     original_features = exported.read_bytes()
-    app.selectbox(key="fitting_mode_update").set_value("Local").run(timeout=30)
+    app.selectbox(key="fitting_mode_update").set_value("Hybrid").run(timeout=30)
     assert not app.exception
     assert len(state["calls"]) == 1
     assert app.session_state["prepared_extraction"].features is None
     saved = pd.read_csv(path)
     assert saved["NADH_shift"].eq(1).all()
-    assert saved["fitting_mode"].eq("Local").all()
+    assert saved["fitting_mode"].eq("Hybrid").all()
     run(app)
-    assert app.selectbox(key="fitting_mode_update").value == "Local"
+    assert app.selectbox(key="fitting_mode_update").value == "Hybrid"
     button(app, "Go back and find shift").click().run(timeout=30)
     run(app)
     assert not any(b.label == "Start extraction" for b in app.button)
@@ -128,7 +129,7 @@ def test_mode_edit_and_recalibration_save_same_csv_and_wait_for_start(workflow):
     app.selectbox(key="fitting_metric").set_value("WLS").run(timeout=30)
     button(app, CONFIRM).click().run(timeout=30)
     run(app)
-    assert app.selectbox(key="fitting_mode_update").value == "Local"
+    assert app.selectbox(key="fitting_mode_update").value == "Hybrid"
     saved = pd.read_csv(path)
     assert saved["NADH_shift"].eq(2.5).all()
     assert saved["NADH_start"].eq(2).all()
@@ -154,7 +155,7 @@ def test_failed_mode_save_blocks_extraction_until_retry(workflow, monkeypatch):
 
     with monkeypatch.context() as patch:
         patch.setattr(extraction_session.os, "replace", fail)
-        app.selectbox(key="fitting_mode_update").set_value("Local").run(timeout=30)
+        app.selectbox(key="fitting_mode_update").set_value("Hybrid").run(timeout=30)
         assert not app.exception
         assert any("locked file" in e.value for e in app.error)
         assert button(app, "Start extraction").disabled
@@ -163,14 +164,14 @@ def test_failed_mode_save_blocks_extraction_until_retry(workflow, monkeypatch):
     button(app, "Retry saving metadata").click().run(timeout=30)
     run(app)
     assert not button(app, "Start extraction").disabled
-    assert pd.read_csv(path)["fitting_mode"].eq("Local").all()
+    assert pd.read_csv(path)["fitting_mode"].eq("Hybrid").all()
     assert not state["calls"]
 
 
 def test_step_switch_keeps_prepared_mode_and_exports_without_repeating_extraction(workflow):
     app, folder, state, _ = workflow
     prepare_and_calibrate(app)
-    app.selectbox(key="fitting_mode_update").set_value("Local").run(timeout=30)
+    app.selectbox(key="fitting_mode_update").set_value("Hybrid").run(timeout=30)
     button(app, "Start extraction").click().run(timeout=30)
     prepared = app.session_state["prepared_extraction"]
     app.radio[0].set_value("**Categorical** (e.g. treatment, day)").run(timeout=30)
@@ -178,7 +179,7 @@ def test_step_switch_keeps_prepared_mode_and_exports_without_repeating_extractio
     app.radio[0].set_value("**Numerical** (e.g. lifetime, morphology)").run(timeout=30)
     assert not app.exception
     assert app.session_state["prepared_extraction"] is prepared
-    assert app.selectbox(key="fitting_mode_update").value == "Local"
+    assert app.selectbox(key="fitting_mode_update").value == "Hybrid"
     assert len(state["calls"]) == 1
     assert len(list(folder.glob("single_cell_features_*.csv"))) == 1
 

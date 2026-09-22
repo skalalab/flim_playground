@@ -171,7 +171,7 @@ def prepare_extraction(
                 else:
                     return f"Fixed lifetime {component} for {channel_name} must be positive and finite, or empty/zero for a free lifetime.", None
         if raw_fit:
-            settings.update(fitting_algo="MLE", fitting_mode="Hybrid")
+            settings.update(fitting_algo="MLE", fitting_mode="Local")
             settings["channels_shift"][channel_name] = "fit"
         elif fit_free and fit_free_calibration_method != _STANDARD:
             settings["channels_shift"][channel_name] = "fit free"

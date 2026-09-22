@@ -97,7 +97,7 @@ def test_raw_fitting_uses_direct_component_settings_and_defaults(tmp_path):
     assert settings["time_bins"] == 32
     assert settings["duration"] == 25.0
     assert settings["fitting_algo"] == "MLE"
-    assert settings["fitting_mode"] == "Hybrid"
+    assert settings["fitting_mode"] == "Local"
     assert settings["fix_shift"] is True
     assert settings["ch1"]["num_components"] == 2
     assert settings["ch1"]["fixed_lifetimes"] == {"t1": 0.4, "t2": None}
