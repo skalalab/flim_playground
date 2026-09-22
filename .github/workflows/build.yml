@@ -113,11 +113,11 @@ jobs:
           if-no-files-found: error
 
       - name: Attach to GitHub release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || inputs.version != ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload '${{ github.event.release.tag_name }}' release/* --clobber
+        run: gh release upload '${{ github.event.release.tag_name || inputs.version }}' release/* --clobber
 
   # The release tag is authoritative. This job synchronizes the default
   # branch's release metadata after publication, while remaining independent
