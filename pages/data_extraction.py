@@ -433,11 +433,11 @@ def _render_shift_controls(prepared):
         return False
 
     if "fitting_mode" in settings:
-        modes = ["Hybrid", "Local"]
+        modes = ["Local", "Hybrid"]
         mode = st.selectbox(
             "Fitting Mode", modes, index=modes.index(settings["fitting_mode"]),
             key="fitting_mode_update",
-            help="Hybrid: global search then local refinement. Local: warm-start on mean decay then local fit per cell.",
+            help="Local is the recommended default after shift calibration. Hybrid adds a slower per-cell global search for difficult fits.",
         )
         prepared.change_mode(mode)
     start_col, back_col = st.columns(2)
