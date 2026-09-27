@@ -68,7 +68,7 @@ def _run(tmp_path, monkeypatch, source, state):
         separate_by=state["separate_by"], shape_by=state["shape_by"],
         opacity_by=state["opacity_by"], collapse_by=collapse_by)
     script_path = tmp_path / "analysis.py"
-    script_path.write_text(generate_script(state))
+    script_path.write_text(generate_script(state), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         namespace = runpy.run_path(str(script_path))

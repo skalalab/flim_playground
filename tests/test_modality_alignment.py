@@ -386,7 +386,7 @@ def test_run_scot_alignment_caches_default_alignment_result(monkeypatch):
 
 
 def test_data_analysis_source_mentions_modality_alignment():
-    source = Path("pages/data_analysis.py").read_text()
+    source = Path("pages/data_analysis.py").read_text(encoding="utf-8")
     assert "Modality Alignment" in source
     assert "_render_compact_file_uploader_style()" in source
     assert 'section[data-testid="stFileUploaderDropzone"]' in source
@@ -405,7 +405,7 @@ def test_data_analysis_source_mentions_modality_alignment():
 
 
 def test_visualization_widgets_source_mentions_scot_widget():
-    source = Path("src/widgets/visualization_widgets.py").read_text()
+    source = Path("src/widgets/visualization_widgets.py").read_text(encoding="utf-8")
     module = ast.parse(source)
     assert any(
         isinstance(node, ast.FunctionDef) and node.name == "scot_hyperParams_widget"

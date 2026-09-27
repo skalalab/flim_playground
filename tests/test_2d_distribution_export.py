@@ -79,7 +79,7 @@ def _run(tmp_path, monkeypatch, state, source, *, save=False):
         assert "SAVE_DERIVED_DATA = False" in script
         script = script.replace("SAVE_DERIVED_DATA = False", "SAVE_DERIVED_DATA = True")
     path = tmp_path / "analysis.py"
-    path.write_text(script)
+    path.write_text(script, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         return runpy.run_path(str(path))
@@ -155,7 +155,7 @@ def test_grid_retains_global_encodings_and_draws_each_levels_points_and_fits(
     for level in levels:
         for treatment in ("ctrl", "drug"):
             assert f"{level} × {treatment}" in output
-    svg = (tmp_path / "2d_feature_distribution.svg").read_text()
+    svg = (tmp_path / "2d_feature_distribution.svg").read_text(encoding="utf-8")
     assert all(level in svg for level in levels)
 
 

@@ -62,7 +62,7 @@ def _run(profiles=None, current="p", path=None):
     from streamlit.testing.v1 import AppTest
 
     if profiles is not None:
-        path.write_text(toml.dumps({"current_profile": current, "profiles": profiles}))
+        path.write_text(toml.dumps({"current_profile": current, "profiles": profiles}), encoding="utf-8")
     at = AppTest.from_file(_PAGE)
     at.run(timeout=90)
     # Turn on "Use a table from another source" -- the branch the gate lives on.
@@ -946,7 +946,7 @@ def test_dataset_warnings_share_one_section_across_loading_stages(
     extraction_path.write_text(toml.dumps({
         "unique_cell_id_col": "cell_id", "fov_name_col": "image_name",
         "categorical_cols": ["treatment"],
-    }))
+    }), encoding="utf-8")
     monkeypatch.setattr(config, "_CONFIG_PATH", extraction_path)
     page["warning"] = "Warning: only the first sheet was read.\n"
     page["frame"]["Empty"] = None

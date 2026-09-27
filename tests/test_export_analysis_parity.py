@@ -73,7 +73,7 @@ def _run(tmp_path, monkeypatch, source, state, save=False):
     if save:
         script = script.replace("SAVE_DERIVED_DATA = False", "SAVE_DERIVED_DATA = True")
     script_path = tmp_path / "analysis.py"
-    script_path.write_text(script)
+    script_path.write_text(script, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         namespace = runpy.run_path(str(script_path))

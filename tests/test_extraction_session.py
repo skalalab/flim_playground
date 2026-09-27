@@ -133,7 +133,7 @@ def test_atomic_save_honours_umask_like_a_plain_write(tmp_path):
     import stat
     from src.extraction_session import atomic_save_csv
     probe = tmp_path / "probe.csv"
-    probe.write_text("a\n1\n")
+    probe.write_text("a\n1\n", encoding="utf-8")
     target = tmp_path / "record.csv"
     assert atomic_save_csv(pd.DataFrame({"a": [1]}), target) == ""
     assert stat.S_IMODE(target.stat().st_mode) == stat.S_IMODE(probe.stat().st_mode)

@@ -131,7 +131,7 @@ def test_synthetic_ptu_calibrates_against_measured_irf(tmp_path, monkeypatch):
                 "input_suffixes": {"Decay": ".ptu", "Mask": "_mask.tif", "IRF": IRF_NAME},
             },
         },
-    }))
+    }), encoding="utf-8")
     monkeypatch.setattr(config, "_CONFIG_PATH", cfg_path)
     rows = pd.DataFrame([{
         "image_name": "synthetic_irf_sample", "dye_input_type": INPUT_TYPE,
@@ -284,4 +284,4 @@ def test_synthetic_ptu_calibrates_against_measured_irf(tmp_path, monkeypatch):
         "shift_note": "No timing shift was added. Cross-correlation can interpret fluorescence broadening as an additional shift; the known-zero and automatically estimated cases are reported separately.",
         "comparisons": comparisons,
     }
-    (tmp_path / "synthetic_irf_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    (tmp_path / "synthetic_irf_summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")

@@ -439,7 +439,7 @@ def test_an_exported_script_reinvents_the_row_id_and_runs(tmp_path):
 
     (tmp_path / "iris.csv").write_text(
         "Sepal length,Sepal width,species\n"
-        "5.1,3.5,setosa\n4.9,3.0,setosa\n6.3,3.3,virginica\n5.8,2.7,virginica\n")
+        "5.1,3.5,setosa\n4.9,3.0,setosa\n6.3,3.3,virginica\n5.8,2.7,virginica\n", encoding="utf-8")
     state = {
         "csv_filename": "iris.csv", "delimiter": ",",
         "unique_row_id_col": "", "fov_name_col": None,
@@ -453,8 +453,8 @@ def test_an_exported_script_reinvents_the_row_id_and_runs(tmp_path):
                           "effect_size_method": "None", "statistical_test": "None"},
     }
     script = tmp_path / "analysis.py"
-    script.write_text(generate_script(state))
-    assert "UNIQUE_ROW_ID_COL = ''" in script.read_text()
+    script.write_text(generate_script(state), encoding="utf-8")
+    assert "UNIQUE_ROW_ID_COL = ''" in script.read_text(encoding="utf-8")
 
     run = subprocess.run([sys.executable, "analysis.py"], cwd=tmp_path,
                          capture_output=True, text=True, check=False)

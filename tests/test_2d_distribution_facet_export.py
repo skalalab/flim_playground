@@ -46,7 +46,7 @@ def _state(separate_by, *, marginal="gaussian fit", fit=True, focus=None):
 def _run(tmp_path, monkeypatch, state):
     _frame().to_csv(tmp_path / "data.csv", index=False)
     path = tmp_path / "analysis.py"
-    path.write_text(generate_script(state))
+    path.write_text(generate_script(state), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(plt, "show", lambda: None)
     try:
@@ -62,7 +62,7 @@ def _points(ax, zorder=2):
 
 def test_one_panel_per_level_in_natural_order_with_grey_context(tmp_path, monkeypatch):
     namespace = _run(tmp_path, monkeypatch, _state("day"))
-    assert "DISTRIBUTION_CATEGORY" not in (tmp_path / "analysis.py").read_text()
+    assert "DISTRIBUTION_CATEGORY" not in (tmp_path / "analysis.py").read_text(encoding="utf-8")
     frame = namespace["df"]
     levels = [level for level, _positions in namespace["distribution_panels"]]
     assert levels == ["Day 2", "Day 10", "N/A"]
@@ -99,7 +99,7 @@ def test_every_levels_statistics_are_printed(tmp_path, monkeypatch, capsys):
     printed = capsys.readouterr().out
     for level in ["Day 2", "Day 10", "N/A"]:
         for group in ["ctrl", "drug"]:
-            assert f"day={level} | {group}" in printed
+            assert f"{level} × {group}" in printed
 
 
 def test_marginals_only_reach_the_overview_and_cover_the_whole_dataset(tmp_path, monkeypatch):
@@ -149,7 +149,7 @@ def _sizes(ax, zorder=2):
 
 def test_a_promoted_level_takes_the_overview_slot(tmp_path, monkeypatch):
     namespace = _run(tmp_path, monkeypatch, _state("day", focus="Day 10"))
-    assert "FOCUS_CATEGORY = 'Day 10'" in (tmp_path / "analysis.py").read_text()
+    assert "FOCUS_CATEGORY = 'Day 10'" in (tmp_path / "analysis.py").read_text(encoding="utf-8")
     frame, ax_main = namespace["df"], namespace["ax_main"]
     promoted = frame[frame["day"] == "Day 10"]
     assert len(_points(ax_main)) == len(promoted)

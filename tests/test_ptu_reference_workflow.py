@@ -45,7 +45,7 @@ def dataset(tmp_path, monkeypatch):
                              "input_suffixes": SUFFIXES}},
     }
     cfg_path = tmp_path / "config.toml"
-    cfg_path.write_text(toml.dumps(cfg))
+    cfg_path.write_text(toml.dumps(cfg), encoding="utf-8")
     monkeypatch.setattr(config, "_CONFIG_PATH", cfg_path)
     mw.clear_folder_scan_caches()
     fov_extraction.clear()

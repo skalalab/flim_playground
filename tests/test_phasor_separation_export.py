@@ -53,7 +53,7 @@ def _run(tmp_path, monkeypatch, state, df):
     df.to_csv(tmp_path / state["csv_filename"], index=False)
     script = generate_script(state)
     path = tmp_path / "analysis.py"
-    path.write_text(script)
+    path.write_text(script, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         return runpy.run_path(str(path))
@@ -246,7 +246,7 @@ def test_legacy_clustering_settings_only_export_the_phasor_plot(
         np.testing.assert_allclose(actual.get_offsets(), expected.get_offsets())
     assert [path.name for path in tmp_path.glob("*.svg")] == ["phasor_plot.svg"]
     assert [path.name for path in tmp_path.glob("*.csv")] == [state["csv_filename"]]
-    script = (tmp_path / "analysis.py").read_text()
+    script = (tmp_path / "analysis.py").read_text(encoding="utf-8")
     for removed in (
         "K_MEANS", "KMeans", "phasor_kmeans", "ConvexHull", "StandardScaler",
         "SAVE_DERIVED_DATA", "DERIVED_EXPORT", "normalize_export_labels",

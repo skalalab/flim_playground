@@ -133,7 +133,7 @@ def test_synthetic_ptu_calibrates_against_measured_atto488(tmp_path, monkeypatch
             "file_types": ["Decay", "Mask", "Fluorescence Lifetime Standard"],
             "available_feature_extractors": ["Lifetime fit free"],
         },
-    }))
+    }), encoding="utf-8")
     monkeypatch.setattr(config, "_CONFIG_PATH", config_path)
     rows = pd.DataFrame([{
         "image_name": "synthetic_sample", "dye_input_type": "Decay (3/4D)",
@@ -223,5 +223,5 @@ def test_synthetic_ptu_calibrates_against_measured_atto488(tmp_path, monkeypatch
         "background": "Unmodified application: subtract mean of last 10% of sample bins and clip at zero; reference remains uncorrected.",
         "comparisons": comparisons,
     }
-    (tmp_path / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    (tmp_path / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(comparison[["model_lifetime_ns", "app_phase_ns", "app_modulation_ns", "max_phasor_error"]].to_string(index=False))

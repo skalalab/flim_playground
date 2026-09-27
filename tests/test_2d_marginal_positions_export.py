@@ -64,7 +64,7 @@ def _run(tmp_path, monkeypatch, marginal, category, *, collapse=False, logged=Fa
     frame, _, error = check_and_fix_df(frame, state["categorical_cols"], "id", None)
     assert not error
     script_path = tmp_path / "analysis.py"
-    script_path.write_text(generate_script(state))
+    script_path.write_text(generate_script(state), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         namespace = runpy.run_path(str(script_path))
@@ -145,7 +145,7 @@ def test_marginal_none_exports_a_single_full_frame_axes(tmp_path, monkeypatch):
     assert namespace["MARGINAL_PLOT_TYPE"] is None
     assert namespace["ax_top"] is None
     assert namespace["ax_right"] is None
-    assert "MARGINAL_PLOT_TYPE = None" in (tmp_path / "analysis.py").read_text()
+    assert "MARGINAL_PLOT_TYPE = None" in (tmp_path / "analysis.py").read_text(encoding="utf-8")
     assert not [trace for trace in app.data
                 if getattr(trace, "yaxis", None) in ("y2", "y3")
                 or getattr(trace, "xaxis", None) == "x2"]

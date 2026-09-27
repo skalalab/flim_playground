@@ -51,7 +51,7 @@ def test_migrate_empty_config_left_untouched():
 
 def _write(tmp_path, cfg):
     p = tmp_path / "config.toml"
-    p.write_text(toml.dumps(cfg))
+    p.write_text(toml.dumps(cfg), encoding="utf-8")
     return p
 
 

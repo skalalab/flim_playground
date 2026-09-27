@@ -54,14 +54,14 @@ def test_a_profile_missing_the_newer_keys_is_topped_up_on_read(acw):
     path.write_text(toml.dumps({
         "current_profile": "legacy",
         "profiles": {"legacy": {"all_numerical_features": ["Area"]}},
-    }))
-    before = path.read_text()
+    }), encoding="utf-8")
+    before = path.read_text(encoding="utf-8")
 
     profile_cfg = acw._get_profile_config("legacy")
 
     assert profile_cfg["unique_row_id_col"] == ""
     assert profile_cfg["categorical_cols"] == []
-    assert path.read_text() == before, "the top-up wrote the config"
+    assert path.read_text(encoding="utf-8") == before, "the top-up wrote the config"
 
 
 def test_the_topped_up_categorical_list_is_not_shared_between_profiles(acw):
@@ -72,9 +72,9 @@ def test_the_topped_up_categorical_list_is_not_shared_between_profiles(acw):
         "current_profile": "a",
         "profiles": {"a": {"all_numerical_features": []},
                      "b": {"all_numerical_features": []}},
-    }))
+    }), encoding="utf-8")
     cfg = acw._migrate_old_config_to_profiles(
-        toml.loads(acw._ANALYSIS_CONFIG_PATH.read_text()))
+        toml.loads(acw._ANALYSIS_CONFIG_PATH.read_text(encoding="utf-8")))
 
     cfg["profiles"]["a"]["categorical_cols"].append("treatment")
 

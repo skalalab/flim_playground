@@ -32,7 +32,7 @@ def test_check_script(script):
 
 
 def _load(name):
-    return json.loads((HERE / name).read_text())
+    return json.loads((HERE / name).read_text(encoding="utf-8"))
 
 
 def test_sina_points_have_not_moved():

@@ -265,7 +265,7 @@ def _run_export(tmp_path, monkeypatch, frame, state):
     script = export_script.generate_script(state).replace(
         "SAVE_DERIVED_DATA = False", "SAVE_DERIVED_DATA = True")
     path = tmp_path / "analysis.py"
-    path.write_text(script)
+    path.write_text(script, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         return runpy.run_path(str(path))

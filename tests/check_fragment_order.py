@@ -13,7 +13,7 @@ def check(name, cond, detail=""):
     if not cond:
         FAILS.append(name)
 
-page = open(f"{ROOT}/pages/data_analysis.py").read()
+page = open(f"{ROOT}/pages/data_analysis.py", encoding="utf-8").read()
 tree = ast.parse(page)
 
 fragment = None
@@ -39,7 +39,7 @@ if fragment:
           bool(reruns) and min(reruns) > last_widget,
           f"rerun at {reruns}, last widget at {last_widget}")
 
-widgets_src = open(f"{ROOT}/src/widgets/visualization_widgets.py").read()
+widgets_src = open(f"{ROOT}/src/widgets/visualization_widgets.py", encoding="utf-8").read()
 wtree = ast.parse(widgets_src)
 for node in ast.walk(wtree):
     if isinstance(node, ast.FunctionDef) and node.name == "reorder_x_axis_widget":

@@ -16,7 +16,7 @@ from src import config
 
 def _write(tmp_path):
     p = tmp_path / "config.toml"
-    p.write_text(toml.dumps({"num_channels": 1}))
+    p.write_text(toml.dumps({"num_channels": 1}), encoding="utf-8")
     return p
 
 

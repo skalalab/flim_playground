@@ -55,7 +55,7 @@ def snapshot():
 
 if __name__ == "__main__":
     path = sys.argv[1]
-    json.dump(snapshot(), open(path, "w"))
-    snap = json.load(open(path))
+    json.dump(snapshot(), open(path, "w", encoding="utf-8"))
+    snap = json.load(open(path, encoding="utf-8"))
     for k, v in snap.items():
         print(f"  {k:16s} points={v['n_points']:4d}  legend={len(v['legend'])}")

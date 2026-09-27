@@ -15,7 +15,7 @@ RATES_MHZ = [39.01, 80.0]
 
 def widget_app(tmp_path, function, *args, **state):
     path = tmp_path / "laser_rate_app.py"
-    path.write_text(inspect.getsource(function) + f"\n{function.__name__}(*{args!r})\n")
+    path.write_text(inspect.getsource(function) + f"\n{function.__name__}(*{args!r})\n", encoding="utf-8")
     app = AppTest.from_file(str(path))
     for key, value in state.items():
         app.session_state[key] = value

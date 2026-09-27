@@ -48,7 +48,7 @@ def render(name):
                                "statistical_test": "None", **extra}}
     state.update(chans)
     path = f"{SCRATCH}/exp_{name}.py"
-    open(path, "w").write(generate_script(state))
+    open(path, "w", encoding="utf-8").write(generate_script(state))
     plt.close("all")
     import runpy
     cwd = __import__("os").getcwd()
@@ -133,8 +133,8 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         SCRATCH = sys.argv[1]
     out = f"{SCRATCH}/{sys.argv[2] if len(sys.argv) > 2 else 'export_baseline.json'}"
-    json.dump(snapshot(), open(out, "w"))
-    snap = json.load(open(out))
+    json.dump(snapshot(), open(out, "w", encoding="utf-8"))
+    snap = json.load(open(out, encoding="utf-8"))
     for k, v in snap.items():
         if k == "_direct":
             for kk, vv in v.items():

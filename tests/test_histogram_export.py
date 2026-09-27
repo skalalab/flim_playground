@@ -63,7 +63,7 @@ def _run(tmp_path, monkeypatch, state, source, *, save=False, script_transform=N
         assert "SAVE_DERIVED_DATA = False" in script
         script = script.replace("SAVE_DERIVED_DATA = False", "SAVE_DERIVED_DATA = True")
     path = tmp_path / "analysis.py"
-    path.write_text(script)
+    path.write_text(script, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         return runpy.run_path(str(path))
@@ -153,7 +153,7 @@ def test_count_export_draws_all_natural_panels_with_shared_bins_ranges_and_local
     for panel in expected["panels"]:
         for group in panel["groups"]:
             assert f"{group['label']} (n={group['count']})" in output
-    svg = (tmp_path / "feature_histogram.svg").read_text()
+    svg = (tmp_path / "feature_histogram.svg").read_text(encoding="utf-8")
     assert all(category in svg for category in ["Day 2", "Day 10", "N/A"])
     assert "day:" not in svg
     assert len(list(tmp_path.glob("*.svg"))) == 1
@@ -244,7 +244,7 @@ def test_gmm_export_fits_each_local_population_and_saves_every_qualified_assignm
     assert output.count("H-index:") == 6
     assert output.count("| Component |") == 6
     assert output.count("Threshold between component") == (6 if intersection else 0)
-    assert "def prepare_histogram(" in (tmp_path / "analysis.py").read_text()
+    assert "def prepare_histogram(" in (tmp_path / "analysis.py").read_text(encoding="utf-8")
     # Executing the embedded helper with duplicate indices must retain positional labels.
     duplicate = _normalized(source)
     duplicate.index = [0] * len(duplicate)
@@ -431,7 +431,7 @@ def test_local_legends_have_optional_counts_and_skewness_only_in_count_mode(
     output = capsys.readouterr().out
     assert "skewness = 2.000" in output
     assert "skewed" not in output and "symmetric" not in output
-    assert "def histogram_legend_label(" in (tmp_path / "analysis.py").read_text()
+    assert "def histogram_legend_label(" in (tmp_path / "analysis.py").read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("legend_size", [10, 24, 32])

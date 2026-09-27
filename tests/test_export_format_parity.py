@@ -103,7 +103,7 @@ def test_exported_script_loads_the_same_frame_the_app_did(tmp_path, monkeypatch,
     _write(_frame(), path, delimiter)
 
     script_path = tmp_path / "analysis.py"
-    script_path.write_text(generate_script(_state(filename, delimiter)))
+    script_path.write_text(generate_script(_state(filename, delimiter)), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         namespace = runpy.run_path(str(script_path))
@@ -145,7 +145,7 @@ def test_a_semicolon_csv_round_trips_through_the_exported_script(tmp_path, monke
     """A semicolon-separated CSV exports with the delimiter detected by the app."""
     path = tmp_path / "euro.csv"
     _frame().to_csv(path, index=False, sep=";")
-    (tmp_path / "analysis.py").write_text(generate_script(_state("euro.csv", ";")))
+    (tmp_path / "analysis.py").write_text(generate_script(_state("euro.csv", ";")), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         namespace = runpy.run_path(str(tmp_path / "analysis.py"))

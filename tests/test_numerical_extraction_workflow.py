@@ -52,7 +52,7 @@ def workflow(tmp_path, monkeypatch):
                                "input_suffixes": {"Decay": "_decay.csv", "IRF": "irf.csv"}}},
     }
     path = tmp_path / "config.toml"
-    path.write_text(toml.dumps(cfg))
+    path.write_text(toml.dumps(cfg), encoding="utf-8")
     monkeypatch.setattr(config, "_CONFIG_PATH", path)
     metadata_widgets.clear_folder_scan_caches()
     state = {"shift": 1.0, "calls": []}
@@ -245,7 +245,7 @@ def test_source_setup_edits_invalidate_preparation(workflow, change):
         cfg = toml.load(cfg_path)
         profile = cfg["profiles"][cfg["current_profile"]] if "profiles" in cfg else cfg
         profile["ch1"]["Decay (2D)"]["num_components"] = 3
-        cfg_path.write_text(toml.dumps(cfg))
+        cfg_path.write_text(toml.dumps(cfg), encoding="utf-8")
     app.run(timeout=30)
     assert not app.exception
     assert app.session_state["prepared_extraction"] is None
@@ -281,7 +281,7 @@ def no_calibration_app(tmp_path, monkeypatch, kind):
                              "num_components": 1, "input_suffixes": suffixes}},
     }
     path = tmp_path / "config.toml"
-    path.write_text(toml.dumps(cfg))
+    path.write_text(toml.dumps(cfg), encoding="utf-8")
     monkeypatch.setattr(config, "_CONFIG_PATH", path)
     metadata_widgets.clear_folder_scan_caches()
     app = AppTest.from_file(PAGE).run(timeout=30)

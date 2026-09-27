@@ -93,7 +93,7 @@ def _run(tmp_path, monkeypatch, state):
         frame, state["categorical_cols"], state["unique_row_id_col"], None)
     assert not error
     script_path = tmp_path / "analysis.py"
-    script_path.write_text(generate_script(state))
+    script_path.write_text(generate_script(state), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         namespace = runpy.run_path(str(script_path))

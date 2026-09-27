@@ -76,7 +76,7 @@ def test_a_script_runs_on_a_file_with_no_fov_column(tmp_path, monkeypatch):
                        "treatment": ["ctrl", "drug", "ctrl", "drug"],
                        "Lifetime fit_ch1: T1": [0.40, 0.55, 0.61, 0.48]})
     df.to_csv(tmp_path / "data.csv", index=False)
-    (tmp_path / "analysis.py").write_text(generate_script(_state()))
+    (tmp_path / "analysis.py").write_text(generate_script(_state()), encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         namespace = runpy.run_path(str(tmp_path / "analysis.py"))

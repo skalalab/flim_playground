@@ -56,7 +56,7 @@ def _run(tmp_path, monkeypatch, state, frame=None):
     (_frame() if frame is None else frame).to_csv(tmp_path / "data.csv", index=False)
     script = generate_script(state)
     path = tmp_path / "analysis.py"
-    path.write_text(script)
+    path.write_text(script, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(plt, "show", lambda: None)
     try:
@@ -470,7 +470,7 @@ def test_export_inlines_the_apps_shared_facet_helpers():
 
 def test_a_promoted_panel_takes_the_overview_slot(tmp_path, monkeypatch):
     namespace = _run(tmp_path, monkeypatch, _state(["row"], focus=("row10",)))
-    assert "FOCUS_CATEGORY = ('row10',)" in (tmp_path / "analysis.py").read_text()
+    assert "FOCUS_CATEGORY = ('row10',)" in (tmp_path / "analysis.py").read_text(encoding="utf-8")
     overview, *facets = namespace["fig"].axes
     df = namespace["df"]
     membership = df["row"].eq("row10")

@@ -51,7 +51,7 @@ def _run_script(tmp_path, state, df, monkeypatch, script_transform=None):
     if script_transform:
         script = script_transform(script)
     script_path = tmp_path / "analysis.py"
-    script_path.write_text(script)
+    script_path.write_text(script, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         ns = runpy.run_path(str(script_path))
@@ -1898,7 +1898,7 @@ def test_gmm_threshold_text_matches_the_app_size(tmp_path, monkeypatch):
 
 def test_no_hardcoded_annotation_font_sizes_remain():
     """All exported annotation text derives its size from AXIS_LABEL_SIZE."""
-    source = (Path(__file__).resolve().parents[1] / "src" / "export_script.py").read_text()
+    source = (Path(__file__).resolve().parents[1] / "src" / "export_script.py").read_text(encoding="utf-8")
     import re
     leftovers = re.findall(r"fontsize=\d+", source)
     assert leftovers == [], f"hardcoded annotation font sizes left: {leftovers}"
@@ -1906,7 +1906,7 @@ def test_no_hardcoded_annotation_font_sizes_remain():
 
 def test_exported_tick_font_size_derives_from_axis_label_size():
     """Ticks use axis_label_size - 2 in both renderers, independently of legend size."""
-    source = (Path(__file__).resolve().parents[1] / "src" / "export_script.py").read_text()
+    source = (Path(__file__).resolve().parents[1] / "src" / "export_script.py").read_text(encoding="utf-8")
     assert "labelsize=LEGEND_SIZE" not in source
     assert "AXIS_LABEL_SIZE - 6" not in source
     assert "AXIS_LABEL_SIZE - 4" not in source

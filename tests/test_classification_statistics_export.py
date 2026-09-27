@@ -72,7 +72,7 @@ def classification_case(request, tmp_path, monkeypatch, capsys):
     script = generate_script(state)
     assert not re.search(r"^\s*(?:from|import) src(?:\.|\b)", script, re.MULTILINE)
     path = tmp_path / "analysis.py"
-    path.write_text(script)
+    path.write_text(script, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(plt, "show", lambda: None)
     capsys.readouterr()
@@ -152,4 +152,4 @@ def test_reporting_preserves_model_outputs_and_saved_figures(classification_case
             [patch.get_width() for patch in app_fi.axes[0].patches])
         saved.add("feature_importance.svg")
     assert {path.name for path in directory.glob("*.svg")} == saved
-    assert all("<svg" in (directory / name).read_text() for name in saved)
+    assert all("<svg" in (directory / name).read_text(encoding="utf-8") for name in saved)

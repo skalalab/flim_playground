@@ -81,7 +81,7 @@ def test_match_col_name_is_not_inlined_into_exported_scripts():
     """Export source contains no reference to the removed fuzzy-matching helper."""
     from src import export_script
 
-    src = Path(export_script.__file__).read_text()
+    src = Path(export_script.__file__).read_text(encoding="utf-8")
     assert "match_col_name" not in src
 
 

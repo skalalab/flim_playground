@@ -111,7 +111,7 @@ def run_export(state, csv_path, workdir, transform=None):
     if transform:
         script = transform(script)
     script_path = workdir / "analysis.py"
-    script_path.write_text(script)
+    script_path.write_text(script, encoding="utf-8")
     cwd = Path.cwd()
     sys.path.insert(0, str(workdir))
     try:
@@ -153,7 +153,7 @@ def page_collectors():
     """
     import ast
 
-    src = (REPO / "pages" / "data_analysis.py").read_text()
+    src = (REPO / "pages" / "data_analysis.py").read_text(encoding="utf-8")
     tree = ast.parse(src)
     wanted = {"_collect_categorical_filters", "_collect_numerical_filters"}
     defs = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name in wanted]

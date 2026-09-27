@@ -84,7 +84,7 @@ def _single_page_bar(tmp_path, monkeypatch, url):
 
     entry = tmp_path / "pages" / "data_analysis.py"
     entry.parent.mkdir()
-    entry.write_text(_MENU_SCRIPT)
+    entry.write_text(_MENU_SCRIPT, encoding="utf-8")
     monkeypatch.setattr(ContextProxy, "url", property(lambda self: url))
     at = AppTest.from_file(str(entry)).run(timeout=60)
     assert not at.exception, [e.value for e in at.exception]
@@ -140,7 +140,7 @@ def _extraction_available(monkeypatch, url, entry=None):
         at = AppTest.from_string(_AVAILABLE_SCRIPT).run(timeout=60)
     else:
         entry.parent.mkdir(exist_ok=True)
-        entry.write_text(_AVAILABLE_SCRIPT)
+        entry.write_text(_AVAILABLE_SCRIPT, encoding="utf-8")
         at = AppTest.from_file(str(entry)).run(timeout=60)
     assert not at.exception, [e.value for e in at.exception]
     return at.text[0].value == "True"

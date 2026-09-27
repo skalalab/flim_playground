@@ -179,7 +179,7 @@ def render_export(df, channels):
     }
     state.update(channels)
     script = HERE / "exp_scope.py"
-    script.write_text(generate_script(state))
+    script.write_text(generate_script(state), encoding="utf-8")
 
     plt.close("all")
     real_close, real_show = plt.close, plt.show

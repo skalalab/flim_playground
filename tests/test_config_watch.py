@@ -17,7 +17,7 @@ _BANNER_HARNESS = str(Path(__file__).resolve().parents[1] / "tests" / "harness_c
 
 def _point_config_at(tmp_path, monkeypatch, mtime=None):
     p = tmp_path / "config.toml"
-    p.write_text(toml.dumps({"num_channels": 1}))
+    p.write_text(toml.dumps({"num_channels": 1}), encoding="utf-8")
     if mtime is not None:
         os.utime(p, (mtime, mtime))
     monkeypatch.setattr(config, "_CONFIG_PATH", p)

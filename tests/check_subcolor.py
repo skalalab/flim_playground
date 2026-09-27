@@ -136,7 +136,7 @@ def exported_legend(spec):
                           "statistical_test": "None"},
     }
     script = HERE / "exp_subcolor.py"
-    script.write_text(generate_script(state))
+    script.write_text(generate_script(state), encoding="utf-8")
     plt.close("all")
     real_close, real_show = plt.close, plt.show
     plt.close = plt.show = lambda *a, **k: None

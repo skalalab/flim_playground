@@ -75,7 +75,7 @@ def _run(tmp_path, monkeypatch, state, source, *, script_transform=None):
     if script_transform:
         script = script_transform(script)
     path = tmp_path / "analysis.py"
-    path.write_text(script)
+    path.write_text(script, encoding="utf-8")
     monkeypatch.chdir(tmp_path)
     try:
         return runpy.run_path(str(path))
@@ -186,7 +186,7 @@ def test_source_negative_disables_log_for_both_layers_and_export_label(tmp_path,
     expected = _retained(source).groupby(["dish", "treatment"], sort=False)["value"].mean()
     np.testing.assert_allclose(ns["df"]["value"], expected)
     assert ns["ax"].get_ylabel() == "value"
-    assert "log₁₀(value)" not in (tmp_path / "feature_comparison.svg").read_text()
+    assert "log₁₀(value)" not in (tmp_path / "feature_comparison.svg").read_text(encoding="utf-8")
     assert "Cannot apply log" in capsys.readouterr().out
 
 

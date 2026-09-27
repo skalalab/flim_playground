@@ -15,7 +15,7 @@ _PAGE = str(Path(__file__).resolve().parents[1] / "pages" / "data_extraction.py"
 
 def _point_config_at(tmp_path, monkeypatch, cfg):
     p = tmp_path / "config.toml"
-    p.write_text(toml.dumps(cfg))
+    p.write_text(toml.dumps(cfg), encoding="utf-8")
     monkeypatch.setattr(config, "_CONFIG_PATH", p)
     return p
 
