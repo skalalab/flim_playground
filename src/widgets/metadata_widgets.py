@@ -526,11 +526,12 @@ def check_raw_2D_decay_data(fov_df, channel_name):
     return "", time_bins
 
 
-@st.cache_data(show_spinner="Reading intensity images...")
-def _scan_intensity_images(intensity_paths, mask_paths):
-    """Check that each intensity image and mask are 2D and have equal shapes.
+@st.cache_data(show_spinner="Reading images...")
+def _scan_intensity_images(intensity_paths, mask_paths, image_label):
+    """Check that each image and mask are 2D and have equal shapes.
 
-    Cache by both path tuples because both files are read. Return
+    Cache by both path tuples because both files are read. ``image_label``
+    ("Intensity" or "QPI") names the image in errors. Return
     ``(error_msg, dimension_list)`` with file-specific errors.
     """
     dimension_list = []
@@ -538,9 +539,9 @@ def _scan_intensity_images(intensity_paths, mask_paths):
         try:
             image_data = load_image(image_path)
         except Exception as e:
-            return f"Error reading intensity image: {image_path}: {e}", None
+            return f"Error reading {image_label} image: {image_path}: {e}", None
         if len(image_data.shape) != 2:
-            return f"Error: Intensity image {image_path} is not a 2D array", None
+            return f"Error: {image_label} image {image_path} is not a 2D array", None
 
         dimension_list.append(image_data.shape)
         # check for the consistency of the shape between the intensity image and the mask image
@@ -551,7 +552,7 @@ def _scan_intensity_images(intensity_paths, mask_paths):
         if len(mask_data.shape) != 2:
             return f"Error: Mask image {mask_path} is not a 2D array", None
         if image_data.shape != mask_data.shape:
-            return f"Error: Intensity image {image_path} and mask image {mask_path} have different shapes: {image_data.shape} != {mask_data.shape}", None
+            return f"Error: {image_label} image {image_path} and mask image {mask_path} have different shapes: {image_data.shape} != {mask_data.shape}", None
     return "", dimension_list
 
 
@@ -571,6 +572,7 @@ def check_raw_intensity_data(fov_df, channel_name, image_file_type="Intensity (2
     error_msg, dimension_list = _scan_intensity_images(
         _column_values(fov_df, intensity_column_name),
         _column_values(fov_df, mask_column_name),
+        image_label=image_file_type.removesuffix(" (2D)"),
     )
     if error_msg != "":
         return error_msg, None

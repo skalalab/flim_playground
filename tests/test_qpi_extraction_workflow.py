@@ -116,6 +116,24 @@ def test_check_raw_intensity_data_reads_the_named_image_column(tmp_path):
     assert "Intensity (2D) image path not found" in err
 
 
+@pytest.mark.parametrize(("image_file_type", "label"), [("Intensity (2D)", "Intensity"), (QPI_INPUT, "QPI")])
+def test_check_raw_intensity_data_errors_name_the_image_kind(tmp_path, image_file_type, label):
+    wavefront, mask_path, mask = write_qpi_fov(tmp_path, "fov1")
+    stack, short_mask, absent = tmp_path / "stack.tiff", tmp_path / "short_mask.tiff", tmp_path / "absent.tiff"
+    tifffile.imwrite(stack, np.stack([mask, mask]))
+    tifffile.imwrite(short_mask, mask[:-1])
+    cases = {
+        f"Error: {label} image {stack} is not a 2D array": (stack, mask_path),
+        f"Error: {label} image {wavefront} and mask image {short_mask} have different shapes": (wavefront, short_mask),
+        f"Error reading {label} image: {absent}": (absent, mask_path),
+    }
+    for expected, (image, mask_file) in cases.items():
+        fov_df = pd.DataFrame({"image_name": ["fov1"], f"ch1_{image_file_type}": [str(image)], "ch1_Mask": [str(mask_file)]})
+        mw._scan_intensity_images.clear()
+        err, dims = mw.check_raw_intensity_data(fov_df, "ch1", image_file_type=image_file_type)
+        assert err.startswith(expected) and dims is None, err
+
+
 # ---- pending calibration -----------------------------------------------------
 
 def test_background_columns_and_pending_with_a_flim_channel():
