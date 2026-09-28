@@ -52,7 +52,7 @@ The hosted demo is intended for analysis of example or non-sensitive data. Use t
 
 ## See it in action
 
-- [Watch the Data Extraction demo](https://github.com/user-attachments/assets/8391d0ca-e0a7-49ef-9f8b-3d7e0d9a273f)
+- [Watch the Data Extraction demo](https://github.com/user-attachments/assets/413bb07d-adad-48b2-b6c3-5fedacca1ccc)
 - [Watch the Data Analysis demo](https://github.com/user-attachments/assets/f422d364-dff8-4422-afdb-48601bd7e0dd)
 
 ## Example datasets
