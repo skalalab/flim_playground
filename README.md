@@ -6,6 +6,9 @@
 
 <p align="center">
   <a href="https://github.com/skalalab/flim_playground/releases/latest"><img src="https://img.shields.io/github/v/release/skalalab/flim_playground?label=latest%20release" alt="Latest release"></a>
+  <a href="#install-windows"><img src="https://img.shields.io/badge/Windows-supported-0078D6?logo=data:image/svg%2bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0id2hpdGUiPjxwYXRoIGQ9Ik0wIDBoMTEuNHYxMS40SDB6TTEyLjYgMEgyNHYxMS40SDEyLjZ6TTAgMTIuNmgxMS40VjI0SDB6TTEyLjYgMTIuNkgyNFYyNEgxMi42eiIvPjwvc3ZnPg==" alt="Windows supported"></a>
+  <a href="#install-macos"><img src="https://img.shields.io/badge/macOS-supported-000000?logo=apple&logoColor=white" alt="macOS supported"></a>
+  <a href="#install-linux"><img src="https://img.shields.io/badge/Linux-supported-FCC624?logo=linux&logoColor=black" alt="Linux supported"></a>
   <a href="https://flim-playground.streamlit.app/"><img src="https://img.shields.io/badge/try-live%20demo-2ea44f" alt="Try the live demo"></a>
   <a href="https://skalalab.github.io/flim_playground_doc/"><img src="https://img.shields.io/badge/docs-online-0969da" alt="Online documentation"></a>
   <a href="https://doi.org/10.5281/zenodo.19744706"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.19744706.svg" alt="DOI"></a>
@@ -69,6 +72,7 @@ Use the [live Data Analysis demo](https://flim-playground.streamlit.app/) withou
 
 The desktop application includes Data Extraction and Data Analysis and keeps your input data on your computer. Builds for macOS, Windows 11, and Ubuntu 24.04 LTS are published under [Releases](https://github.com/skalalab/flim_playground/releases).
 
+<a id="install-macos"></a>
 <details>
 <summary><strong>macOS</strong></summary>
 
@@ -94,6 +98,7 @@ curl -fL -o ~/Downloads/Flim-Playground-mac-intel.tar.gz \
 
 </details>
 
+<a id="install-windows"></a>
 <details>
 <summary><strong>Windows</strong></summary>
 
@@ -111,6 +116,7 @@ This applies to **Windows** only — the macOS `curl` install above never trigge
 
 </details>
 
+<a id="install-linux"></a>
 <details>
 <summary><strong>Linux (Ubuntu 24.04+)</strong></summary>
 
