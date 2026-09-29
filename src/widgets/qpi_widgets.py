@@ -125,7 +125,9 @@ def choose_background_widget(metadata_df, metadata_dict, fov_name_col, channel_n
     # Draft choices survive hidden widgets and recalibration without confirming
     # the recipe or changing the last saved metadata record.
     metadata_dict[channel_name]["background_defaults"] = dict(settings)
-    args = (constants["opd_unit"], settings["method"], settings["degree"], settings["expand_pct"])
+    column = f"{channel_name}_channel"  # the plane Step 1 picked for every FOV; absent for a 2D image
+    plane = int(metadata_df[column].iloc[0]) if column in metadata_df else -1
+    args = (constants["opd_unit"], settings["method"], settings["degree"], settings["expand_pct"], plane)
     fov_names = metadata_df[fov_name_col].astype(str).tolist()
     image_paths = metadata_df[f"{channel_name}_QPI (2D)"].tolist()
     mask_paths = metadata_df[f"{channel_name}_Mask"].tolist()

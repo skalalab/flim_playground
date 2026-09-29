@@ -90,7 +90,7 @@ def get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, i
     # get the intensity image from the metadata
     if input_type == "Intensity (2D)":
         try:
-            intensity_image = load_image(metadata[f"{channel_name}_Intensity (2D)"])
+            intensity_image = load_image(metadata[f"{channel_name}_Intensity (2D)"], int(metadata.get(f"{channel_name}_channel", -1)))
         except Exception as e:
             return f"Error reading the {channel_name} intensity image: {metadata[f'{channel_name}_Intensity (2D)']}: {e}", pd.DataFrame()
     elif "Decay (3/4D)" in input_type:
@@ -146,16 +146,16 @@ def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask
 # max_entries bounds the memory: each entry holds four full-resolution arrays (~6 MB at 552²,
 # ~80 MB at 2048²). The diagnostics cache below stays unbounded; it holds small dicts.
 @st.cache_data(show_spinner="Correcting QPI background...", max_entries=4)
-def corrected_qpi_image(wavefront_path, mask_path, opd_unit, method, degree, expand_pct):
+def corrected_qpi_image(wavefront_path, mask_path, opd_unit, method, degree, expand_pct, channel=-1):
     """Load one QPI FOV and correct its background.
 
     ``(error_msg, (corrected_um, surface_um, exclusion, mask, info))``. Keyed on the two
-    paths, the unit and the four settings, which is everything it reads, so the calibration
+    paths, the unit, the four settings and the plane: everything it reads, so the calibration
     preview and the extraction share one computation per FOV. Cleared by
     ``clear_folder_scan_caches`` (a rescan may replace the files in place).
     """
     try:
-        image = load_image(wavefront_path)
+        image = load_image(wavefront_path, channel)
     except Exception as e:  # noqa: BLE001
         return f"Error reading the QPI image {wavefront_path}: {e}", None
     try:
@@ -173,12 +173,12 @@ def corrected_qpi_image(wavefront_path, mask_path, opd_unit, method, degree, exp
 
 
 @st.cache_data(show_spinner=False)
-def qpi_fov_diagnostics(wavefront_path, mask_path, opd_unit, method, degree, expand_pct):
+def qpi_fov_diagnostics(wavefront_path, mask_path, opd_unit, method, degree, expand_pct, channel=-1):
     """Calibration readouts for one FOV (``qpi.diagnostics``); ``(error_msg, dict)``.
 
     Same key as ``corrected_qpi_image``, which it calls, so the arrays are computed once.
     """
-    error_msg, result = corrected_qpi_image(wavefront_path, mask_path, opd_unit, method, degree, expand_pct)
+    error_msg, result = corrected_qpi_image(wavefront_path, mask_path, opd_unit, method, degree, expand_pct, channel)
     if error_msg:
         return error_msg, None
     corrected, _, exclusion, mask, info = result
@@ -767,7 +767,7 @@ def fov_extraction(metadata, metadata_dict):
                 constants = metadata_dict[channel_name]["qpi"]
                 error_msg, corrected = corrected_qpi_image(
                     metadata[f"{channel_name}_QPI (2D)"], metadata[f"{channel_name}_Mask"], constants["opd_unit"],
-                    recipe["method"], recipe["degree"], recipe["expand_pct"])
+                    recipe["method"], recipe["degree"], recipe["expand_pct"], int(metadata.get(f"{channel_name}_channel", -1)))
                 if error_msg != "":
                     st.error(f"{error_msg} {sad_emoji}")
                     continue

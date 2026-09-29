@@ -9,7 +9,7 @@ from src.config import get_fov_name_col
 import pandas as pd
 import os
 
-def load_image(path: Union[str, pathlib.PurePath]) -> np.ndarray:
+def load_image(path: Union[str, pathlib.PurePath], channel: int = -1) -> np.ndarray:
     """
     Detects the extension and loads image into a numpy array 
     if it's a tif/tiff or an asc file.
@@ -18,6 +18,9 @@ def load_image(path: Union[str, pathlib.PurePath]) -> np.ndarray:
     ----------
     path : pathlib path or str
         path to the image.
+    channel : int
+        -1 returns the whole image; otherwise that plane of a stack whose one axis
+        besides Y and X holds the planes (see ``read_image_axes``).
 
     Returns
     -------
@@ -28,11 +31,26 @@ def load_image(path: Union[str, pathlib.PurePath]) -> np.ndarray:
     if not isinstance(path, pathlib.PurePath):
         path = Path(path)
     pass
+    if channel != -1:
+        data, axes = read_image_axes(path)
+        extra = [i for i, axis in enumerate(axes) if axis not in "YX"]
+        if len(extra) != 1 or not 0 <= channel < data.shape[extra[0]]:
+            raise ValueError(f"{path.name} has no plane {channel + 1}")
+        return np.take(data, channel, axis=extra[0])
     if path.suffix == ".asc":
         return read_asc(path)
     if path.suffix in [".tiff", ".tif"]:
         return tifffile.imread(path)
     raise ValueError(f"Unsupported file extension '{path.suffix}'. Supported: .asc, .tiff, .tif")
+
+def read_image_axes(path):
+    """``(data, axes)``: the image and tifffile's axis letters for its first series, which
+    leave out size-1 axes (``"YX"``, ``"CYX"``, ``"YXS"``); ``"YX"`` for an .asc file."""
+    path = Path(path)
+    if path.suffix in [".tiff", ".tif"]:
+        with tifffile.TiffFile(path) as tif:
+            return tif.series[0].asarray(), tif.series[0].axes
+    return load_image(path), "YX"
 
 def read_asc(path):
     """

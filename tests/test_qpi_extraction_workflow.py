@@ -28,7 +28,9 @@ from test_data_extraction_real_dataset import (
     _button,
     _refresh_after_rerun,
 )
+from test_ptu_references import write_reference
 
+from src.file_io import load_image
 from src.fov_extraction import fov_extraction
 from src.metadata import background_columns, pending_calibration, prepare_extraction
 from src.qpi import DEFAULT_BACKGROUND
@@ -64,6 +66,7 @@ def test_step1_accepts_flim_and_qpi_channels_on_different_grids(tmp_path, monkey
     write_config(tmp_path, monkeypatch, [flim_channel("ch1"), qpi_channel("QPI")])
     app = _open_step1(folder)
     assert not app.error, [e.value for e in app.error]
+    assert not [s for s in app.selectbox if (s.key or "").endswith("_channel_selectbox")]   # one detector, a 2D image
     rows = _export_metadata(app)
     assert rows["image_name"].tolist() == ["fov1", "fov2"]
     assert rows["fov_dimensions"].tolist() == ["(2, 3)", "(2, 3)"]
@@ -110,8 +113,8 @@ def test_check_raw_intensity_data_reads_the_named_image_column(tmp_path):
     wavefront, mask_path, _ = write_qpi_fov(tmp_path, "fov1")
     fov_df = pd.DataFrame({"image_name": ["fov1"], f"QPI_{QPI_INPUT}": [str(wavefront)], "QPI_Mask": [str(mask_path)]})
     mw._scan_intensity_images.clear()
-    err, dims = mw.check_raw_intensity_data(fov_df, "QPI", image_file_type=QPI_INPUT)
-    assert err == "" and dims == (64, 64)
+    err, (dims, planes, previews) = mw.check_raw_intensity_data(fov_df, "QPI", image_file_type=QPI_INPUT)
+    assert err == "" and dims == (64, 64) and planes == [-1] and previews is None      # a 2D image: nothing to pick
     err, _ = mw.check_raw_intensity_data(fov_df, "QPI")          # the default column is the intensity one
     assert "Intensity (2D) image path not found" in err
 
@@ -120,10 +123,13 @@ def test_check_raw_intensity_data_reads_the_named_image_column(tmp_path):
 def test_check_raw_intensity_data_errors_name_the_image_kind(tmp_path, image_file_type, label):
     wavefront, mask_path, mask = write_qpi_fov(tmp_path, "fov1")
     stack, short_mask, absent = tmp_path / "stack.tiff", tmp_path / "short_mask.tiff", tmp_path / "absent.tiff"
-    tifffile.imwrite(stack, np.stack([mask, mask]))
+    tifffile.imwrite(stack, np.stack([mask, mask]), imagej=True, metadata={"axes": "ZYX"})
     tifffile.imwrite(short_mask, mask[:-1])
+    complex_image = tmp_path / "complex.tiff"
+    tifffile.imwrite(complex_image, mask.astype(np.complex64))
     cases = {
-        f"Error: {label} image {stack} is not a 2D array": (stack, mask_path),
+        f"Error: {label} image {stack} has extra axes besides Y and X: depth (Z×2)": (stack, mask_path),
+        f"Error: {label} image {complex_image} holds complex numbers. Save a real-valued image.": (complex_image, mask_path),
         f"Error: {label} image {wavefront} and mask image {short_mask} have different shapes": (wavefront, short_mask),
         f"Error reading {label} image: {absent}": (absent, mask_path),
     }
@@ -132,6 +138,104 @@ def test_check_raw_intensity_data_errors_name_the_image_kind(tmp_path, image_fil
         mw._scan_intensity_images.clear()
         err, dims = mw.check_raw_intensity_data(fov_df, "ch1", image_file_type=image_file_type)
         assert err.startswith(expected) and dims is None, err
+
+
+PLANES = np.stack([np.full((8, 9), k + 1, dtype=np.uint8) for k in range(3)])     # plane k holds k + 1
+
+
+@pytest.mark.parametrize(("data", "kwargs"), [
+    (PLANES, {"imagej": True, "metadata": {"axes": "CYX"}}),
+    (np.moveaxis(PLANES, 0, -1), {"photometric": "rgb"}),          # interleaved RGB: YXS
+    (PLANES, {"photometric": "minisblack"}),                       # no axis labels: QYX
+], ids=["CYX", "YXS", "QYX"])
+def test_an_image_stack_reads_and_scans_one_plane(tmp_path, data, kwargs):
+    image, mask, empty, flat, single = (tmp_path / f"{name}.tif" for name in ("stack", "mask", "empty", "flat", "single"))
+    tifffile.imwrite(image, data, **kwargs)
+    tifffile.imwrite(mask, np.ones((8, 9), dtype=np.uint16))
+    for plane in range(3):
+        assert np.all(load_image(image, plane) == plane + 1)
+    np.testing.assert_array_equal(load_image(image), tifffile.imread(image))      # -1: the whole file, as before
+    with pytest.raises(ValueError, match="has no plane 4"):
+        load_image(image, 3)
+
+    def check(*images):
+        mw._scan_intensity_images.clear()
+        return mw.check_raw_intensity_data(pd.DataFrame({
+            "image_name": [f"fov{i + 1}" for i in range(len(images))],
+            "ch1_Intensity (2D)": [str(path) for path in images], "ch1_Mask": [str(mask)] * len(images)}), "ch1")
+
+    err, (dims, planes, previews) = check(image)
+    assert (err, dims, planes) == ("", (8, 9), [0, 1, 2]) and [p.max() for p in previews] == [1, 2, 3]
+    tifffile.imwrite(empty, 0 * data, **kwargs)                    # a FOV with no signal in any plane, as for decays
+    assert check(image, empty)[0] == "1 field(s) of view have entirely zero Intensity images (empty.tif). Please check the data."
+    tifffile.imwrite(flat, PLANES[0])                              # one pick serves every FOV, so plane counts must match
+    assert check(image, flat)[0].startswith("Inconsistent fov dimensions found for channel ch1")
+    tifffile.imwrite(single, PLANES[:1])                           # shaped metadata keeps the size-1 axis: QYX
+    assert all(check(*fovs)[0].startswith("Inconsistent fov dimensions found for channel ch1")   # its pick is 0, a 2D image's -1
+               for fovs in ((flat, single), (single, flat)))
+
+
+def test_intensity_texture_reads_the_picked_plane(tmp_path):
+    _, mask_path, mask = write_qpi_fov(tmp_path, "fov1")
+    image = tmp_path / "stack.tif"
+    plane = np.where(mask > 0, 10, 1).astype(np.uint16)
+    tifffile.imwrite(image, np.stack([plane, 3 * plane]), imagej=True, metadata={"axes": "CYX"})
+    rows = pd.DataFrame([{"image_name": "fov1", "red_Intensity (2D)": str(image), "red_Mask": str(mask_path), "red_channel": 1}])
+    texture = {"input_type": "Intensity (2D)", "imaging_modality": "Intensity-only", "selected_feature_extractors": ["Intensity texture"]}
+    err, info = prepare_extraction(rows, {"red": texture}, fov_name_col="image_name", unique_cell_id_col="cell_id")
+    assert err == "", err
+    fov_extraction.clear()
+    err, features = fov_extraction(rows.iloc[0], info)
+    assert err == "" and features.loc["fov1_1", "Intensity texture_red: intensity_sum"] == 3 * 10 * 256    # cell 1: 16 x 16
+
+
+def test_step1_picks_one_qpi_plane_for_calibration_and_extraction(tmp_path, monkeypatch):
+    folder = tmp_path / "data"
+    folder.mkdir()
+    for name, (lit3, lit4) in (("fov1", (1, 0)), ("fov2", (0, 1))):
+        wavefront, _, _ = write_qpi_fov(folder, name)
+        image = tifffile.imread(wavefront)
+        # Planes 3 and 4 have signal in one FOV each, so both are offered whichever FOV Step 1
+        # reads first; plane 5 is empty in both, so it is not.
+        planes = [2 * image, image, lit3 * image, lit4 * image, 0 * image]
+        tifffile.imwrite(wavefront, np.stack(planes), imagej=True, metadata={"axes": "CYX"})
+    write_config(tmp_path, monkeypatch, [qpi_channel("QPI")])
+    app = _open_step1(folder)
+    picker = app.selectbox(key="QPI_channel_selectbox")
+    assert (picker.label, list(picker.options)) == ("Select the channel for QPI image", ["1", "2", "3", "4"])
+    assert [image.proto.imgs[0].caption for image in app.get("imgs")] == ["ch 1 \u2705", "ch 2", "ch 3", "ch 4"]   # no photon totals
+    picker.set_value(2).run(timeout=60)
+    assert _export_metadata(app)["QPI_channel"].eq(1).all()
+    # Step 2 corrects plane 2, the 2D fixture itself, so its largest cell (400 pixels) weighs what the fixture's does.
+    mass = [m for m in app.get("metric") if m.proto.label == "Cell dry mass"]
+    assert float(mass[0].proto.body.removesuffix(" pg")) == pytest.approx(CELL1_MASS_PG * 400 / 256, rel=0.05)
+    _button(app, "Confirm calibration for each channel").click().run(timeout=120)
+    _refresh_after_rerun(app)
+    _button(app, "Start extraction").click().run(timeout=300)
+    _refresh_after_rerun(app)
+    assert not app.error, [e.value for e in app.error]
+    features = pd.read_csv(next(folder.glob("single_cell_features_*.csv")), index_col=0)
+    assert features.loc["fov1_1", "Dry-mass statistics_QPI: dry_mass_pg"] == pytest.approx(CELL1_MASS_PG, rel=0.02)
+
+
+def test_flim_detector_picker_keeps_its_label_and_photon_captions(tmp_path, monkeypatch):
+    folder = tmp_path / "data"
+    folder.mkdir()
+    write_irf(folder)
+    for name in ("fov1", "fov2"):
+        data = np.zeros((1, 2, 3, 3, 32), dtype=np.uint16)          # (T, Y, X, detector, bins)
+        for detector in range(3):
+            data[0, :, :, detector, 4 + detector] = detector + 1   # detector d: d + 1 photons per pixel
+        write_reference(folder / f"{name}.ptu", data)
+        tifffile.imwrite(folder / f"{name}_mask.tif", np.ones((2, 3), dtype=np.uint8))
+    write_config(tmp_path, monkeypatch, [flim_channel("ch1")])
+    app = _open_step1(folder)
+    picker = app.selectbox(key="ch1_channel_selectbox")
+    assert (picker.label, list(picker.options)) == ("Select the channel for ch1 decay", ["1", "2", "3"])
+    assert [image.proto.imgs[0].caption for image in app.get("imgs")] == [
+        "ch 1 \u2705 \u2014 6 photons", "ch 2 \u2014 12 photons", "ch 3 \u2014 18 photons"]
+    picker.set_value(2).run(timeout=60)
+    assert _export_metadata(app)["ch1_channel"].eq(1).all()
 
 
 # ---- pending calibration -----------------------------------------------------

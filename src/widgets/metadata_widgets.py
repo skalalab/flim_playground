@@ -7,6 +7,7 @@ from typing import NamedTuple
 import numpy as np
 import pandas as pd
 import streamlit as st
+import tifffile
 
 from src.config import (
     get_default_2D_decay_config,
@@ -21,7 +22,7 @@ from src.decay_io import (
     read_decay_with_frames,
 )
 from src.emojis import sad_emoji
-from src.file_io import load_image
+from src.file_io import load_image, read_image_axes
 from src.widgets.analysis_widget_state import control_default, number_input_default
 from src.widgets.laser_rate_widget import laser_rate_input
 
@@ -528,22 +529,44 @@ def check_raw_2D_decay_data(fov_df, channel_name):
 
 @st.cache_data(show_spinner="Reading images...")
 def _scan_intensity_images(intensity_paths, mask_paths, image_label):
-    """Check that each image and mask are 2D and have equal shapes.
+    """Check that each image is 2D or a stack of planes, with a 2D mask of the same (Y, X).
 
-    Cache by both path tuples because both files are read. ``image_label``
+    A stack keeps one axis besides Y and X once tifffile drops size-1 axes: C, S, or the
+    unlabelled I/Q. Cache by both path tuples because both files are read. ``image_label``
     ("Intensity" or "QPI") names the image in errors. Return
-    ``(error_msg, dimension_list)`` with file-specific errors.
+    ``(error_msg, (dimension_list, available_planes, preview_images))`` with file-specific
+    errors: the (planes, Y, X) of every FOV, or the (Y, X) of a 2D image, which is read whole and
+    so must not match a one-plane stack; the planes with signal in any FOV, as for decay
+    detectors ([-1] for a 2D image); and the first FOV's planes (None for a 2D image). As
+    for decay files, a stack with no signal in any plane is an error.
     """
     dimension_list = []
+    empty_images = []
+    plane_has_signal = preview_images = None
     for image_path, mask_path in zip(intensity_paths, mask_paths):
         try:
-            image_data = load_image(image_path)
+            image_data, axes = read_image_axes(image_path)
         except Exception as e:
             return f"Error reading {image_label} image: {image_path}: {e}", None
-        if len(image_data.shape) != 2:
+        if np.iscomplexobj(image_data):  # no single intensity or OPD to measure
+            return f"Error: {image_label} image {image_path} holds complex numbers. Save a real-valued image.", None
+        extra = [(axis, size) for axis, size in zip(axes, image_data.shape) if axis not in "YX"]
+        if len(extra) > 1 or any(axis not in "CSIQ" for axis, _ in extra):
+            listed = ", ".join(f"{tifffile.TIFF.AXES_NAMES.get(axis, axis)} ({axis}×{size})" for axis, size in extra)
+            return (f"Error: {image_label} image {image_path} has extra axes besides Y and X: {listed}. "
+                    "Save a 2D image, or a stack whose only extra axis is channels."), None
+        planes = np.moveaxis(image_data, axes.index(extra[0][0]), 0) if extra else image_data[np.newaxis]
+        if planes.ndim != 3:
             return f"Error: {image_label} image {image_path} is not a 2D array", None
 
-        dimension_list.append(image_data.shape)
+        dimension_list.append(planes.shape if extra else image_data.shape)
+        if extra and len(dimension_list) == 1:  # the first FOV's planes feed the thumbnails
+            preview_images, plane_has_signal = planes, np.zeros(len(planes), dtype=bool)
+        if plane_has_signal is not None and planes.shape == dimension_list[0]:
+            lit = planes.reshape(len(planes), -1).any(axis=1)
+            if not lit.any():
+                empty_images.append(image_path)
+            plane_has_signal |= lit
         # check for the consistency of the shape between the intensity image and the mask image
         try:
             mask_data = load_image(mask_path)
@@ -551,16 +574,25 @@ def _scan_intensity_images(intensity_paths, mask_paths, image_label):
             return f"Error reading mask image: {mask_path}: {e}", None
         if len(mask_data.shape) != 2:
             return f"Error: Mask image {mask_path} is not a 2D array", None
-        if image_data.shape != mask_data.shape:
-            return f"Error: {image_label} image {image_path} and mask image {mask_path} have different shapes: {image_data.shape} != {mask_data.shape}", None
-    return "", dimension_list
+        if planes.shape[1:] != mask_data.shape:
+            return f"Error: {image_label} image {image_path} and mask image {mask_path} have different shapes: {planes.shape[1:]} != {mask_data.shape}", None
+    if plane_has_signal is None:
+        return "", (dimension_list, [-1], None)
+    if empty_images:
+        listed = ", ".join(os.path.basename(str(path)) for path in empty_images)
+        return f"{len(empty_images)} field(s) of view have entirely zero {image_label} images ({listed}). Please check the data.", None
+    # Every FOV has signal, so a plane is always offered; planes empty in every FOV are not, as for decay detectors.
+    available_planes = [p for p, signal in enumerate(plane_has_signal) if signal]
+    return "", (dimension_list, available_planes, preview_images)
 
 
 def check_raw_intensity_data(fov_df, channel_name, image_file_type="Intensity (2D)"):
-    """Validate one 2D image channel (intensity or QPI wavefront) against its mask.
+    """Validate one image channel (intensity or QPI wavefront, 2D or a stack) against its mask.
 
     ``image_file_type`` names the path column, ``{channel}_{image_file_type}``; the checks are
-    shape-only (2D, image and mask equal, consistent across FOVs), so signed floats pass.
+    shape-only (axes, image and mask equal, consistent across FOVs), so signed floats pass.
+    Return ``(error_msg, (dims, available_planes, preview_images))``: the (Y, X) every FOV
+    shares, the planes Step 1 may offer ([-1] for a 2D image) and the first FOV's planes.
     """
     intensity_column_name = f"{channel_name}_{image_file_type}"
     mask_column_name = f"{channel_name}_Mask"
@@ -569,20 +601,21 @@ def check_raw_intensity_data(fov_df, channel_name, image_file_type="Intensity (2
     if mask_column_name not in fov_df.columns:
         return f"Error: Mask path not found for {channel_name}", None
 
-    error_msg, dimension_list = _scan_intensity_images(
+    error_msg, scan = _scan_intensity_images(
         _column_values(fov_df, intensity_column_name),
         _column_values(fov_df, mask_column_name),
         image_label=image_file_type.removesuffix(" (2D)"),
     )
     if error_msg != "":
         return error_msg, None
+    dimension_list, available_planes, preview_images = scan
 
     if len(set(dimension_list)) > 1:
         return f"Inconsistent fov dimensions found for channel {channel_name}. Please check the data.", None
     elif len(dimension_list) == 0:
         return f"No fov dimensions found for channel {channel_name}. Please check the data.", None
     else:
-        return "", dimension_list[0]
+        return "", (dimension_list[0][-2:], available_planes, preview_images)
 
 def clear_folder_scan_caches():
     """Clear folder listing and all raw-data caches for the Rescan folder action.
@@ -633,12 +666,13 @@ def _to_display_image(intensity_image, high_percentile=99.5):
     return (np.clip(intensity_image / vmax, 0, 1) * 255).astype(np.uint8)
 
 
-def _render_channel_preview(fov_df, preview_images, available_channels, selected_channel):
+def _render_channel_preview(fov_df, preview_images, available_channels, selected_channel, photons=True):
     """Thumbnails of every non-zero channel in the first FOV, so the channel assigned
     above can be checked against what the data actually looks like.
 
     Each channel is stretched independently so a dim one stays legible; the photon total
     in each caption carries the relative-brightness cue that independent stretching drops.
+    Image planes pass ``photons=False``: their values need not be photons.
     """
     if preview_images is None:
         return  # 3D decay, or a read error check_raw_decay_data has already reported
@@ -657,8 +691,24 @@ def _render_channel_preview(fov_df, preview_images, available_channels, selected
             st.image(
                 _to_display_image(intensity_image),
                 width="stretch",
-                caption=f"ch {channel_no + 1}{marker} \u2014 {intensity_image.sum():,.0f} photons",
+                caption=f"ch {channel_no + 1}{marker}" + (f" \u2014 {intensity_image.sum():,.0f} photons" if photons else ""),
             )
+
+
+def _pick_channel(fov_df, channel_name, available_channels, preview_images, file_kind):
+    """Write ``{channel}_channel``: the only available channel, or the one picked in the
+    selectbox decay detectors and image planes share, above first-FOV thumbnails.
+
+    ``file_kind`` ("decay" or "image") ends the label. Only decay thumbnails show photon
+    totals, because image values need not be photons.
+    """
+    if len(available_channels) == 1:
+        fov_df[f"{channel_name}_channel"] = available_channels[0]
+        return
+    human_readable_channel_nos = [channel_no + 1 for channel_no in available_channels]
+    human_readable_channel_no = st.selectbox(f"Select the channel for {channel_name} {file_kind}", human_readable_channel_nos, key=f"{channel_name}_channel_selectbox")
+    fov_df[f"{channel_name}_channel"] = human_readable_channel_no - 1
+    _render_channel_preview(fov_df, preview_images, available_channels, human_readable_channel_no - 1, photons=file_kind == "decay")
 
 
 def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type, imaging_modalities, selected_ch_feature_extractors, duration=None, time_bins=None):
@@ -675,9 +725,12 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
         if imaging_modality in ("Intensity-only", "QPI"):
             has_intensity_only = True
             image_file_type = "Intensity (2D)" if imaging_modality == "Intensity-only" else "QPI (2D)"
-            error_msg, dims = check_raw_intensity_data(fov_df, channel_name, image_file_type=image_file_type)
+            error_msg, result = check_raw_intensity_data(fov_df, channel_name, image_file_type=image_file_type)
             if error_msg == "":
+                dims, available_planes, preview_images = result
                 fov_dimensions.setdefault(imaging_modality, []).append((dims, channel_name))
+                with cols[i]:
+                    _pick_channel(fov_df, channel_name, available_planes, preview_images, "image")
             else:
                 return error_msg, None
         elif imaging_modality == "FLIM":
@@ -710,13 +763,7 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
                     with cols[i]:
                         error_msg, available_channels, shape, laser_rep_time, preview_images = check_raw_decay_data(fov_df, channel_name)
                         if error_msg == "":
-                            if len(available_channels) == 1:
-                                fov_df[f"{channel_name}_channel"] = available_channels[0]
-                            else:
-                                human_readable_channel_nos = [channel_no + 1 for channel_no in available_channels]
-                                human_readable_channel_no = st.selectbox(f"Select the channel for {channel_name} decay", human_readable_channel_nos, key=f"{channel_name}_channel_selectbox")
-                                fov_df[f"{channel_name}_channel"] = human_readable_channel_no - 1
-                                _render_channel_preview(fov_df, preview_images, available_channels, human_readable_channel_no - 1)
+                            _pick_channel(fov_df, channel_name, available_channels, preview_images, "decay")
                             time_bins_list.append(shape[-1])
                             fov_dimensions.setdefault("FLIM", []).append((shape[:-1], channel_name))
                             laser_rep_time_list.append(laser_rep_time)
