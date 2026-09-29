@@ -1,6 +1,6 @@
 [project]
 name = "flim-playground"
-version = "1.14.3"
+version = "1.14.4"
 description = "A FLIM-focused framework for multimodal single-cell imaging and interactive tabular data analysis."
 readme = "README.md"
 license = { file = "LICENSE" }
