@@ -137,6 +137,44 @@ Upgrading is the same step as installing — your settings (`config.toml`, plus 
 
 </details>
 
+#### Uninstalling
+
+Each platform's steps remove the app, your settings, and the `numba` compile cache that Data Analysis leaves in your user folder (safe to delete; it is rebuilt if needed).
+
+<details>
+<summary><strong>macOS</strong></summary>
+
+Paste into **Terminal**. If you moved the app out of Downloads, use that folder in the first two lines — your settings sit beside the app.
+
+```bash
+rm -rf ~/Downloads/Flim-Playground.app
+rm -f ~/Downloads/config.toml ~/Downloads/analysis_config.toml
+rm -f ~/Downloads/Flim-Playground-mac.tar.gz ~/Downloads/Flim-Playground-mac-intel.tar.gz
+rm -rf ~/Library/Caches/numba
+```
+
+</details>
+
+<details>
+<summary><strong>Windows</strong></summary>
+
+Open **Settings → Apps → Installed apps**, click **⋯** next to **Flim-Playground** and choose **Uninstall**. It removes the app, its shortcuts and your settings; to keep the settings, first copy `config.toml` and `analysis_config.toml` out of `%LOCALAPPDATA%\Programs\Flim-Playground`. Then type `%LOCALAPPDATA%` into File Explorer's address bar and delete the **numba** folder, and delete `Flim-Playground-Setup.exe` from your Downloads.
+
+</details>
+
+<details>
+<summary><strong>Linux</strong></summary>
+
+The first line removes the menu entry; the others delete the app folder, the download, your settings and the cache. If you extracted it somewhere other than Downloads, use that path.
+
+```bash
+~/Downloads/Flim-Playground-linux/uninstall.sh
+rm -rf ~/Downloads/Flim-Playground-linux ~/Downloads/Flim-Playground-linux.tar.gz
+rm -rf ~/.config/flim-playground ~/.cache/numba
+```
+
+</details>
+
 ### Option 2: Build from source
 
 Requirements: Python 3.11 or newer and [uv](https://docs.astral.sh/uv/).
