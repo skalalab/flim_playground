@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from chart_theme_checks import assert_canvas_holds_everything
 from matplotlib.patches import Ellipse
 
 from src.export_script import generate_script
@@ -180,6 +181,22 @@ def test_the_promoted_levels_strips_describe_it(tmp_path, monkeypatch):
     assert curves
     assert min(line.get_xdata().min() for line in curves) == pytest.approx(promoted.x.min())
     assert max(line.get_xdata().max() for line in curves) == pytest.approx(promoted.x.max())
+
+
+def test_a_promotion_moves_the_maps_but_never_the_legend(tmp_path, monkeypatch):
+    """Entries and counts describe the whole dataset, as the app's shared legend does."""
+    def legend_labels(focus):
+        namespace = _run(tmp_path, monkeypatch, _state("day", focus=focus))
+        return [text.get_text() for text in namespace["ax_main"].get_legend().get_texts()]
+
+    assert legend_labels("Day 10") == legend_labels(None)
+
+
+def test_the_canvas_holds_main_plot_and_the_y_title(tmp_path, monkeypatch):
+    """At the app's default fonts both ran off the canvas, which is all plt.show() draws."""
+    state = _state("day", focus="Day 10")
+    state.update(axis_label_size=24, legend_size=18)
+    assert_canvas_holds_everything(_run(tmp_path, monkeypatch, state)["fig"])
 
 
 def _models(axis):

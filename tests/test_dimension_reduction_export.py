@@ -10,6 +10,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from chart_theme_checks import (
+    assert_canvas_holds_everything,
+    assert_theme_axes,
+    assert_theme_title,
+)
 
 from src.export_script import generate_script
 
@@ -506,6 +511,20 @@ def test_a_promoted_matrix_cell_keeps_the_edge_labels_and_is_stamped(tmp_path, m
         "row: row2 · column: col1"]
 
 
+@pytest.mark.parametrize("encodings", [True, False])
+def test_a_promotion_moves_the_maps_but_never_the_legend(tmp_path, monkeypatch, encodings):
+    """The app's one legend lists every colour, counted over the whole dataset, wherever
+    that map sits; without shape or opacity entries the promoted export used to crash."""
+    def legend_labels(focus):
+        state = _state(["row"], focus=focus)
+        if not encodings:
+            state.update(shape_by=None, opacity_by=None)
+        namespace = _run(tmp_path, monkeypatch, state)
+        return [text.get_text() for text in namespace["ax"].get_legend().get_texts()]
+
+    assert legend_labels(("row10",)) == legend_labels(None)
+
+
 def test_without_a_promotion_the_grid_is_unchanged(tmp_path, monkeypatch):
     namespace = _run(tmp_path, monkeypatch, _state(["row"]))
     overview, *facets = namespace["fig"].axes
@@ -513,3 +532,23 @@ def test_without_a_promotion_the_grid_is_unchanged(tmp_path, monkeypatch):
     assert not any("Main plot" in text.get_text()
                    for ax in [overview, *facets] for text in ax.texts)
     assert not namespace["fig"].texts
+
+
+@pytest.mark.parametrize("separate_by, focus", [([], None), (["row"], ("row10",))])
+def test_export_follows_the_app_chart_theme(tmp_path, monkeypatch, separate_by, focus):
+    """Every map keeps the app's left and bottom axis lines, without gridlines or tick
+    marks; a promotion titles the figure in the theme's bold left style."""
+    ns = _run(tmp_path, monkeypatch, _state(separate_by, focus=focus))
+    for panel in [ns["ax"], *ns["facet_axes"]]:
+        assert_theme_axes(panel, grid_axis=None, lines=("left", "bottom"))
+    if focus:
+        assert_theme_title(ns["fig"]._suptitle)
+
+
+@pytest.mark.parametrize("separate_by, focus", [([], None), (["row"], ("row10",))])
+def test_the_canvas_holds_the_legend_labels_and_titles(tmp_path, monkeypatch, separate_by, focus):
+    """At the app's default fonts the legend beside the plot, "Main plot" and the y title
+    ran off the canvas, which is all plt.show() draws."""
+    state = _state(separate_by, focus=focus)
+    state.update(axis_label_size=24, legend_size=18)
+    assert_canvas_holds_everything(_run(tmp_path, monkeypatch, state)["fig"])

@@ -43,6 +43,35 @@ _EXPORT_SCRIPT_CITATION = """\
 #
 """
 
+# Streamlit's Plotly theme draws chart titles at fontSizes.md (1rem = 16 px) whatever the
+# axis label size, and its frontend wraps every Plotly title in <b>. The Phasor figure
+# sets its own title font instead (Arial 20, src/vis/bivar.py).
+_THEME_TITLE_FONT_SIZE = 16
+_PHASOR_TITLE_FONT_SIZE = 20
+
+# Follows the imports of every script whose app chart is Plotly: all but Classification,
+# which the app draws with Matplotlib's defaults. The app's text renders in a Helvetica-like
+# sans that Matplotlib's default DejaVu Sans outgrows by 10-17% at the same size; Arial
+# matches within 4%. A family list (not font.sans-serif) lets the subscript digits Arial
+# lacks fall back per glyph to DejaVu Sans. Helvetica has them, but hanging below the
+# baseline, so it stays out of the list. A missing family would log findfont warnings.
+# The theme's gridline colour is Plotly's gridcolor as the app renders it.
+_CHART_THEME_SETUP = """
+# Match the app's Helvetica-like text; DejaVu Sans (bundled) draws the subscripts Arial lacks.
+if "Arial" in {font.name for font in font_manager.fontManager.ttflist}:
+    plt.rcParams["font.family"] = ["Arial", "DejaVu Sans"]
+
+
+def style_axes_like_app(ax, grid_axis="y"):
+    # Streamlit's chart theme: light gridlines behind the data, no frame or tick marks.
+    ax.set_axisbelow(True)
+    if grid_axis:
+        ax.grid(True, axis=grid_axis, color='#e6eaf1', linewidth=1)
+    for spine in ax.spines.values():
+        spine.set_visible(False)
+    ax.tick_params(length=0)
+"""
+
 
 # ---------------------------------------------------------------------------
 # Source extraction utility
@@ -218,24 +247,56 @@ def scatter_interleaved_points(ax, df, x_col, y_col, group_column, color_groups,
     return [first_handles[group] for group in color_groups if group in first_handles]
 
 
-def place_facet_legend(fig, ax, legend_size, left_margin, figure_width, figure_height,
-                       legend_y=0.015):
+def widen_to_fit(fig, pad=0.1):
+    """Widen the canvas until everything drawn fits, keeping every axes' size.
+
+    The saved SVG is cropped to whatever was drawn, so it always holds a legend or
+    label past the canvas edge; plt.show() draws only the canvas. Returns the inches
+    added on the left, which shift anything later placed in figure coordinates.
+    """
+    fig.canvas.draw()
+    content = fig.get_tightbbox(fig.canvas.get_renderer())
+    width, height = fig.get_size_inches()
+    extra_left = max(0., pad - content.x0)
+    extra_right = max(0., content.x1 + pad - width)
+    if extra_left or extra_right:
+        positions = [panel_ax.get_position().frozen() for panel_ax in fig.axes]
+        new_width = width + extra_left + extra_right
+        fig.set_size_inches(new_width, height)
+        for panel_ax, position in zip(fig.axes, positions):
+            panel_ax.set_position([(position.x0 * width + extra_left) / new_width, position.y0,
+                                   position.width * width / new_width, position.height])
+    return extra_left
+
+
+def place_facet_legend(fig, ax, handles, legend_size, left_margin, figure_width,
+                       figure_height, legend_y=0.015):
     """One horizontal legend under the overview's axis title, sized to real text.
+
+    ``handles`` come from the whole-dataset map, wherever a promotion moved it: the
+    app's shared legend never follows the promotion.
+
+    The side margins are guesses as well: a long level name, "Main plot" or a large
+    y title can outrun them, so the canvas first widens to hold everything drawn.
 
     Measure before reserving space: large fonts and short grids can make the
     legend taller than the initial margin estimate. Wrap long combination labels
     within the canvas instead of widening the saved SVG, then grow only the
     bottom margin so every panel keeps its physical size and shared geometry.
     """
+    left_margin += widen_to_fit(fig)
+    figure_width = fig.get_figwidth()
+
     def make_legend(columns):
-        legend = ax.legend(fontsize=legend_size, loc='lower left', ncol=columns, frameon=False,
+        legend = ax.legend(handles=handles, fontsize=legend_size, loc='lower left',
+                           ncol=columns, frameon=False,
                            bbox_to_anchor=(left_margin / figure_width, legend_y),
                            bbox_transform=fig.transFigure)
         for handle in legend.legend_handles:
             handle.set_sizes([legend_size ** 2])
         return legend
 
-    legend_columns = min(5, len(ax.get_legend_handles_labels()[0]))
+    legend_columns = min(5, len(handles))
     legend = make_legend(legend_columns)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
@@ -258,6 +319,32 @@ def place_facet_legend(fig, ax, legend_size, left_margin, figure_width, figure_h
                 position.width, position.height * old_height / figure_height,
             ])
     return figure_height
+
+
+def place_phasor_legend(ax, handles, legend_size, frequency_label):
+    """Beside the plot, as in the app, and clear of the frequency label.
+
+    The app's plot area runs on past that label; these equal-aspect axes stop at
+    g = 1.05, which a large label overhangs. Its width is fixed in points, so one
+    measurement anchors the legend past whichever reaches further right, and the
+    anchor follows any later layout.
+    """
+    from matplotlib.transforms import blended_transform_factory, offset_copy
+
+    fig = ax.figure
+    fig.canvas.draw()
+    label_box = frequency_label.get_window_extent()
+    x, x_transform = 1.02, ax.transAxes
+    if label_box.x1 > ax.get_window_extent().x1:
+        x = frequency_label.get_position()[0]
+        x_transform = offset_copy(ax.transData, fig=fig, units='points',
+                                  x=label_box.width * 72 / fig.dpi + legend_size / 2)
+    legend = ax.legend(handles=handles, fontsize=legend_size, loc='upper left', frameon=False,
+                       borderaxespad=0, bbox_to_anchor=(x, 1),
+                       bbox_transform=blended_transform_factory(x_transform, ax.transAxes))
+    for handle in legend.legend_handles:
+        handle.set_sizes([legend_size ** 2])
+    return legend
 
 
 def _print_distribution_statistics(result, label):
@@ -350,6 +437,8 @@ def _build_preamble(state: dict) -> str:
         "import seaborn as sns",
         "import re",
     ]
+    if method != "Classification":
+        base_imports.insert(3, "from matplotlib import font_manager")
 
     extra = []
     mp = state.get("method_params", {})
@@ -412,12 +501,14 @@ def _build_preamble(state: dict) -> str:
         f"{_EXPORT_SCRIPT_CITATION}\n"
         # Record the generating app's version, independent of where the script later runs.
         f'"""\nAuto-generated by FLIM Playground {get_app_version()} \u2014 {method}\nDate: {ts}\n"""\n{imports}\n'
+        f"{_CHART_THEME_SETUP if method != 'Classification' else ''}"
     )
 
 
 def _build_config_section(state: dict) -> str:
     mp = state.get("method_params", {})
     method = state["method"]
+    title_size = _PHASOR_TITLE_FONT_SIZE if method == "Phasor Plot" else _THEME_TITLE_FONT_SIZE
     lines = [
         "",
         "# " + "=" * 60,
@@ -427,6 +518,9 @@ def _build_config_section(state: dict) -> str:
         f"POINT_SIZE = {state.get('point_size', DEFAULT_POINT_SIZE)}",
         f"AXIS_LABEL_SIZE = {state.get('axis_label_size', DEFAULT_AXIS_LABEL_FONT_SIZE)}",
         f"LEGEND_SIZE = {state.get('legend_size', DEFAULT_LEGEND_FONT_SIZE)}",
+        # Classification's figures keep Matplotlib's defaults, as the app draws them.
+        *([f"TITLE_SIZE = {title_size}  # the app's chart title, bold and left-aligned"]
+          if method != "Classification" else []),
         f"SHOW_GROUP_COUNTS = {state.get('show_group_counts', False)!r}  # 'Show group counts (n) in legend'",
         f"COLORMAP = {state.get('colormap', DEFAULT_COLORMAP)!r}",
         f"COLOR_BY = {state.get('color_by', [])!r}",
@@ -778,7 +872,8 @@ dash_styles = ['--', ':', '-.', (0, (5, 10)), (0, (3, 5, 1, 5))]
 for ax, panel in zip(histogram_axes, panels):
     legend_handles = []
     if SEPARATE_BY:
-        ax.set_title(str(panel['category']), fontsize=AXIS_LABEL_SIZE)
+        # The app's category headings stop growing at 24 (apply_plot_styling).
+        ax.set_title(str(panel['category']), fontsize=min(AXIS_LABEL_SIZE, 24))
     for group in panel["groups"]:
         g = group["color_group"]
         color = color_map[g][:3]
@@ -830,11 +925,13 @@ for ax, panel in zip(histogram_axes, panels):
                             ha='center', fontsize=AXIS_LABEL_SIZE, color=color)
                 print(f"    Threshold between component {index} and {index + 1}: {threshold:.4f}")
     if legend_handles:
+        # The app's legends have no border; the one over the data is translucent white.
         if APPLY_GMM:
             ax.legend(handles=legend_handles, loc='upper left', bbox_to_anchor=(1.02, 1),
-                      borderaxespad=0, fontsize=LEGEND_SIZE)
+                      borderaxespad=0, fontsize=LEGEND_SIZE, frameon=False)
         else:
-            ax.legend(handles=legend_handles, loc='upper right', fontsize=LEGEND_SIZE)
+            ax.legend(handles=legend_handles, loc='upper right', fontsize=LEGEND_SIZE,
+                      edgecolor='none', framealpha=0.85)
 pretty_var = format_feature_label(SELECTED_VAR, engine='mpl')
 x_label = f"log₁₀({pretty_var})" if LOG_X else pretty_var
 y_label = ("Density" if SEPARATE_BY else "Probability Density") if APPLY_GMM else "Count"
@@ -845,16 +942,16 @@ for ax in histogram_axes:
     show_x_axis = ax is histogram_axes[-1]
     ax.set_xlabel(x_label if show_x_axis else "", fontsize=AXIS_LABEL_SIZE)
     ax.xaxis.set_visible(show_x_axis)
-    ax.spines["bottom"].set_visible(show_x_axis)
     ax.set_ylabel(y_label, fontsize=AXIS_LABEL_SIZE)
     ax.set_xlim(histogram_data["x_range"])
     ax.set_ylim(histogram_data["y_range"])
     ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2, labelbottom=show_x_axis)
+    style_axes_like_app(ax)
 ax = histogram_axes[0]
 if SEPARATE_BY:
-    fig.suptitle(title, fontsize=AXIS_LABEL_SIZE)
+    fig.suptitle(title, fontsize=TITLE_SIZE, fontweight='bold', x=0.01, ha='left')
 else:
-    ax.set_title(title, fontsize=AXIS_LABEL_SIZE)
+    ax.set_title(title, fontsize=TITLE_SIZE, fontweight='bold', loc='left')
 
 if APPLY_GMM and SAVE_DERIVED_DATA:
     apply_export_labels(df, DERIVED_LABEL_COLUMN, DERIVED_EXPORT).to_csv(
@@ -1240,10 +1337,12 @@ if CONNECT_MEANS:
             ax.plot(means_x, means_y, 'k-o', linewidth=2, markersize=6, zorder=3)
 
 # --- Section dividers ---
+# The app's divider is a 2 px dashed line in the theme colour.
 for boundary in section_boundaries:
-    ax.axvline(x=boundary, linestyle='--', color='gray', alpha=0.5, linewidth=1)
+    ax.axvline(x=boundary, linestyle='--', color='black', linewidth=2)
 
 # --- Effect size / statistical test annotations ---
+bracket_labels = []
 if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
     from itertools import combinations
     for sec_group in ordered_separate_groups:
@@ -1336,9 +1435,10 @@ if EFFECT_SIZE_METHOD != "None" or STATISTICAL_TEST != "None":
                    [y_bracket_top - bracket_h, y_bracket_top, y_bracket_top, y_bracket_top - bracket_h],
                    color='black', linewidth=1.5, zorder=4)
 
-            # Match the font size applied by the app's final styling pass.
-            ax.text((x_start + x_end) / 2, y_text_center,
-                   txt, ha='center', va='bottom', fontsize=AXIS_LABEL_SIZE, zorder=4)
+            # Match the font size applied by the app's final styling pass. Plotly centres
+            # data-anchored annotations on y, which keeps each label below the next bracket.
+            bracket_labels.append(ax.text((x_start + x_end) / 2, y_text_center,
+                   txt, ha='center', va='center', fontsize=AXIS_LABEL_SIZE, zorder=4))
 
 # --- Axis setup ---
 ax.set_xticks(tick_positions)
@@ -1355,10 +1455,15 @@ if SHAPE_BY:
 if SUBCOLOR_BY:
     _title_parts.append(f"subcolor: {{SUBCOLOR_BY}}")
 _full_title = _title_parts[0] + (f" ({{', '.join(_title_parts[1:])}})" if len(_title_parts) > 1 else "")
-ax.set_title(_full_title, fontsize=AXIS_LABEL_SIZE)
+ax.set_title(_full_title, fontsize=TITLE_SIZE, fontweight='bold', loc='left')
 ax.tick_params(axis='y', labelsize=AXIS_LABEL_SIZE - 2)
-add_encoding_legend_entries(ax, shape_map, opacity_map, primary_point_area)
-ax.legend(fontsize=LEGEND_SIZE)
+style_axes_like_app(ax)
+add_encoding_legend_entries(ax, shape_map, opacity_map, LEGEND_SIZE ** 2)
+# Like the app: the legend sits beside the plot, its markers sized by the legend font.
+legend = ax.legend(fontsize=LEGEND_SIZE, loc='upper left', frameon=False,
+                   bbox_to_anchor=(1.02, 1), borderaxespad=0)
+for handle in legend.legend_handles:
+    handle.set_sizes([LEGEND_SIZE ** 2])
 
 # Match the app's tick angles: slant labels longer than four characters.
 if max((len(str(lbl)) for lbl in x_labels), default=0) > 4:
@@ -1373,6 +1478,20 @@ if section_headers:
         ax.annotate(_header_label, xy=(_header_x, 0), xycoords=('data', 'axes fraction'),
                     xytext=(0, -0.25 * AXIS_LABEL_SIZE), textcoords='offset points',
                     ha='center', va='top', fontsize=AXIS_LABEL_SIZE, fontweight='bold')
+
+# Plotly's autorange makes room for annotation text; Matplotlib's ignores text. Raise the
+# y maximum until the highest label, plus the headers' padding, fits inside the axes.
+if bracket_labels:
+    plt.tight_layout()  # the final axes height sets each label's height in data units
+    _axes_px = ax.get_window_extent().height
+    _y_low, _y_high = ax.get_ylim()
+    for _label in bracket_labels:
+        _reach_px = (_label.get_window_extent().height / 2
+                     + 0.25 * AXIS_LABEL_SIZE * fig.dpi / 72)
+        if _reach_px < _axes_px:
+            _y_high = max(_y_high, _y_low + (_label.get_position()[1] - _y_low)
+                          * _axes_px / (_axes_px - _reach_px))
+    ax.set_ylim(_y_low, _y_high)
 """
 
 
@@ -1392,7 +1511,7 @@ def _build_2d_distribution(state: dict) -> str:
 
     helpers = [category_panel_rows, distribution_fit_groups, distribution_ranges,
                category_facet_groups, dimension_facet_layout, focus_slot_keys,
-               place_facet_legend, _print_distribution_statistics]
+               widen_to_fit, place_facet_legend, _print_distribution_statistics]
     if state.get("method_params", {}).get("fit_gmm_2d"):
         from src.vis.helpers import _find_best_gmm
 
@@ -1644,6 +1763,9 @@ if SEPARATE_BY:
     for panel_ax in [ax_main, *facet_axes]:
         panel_ax.set_xlim(x_range)
         panel_ax.set_ylim(y_range)
+    # The small maps keep the app's left and bottom axis lines; the overview block
+    # follows the chart theme below.
+    for panel_ax in facet_axes:
         panel_ax.grid(False, which='both')
         for side in ('left', 'bottom'):
             panel_ax.spines[side].set_visible(True)
@@ -1651,10 +1773,14 @@ if SEPARATE_BY:
             panel_ax.spines[side].set_linewidth(1)
         for side in ('top', 'right'):
             panel_ax.spines[side].set_visible(False)
-    for panel_ax in facet_axes:
         panel_ax.tick_params(axis='both', which='both', bottom=False, left=False,
                              labelbottom=False, labelleft=False)
 
+# Horizontal gridlines on the main axes only; the marginal strips are bare.
+style_axes_like_app(ax_main)
+for marginal_ax in (ax_top, ax_right):
+    if marginal_ax is not None:
+        style_axes_like_app(marginal_ax, grid_axis=None)
 ax_main.set_xlabel(f"log₁₀({format_feature_label(SELECTED_X, engine='mpl')})" if LOG_X else format_feature_label(SELECTED_X, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
 ax_main.set_ylabel(f"log₁₀({format_feature_label(SELECTED_Y, engine='mpl')})" if LOG_Y else format_feature_label(SELECTED_Y, engine='mpl'), fontsize=AXIS_LABEL_SIZE)
 ax_main.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
@@ -1666,20 +1792,32 @@ if promoted_category is not None:
 encoding_legend_handles = add_encoding_legend_entries(
     ax_main, shape_map, opacity_map, POINT_SIZE ** 2)
 if SEPARATE_BY:
-    fig.suptitle(_2d_title, fontsize=AXIS_LABEL_SIZE)
-    figure_height = place_facet_legend(fig, ax_main, LEGEND_SIZE, left_margin,
-                                       figure_width, figure_height)
+    fig.suptitle(_2d_title, fontsize=TITLE_SIZE, fontweight='bold', x=0.01, ha='left')
+    figure_height = place_facet_legend(fig, ax_main,
+                                       point_legend_handles + encoding_legend_handles,
+                                       LEGEND_SIZE, left_margin, figure_width, figure_height)
 else:
-    ax_main.set_title(_2d_title, fontsize=AXIS_LABEL_SIZE)
-    ax_main.legend(handles=point_legend_handles + encoding_legend_handles, fontsize=LEGEND_SIZE)
+    # The app's title sits above the whole chart, top marginal included.
+    (ax_main if ax_top is None else ax_top).set_title(
+        _2d_title, fontsize=TITLE_SIZE, fontweight='bold', loc='left')
+    # Plotly's default legend sits beside the plot, clear of the right marginal.
+    legend = ax_main.legend(handles=point_legend_handles + encoding_legend_handles,
+                            fontsize=LEGEND_SIZE, loc='upper left', frameon=False,
+                            borderaxespad=0, bbox_to_anchor=(1.02, 1),
+                            bbox_transform=(ax_right or ax_main).transAxes)
+    for handle in legend.legend_handles:
+        handle.set_sizes([LEGEND_SIZE ** 2])
+    if ax_right is not None:
+        # tight_layout cannot move the marginal grid, so the canvas makes the room.
+        widen_to_fit(fig)
 """)
 
 
 def _build_phasor_plot(state: dict) -> str:
     from src.export_labels import available_label_column
 
-    preparation = ("\n# Grouping helper (extracted from FLIM Playground source)\n"
-                   + _extract_source(available_label_column) + """
+    preparation = ("\n# Grouping and legend helpers (extracted from FLIM Playground source)\n"
+                   + _extract_source(available_label_column, place_phasor_legend) + """
 # Both Phasor layouts build their encodings from complete G/S observations.
 harmonic_label = "1st" if PHASOR_HARMONIC == 1 else "2nd"
 g_col = f"Lifetime fit free_{PHASOR_CHANNEL}: G({harmonic_label})"
@@ -1732,7 +1870,7 @@ def draw_phasor_background(panel_ax):
     # Universal semicircle: G = 1/(1+u^2), S = u/(1+u^2)
     u = np.linspace(0, 100, 5000)
     panel_ax.plot(1.0 / (1.0 + u**2), u / (1.0 + u**2),
-                  'k-', linewidth=1.5, zorder=1)
+                  'k-', linewidth=2, zorder=1)
 
     w = 2 * np.pi * PHASOR_F * PHASOR_HARMONIC
     for tau in [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
@@ -1746,16 +1884,17 @@ def draw_phasor_background(panel_ax):
                 xytext=(5, 5), fontsize=AXIS_LABEL_SIZE, zorder=3,
             )
 
-    panel_ax.axhline(y=0, color='gray', linewidth=0.5)
-    panel_ax.axvline(x=0, color='gray', linewidth=0.5)
+    # The app draws its own G and S axes in place of a frame (src/vis/bivar.py).
+    panel_ax.plot([0, 1], [0, 0], color='black', linewidth=2, zorder=1)
+    panel_ax.plot([0, 0], [0, 0.5], color='black', linewidth=2, zorder=1)
     freq_text = f"f = {PHASOR_F * PHASOR_HARMONIC * 1000} MHz"
     if PHASOR_HARMONIC != 1:
         freq_text += f"\\n({PHASOR_HARMONIC} x {PHASOR_F * 1000} MHz)"
-    panel_ax.text(0.8, 0.5, freq_text, fontsize=AXIS_LABEL_SIZE,
-                  ha='left', va='center')
+    return panel_ax.text(0.8, 0.5, freq_text, fontsize=AXIS_LABEL_SIZE,
+                         ha='left', va='center')
 
 
-draw_phasor_background(ax)
+frequency_label = draw_phasor_background(ax)
 if len(active_positions) < len(df):
     other_positions = np.setdiff1d(
         np.arange(len(df)), active_positions, assume_unique=True
@@ -1782,12 +1921,13 @@ ax.set_xlabel("g", fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("s", fontsize=AXIS_LABEL_SIZE)
 ax.set_title(
     f"{PHASOR_CHANNEL} {harmonic_label} Harmonic Phasor",
-    fontsize=AXIS_LABEL_SIZE,
+    fontsize=TITLE_SIZE, fontweight='bold', loc='left',
 )
 ax.set_xlim(-0.05, 1.05)
 ax.set_ylim(-0.05, 0.55)
 ax.set_aspect('equal')
 ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
+style_axes_like_app(ax, grid_axis=None)
 
 category_label = None
 if phasor_category is not None:
@@ -1800,11 +1940,7 @@ if phasor_category is not None:
 
 legend_handles = point_legend_handles + encoding_legend_handles
 if legend_handles:
-    ax.legend(
-        handles=legend_handles, fontsize=LEGEND_SIZE,
-        loc='upper left', ncol=1, frameon=False,
-        bbox_to_anchor=(1.02, 1), borderaxespad=0,
-    )
+    place_phasor_legend(ax, legend_handles, LEGEND_SIZE, frequency_label)
 
 # Reserve rendered space below the g label for the active category.
 fig.canvas.draw()
@@ -1851,7 +1987,7 @@ fig, ax = plt.subplots(figsize=(10, 6))
 u = np.linspace(0, 100, 5000)
 G_semi = 1.0 / (1.0 + u**2)
 S_semi = u / (1.0 + u**2)
-ax.plot(G_semi, S_semi, 'k-', linewidth=1.5, zorder=1)
+ax.plot(G_semi, S_semi, 'k-', linewidth=2, zorder=1)
 
 # Lifetime markers. The n-th harmonic phasor is evaluated at n*omega, so a marker
 # for tau belongs at n*2*pi*f*tau (src/vis/bivar.py _create_phasor_background).
@@ -1869,8 +2005,9 @@ for tau in [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
         ax.annotate(f"{tau} ns", (g_marker, s_marker), textcoords="offset points",
                    xytext=(5, 5), fontsize=AXIS_LABEL_SIZE, zorder=3)
 
-ax.axhline(y=0, color='gray', linewidth=0.5)
-ax.axvline(x=0, color='gray', linewidth=0.5)
+# The app draws its own G and S axes in place of a frame (src/vis/bivar.py).
+ax.plot([0, 1], [0, 0], color='black', linewidth=2, zorder=1)
+ax.plot([0, 0], [0, 0.5], color='black', linewidth=2, zorder=1)
 
 # Frequency annotation, matching the app (src/vis/bivar.py): the lifetime marker
 # scale is meaningless without it. For harmonic n the geometry is drawn at n x the
@@ -1878,7 +2015,7 @@ ax.axvline(x=0, color='gray', linewidth=0.5)
 freq_text = f"f = {PHASOR_F * PHASOR_HARMONIC * 1000} MHz"
 if PHASOR_HARMONIC != 1:
     freq_text += f"\\n({PHASOR_HARMONIC} x {PHASOR_F * 1000} MHz)"
-ax.text(0.8, 0.5, freq_text, fontsize=AXIS_LABEL_SIZE, ha='left', va='center')
+frequency_label = ax.text(0.8, 0.5, freq_text, fontsize=AXIS_LABEL_SIZE, ha='left', va='center')
 
 point_legend_handles = scatter_interleaved_points(
     ax, df, g_col, s_col, PHASOR_GROUP_COLUMN, color_groups, color_map,
@@ -1892,12 +2029,15 @@ encoding_legend_handles = add_encoding_legend_entries(
 
 ax.set_xlabel("g", fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("s", fontsize=AXIS_LABEL_SIZE)
-ax.set_title(f"{PHASOR_CHANNEL} {harmonic_label} Harmonic Phasor", fontsize=AXIS_LABEL_SIZE)
+ax.set_title(f"{PHASOR_CHANNEL} {harmonic_label} Harmonic Phasor",
+             fontsize=TITLE_SIZE, fontweight='bold', loc='left')
 ax.set_xlim(-0.05, 1.05)
 ax.set_ylim(-0.05, 0.55)
 ax.set_aspect('equal')
 ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
-ax.legend(handles=point_legend_handles + encoding_legend_handles, fontsize=LEGEND_SIZE)
+style_axes_like_app(ax, grid_axis=None)
+place_phasor_legend(ax, point_legend_handles + encoding_legend_handles, LEGEND_SIZE,
+                    frequency_label)
 """
 
 
@@ -1916,7 +2056,7 @@ def _build_dimension_reduction(state: dict) -> str:
                                 dimension_facet_groups, dimension_ranges,
                                 dimension_facet_layout, dimension_interleaved_indices,
                                 focus_slot_keys, scatter_dimension_batch,
-                                place_facet_legend)
+                                widen_to_fit, place_facet_legend)
     facet_src += f"\nMAIN_PLOT_LABEL = {MAIN_PLOT_LABEL!r}\n"  # embedded, never restated
     # Encoding maps and facet levels describe the observations that are actually
     # reduced. No facet changes the scaler, fit, color, shape, or opacity maps.
@@ -2082,20 +2222,26 @@ if promoted_key is not None:
     # Dimension Reduction draws no title of its own, so the promotion is it.
     fig.suptitle(" · ".join(f"{column}: {value}"
                             for column, value in zip(SEPARATE_BY, promoted_key)),
-                 fontsize=AXIS_LABEL_SIZE)
+                 fontsize=TITLE_SIZE, fontweight='bold', x=0.01, ha='left')
 
 ax.set_xlabel(xlabel, fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel(ylabel, fontsize=AXIS_LABEL_SIZE)
-ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2)
-add_encoding_legend_entries(ax, shape_map, opacity_map, LEGEND_SIZE ** 2)
+# The app's axis lines carry no tick marks.
+ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2, length=0)
+# One shared legend, counted over the whole dataset, wherever that map sits.
+point_legend_handles = [ax, *facet_axes][slot_keys.index(None)].get_legend_handles_labels()[0]
+encoding_legend_handles = add_encoding_legend_entries(ax, shape_map, opacity_map, LEGEND_SIZE ** 2)
 if SEPARATE_BY:
-    figure_height = place_facet_legend(fig, ax, LEGEND_SIZE, left_margin,
-                                       figure_width, figure_height)
+    figure_height = place_facet_legend(fig, ax, point_legend_handles + encoding_legend_handles,
+                                       LEGEND_SIZE, left_margin, figure_width, figure_height)
 else:
-    legend = ax.legend(fontsize=LEGEND_SIZE, loc='upper left', frameon=False,
+    legend = ax.legend(handles=point_legend_handles + encoding_legend_handles,
+                       fontsize=LEGEND_SIZE, loc='upper left', frameon=False,
                        bbox_to_anchor=(1.02, 1), borderaxespad=0)
     for handle in legend.legend_handles:
         handle.set_sizes([LEGEND_SIZE ** 2])
+    # The legend sits beside the fixed frame, past the canvas edge.
+    widen_to_fit(fig)
 """
 
 

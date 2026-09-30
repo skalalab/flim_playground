@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from chart_theme_checks import assert_theme_axes, assert_theme_title
 
 from src.export_script import generate_script
 from src.vis.histogram import histogram_bin_edges, prepare_histogram
@@ -144,7 +145,6 @@ def test_count_export_draws_all_natural_panels_with_shared_bins_ranges_and_local
     assert all(bound[2] == pytest.approx(bounds[0][2]) for bound in bounds)
     assert bounds[0][1] > bounds[1][1] > bounds[2][1]
     assert [axis.xaxis.get_visible() for axis in axes] == [False, False, True]
-    assert [axis.spines["bottom"].get_visible() for axis in axes] == [False, False, True]
     assert not ns["fig"].legends
     for axis, panel in zip(axes, expected["panels"]):
         _assert_upper_right_legend(axis)
@@ -460,3 +460,14 @@ def test_gmm_legends_fit_outside_aligned_axes_without_clipping_or_neighbor_overl
             assert legend_box.y0 > axes_boxes[index + 1].y1
         assert len(_legend_labels(axis)) == 6
         assert all("skew=" not in label for label in _legend_labels(axis))
+
+
+@pytest.mark.parametrize("separate_by", [None, "day"])
+def test_export_follows_the_app_chart_theme(tmp_path, monkeypatch, separate_by):
+    """Horizontal gridlines, no frame or tick marks, and the theme's bold left title."""
+    ns = _run(tmp_path, monkeypatch, _state(separate_by=separate_by), _source())
+    for axis in ns["histogram_axes"]:
+        assert_theme_axes(axis)
+        frame = axis.get_legend().get_frame()
+        assert frame.get_edgecolor()[3] == 0 and frame.get_alpha() == 0.85
+    assert_theme_title(ns["fig"]._suptitle if separate_by else ns["ax"]._left_title)

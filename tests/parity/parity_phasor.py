@@ -77,8 +77,8 @@ def run_case(app_df, harmonic):
             and app_freq[0].replace("<br>", "\n") == exp_freq[0])
     R.check("frequency annotation text", same, f"app={app_freq} exp={exp_freq}")
 
-    R.check("title", fig.layout.title.text == ax.get_title(),
-            f"app={fig.layout.title.text!r} exp={ax.get_title()!r}")
+    R.check("title", fig.layout.title.text == ax.get_title(loc="left"),
+            f"app={fig.layout.title.text!r} exp={ax.get_title(loc='left')!r}")
 
 
 def main():

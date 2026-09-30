@@ -653,10 +653,12 @@ def subcolor_controls():
                 and not (groups & app_legend),
                 f"app={sorted(app_legend)} exp={sorted(exp_legend)} want={sorted(values)}")
         app_title = fig.layout.title.text or ""
+        # The export left-aligns its title, as Streamlit's chart theme does.
+        exp_title = ax.get_title(loc="left")
         R.check(f"{tag}: title names the subcolor column on both sides",
                 f"subcolor: {ctrl['subcolor_by']}" in app_title
-                and f"subcolor: {ctrl['subcolor_by']}" in ax.get_title(),
-                f"app={app_title!r} exp={ax.get_title()!r}")
+                and f"subcolor: {ctrl['subcolor_by']}" in exp_title,
+                f"app={app_title!r} exp={exp_title!r}")
 
     # Subcolor legend counts span all x groups and include only plotted, non-NaN rows.
     st.session_state["plot_show_group_counts"] = True

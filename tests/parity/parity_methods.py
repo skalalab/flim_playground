@@ -76,8 +76,8 @@ def histogram():
         np.array_equal(app_counts[k], exp_counts[k]) for k in app_counts)
     R.check(f"per-group counts ({len(app_counts)} groups)", same,
             "" if same else f"app={list(app_counts)} exp={list(exp_counts)}")
-    R.check("title", ax.get_title() ==
-            f"Frequency histogram of {mpl_label(VAR)} by treatment", ax.get_title())
+    R.check("title", ax.get_title(loc="left") ==
+            f"Frequency histogram of {mpl_label(VAR)} by treatment", ax.get_title(loc="left"))
 
 
 # ---------------------------------------------------------------- Histogram + GMM
@@ -107,8 +107,8 @@ def histogram_gmm(intersection):
     R.check(f"GMM_group label for all {len(common)} cells", same, f"{n_diff} differ")
     R.check("subpopulation labels present", a.notna().any(),
             f"{a.nunique()} distinct: {sorted(a.dropna().unique())[:6]}")
-    R.check("title", ax.get_title() ==
-            f"Gaussian Mixture Model fit of {mpl_label(VAR)} by treatment", ax.get_title())
+    R.check("title", ax.get_title(loc="left") ==
+            f"Gaussian Mixture Model fit of {mpl_label(VAR)} by treatment", ax.get_title(loc="left"))
 
 
 # ---------------------------------------------------------------- Feature Comparison
@@ -224,7 +224,8 @@ def feature_comparison(separate_by, effect_size, statistical_test="Welch's t-tes
     want = f"Distribution of {mpl_label(VAR)} by treatment"
     if separate_by:
         want += f" (separated by: {separate_by})"
-    R.check("title", ax.get_title() == want, ax.get_title())
+    # Left-aligned, as Streamlit's chart theme draws the app's title.
+    R.check("title", ax.get_title(loc="left") == want, ax.get_title(loc="left"))
 
 
 # ---------------------------------------------------------------- 2D distribution
@@ -324,8 +325,9 @@ def two_d(marginal, fit_gmm, separate_by=None, focus=None):
     want = f"2D Distribution of {mpl_label(VAR)} and {mpl_label(VAR2)} by treatment"
     if focus is not None:
         want += f" ({separate_by}: {focus})"
-    # The grid titles the whole figure; the single plot titles its axes.
-    got = (ns["fig"].get_suptitle() if separate_by else ax_main.get_title())
+    # The grid titles the whole figure; the single plot titles its topmost axes.
+    got = (ns["fig"].get_suptitle() if separate_by
+           else (ns.get("ax_top") or ax_main).get_title(loc="left"))
     R.check("title", got == want, got)
 
 
@@ -365,6 +367,61 @@ def dimension_reduction(method, cat_filters=None):
             "" if same else f"app={app_pts.shape} exp={exp_pts.shape}")
     R.check("axis labels", ax.get_xlabel() == fig.layout.xaxis.title.text,
             f"app={fig.layout.xaxis.title.text!r} exp={ax.get_xlabel()!r}")
+
+
+def promoted_legends():
+    """A promotion moves maps between slots, never the one legend: both sides list every
+    color counted over the whole dataset. Counts on, or a wrong count would hide."""
+    print("\n=== Promoted 2D and DR grids keep the whole-dataset legend — inhibitors.csv ===")
+    import streamlit as st
+
+    patch_streamlit({"2D Gaussian Mixture Model": False, "Marginal Plot Type": "None"})
+    from src.vis.bivar import feature_2d_distribution_plot
+    from src.vis.dimension_facets import focus_facet_figure
+    from src.vis.multivar import dimension_reduction_plot
+
+    def check(name, fig, ax):
+        app = sorted(plain_legend_label(t.name) for t in fig.data
+                     if t.name and getattr(t, "showlegend", None) is not False)
+        exp = sorted(text.get_text() for text in ax.get_legend().get_texts())
+        R.check(f"{name} legend matches the app ({len(exp)} entries)", app == exp,
+                f"app={app[:3]} exp={exp[:3]}")
+
+    st.session_state["plot_show_group_counts"] = True
+    try:
+        df, _ = load_app_df(CSV, CATS, "cell_id", "image_name")
+        fig, _table_md, _app_out = feature_2d_distribution_plot(
+            df.copy(), unique_row_id_col="cell_id", fov_name_col="image_name",
+            selected_x=VAR, selected_y=VAR2, color_by=["treatment"], colormap="tab10",
+            separate_by="cell_line")
+        focus_facet_figure(fig, "MCF7")
+        state = base_state("2D Feature Distribution", "inhibitors.csv", CATS,
+                           color_by=["treatment"], separate_by="cell_line",
+                           analysis_columns=list(df.columns),
+                           method_params={"selected_x": VAR, "selected_y": VAR2,
+                                          "log_x": False, "log_y": False,
+                                          "marginal_plot_type": "None",
+                                          "fit_regression": False, "fit_gmm_2d": False,
+                                          "facet_focus": "MCF7"})
+        ns, _ = run_export(state, CSV, WORK / "2d_promoted_legend")
+        check("2D (cell_line: MCF7 promoted)", fig, ns["ax_main"])
+
+        feats = ["Lifetime fit_nadh: t1", "Lifetime fit_nadh: t2", "Lifetime fit_nadh: a1"]
+        fig = dimension_reduction_plot(df.copy(), unique_row_id_col="cell_id",
+                                       fov_name_col="image_name", selected_features=feats,
+                                       colored_by=["treatment"], colormap="tab10",
+                                       method="PCA", hyperParam_dict={},
+                                       separate_by=["cell_line"])
+        focus_facet_figure(fig, ("MCF7",))
+        state = base_state("Dimension Reduction", "inhibitors.csv", CATS,
+                           color_by=["treatment"], separate_by=["cell_line"],
+                           analysis_columns=list(df.columns),
+                           method_params={"selected_features": feats, "dr_method": "PCA",
+                                          "hyperParam_dict": {}, "facet_focus": ("MCF7",)})
+        ns, _ = run_export(state, CSV, WORK / "dr_promoted_legend")
+        check("DR (cell_line: MCF7 promoted)", fig, ns["ax"])
+    finally:
+        st.session_state["plot_show_group_counts"] = False
 
 
 # ---------------------------------------------------------------- ANALYSIS_COLUMNS
@@ -428,6 +485,8 @@ def main(which="all"):
         dimension_reduction("UMAP")
         # t-SNE on a filtered subset: covers the third DR method and the filter path
         dimension_reduction("t-SNE", {"treatment": ["IAA"]})
+    if which in ("all", "promoted"):
+        promoted_legends()
     if which in ("all", "prune"):
         analysis_columns_prune()
     return 0 if R.summary("Methods") else 1

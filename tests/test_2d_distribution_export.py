@@ -9,6 +9,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from chart_theme_checks import (
+    assert_canvas_holds_everything,
+    assert_theme_axes,
+    assert_theme_title,
+)
 from scipy.stats import gaussian_kde
 
 from src.export_script import generate_script
@@ -350,3 +355,29 @@ def test_unseparated_export_emits_none_separator_and_uses_fd_point_alpha(tmp_pat
     assert ns["SEPARATE_BY"] is None
     assert ns["facet_axes"] == []
     assert {collection.get_alpha() for collection in _points(ns["ax_main"])} == {0.8}
+
+
+@pytest.mark.parametrize("separate_by", [None, "day"])
+def test_export_follows_the_app_chart_theme(tmp_path, monkeypatch, separate_by):
+    """The main block has horizontal gridlines and no frame; marginals are bare; only the
+    small panels carry the app's left and bottom axis lines."""
+    ns = _run(tmp_path / "run", monkeypatch, _state(separate_by=separate_by), _source())
+    assert_theme_axes(ns["ax_main"])
+    for marginal in (ns["ax_top"], ns["ax_right"]):
+        assert_theme_axes(marginal, grid_axis=None)
+    for panel in ns["facet_axes"]:
+        assert_theme_axes(panel, grid_axis=None, lines=("left", "bottom"))
+    # The title sits above the top marginal, not between it and the main axes.
+    assert_theme_title(ns["fig"]._suptitle if separate_by else ns["ax_top"]._left_title)
+    if not separate_by:
+        ns["fig"].canvas.draw()
+        legend = ns["ax_main"].get_legend()
+        assert legend.get_window_extent().x0 >= ns["ax_right"].get_window_extent().x1
+        assert {tuple(handle.get_sizes()) for handle in legend.legend_handles} == {(10 ** 2,)}
+
+
+def test_the_canvas_holds_the_legend_beside_the_marginal(tmp_path, monkeypatch):
+    """tight_layout cannot move the marginal grid, so the legend ran off the canvas."""
+    state = _state(separate_by=None)
+    state.update(axis_label_size=24, legend_size=18)
+    assert_canvas_holds_everything(_run(tmp_path / "run", monkeypatch, state, _source())["fig"])

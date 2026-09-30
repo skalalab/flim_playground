@@ -153,3 +153,19 @@ def test_reporting_preserves_model_outputs_and_saved_figures(classification_case
         saved.add("feature_importance.svg")
     assert {path.name for path in directory.glob("*.svg")} == saved
     assert all("<svg" in (directory / name).read_text(encoding="utf-8") for name in saved)
+
+
+def test_export_keeps_the_app_matplotlib_default_font():
+    """The app draws Classification with Matplotlib's defaults, so its script sets no font."""
+    state = {
+        "method": "Classification", "csv_filename": "data.csv",
+        "unique_row_id_col": "id", "fov_name_col": None,
+        "categorical_cols": ["target"], "axis_label_size": 16, "legend_size": 11,
+        "method_params": {
+            "selected_features": ["x", "y", "z"], "classification_method": "Random Forest",
+            "classify_by": ["target"], "classify_classes": ["control_A", "drug B"],
+            "splits": .7, "sampling_method": "None", "class_weight": "None",
+            "threshold_method": "None", "classifier_params": {"n_estimators": 50},
+        },
+    }
+    assert "font.family" not in generate_script(state)

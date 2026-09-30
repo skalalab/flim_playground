@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pytest
+from chart_theme_checks import assert_theme_axes, assert_theme_title
 
 from src.export_script import generate_script
 
@@ -93,7 +94,7 @@ def test_separated_phasor_exports_one_large_selected_category_with_context_point
     assert fig.get_size_inches().tolist() == pytest.approx([10, 6])
     ax = fig.axes[0]
     assert ax.get_aspect() == 1.0
-    assert ax.get_title() == "Ch1 1st Harmonic Phasor"
+    assert ax.get_title(loc="left") == "Ch1 1st Harmonic Phasor"
     assert ns["phasor_category"] == "Day 10"
     labels = [text for text in ax.texts if text.get_text() == "day: Day 10"]
     assert len(labels) == 1
@@ -307,3 +308,36 @@ def test_phasor_separator_must_be_scalar_present_and_disjoint_from_color(
     state["color_by"] = color_by
     with pytest.raises(ValueError):
         _run(tmp_path, monkeypatch, state, _faceted_df())
+
+
+@pytest.mark.parametrize("separate_by", [None, "day"])
+def test_export_follows_the_app_phasor_style(tmp_path, monkeypatch, separate_by):
+    """No frame, gridlines or tick marks; the app's own black G and S axis segments; its
+    bold Arial 20 title at the left; the legend beside the plot."""
+    ns = _run(tmp_path, monkeypatch, _state(separate_by=separate_by), _faceted_df())
+    ax = ns["ax"]
+    assert_theme_axes(ax, grid_axis=None)
+    segments = {(tuple(line.get_xdata()), tuple(line.get_ydata())) for line in ax.lines
+                if line.get_color() == "black" and line.get_linewidth() == 2}
+    assert segments == {((0, 1), (0, 0)), ((0, 0), (0, 0.5))}
+    assert_theme_title(ax._left_title, size=20)
+    ns["fig"].canvas.draw()
+    legend = ax.get_legend()
+    assert legend.get_window_extent().x0 >= ax.get_window_extent().x1
+    assert {tuple(handle.get_sizes()) for handle in legend.legend_handles} == {(10 ** 2,)}
+
+
+@pytest.mark.parametrize("separate_by", [None, "day"])
+def test_legend_clears_a_frequency_label_that_overhangs_the_axes(
+        tmp_path, monkeypatch, separate_by):
+    """At the app's default 24 pt, the 2nd harmonic's two-line label runs past g = 1.05."""
+    state = _state(separate_by=separate_by)
+    state.update(axis_label_size=24, legend_size=18)
+    state["method_params"]["phasor_harmonic"] = 2
+    df = _faceted_df().rename(columns=lambda column: column.replace("(1st)", "(2nd)"))
+    ns = _run(tmp_path, monkeypatch, state, df)
+    ns["fig"].canvas.draw()
+    label = next(text for text in ns["ax"].texts if text.get_text().startswith("f = "))
+    label_box = label.get_window_extent()
+    assert label_box.x1 > ns["ax"].get_window_extent().x1
+    assert ns["ax"].get_legend().get_window_extent().x0 >= label_box.x1
