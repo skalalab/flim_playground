@@ -27,7 +27,7 @@ Use the desktop application to configure channels, calibrate measurements, fit f
 
 ### Analyze any tabular dataset
 
-Data Analysis accepts CSV, TSV/TXT, Excel, and OpenDocument tables from any acquisition modality. A column-review step identifies row IDs, categorical metadata, measurements, and feature groups before you explore the data with:
+Data Analysis accepts CSV, TSV/TXT, Excel, and OpenDocument tables from any source as long as it is tabular (it could be a [flower dataset](./example_data/Data_Analysis/iris.csv). A column-review step identifies row IDs, categorical metadata, measurements, and feature groups before you explore the data with:
 
 - feature histograms and comparisons;
 - two-dimensional distributions, phasor plots, and dimensional reduction;
