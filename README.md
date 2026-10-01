@@ -198,6 +198,7 @@ uv run pyinstaller Flim-Playground.spec --clean
 - [Release notes and downloads](https://github.com/skalalab/flim_playground/releases)
 - [Report an issue or request a feature](https://github.com/skalalab/flim_playground/issues)
 - [Project history](./HISTORY.md)
+- For collaborations, questions about applying FLIM Playground to your data, and other inquiries, email Wenxuan Zhao at wzhao [at] morgridge [dot] org
 
 ## Citation
 
