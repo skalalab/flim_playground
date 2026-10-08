@@ -74,7 +74,7 @@ dependencies = [
     "typing-extensions==4.13.2",
     "tzdata==2025.2",
     "umap-learn>=0.5.8",
-    "urllib3==2.7.0",
+    "urllib3==2.8.0",
     "watchdog==6.0.0",
 ]
 
