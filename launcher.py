@@ -13,6 +13,9 @@ import socket
 import threading
 import platform
 
+BROWSER_POLL_INTERVAL = 5
+BROWSER_IDLE_TIMEOUT = 30
+
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
     try:
@@ -72,44 +75,33 @@ def check_server_running(port):
         return False
 
 
-def check_browser_windows_open(port):
-    """Check browser-process connections to the app, falling back to server reachability."""
-    try:
-        import psutil
+def get_browser_session_activity():
+    """Return app connection state and cumulative connect/reconnect count.
 
-        # Browser process names
-        browser_names = ['chrome', 'firefox', 'edge', 'msedge', 'safari', 'opera', 'brave', 'comet']
+    Safari owns its sockets in a separate WebKit networking process, and
+    macOS may deny inspection of browser processes. Streamlit already knows
+    whether an app tab is connected. Unknown activity returns (None, None).
+    """
+    from streamlit.runtime import Runtime, RuntimeState
+    from streamlit.runtime.websocket_session_manager import SESSION_EVENTS_FAMILY
 
-        # Count browsers with active connections to our port
-        connected_browsers = 0
+    if not Runtime.exists():
+        return None, None
 
-        for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                if proc.info['name'] and any(browser in proc.info['name'].lower() for browser in browser_names):
-                    # Check if this browser has connections to our port
-                    process = psutil.Process(proc.info['pid'])
-                    for conn in process.net_connections(kind='inet'):
-                        if (hasattr(conn, 'raddr') and conn.raddr and 
-                            conn.raddr.port == port and conn.status == 'ESTABLISHED'):
-                            connected_browsers += 1
-                            print(f"Debug - Browser connected: {proc.info['name']} (PID: {proc.info['pid']})")
-                            break  # Only count each browser process once
+    runtime = Runtime.instance()
+    state = runtime.state
+    if state not in (RuntimeState.ONE_OR_MORE_SESSIONS_CONNECTED,
+                     RuntimeState.NO_SESSIONS_CONNECTED):
+        return None, None
 
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-                continue
-
-        windows_open = connected_browsers > 0
-        status = f"Connected browsers: {connected_browsers}"
-
-        if connected_browsers == 0:
-            print(f"Debug - No browsers connected to port {port}")
-
-        return windows_open, status
-
-    except ImportError:
-        # Fallback without psutil
-        server_active = check_server_running(port)
-        return server_active, "psutil not available"
+    events = runtime.stats_mgr.get_stats([SESSION_EVENTS_FAMILY]).get(SESSION_EVENTS_FAMILY)
+    if events is None:
+        return None, None
+    connection_count = sum(
+        event.value for event in events
+        if event.labels.get("type") in ("connect", "reconnect")
+    )
+    return state == RuntimeState.ONE_OR_MORE_SESSIONS_CONNECTED, connection_count
 
 
 def aggressive_shutdown():
@@ -140,7 +132,7 @@ def aggressive_shutdown():
 
 
 def monitor_browser_windows(port, shutdown_event):
-    """Shut down after two consecutive checks find no browser connections."""
+    """Shut down after the last app session disconnects for the grace period."""
     print("Starting browser monitoring...")
 
     # Wait for server to start
@@ -149,46 +141,64 @@ def monitor_browser_windows(port, shutdown_event):
     while waited < max_wait and not shutdown_event.is_set():
         if check_server_running(port):
             break
-        time.sleep(0.5)
+        if shutdown_event.wait(0.5):
+            return
         waited += 0.5
+
+    if shutdown_event.is_set():
+        return
 
     if waited >= max_wait:
         print("Server failed to start, disabling monitoring")
         return
 
-    print("Browser monitoring active - app will close 10 seconds after all browser windows are closed")
+    print(f"Browser monitoring active - app will close {BROWSER_IDLE_TIMEOUT} seconds after all app tabs are closed")
 
-    # Monitor browser windows
-    no_windows_count = 0
-    max_no_windows_checks = 2     # 2 checks * 5 seconds = 10 seconds
-
-    # Wait for initial browser connection
-    time.sleep(5)
+    # A slow browser launch is not a closed tab. Begin the idle timer only
+    # after a real session has connected, and allow brief reconnections.
+    has_connected = False
+    disconnected_since = None
+    previous_connection_count = 0
 
     while not shutdown_event.is_set():
         try:
-            windows_open, status = check_browser_windows_open(port)
+            sessions_connected, connection_count = get_browser_session_activity()
+        except Exception as e:
+            # Failed detection is not evidence that the user closed the app.
+            print(f"Monitor error: {e}. Disabling automatic shutdown.")
+            return
 
-            if not windows_open:
-                no_windows_count += 1
-                print(f"No browser windows detected ({no_windows_count}/{max_no_windows_checks}) - {status}")
-            else:
-                if no_windows_count > 0:
-                    print(f"Browser windows detected - {status}")
-                no_windows_count = 0
+        connection_changed = False
+        if sessions_connected is not None:
+            # Connection counters preserve activity that starts and ends between
+            # polls, including an initial tab that the user closes immediately.
+            connection_changed = connection_count > previous_connection_count
+            if connection_changed:
+                has_connected = True
+                disconnected_since = None
+            previous_connection_count = connection_count
 
-            # Shutdown if no windows for full duration
-            if no_windows_count >= max_no_windows_checks:
-                print("All browser windows closed for 10+ seconds. Shutting down...")
+        if sessions_connected is True:
+            if connection_changed or not has_connected or disconnected_since is not None:
+                print(f"Browser session active on port {port}")
+            has_connected = True
+            disconnected_since = None
+        elif sessions_connected is False and has_connected:
+            now = time.monotonic()
+            if disconnected_since is None:
+                disconnected_since = now
+                print(f"No app tabs connected to port {port}")
+            if now - disconnected_since >= BROWSER_IDLE_TIMEOUT:
+                print(f"All app tabs disconnected for {BROWSER_IDLE_TIMEOUT} seconds. Shutting down...")
                 shutdown_event.set()
                 aggressive_shutdown()
+                return
+        else:
+            # An uninitialized or stopping runtime has no reliable session state.
+            disconnected_since = None
 
-        except Exception as e:
-            print(f"Monitor error: {e}")
-            shutdown_event.set()
-            aggressive_shutdown()
-
-        time.sleep(5)
+        if shutdown_event.wait(BROWSER_POLL_INTERVAL):
+            return
 
 
 def run_streamlit_app(main_script):
@@ -201,7 +211,7 @@ def run_streamlit_app(main_script):
         print("Starting Flim-Playground...")
         print(f"Server will start on port {port}")
         print("The application will open in your default web browser.")
-        print("App will auto-close 30 seconds after ALL browser windows are closed.")
+        print(f"App will auto-close {BROWSER_IDLE_TIMEOUT} seconds after all app tabs are closed.")
 
         # Import streamlit and set up arguments
         from streamlit.web import cli as stcli

@@ -32,7 +32,7 @@ Data Analysis accepts CSV, TSV/TXT, Excel, and OpenDocument tables from any sour
 - feature histograms and comparisons;
 - two-dimensional distributions, phasor plots, and dimensional reduction;
 - filtering, grouping, classification, clustering, and model tuning; and
-- publication-ready exports, including a standalone Python script.
+- publication-ready exports, including a standalone Python script that lets you reproduce the analysis.
 
 The included examples work even when a table was not produced by FLIM Playground.
 
