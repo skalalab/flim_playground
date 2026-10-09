@@ -30,7 +30,9 @@ from src.export_script import generate_script
      "Oversampling", "Balanced", {"C": .1, "solver": "lbfgs"}),
     ("SVM", ["drug B", "the rest"], "Balanced Accuracy", "None", "Balanced",
      {"kernel": "rbf", "C": .5}),
-], ids=["binary", "multiclass-tuned", "one-versus-rest-tuned"])
+    ("Gradient Boosting", ["control_A", "drug B", "3"], "None", "None", "None",
+     {"n_estimators": 40, "max_depth": 2, "learning_rate": .15}),
+], ids=["binary", "multiclass-tuned", "one-versus-rest-tuned", "gradient-boosting"])
 def classification_case(request, tmp_path, monkeypatch, capsys):
     method, selected_classes, threshold, sampling, weight, parameters = request.param
     rng = np.random.default_rng(512)
@@ -98,6 +100,11 @@ def _table_rows(text):
     return rows
 
 
+def _pixels(fig):
+    fig.canvas.draw()
+    return np.asarray(fig.canvas.buffer_rgba()).copy()
+
+
 def test_export_reports_every_value_shown_in_the_app_metric_tables(classification_case):
     expected, _, output, state, _ = classification_case
     metrics = expected["metrics"]
@@ -140,6 +147,9 @@ def test_reporting_preserves_model_outputs_and_saved_figures(classification_case
         assert actual.get_label() == reference.get_label()
     np.testing.assert_array_equal(namespace["fig_cm"].axes[0].images[0].get_array(),
                                   app_cm.axes[0].images[0].get_array())
+    # Both paths render Classification with Matplotlib, so every pixel can match.
+    np.testing.assert_array_equal(_pixels(namespace["fig_roc"]), _pixels(app_roc))
+    np.testing.assert_array_equal(_pixels(namespace["fig_cm"]), _pixels(app_cm))
     saved = {"roc_curve.svg", "confusion_matrix.svg"}
     if hasattr(expected["classifier"], "feature_importances_"):
         np.testing.assert_array_equal(namespace["actual_clf"].feature_importances_,
@@ -150,6 +160,7 @@ def test_reporting_preserves_model_outputs_and_saved_figures(classification_case
         np.testing.assert_array_equal(
             [patch.get_width() for patch in namespace["fig_fi"].axes[0].patches],
             [patch.get_width() for patch in app_fi.axes[0].patches])
+        np.testing.assert_array_equal(_pixels(namespace["fig_fi"]), _pixels(app_fi))
         saved.add("feature_importance.svg")
     assert {path.name for path in directory.glob("*.svg")} == saved
     assert all("<svg" in (directory / name).read_text(encoding="utf-8") for name in saved)

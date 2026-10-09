@@ -145,15 +145,16 @@ def test_grid_retains_global_encodings_and_draws_each_levels_points_and_fits(
             matplotlib.colors.to_rgb("#b8b8b8"))
         assert all(collection.get_sizes().tolist() == [9]
                    for collection in _foreground(panel_ax))
-        regressions = [line for line in panel_ax.lines if line.get_linestyle() == "--"]
+        regressions = [line for line in panel_ax.lines if line.get_gid() == "regression"]
         assert len(regressions) == 2
+        assert all(line.get_linestyle() == "-" for line in regressions)
         assert all(line.get_linewidth() == 1 for line in regressions)
-    assert not [line for line in ns["ax_main"].lines if line.get_linestyle() == "--"]
+    assert not [line for line in ns["ax_main"].lines if line.get_gid() == "regression"]
     labels = [text.get_text() for text in ns["ax_main"].get_legend().get_texts()]
     assert labels[:2] == ["ctrl\nn=36", "drug\nn=36"]
     slopes = {round(np.polyfit(line.get_xdata(), line.get_ydata(), 1)[0])
               for panel_ax in ns["facet_axes"]
-              for line in panel_ax.lines if line.get_linestyle() == "--"}
+              for line in panel_ax.lines if line.get_gid() == "regression"}
     assert slopes == {-3, 2, 1}
     output = capsys.readouterr().out
     assert output.count("Pearson r=") == 6
@@ -188,11 +189,11 @@ def test_marginals_describe_the_whole_dataset_on_the_overview_only(tmp_path, mon
     # Those four lines are the only artists on the strips, so this covers every
     # density curve: each carries the app's opacity=0.7 (_plot_marginal_density).
     assert {line.get_alpha() for line in [*ns["ax_top"].lines, *ns["ax_right"].lines]} == {0.7}
-    # A panel's own dashed regression is also a long line, so density curves are
-    # identified by their solid style.
+    # Regression and density curves are both solid, as in the app; their roles
+    # identify which curves belong on the marginal strips.
     for panel_ax in ns["facet_axes"]:
         assert not [line for line in panel_ax.lines
-                    if line.get_linestyle() == "-" and len(line.get_xdata()) > 2]
+                    if line.get_gid() == "marginal"]
     complete = source.dropna(subset=["feature_x", "feature_y"])
     for index, treatment in enumerate(["ctrl", "drug"]):
         group = complete[complete["treatment"] == treatment]
@@ -376,8 +377,16 @@ def test_export_follows_the_app_chart_theme(tmp_path, monkeypatch, separate_by):
         assert {tuple(handle.get_sizes()) for handle in legend.legend_handles} == {(10 ** 2,)}
 
 
-def test_the_canvas_holds_the_legend_beside_the_marginal(tmp_path, monkeypatch):
+@pytest.mark.parametrize("marginal", ["None", "gaussian fit", "boxplot", "violin"])
+@pytest.mark.parametrize("axis_size,legend_size", [(24, 18), (48, 24)])
+def test_the_canvas_holds_the_legend_beside_the_marginal(
+        tmp_path, monkeypatch, marginal, axis_size, legend_size):
     """tight_layout cannot move the marginal grid, so the legend ran off the canvas."""
-    state = _state(separate_by=None)
-    state.update(axis_label_size=24, legend_size=18)
-    assert_canvas_holds_everything(_run(tmp_path / "run", monkeypatch, state, _source())["fig"])
+    state = _state(separate_by=None, marginal=marginal)
+    state.update(axis_label_size=axis_size, legend_size=legend_size)
+    ns = _run(tmp_path / "run", monkeypatch, state, _source())
+    assert_canvas_holds_everything(ns["fig"])
+    if marginal != "None":
+        main, top, right = [ns[key].get_position() for key in ("ax_main", "ax_top", "ax_right")]
+        assert top.y0 == pytest.approx(main.y1)
+        assert right.x0 == pytest.approx(main.x1)

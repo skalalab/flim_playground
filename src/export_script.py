@@ -114,8 +114,8 @@ def _extract_module_source(module) -> str:
 # These exist because the app's versions return Plotly-specific formats.
 # ---------------------------------------------------------------------------
 
-def create_color_map(groups, colormap, alpha=0.8):
-    """Map group names to RGBA tuples for Matplotlib."""
+def create_color_map(groups, colormap, alpha=0.8, byte_colors=True):
+    """Map group names to RGBA, matching Plotly's integer RGB channels."""
     import matplotlib.pyplot as plt
     import seaborn as sns
     try:
@@ -129,7 +129,9 @@ def create_color_map(groups, colormap, alpha=0.8):
             palette = sns.color_palette(colormap, n_colors=len(groups))
     except (ValueError, KeyError):
         palette = sns.color_palette("tab10", n_colors=len(groups))
-    return {g: (*palette[i][:3], alpha) for i, g in enumerate(groups)}
+    return {g: (*(tuple(int(channel * 255) / 255 for channel in palette[i][:3])
+                  if byte_colors else palette[i][:3]), alpha)
+            for i, g in enumerate(groups)}
 
 
 def create_shape_map(groups):
@@ -174,17 +176,34 @@ def scatter_with_encodings(ax, x, y, color, label, point_size,
         labeled = True
 
 
-def add_encoding_legend_entries(ax, shape_map, opacity_map, point_size):
+def add_encoding_legend_entries(ax, shape_map, opacity_map, point_size, borderless=False):
     """Add gray proxy legend entries for opacity and shape groups
     (mirrors the app's helpers.add_point_legend_traces: opacity first, then shape)."""
     handles = []
+    marker_style = dict(edgecolors='none', linewidths=0) if borderless else {}
     for group, alpha in (opacity_map or {}).items():
         handles.append(ax.scatter([], [], c='gray', alpha=alpha, marker='o',
-                                  s=point_size, label=str(group)))
+                                  s=point_size, label=str(group), **marker_style))
     for group, marker in (shape_map or {}).items():
         handles.append(ax.scatter([], [], c='gray', alpha=0.8, marker=marker,
-                                  s=point_size, label=str(group)))
+                                  s=point_size, label=str(group), **marker_style))
     return handles
+
+
+def plotly_dash_style(dash, linewidth, webgl=False):
+    """Match the app renderer's dash lengths despite Matplotlib's scaling."""
+    import matplotlib.pyplot as plt
+
+    patterns = {'dot': (1, 1), 'dash': (3, 3), 'dashdot': (3, 1, 1, 1),
+                'longdash': (5, 5), 'longdashdot': (5, 2, 1, 2)}
+    unit = max(linewidth, 3)
+    if webgl:
+        # Scattergl uses its own dash texture, with longer solid segments.
+        patterns = {'dot': (1, 1), 'dash': (4, 1), 'dashdot': (4, 1, 1, 1),
+                    'longdash': (8, 1), 'longdashdot': (8, 1, 1, 1)}
+        unit = linewidth
+    scale = linewidth if plt.rcParams['lines.scale_dashes'] else 1
+    return (0, tuple(length * unit / scale for length in patterns[dash]))
 
 
 def scatter_dimension_batch(ax, x, y, color, label, point_size,
@@ -196,7 +215,7 @@ def scatter_dimension_batch(ax, x, y, color, label, point_size,
     alphas = ([opacity_map[str(value)] for value in opacity_vals]
               if opacity_vals is not None and opacity_map else base_alpha)
     collection = ax.scatter(x, y, c=[color], alpha=alphas, s=point_size,
-                            edgecolors='DarkSlateGrey', linewidths=0.3,
+                            edgecolors='none', linewidths=0,
                             label=label, zorder=2)
     if shape_vals is not None and shape_map:
         paths = {}
@@ -247,8 +266,8 @@ def scatter_interleaved_points(ax, df, x_col, y_col, group_column, color_groups,
     return [first_handles[group] for group in color_groups if group in first_handles]
 
 
-def widen_to_fit(fig, pad=0.1):
-    """Widen the canvas until everything drawn fits, keeping every axes' size.
+def widen_to_fit(fig, pad=0.1, fit_height=False):
+    """Fit the canvas horizontally, and optionally vertically, keeping axes sizes.
 
     The saved SVG is cropped to whatever was drawn, so it always holds a legend or
     label past the canvas edge; plt.show() draws only the canvas. Returns the inches
@@ -259,13 +278,18 @@ def widen_to_fit(fig, pad=0.1):
     width, height = fig.get_size_inches()
     extra_left = max(0., pad - content.x0)
     extra_right = max(0., content.x1 + pad - width)
-    if extra_left or extra_right:
+    extra_bottom = max(0., pad - content.y0) if fit_height else 0.
+    extra_top = max(0., content.y1 + pad - height) if fit_height else 0.
+    if extra_left or extra_right or extra_bottom or extra_top:
         positions = [panel_ax.get_position().frozen() for panel_ax in fig.axes]
         new_width = width + extra_left + extra_right
-        fig.set_size_inches(new_width, height)
+        new_height = height + extra_bottom + extra_top
+        fig.set_size_inches(new_width, new_height)
         for panel_ax, position in zip(fig.axes, positions):
-            panel_ax.set_position([(position.x0 * width + extra_left) / new_width, position.y0,
-                                   position.width * width / new_width, position.height])
+            panel_ax.set_position([(position.x0 * width + extra_left) / new_width,
+                                   (position.y0 * height + extra_bottom) / new_height,
+                                   position.width * width / new_width,
+                                   position.height * height / new_height])
     return extra_left
 
 
@@ -345,6 +369,103 @@ def place_phasor_legend(ax, handles, legend_size, frequency_label):
     for handle in legend.legend_handles:
         handle.set_sizes([legend_size ** 2])
     return legend
+
+
+def draw_phasor_background(ax, f, harmonic, annotation_size):
+    """Render the app's reference geometry and its three numeric axis labels."""
+    from src.vis.bivar import phasor_reference_geometry
+
+    geometry = phasor_reference_geometry(f, harmonic)
+    ax.plot(geometry['curve_x'], geometry['curve_y'], color='black', linewidth=2, zorder=1)
+    ax.plot([0, 1], [0, 0], color='black', linewidth=2, zorder=1)
+    ax.plot([0, 0], [0, .5], color='black', linewidth=2, zorder=1)
+    for x, y in zip(geometry['marker_x'], geometry['marker_y']):
+        ax.plot(x, y, 'ko', markersize=7, markeredgewidth=0, zorder=1)
+    for index, (text, x, y) in enumerate(zip(
+            geometry['lifetime_labels'], geometry['label_x'], geometry['label_y'])):
+        ax.annotate(text, (geometry['marker_x'][index], geometry['marker_y'][index]),
+                    xytext=(x, y), textcoords='data', ha='left', va='center',
+                    fontsize=annotation_size, zorder=3)
+    for text, x, y, horizontal, vertical in [
+            ('0.5', -.02, .5, 'right', 'center'),
+            ('0', 0, -.02, 'center', 'top'),
+            ('1', 1, -.02, 'center', 'top')]:
+        ax.text(x, y, text, ha=horizontal, va=vertical, fontsize=annotation_size)
+    # Plotly hides automatic ticks; only the explicit labels above are drawn.
+    ax.tick_params(axis='both', which='both', bottom=False, left=False,
+                   labelbottom=False, labelleft=False)
+    return ax.text(.8, .5, geometry['frequency'], fontsize=annotation_size,
+                   ha='left', va='center')
+
+
+def marginal_box_statistics(values):
+    """Plotly's default linear quartiles (Hazen ranks) and observed whiskers.
+
+    Matplotlib's default percentiles use different ranks, so its boxplot cannot
+    reproduce the app without explicitly supplied statistics.
+    """
+    import numpy as np
+
+    values = np.sort(np.asarray(values, dtype=float))
+    q1, median, q3 = np.percentile(values, [25, 50, 75], method='hazen')
+    spread = q3 - q1
+    lower = max(values[0], min(q1, values[values >= q1 - 1.5 * spread][0]))
+    upper = min(values[-1], max(q3, values[values <= q3 + 1.5 * spread][-1]))
+    return dict(q1=q1, med=median, q3=q3, whislo=lower, whishi=upper,
+                fliers=values[(values < lower) | (values > upper)])
+
+
+def marginal_violin_statistics(values):
+    """Plotly's Gaussian KDE, robust Silverman bandwidth, and default soft span."""
+    import numpy as np
+
+    values = np.sort(np.asarray(values, dtype=float))
+    box = marginal_box_statistics(values)
+    extent = values[-1] - values[0]
+    bandwidth = max(1.059 * min(np.std(values, ddof=1), (box['q3'] - box['q1']) / 1.349)
+                    * len(values) ** -.2, extent / 100)
+    low, high = values[0] - 2 * bandwidth, values[-1] + 2 * bandwidth
+    intervals = int(np.ceil((high - low) / (bandwidth / 3)))
+    coords = np.linspace(low, high, intervals + 1)
+    density = np.array([np.exp(-.5 * ((x - values) / bandwidth) ** 2).mean()
+                        / (bandwidth * np.sqrt(2 * np.pi)) for x in coords])
+    return dict(coords=coords, vals=density, mean=values.mean(), median=box['med'],
+                min=values[0], max=values[-1])
+
+
+def draw_distribution_marginal(ax, values, orientation, color, plot_type, position, point_size):
+    """Render one available marginal using the app renderer's statistics and styles."""
+    import numpy as np
+    from scipy.stats import gaussian_kde
+
+    if plot_type == 'gaussian fit':
+        coords = np.linspace(min(values), max(values), 200)
+        density = gaussian_kde(values)(coords)
+        x, y = (coords, density) if orientation == 'horizontal' else (density, coords)
+        ax.plot(x, y, color=color, linewidth=2, alpha=.7, gid='marginal')
+        return
+    if plot_type == 'boxplot':
+        stroke = dict(color=color, linewidth=2)
+        ax.bxp([marginal_box_statistics(values)], orientation=orientation,
+               positions=[position], widths=.49, capwidths=.245, patch_artist=True,
+               boxprops=dict(facecolor=(*color, .5), edgecolor=color, linewidth=2),
+               whiskerprops=stroke, capprops=stroke, medianprops=stroke,
+               flierprops=dict(marker='o', markersize=point_size,
+                               markerfacecolor=color, markeredgewidth=0))
+    elif plot_type == 'violin':
+        parts = ax.violin([marginal_violin_statistics(values)], orientation=orientation,
+                          positions=[position], widths=.49, showmeans=False,
+                          showmedians=False, showextrema=False)
+        for body in parts['bodies']:
+            body.set_alpha(None)
+            body.set_facecolor((*color, .5))
+            body.set_edgecolor(color)
+            body.set_linewidth(2)
+    # Plotly pads categorical positions by half a slot regardless of body width.
+    if orientation == 'horizontal':
+        ax.set_ylim(-.5, position + .5)
+    else:
+        ax.set_xlim(-.5, position + .5)
 
 
 def _print_distribution_statistics(result, label):
@@ -769,7 +890,8 @@ else:
     df[{group_column_expr}] = "all_data"
 
 color_groups = natural_tuple_sort(df[{group_column_expr}].unique().tolist())
-color_map = create_color_map(color_groups, COLORMAP, alpha={alpha_expr})
+color_map = create_color_map(color_groups, COLORMAP, alpha={alpha_expr},
+                             byte_colors={state['method'] != 'Feature Comparison'})
 BASE_ALPHA = {base_alpha_expr}
 
 shape_map = {{}}
@@ -796,6 +918,10 @@ def _build_footer(state: dict) -> str:
     if method == "Feature Histogram":
         # Preserve constrained layout even if separation is enabled by editing the script.
         layout = "if not SEPARATE_BY:\n    plt.tight_layout()"
+    elif method == "2D Feature Distribution":
+        # Marginal strips already share exact edges and have room for the legend.
+        # tight_layout would rearrange that grid after widen_to_fit freezes it.
+        layout = "if not SEPARATE_BY and MARGINAL_PLOT_TYPE is None:\n    plt.tight_layout()"
     return f"""
 # ============================================================
 # Save & Show
@@ -832,7 +958,7 @@ def _build_feature_histogram(state: dict) -> str:
     )
 
     helpers = [natural_key, tuple_natural_key, natural_tuple_sort,
-               histogram_legend_label, create_color_map, histogram_bin_settings,
+               histogram_legend_label, create_color_map, plotly_dash_style, histogram_bin_settings,
                histogram_bin_edges, histogram_skewness, _find_best_gmm,
                find_intersection, _assign_subpopulation_labels, histogram_gmm,
                prepare_histogram]
@@ -867,7 +993,7 @@ fig, _axes = plt.subplots(
     figsize=(10, row_height * rows + 1 if SEPARATE_BY else max(6, row_height + 1)),
     layout="constrained" if SEPARATE_BY else None)
 histogram_axes = list(_axes[:, 0])
-dash_styles = ['--', ':', '-.', (0, (5, 10)), (0, (3, 5, 1, 5))]
+dash_styles = ['dash', 'dot', 'dashdot', 'longdash', 'longdashdot']
 
 for ax, panel in zip(histogram_axes, panels):
     legend_handles = []
@@ -889,7 +1015,7 @@ for ax, panel in zip(histogram_axes, panels):
                 group["pdf"] if APPLY_GMM else group["counts"],
                 color=color, linewidth=2, label=legend_label,
                 marker='o' if not APPLY_GMM and len(histogram_data["bin_centers"]) == 1 else None,
-                markersize=6)
+                markersize=POINT_SIZE, markeredgewidth=0)
         else:
             # Sparse and failed fits retain their local count/skewness legend entry.
             line = Line2D([], [], color=color, linewidth=2, label=legend_label)
@@ -910,8 +1036,8 @@ for ax, panel in zip(histogram_axes, panels):
                     continue
                 line, = ax.plot(
                     group["x"], component["density"], color=color,
-                    linestyle=dash_styles[(rank - 1) % len(dash_styles)],
-                    alpha=0.6, linewidth=1.5, label=f"{g} Component {rank}")
+                    linestyle=plotly_dash_style(dash_styles[(rank - 1) % len(dash_styles)], 1),
+                    linewidth=1, label=f"{g} Component {rank}")
                 legend_handles.append(line)
             if group["h_index"] is not None:
                 print(f"    H-index: {group['h_index']:.3f}")
@@ -919,10 +1045,10 @@ for ax, panel in zip(histogram_axes, panels):
             for index, threshold in enumerate(thresholds if thresholds is not None else [], 1):
                 peak = float(max(group["pdf"]))
                 ax.plot([threshold, threshold], [0, peak], color=color,
-                        linestyle='--', alpha=0.5, linewidth=2)
+                        linestyle=plotly_dash_style('dash', 2), alpha=0.5, linewidth=2)
                 if not SEPARATE_BY:
-                    ax.text(threshold, peak * 1.05, f"Threshold: {threshold:.2f}",
-                            ha='center', fontsize=AXIS_LABEL_SIZE, color=color)
+                    ax.text(threshold, peak * 1.05, f"Threshold ({threshold:.2f})",
+                            ha='center', fontsize=AXIS_LABEL_SIZE, color='black')
                 print(f"    Threshold between component {index} and {index + 1}: {threshold:.4f}")
     if legend_handles:
         # The app's legends have no border; the one over the data is translucent white.
@@ -1508,15 +1634,19 @@ def _build_2d_distribution(state: dict) -> str:
         dimension_facet_layout,
         focus_slot_keys,
     )
+    from src.vis.plot_defaults import WEBGL_POINT_THRESHOLD
 
     helpers = [category_panel_rows, distribution_fit_groups, distribution_ranges,
                category_facet_groups, dimension_facet_layout, focus_slot_keys,
-               widen_to_fit, place_facet_legend, _print_distribution_statistics]
+               widen_to_fit, place_facet_legend, _print_distribution_statistics,
+               marginal_box_statistics, marginal_violin_statistics, draw_distribution_marginal,
+               plotly_dash_style]
     if state.get("method_params", {}).get("fit_gmm_2d"):
         from src.vis.helpers import _find_best_gmm
 
         helpers.append(_find_best_gmm)
-    fit_src = _extract_source(*helpers)
+    fit_src = (_extract_source(*helpers)
+               + f"\nWEBGL_POINT_THRESHOLD = {WEBGL_POINT_THRESHOLD}\n")
 
     preparation = """
 if df.empty:
@@ -1625,7 +1755,7 @@ elif MARGINAL_PLOT_TYPE is not None:
     from matplotlib.gridspec import GridSpec
     fig = plt.figure(figsize=(10, 10))
     gs = GridSpec(2, 2, figure=fig, height_ratios=[1, 9], width_ratios=[9, 1],
-                  hspace=0.05, wspace=0.05)
+                  hspace=0, wspace=0)
     # Match the app's square main axes and 10% marginal domains. Anchor the
     # shared edges so the marginals stay aligned even if figsize is edited.
     ax_main = fig.add_subplot(gs[1, 0], box_aspect=1, anchor='NE')
@@ -1658,7 +1788,7 @@ for slot, (slot_ax, slot_key) in enumerate(zip(slot_axes, slot_keys)):
             background = df.loc[~membership]
             slot_ax.scatter(background[SELECTED_X], background[SELECTED_Y],
                             color=PANEL_CONTEXT_COLOR, alpha=PANEL_CONTEXT_ALPHA,
-                            s=slot_area, edgecolors='none', linewidths=0, zorder=1)
+                            s=panel_point_area, edgecolors='none', linewidths=0, zorder=1)
     handles = scatter_interleaved_points(
         slot_ax, df, SELECTED_X, SELECTED_Y, FD_GROUP_COLUMN, color_groups, color_map,
         slot_area, shape_by=SHAPE_BY, shape_map=shape_map,
@@ -1684,23 +1814,9 @@ for g in color_groups:
     # in src/vis/bivar.py returns early per axis), so a constant y still draws x.
     if ax_top is not None and gdf[SELECTED_X].nunique() > 1:
         try:
-            x_vals = gdf[SELECTED_X].dropna().values
-            kde_x = gaussian_kde(x_vals)
-            x_curve = np.linspace(x_vals.min(), x_vals.max(), 200)
-            if MARGINAL_PLOT_TYPE == 'gaussian fit':
-                # alpha matches the app's opacity=0.7 on both density traces
-                # (_plot_marginal_density in src/vis/bivar.py).
-                ax_top.plot(x_curve, kde_x(x_curve), color=color_map[g][:3], linewidth=1.5,
-                            alpha=0.7)
-            elif MARGINAL_PLOT_TYPE == 'boxplot':
-                ax_top.boxplot(x_vals, orientation='horizontal', positions=[marginal_positions["x"]],
-                               widths=0.5, patch_artist=True,
-                               boxprops=dict(facecolor=(*color_map[g][:3], 0.3)))
-            elif MARGINAL_PLOT_TYPE == 'violin':
-                parts = ax_top.violinplot(x_vals, orientation='horizontal',
-                                          positions=[marginal_positions["x"]], showmedians=True)
-                for pc in parts.get('bodies', []):
-                    pc.set_facecolor((*color_map[g][:3], 0.3))
+            draw_distribution_marginal(
+                ax_top, gdf[SELECTED_X].dropna().values, 'horizontal', color_map[g][:3],
+                MARGINAL_PLOT_TYPE, marginal_positions["x"], POINT_SIZE)
             if MARGINAL_PLOT_TYPE in ('boxplot', 'violin'):
                 marginal_positions["x"] += 1
         except Exception:
@@ -1708,21 +1824,9 @@ for g in color_groups:
 
     if ax_right is not None and gdf[SELECTED_Y].nunique() > 1:
         try:
-            y_vals = gdf[SELECTED_Y].dropna().values
-            kde_y = gaussian_kde(y_vals)
-            y_curve = np.linspace(y_vals.min(), y_vals.max(), 200)
-            if MARGINAL_PLOT_TYPE == 'gaussian fit':
-                ax_right.plot(kde_y(y_curve), y_curve, color=color_map[g][:3], linewidth=1.5,
-                              alpha=0.7)
-            elif MARGINAL_PLOT_TYPE == 'boxplot':
-                ax_right.boxplot(y_vals, orientation='vertical', positions=[marginal_positions["y"]],
-                                 widths=0.5, patch_artist=True,
-                                 boxprops=dict(facecolor=(*color_map[g][:3], 0.3)))
-            elif MARGINAL_PLOT_TYPE == 'violin':
-                parts = ax_right.violinplot(y_vals, orientation='vertical',
-                                            positions=[marginal_positions["y"]], showmedians=True)
-                for pc in parts.get('bodies', []):
-                    pc.set_facecolor((*color_map[g][:3], 0.3))
+            draw_distribution_marginal(
+                ax_right, gdf[SELECTED_Y].dropna().values, 'vertical', color_map[g][:3],
+                MARGINAL_PLOT_TYPE, marginal_positions["y"], POINT_SIZE)
             if MARGINAL_PLOT_TYPE in ('boxplot', 'violin'):
                 marginal_positions["y"] += 1
         except Exception:
@@ -1734,6 +1838,7 @@ panel_by_level = {slot_key: slot_ax
                   for slot_ax, slot_key in zip(slot_axes, slot_keys)
                   if slot_key is not None}
 model_width = PANEL_MODEL_WIDTH if SEPARATE_BY else OVERVIEW_MODEL_WIDTH
+model_dash = plotly_dash_style('dash', model_width, webgl=len(df) >= WEBGL_POINT_THRESHOLD)
 for result in distribution_results:
     color = color_map[result["color_group"]][:3]
     label = (f"{result['category']} × {result['color_group']}"
@@ -1742,7 +1847,8 @@ for result in distribution_results:
     model_ax = panel_by_level.get(result["category"], ax_main)
     regression = result["regression"]
     if regression is not None:
-        model_ax.plot(regression["x"], regression["y"], '--', color=color, linewidth=model_width)
+        model_ax.plot(regression["x"], regression["y"], color=color, linewidth=model_width,
+                      gid='regression')
     for component in result["components"]:
         mean, covariance = component["mean"], component["covariance"]
         eigenvalues, eigenvectors = np.linalg.eigh(covariance)
@@ -1750,9 +1856,8 @@ for result in distribution_results:
         width, height = 2 * np.sqrt(eigenvalues * chi2.ppf(0.95, 2))
         model_ax.add_patch(Ellipse(
             xy=mean, width=width, height=height, angle=angle, fill=False,
-            edgecolor=color, linewidth=model_width, linestyle='--',
+            edgecolor=color, linewidth=model_width, linestyle=model_dash,
         ))
-        model_ax.plot(*mean, '+', color=color, markersize=15, markeredgewidth=model_width)
 
 if SEPARATE_BY:
     for panel_ax, slot_key in zip(facet_axes, slot_keys[1:]):
@@ -1790,7 +1895,7 @@ if promoted_category is not None:
     # A promotion names itself in the title, as it does in the app.
     _2d_title += f" ({SEPARATE_BY}: {promoted_category})"
 encoding_legend_handles = add_encoding_legend_entries(
-    ax_main, shape_map, opacity_map, POINT_SIZE ** 2)
+    ax_main, shape_map, opacity_map, POINT_SIZE ** 2, borderless=True)
 if SEPARATE_BY:
     fig.suptitle(_2d_title, fontsize=TITLE_SIZE, fontweight='bold', x=0.01, ha='left')
     figure_height = place_facet_legend(fig, ax_main,
@@ -1809,15 +1914,17 @@ else:
         handle.set_sizes([LEGEND_SIZE ** 2])
     if ax_right is not None:
         # tight_layout cannot move the marginal grid, so the canvas makes the room.
-        widen_to_fit(fig)
+        widen_to_fit(fig, fit_height=True)
 """)
 
 
 def _build_phasor_plot(state: dict) -> str:
     from src.export_labels import available_label_column
+    from src.vis.bivar import phasor_reference_geometry
 
     preparation = ("\n# Grouping and legend helpers (extracted from FLIM Playground source)\n"
-                   + _extract_source(available_label_column, place_phasor_legend) + """
+                   + _extract_source(available_label_column, place_phasor_legend,
+                                     phasor_reference_geometry, draw_phasor_background) + """
 # Both Phasor layouts build their encodings from complete G/S observations.
 harmonic_label = "1st" if PHASOR_HARMONIC == 1 else "2nd"
 g_col = f"Lifetime fit free_{PHASOR_CHANNEL}: G({harmonic_label})"
@@ -1864,37 +1971,7 @@ active_positions = (
 )
 
 fig, ax = plt.subplots(figsize=(10, 6))
-
-
-def draw_phasor_background(panel_ax):
-    # Universal semicircle: G = 1/(1+u^2), S = u/(1+u^2)
-    u = np.linspace(0, 100, 5000)
-    panel_ax.plot(1.0 / (1.0 + u**2), u / (1.0 + u**2),
-                  'k-', linewidth=2, zorder=1)
-
-    w = 2 * np.pi * PHASOR_F * PHASOR_HARMONIC
-    for tau in [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
-        wt = w * tau
-        g_marker = 1.0 / (1.0 + wt**2)
-        s_marker = wt / (1.0 + wt**2)
-        panel_ax.plot(g_marker, s_marker, 'ko', markersize=5, zorder=3)
-        if tau in (0.5, 1, 2, 3, 4, 5):
-            panel_ax.annotate(
-                f"{tau} ns", (g_marker, s_marker), textcoords="offset points",
-                xytext=(5, 5), fontsize=AXIS_LABEL_SIZE, zorder=3,
-            )
-
-    # The app draws its own G and S axes in place of a frame (src/vis/bivar.py).
-    panel_ax.plot([0, 1], [0, 0], color='black', linewidth=2, zorder=1)
-    panel_ax.plot([0, 0], [0, 0.5], color='black', linewidth=2, zorder=1)
-    freq_text = f"f = {PHASOR_F * PHASOR_HARMONIC * 1000} MHz"
-    if PHASOR_HARMONIC != 1:
-        freq_text += f"\\n({PHASOR_HARMONIC} x {PHASOR_F * 1000} MHz)"
-    return panel_ax.text(0.8, 0.5, freq_text, fontsize=AXIS_LABEL_SIZE,
-                         ha='left', va='center')
-
-
-frequency_label = draw_phasor_background(ax)
+frequency_label = draw_phasor_background(ax, PHASOR_F, PHASOR_HARMONIC, AXIS_LABEL_SIZE)
 if len(active_positions) < len(df):
     other_positions = np.setdiff1d(
         np.arange(len(df)), active_positions, assume_unique=True
@@ -1915,7 +1992,7 @@ point_legend_handles = scatter_interleaved_points(
 )
 
 encoding_legend_handles = add_encoding_legend_entries(
-    ax, shape_map, opacity_map, POINT_SIZE ** 2)
+    ax, shape_map, opacity_map, POINT_SIZE ** 2, borderless=True)
 
 ax.set_xlabel("g", fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("s", fontsize=AXIS_LABEL_SIZE)
@@ -1982,40 +2059,7 @@ def _build_unseparated_phasor_plot(state: dict) -> str:
 # Phasor Plot
 # ============================================================
 fig, ax = plt.subplots(figsize=(10, 6))
-
-# Universal semicircle: G = 1/(1+u^2), S = u/(1+u^2)
-u = np.linspace(0, 100, 5000)
-G_semi = 1.0 / (1.0 + u**2)
-S_semi = u / (1.0 + u**2)
-ax.plot(G_semi, S_semi, 'k-', linewidth=2, zorder=1)
-
-# Lifetime markers. The n-th harmonic phasor is evaluated at n*omega, so a marker
-# for tau belongs at n*2*pi*f*tau (src/vis/bivar.py _create_phasor_background).
-# The semicircle is parameterised by omega*tau and needs no harmonic correction.
-w = 2 * np.pi * PHASOR_F * PHASOR_HARMONIC
-for tau in [0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]:
-    wt = w * tau
-    g_marker = 1.0 / (1.0 + wt**2)
-    s_marker = wt / (1.0 + wt**2)
-    ax.plot(g_marker, s_marker, 'ko', markersize=5, zorder=3)
-    if tau in (0.5, 1, 2, 3, 4, 5):  # app annotates only the first six (bivar.py)
-        # AXIS_LABEL_SIZE here and on the frequency text below: the app writes 12 and 15
-        # on these annotations (src/vis/bivar.py), but apply_plot_styling() rewrites every
-        # annotation's size to plot_axis_label_size, so neither literal ever renders.
-        ax.annotate(f"{tau} ns", (g_marker, s_marker), textcoords="offset points",
-                   xytext=(5, 5), fontsize=AXIS_LABEL_SIZE, zorder=3)
-
-# The app draws its own G and S axes in place of a frame (src/vis/bivar.py).
-ax.plot([0, 1], [0, 0], color='black', linewidth=2, zorder=1)
-ax.plot([0, 0], [0, 0.5], color='black', linewidth=2, zorder=1)
-
-# Frequency annotation, matching the app (src/vis/bivar.py): the lifetime marker
-# scale is meaningless without it. For harmonic n the geometry is drawn at n x the
-# laser repetition rate, so report that and show the rate it came from.
-freq_text = f"f = {PHASOR_F * PHASOR_HARMONIC * 1000} MHz"
-if PHASOR_HARMONIC != 1:
-    freq_text += f"\\n({PHASOR_HARMONIC} x {PHASOR_F * 1000} MHz)"
-frequency_label = ax.text(0.8, 0.5, freq_text, fontsize=AXIS_LABEL_SIZE, ha='left', va='center')
+frequency_label = draw_phasor_background(ax, PHASOR_F, PHASOR_HARMONIC, AXIS_LABEL_SIZE)
 
 point_legend_handles = scatter_interleaved_points(
     ax, df, g_col, s_col, PHASOR_GROUP_COLUMN, color_groups, color_map,
@@ -2025,7 +2069,7 @@ point_legend_handles = scatter_interleaved_points(
 )
 
 encoding_legend_handles = add_encoding_legend_entries(
-    ax, shape_map, opacity_map, POINT_SIZE ** 2)
+    ax, shape_map, opacity_map, POINT_SIZE ** 2, borderless=True)
 
 ax.set_xlabel("g", fontsize=AXIS_LABEL_SIZE)
 ax.set_ylabel("s", fontsize=AXIS_LABEL_SIZE)
@@ -2164,7 +2208,7 @@ for slot, (panel_ax, slot_key) in enumerate(zip([ax, *facet_axes], slot_keys)):
     if (~membership).any():
         background = df.loc[~membership]
         panel_ax.scatter(background[DR_X_COLUMN], background[DR_Y_COLUMN],
-                         color='#b8b8b8', alpha=0.25, s=panel_point_area,
+                         color='#b8b8b8', alpha=0.25, s=max(1, POINT_SIZE - 2) ** 2,
                          edgecolors='none', linewidths=0, zorder=1)
     labeled_groups = set()
     for g, global_indices in point_batches:
@@ -2230,7 +2274,8 @@ ax.set_ylabel(ylabel, fontsize=AXIS_LABEL_SIZE)
 ax.tick_params(axis='both', labelsize=AXIS_LABEL_SIZE - 2, length=0)
 # One shared legend, counted over the whole dataset, wherever that map sits.
 point_legend_handles = [ax, *facet_axes][slot_keys.index(None)].get_legend_handles_labels()[0]
-encoding_legend_handles = add_encoding_legend_entries(ax, shape_map, opacity_map, LEGEND_SIZE ** 2)
+encoding_legend_handles = add_encoding_legend_entries(
+    ax, shape_map, opacity_map, LEGEND_SIZE ** 2, borderless=True)
 if SEPARATE_BY:
     figure_height = place_facet_legend(fig, ax, point_legend_handles + encoding_legend_handles,
                                        LEGEND_SIZE, left_margin, figure_width, figure_height)

@@ -142,6 +142,25 @@ be a scalar or a per-point array, while Matplotlib stores a per-point alpha arra
 Dimension Reduction and Phasor also multiply by the trace color's alpha to compare the
 effective rendered opacity. Phasor lifetime markers are excluded from data-point checks.
 
+`tests/test_other_graph_rendering_parity.py` adds direct comparisons of the **styled** app
+figure and executed export for Histogram, 2D Distribution, Phasor, and Dimension Reduction.
+It checks component strokes and threshold labels, singleton markers, regression styles,
+GMM overlays, promoted context sizes, point and legend borders, exact integer RGB colours, and every
+Phasor reference vertex, label position, marker diameter, and tick setting. The Phasor
+reference coordinates and labels come from the same inlined helper on both sides.
+Histogram dash lengths follow Plotly's SVG defaults; 2D GMM dash lengths follow whichever
+renderer the app chooses, including its separate WebGL patterns for large point clouds.
+
+The 2D box and violin cases include a skewed population inspected through the app's bundled
+Plotly.js 3.0.1 browser `calcdata`. Plotly's default linear quartiles use Hazen ranks; its
+violin uses a robust Silverman bandwidth, a soft span extending two bandwidths beyond the
+observations, and no median/extrema bars. Matplotlib's defaults differ, so the export supplies
+these statistics explicitly. These tests also pin coloured outlines, fill opacity, outlier
+sizes, marginal density stroke width, and touching marginal domains.
+`tests/test_classification_statistics_export.py`
+checks complete rendered image equality for ROC, confusion matrix, and feature importance
+across all four classifiers, since both Classification paths use Matplotlib.
+
 ## Known gaps
 
 None open. A `[KNOWN GAP]` line is a difference that is understood but not yet fixed: it
@@ -179,8 +198,9 @@ Resolved this way already:
 
 - The app's 2D marginal selector offers exactly `gaussian fit` | `boxplot` | `violin`.
   Any other string makes the export draw no marginal and look like a parity bug.
-- Matplotlib's `violinplot` emits ~5 artists per violin; only the `PolyCollection` bodies
-  correspond to the app's traces.
+- Matplotlib's default `violinplot` emits extrema/median bars that the app does not draw.
+  The export supplies Plotly-compatible density statistics to `Axes.violin` and draws only
+  the `PolyCollection` bodies.
 - Significance brackets are vertical line shapes in `fig.layout.shapes`, so a
   `separate_by` divider cannot be found by `x0 == x1` alone; match on the dash style.
 - `add_point_legend_traces()` adds shape/opacity legend entries as `x=[None], y=[None]`

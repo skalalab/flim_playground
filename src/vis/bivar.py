@@ -95,6 +95,25 @@ def _plot_marginal_density(fig, data, axis_type, color, name_prefix, plot_type, 
                 points=False # Hide points for a cleaner look
             ))
 
+def phasor_reference_geometry(f=0.08, harmonic=1):
+    """Reference coordinates and labels shared with standalone Phasor exports."""
+    u = np.arange(0, 100, 0.01)
+    lifetimes = np.array([0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=float)
+    wt = 2 * np.pi * f * harmonic * lifetimes
+    marker_x = 1 / (1 + wt**2)
+    marker_y = wt / (1 + wt**2)
+    frequency = f"f = {f * harmonic * 1000} MHz"
+    if harmonic != 1:
+        frequency += f"\n({harmonic} x {f * 1000} MHz)"
+    return dict(
+        curve_x=1 / (1 + u**2), curve_y=u / (1 + u**2),
+        marker_x=marker_x, marker_y=marker_y,
+        lifetime_labels=[f"{tau:g} ns" for tau in lifetimes[:6]],
+        label_x=marker_x[:6] - .02, label_y=marker_y[:6] + .03,
+        frequency=frequency,
+    )
+
+
 def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
     """
     Helper function to create the phasor semicircle, axes, annotations, and lifetime markers.
@@ -106,13 +125,11 @@ def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
     n·ω, so the reference geometry must use n·2πf as well.
     """
     # Plot the curve
-    u = np.arange(0, 100, 0.01)
-    x_curve = 1 / (1 + u**2)
-    y_curve = u / (1 + u**2)
+    geometry = phasor_reference_geometry(f, harmonic)
 
     fig.add_trace(go.Scatter(
-        x=x_curve,
-        y=y_curve,
+        x=geometry['curve_x'],
+        y=geometry['curve_y'],
         mode='lines',
         line=dict(color=theme_color),
         name='Curve', 
@@ -179,13 +196,9 @@ def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
     # Lifetime markers. The n-th harmonic phasor is evaluated at n*omega, so a marker
     # for tau belongs at n*2*pi*f*tau. The semicircle is parameterised by omega*tau and
     # needs no harmonic correction.
-    wt = 2 * np.pi * f * harmonic * np.array([0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10], dtype=float)
-    x_points = 1 / (1 + wt**2)
-    y_points = wt / (1 + wt**2)
-
     fig.add_trace(go.Scatter(
-        x=x_points,
-        y=y_points,
+        x=geometry['marker_x'],
+        y=geometry['marker_y'],
         mode='markers',
         marker=dict(size=7, color=theme_color),
         name='Lifetime Markers',
@@ -195,9 +208,9 @@ def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
     ))
 
     # Annotate the points
-    lifetime_labels = ['0.5 ns', '1 ns', '2 ns', '3 ns', '4 ns', '5 ns']
+    lifetime_labels = geometry['lifetime_labels']
     labels = len(lifetime_labels)
-    label_coords = list(zip(x_points - 0.02, y_points + 0.03))[:labels]
+    label_coords = list(zip(geometry['label_x'], geometry['label_y']))
 
     for i in range(labels):
         fig.add_annotation(
@@ -211,9 +224,7 @@ def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
 
     # Add text inside the plot. Report the frequency the geometry is drawn at, which
     # for harmonic n is n x the laser repetition rate.
-    freq_text = f"f = {f * harmonic * 1000} MHz"
-    if harmonic != 1:
-        freq_text += f"<br>({harmonic} x {f * 1000} MHz)"
+    freq_text = geometry['frequency'].replace('\n', '<br>')
     fig.add_annotation(
         x=0.8,
         y=0.5,

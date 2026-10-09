@@ -318,7 +318,8 @@ def test_export_follows_the_app_phasor_style(tmp_path, monkeypatch, separate_by)
     ax = ns["ax"]
     assert_theme_axes(ax, grid_axis=None)
     segments = {(tuple(line.get_xdata()), tuple(line.get_ydata())) for line in ax.lines
-                if line.get_color() == "black" and line.get_linewidth() == 2}
+                if line.get_color() == "black" and line.get_linewidth() == 2
+                and len(line.get_xdata()) == 2}
     assert segments == {((0, 1), (0, 0)), ((0, 0), (0, 0.5))}
     assert_theme_title(ax._left_title, size=20)
     ns["fig"].canvas.draw()

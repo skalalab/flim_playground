@@ -87,12 +87,12 @@ def test_models_are_drawn_thinner_inside_their_own_panel(tmp_path, monkeypatch):
     levels = [level for level, _positions in namespace["distribution_panels"]]
     for level, panel_ax in zip(levels, namespace["facet_axes"]):
         ellipses = [patch for patch in panel_ax.patches if isinstance(patch, Ellipse)]
-        regressions = [line for line in panel_ax.lines if line.get_linestyle() == '--']
+        regressions = [line for line in panel_ax.lines if line.get_gid() == 'regression']
         assert ellipses or regressions
         assert all(patch.get_linewidth() == 1 for patch in ellipses)
         assert all(line.get_linewidth() == 1 for line in regressions)
     assert not [line for line in namespace["ax_main"].lines
-                if line.get_linestyle() == '--']
+                if line.get_gid() == 'regression']
 
 
 def test_every_levels_statistics_are_printed(tmp_path, monkeypatch, capsys):
@@ -107,11 +107,10 @@ def test_marginals_only_reach_the_overview_and_cover_the_whole_dataset(tmp_path,
     namespace = _run(tmp_path, monkeypatch, _state("day"))
     curves = [line for line in namespace["ax_top"].lines if len(line.get_xdata()) > 2]
     assert len(curves) == 2
-    # A panel's own dashed regression is also a long line, so density curves are
-    # identified by their solid style.
+    # The app's regressions and densities are both solid; distinguish their roles.
     for panel_ax in namespace["facet_axes"]:
         assert not [line for line in panel_ax.lines
-                    if line.get_linestyle() == "-" and len(line.get_xdata()) > 2]
+                    if line.get_gid() == "marginal"]
 
 
 def test_overview_and_the_panel_column_share_edges_and_stay_square(tmp_path, monkeypatch):
@@ -202,7 +201,7 @@ def test_the_canvas_holds_main_plot_and_the_y_title(tmp_path, monkeypatch):
 def _models(axis):
     """Whatever this frame's groups support: ellipses, regression lines, or both."""
     return ([patch for patch in axis.patches if isinstance(patch, Ellipse)]
-            + [line for line in axis.lines if line.get_linestyle() == "--"])
+            + [line for line in axis.lines if line.get_gid() == "regression"])
 
 
 def test_models_stay_with_their_own_level_when_one_is_promoted(tmp_path, monkeypatch):
