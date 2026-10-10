@@ -62,6 +62,7 @@ The hosted demo is intended for analysis of example or non-sensitive data. Use t
 - [Wine quality](./example_data/Data_Analysis/wine_quality.csv) — a larger general-purpose tabular analysis example.
 - [FLIM extraction examples](./example_data/Data_Extraction/README.md) — T-cell activation data, reference files, and a decay archive.
 
+<a id="install"></a>
 ## Installation
 
 ### Browser demo
@@ -70,13 +71,13 @@ Use the [live Data Analysis demo](https://flim-playground.streamlit.app/) withou
 
 ### Option 1: Download from Releases
 
-The desktop application includes Data Extraction and Data Analysis and keeps your input data on your computer. Builds for macOS, Windows 11, and Ubuntu 24.04 LTS are published under [Releases](https://github.com/skalalab/flim_playground/releases).
+The desktop application includes Data Extraction and Data Analysis and keeps your input data on your computer. Builds for macOS, Windows 11, and Ubuntu 24.04 LTS are published under [Releases](https://github.com/skalalab/flim_playground/releases). When it starts, the app asks GitHub for the latest release number so it can offer updates; nothing else is sent.
 
 <a id="install-macos"></a>
 <details>
 <summary><strong>macOS</strong></summary>
 
-Install *and* upgrade with one paste into **Terminal** (find it with Spotlight: ⌘-Space, type "Terminal"): it downloads the build and unpacks **Flim-Playground.app** into your Downloads folder, ready to double-click. Any previous copy is replaced; a download that fails leaves it untouched. Use the block for your Mac (unsure which? **Apple menu → About This Mac**).
+Install with one paste into **Terminal** (find it with Spotlight: ⌘-Space, type "Terminal"): it downloads the build and unpacks **Flim-Playground.app** into your Downloads folder, ready to double-click. Any previous copy is replaced; a download that fails leaves it untouched. Use the block for your Mac (unsure which? **Apple menu → About This Mac**).
 
 **Apple Silicon** (M1 and later):
 
@@ -126,16 +127,7 @@ Download `Flim-Playground-linux.tar.gz` and **double-click it to extract** (or r
 
 #### Upgrading
 
-<details>
-<summary>Show upgrade instructions</summary>
-
-Upgrading is the same step as installing — your settings (`config.toml`, plus `analysis_config.toml` if you have one) live **outside** the app, so a new version never touches them: on macOS beside the app, on Windows at the root of the install folder, on Linux in `~/.config/flim-playground/`.
-
-- **macOS** — paste the [same command](#option-1-download-from-releases) again: it fetches the new build, deletes the old app and unpacks the replacement in its place.
-- **Windows** — run the new `Flim-Playground-Setup.exe`; it upgrades your existing installation in place. Every download is a fresh unsigned file, so expect the [SmartScreen warning](#first-launch-getting-past-the-security-warning) again each time.
-- **Linux** — delete the old `Flim-Playground-linux` folder, extract the new tarball in its place, then re-run `./install.sh` so the menu launcher points at the new files.
-
-</details>
+When a newer release is out, **Update to v…** appears at the right of the app's top bar. Click it, then **Update now**. Versions 1.14.4 and earlier don't have the button: install the latest release once with the steps above.
 
 #### Uninstalling
 

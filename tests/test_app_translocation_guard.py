@@ -49,6 +49,30 @@ def test_translocated_launch_stops_with_xattr_guidance(monkeypatch):
     assert "PAGE-BODY-RENDERED" not in " ".join(m.value for m in at.markdown)
 
 
+@pytest.mark.parametrize("allowed", [False, True])
+def test_settings_folder_macos_has_not_allowed_asks_for_allow_then_reload(monkeypatch, tmp_path, allowed):
+    from streamlit.testing.v1 import AppTest
+
+    from src import navigation
+
+    folder = tmp_path / "Downloads"
+    folder.mkdir()
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "platform", "darwin")
+    monkeypatch.setattr(navigation, "get_persistent_dir", lambda: folder)
+    if not allowed:
+        folder.chmod(0)  # reads fail, as while macOS's privacy prompt is unanswered or refused
+    try:
+        at = AppTest.from_string(_MENU_SCRIPT).run(timeout=60)
+    finally:
+        folder.chmod(0o755)
+
+    assert not at.exception, [e.value for e in at.exception]
+    asked = any("Click **Allow**, then reload this page" in w.value for w in at.warning)
+    assert asked == (not allowed)
+    assert ("PAGE-BODY-RENDERED" in " ".join(m.value for m in at.markdown)) == allowed
+
+
 def test_normal_launch_renders(monkeypatch):
     from streamlit.testing.v1 import AppTest
 

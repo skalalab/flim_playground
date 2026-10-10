@@ -280,6 +280,10 @@ def main():
     try:
         main_script = setup_environment()
 
+        # Look for a newer release while the server starts (frozen builds only).
+        from src.updater import start_check
+        start_check()
+
         # Run the Streamlit application
         run_streamlit_app(main_script)
 

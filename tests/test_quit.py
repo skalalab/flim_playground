@@ -27,7 +27,7 @@ _TRANSLOCATED = (
 )
 
 
-def _render(monkeypatch, quit_param=None):
+def _render(monkeypatch, quit_param=None, **params):
     """Render the bar, recording exits instead of exiting.
 
     The exit timer captures os._exit when it starts, so the recorder must be in
@@ -40,6 +40,8 @@ def _render(monkeypatch, quit_param=None):
     at = AppTest.from_string(_MENU_SCRIPT)
     if quit_param is not None:
         at.query_params["quit"] = quit_param
+    for name, value in params.items():
+        at.query_params[name] = value
     at.run(timeout=60)
     assert not at.exception, [e.value for e in at.exception]
     return at, exits
@@ -89,16 +91,23 @@ def test_launcher_turns_on_the_power_button(monkeypatch):
     (None, None),
 ])
 def test_page_renders_without_this_launchs_token(monkeypatch, token, quit_param):
+    from src import updater
+
     if token is None:
         monkeypatch.delenv(_TOKEN_VAR, raising=False)
     else:
         monkeypatch.setenv(_TOKEN_VAR, token)
+    # A newer release is out, so only the token decides whether the update link shows.
+    monkeypatch.setattr(updater, "get_app_version", lambda: "1.14.4")
+    monkeypatch.setattr(updater, "_release", {"tag_name": "99.0.0", "assets": [
+        {"name": updater.asset_name(), "state": "uploaded", "digest": "sha256:0", "size": 3}]})
 
     at, exits = _render(monkeypatch, quit_param)
 
     bar = _bar(at)
     assert bar is not None and _body_rendered(at)
     assert ("?quit=" in bar) == (token is not None), "the button appears only under the launcher"
+    assert ("?update=" in bar) == (token is not None), "so does the update link"
     assert not _exits_after(exits, 1.5)
 
 

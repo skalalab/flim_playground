@@ -1,5 +1,6 @@
 import html
 import os
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -7,6 +8,9 @@ from urllib.parse import urlparse
 
 import streamlit as st
 
+from src import updater
+from src.column_roles import code_span
+from src.config import get_persistent_dir
 from src.emojis import sad_emoji
 from src.version import get_version_label
 
@@ -95,6 +99,40 @@ _POWER_ICON = (
 _QUIT_STYLE = "<style>[data-testid='stHeader'], [data-testid='stDialog'] {display:none !important;}</style>"
 
 
+def _update_page(tag, asset):
+    """Offer ``asset``; on Update now, download it and hand over to ``updater.finish``,
+    which replaces the app and reopens it. Ends the script either way."""
+    st.markdown(
+        f"**v{tag}** is available ([what's new ↗]({updater.RELEASE_NOTES_URL})); this is "
+        f"{get_version_label()}. Updating downloads {asset['size'] / 1e6:.0f} MB, then FLIM "
+        "Playground closes and reopens in a new tab. Your settings stay; work running in "
+        "other tabs, such as an extraction, stops."
+    )
+    if not st.button("Update now", type="primary"):
+        st.stop()
+    progress = st.progress(0.0, text=f"Downloading v{tag}…")
+
+    def on_progress(done, total):
+        if done < total:
+            progress.progress(done / total, text=f"Downloading v{tag}… {done / 1e6:.0f} of {total / 1e6:.0f} MB")
+        else:
+            progress.progress(1.0, text="Preparing the update…")
+
+    try:
+        new_app = updater.prepare(tag, asset, on_progress)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        st.error(
+            f"The update stopped and nothing changed: {code_span(error)}. "
+            f"You can [update manually]({DESKTOP_APP_URL}). {sad_emoji}"
+        )
+        st.stop()
+    # Committed: from here a closed tab or a click must not stop the swap and exit.
+    threading.Timer(1, updater.finish, (new_app,)).start()
+    st.info(f"Installing v{tag}. FLIM Playground reopens in a new tab, so you can close this one.")
+    st.markdown(_QUIT_STYLE, unsafe_allow_html=True)
+    st.stop()
+
+
 def render_top_menu(space_below="0"):
     """Render the navigation bar. ``space_below`` is CSS length of breathing room
     between the bar and the page's first element (the pages otherwise touch it)."""
@@ -125,6 +163,9 @@ def render_top_menu(space_below="0"):
         # Exit once the goodbye has reached the browser.
         threading.Timer(1, os._exit, (0,)).start()
         st.stop()
+
+    # A newer release is offered to this launch alone: its link carries the token too.
+    update = updater.available_update() if quit_token else None
 
     st.markdown(
         """
@@ -171,6 +212,12 @@ def render_top_menu(space_below="0"):
         f"style='{version_margin}; color:#666; font-size:0.8em;'>"
         f"{html.escape(get_version_label())}</span>"
     )
+    if update:
+        menu_html += (
+            f"<a href='/?update={quit_token}' target='_self' title='Install the latest release' "
+            f"style='{_link_style(False)} margin-left:4px; font-size:0.8em;'>"
+            f"Update to v{html.escape(update[0])}</a>"
+        )
     if quit_token:
         # Without a target, st.markdown opens links in a new tab.
         menu_html += (
@@ -179,3 +226,24 @@ def render_top_menu(space_below="0"):
         )
 
     st.markdown(menu_html + "</div>", unsafe_allow_html=True)
+
+    # macOS asks each new build whether it may use the folder holding its settings,
+    # the one the .app is in. Until someone clicks Allow, every read there fails.
+    if getattr(sys, "frozen", False) and sys.platform == "darwin":
+        try:
+            os.scandir(get_persistent_dir()).close()
+        except PermissionError:
+            st.warning(
+                "macOS is asking whether FLIM Playground may access the folder it's in, where its "
+                "settings are saved. Click **Allow**, then reload this page. If you clicked Don't "
+                f"Allow, turn it on in System Settings → Privacy & Security → Files & Folders. {sad_emoji}"
+            )
+            st.stop()
+
+    if failure := updater.pop_failure():
+        st.warning(
+            f"The last update didn't finish, so this is still {get_version_label()}: "
+            f"{code_span(failure)}. You can [update manually]({DESKTOP_APP_URL}). {sad_emoji}"
+        )
+    if update and st.query_params.get("update") == quit_token:
+        _update_page(*update)
