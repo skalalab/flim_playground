@@ -1,8 +1,11 @@
 """A translocated macOS app stops before page rendering or config writes.
 The notice gives an xattr command targeting the downloaded app.
 """
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -23,6 +26,12 @@ _TRANSLOCATED = (
     "448EDF53-C8C9-4A62-9CA1-6412113CDF60/d/Flim-Playground 2.app/"
     "Contents/MacOS/Flim-Playground"
 )
+
+
+@pytest.fixture(autouse=True)
+def _keep_pytest_alive(monkeypatch):
+    """A translocated page may start the app's exit timer; it must not end pytest."""
+    monkeypatch.setattr(os, "_exit", lambda code: None)
 
 
 def test_translocated_launch_stops_with_xattr_guidance(monkeypatch):

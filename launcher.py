@@ -6,6 +6,7 @@ when bundled with PyInstaller.
 """
 
 import os
+import secrets
 import sys
 import time
 import webbrowser
@@ -35,6 +36,9 @@ def setup_environment():
 
     # Disable file watchers that can cause issues in bundled apps
     os.environ['STREAMLIT_SERVER_FILE_WATCHER_TYPE'] = 'none'
+
+    # Pages this launcher serves link Quit with this token; no other page or launch knows it.
+    os.environ['FLIM_PLAYGROUND_QUIT_TOKEN'] = secrets.token_urlsafe(8)
 
     main_script = resource_path('main.py')
     if not os.path.exists(main_script):
@@ -105,29 +109,9 @@ def get_browser_session_activity():
 
 
 def aggressive_shutdown():
-    """Shut down the application"""
+    """Exit the app at once, leaving every other process alone."""
     print("Shutting down...")
-
-    try:
-        import psutil
-        current_pid = os.getpid()
-
-        # Terminate streamlit processes
-        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
-            try:
-                if proc.info['name'] and 'streamlit' in proc.info['name'].lower():
-                    if proc.info['pid'] != current_pid:
-                        proc.terminate()
-                        proc.wait(timeout=3)
-                elif proc.info['cmdline'] and any('streamlit' in str(cmd).lower() for cmd in proc.info['cmdline']):
-                    if proc.info['pid'] != current_pid:
-                        proc.terminate()
-                        proc.wait(timeout=3)
-            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
-                continue
-    except ImportError:
-        pass
-
+    # Worker processes exit by themselves once this process is gone.
     os._exit(0)
 
 

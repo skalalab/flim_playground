@@ -1,5 +1,7 @@
 import html
+import os
 import sys
+import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -78,19 +80,50 @@ def _link_style(active):
         style += " background-color:#fff; color:#31333f; font-weight:bold; border-radius:6px; box-shadow:0 1px 2px rgba(0,0,0,0.15);"
     return style
 
+
+# Material Symbols "power_settings_new", in the link colour. At the version label's
+# 0.8em it shares that label's top and baseline and centres on the page links' text.
+_POWER_ICON = (
+    "<svg viewBox='0 0 24 24' width='0.8em' height='0.8em' fill='currentColor' style='vertical-align:-0.1em'>"
+    "<path d='M13 3h-2v10h2V3zm4.83 2.17l-1.42 1.42C17.99 7.86 19 9.81 19 12c0 3.87-3.13 7-7 7"
+    "s-7-3.13-7-7c0-2.19 1.01-4.14 2.58-5.42L6.17 5.17C4.23 6.82 3 9.26 3 12c0 4.97 4.03 9 9 9"
+    "s9-4.03 9-9c0-2.74-1.23-5.18-3.17-6.83z'/></svg>"
+)
+
+# After quitting, hide Streamlit's header (reconnect status, menu) and its
+# "Connection error" dialog, which opens about 3 s after the server goes away.
+_QUIT_STYLE = "<style>[data-testid='stHeader'], [data-testid='stDialog'] {display:none !important;}</style>"
+
+
 def render_top_menu(space_below="0"):
     """Render the navigation bar. ``space_below`` is CSS length of breathing room
     between the bar and the page's first element (the pages otherwise touch it)."""
+
+    # Set only by launcher.py; without it (online, `streamlit run`) nothing may end the server.
+    quit_token = os.environ.get("FLIM_PLAYGROUND_QUIT_TOKEN")
 
     # App Translocation makes the app read-only and prevents configuration saves.
     if "/AppTranslocation/" in sys.executable:
         # Recover the app name so the command targets the download, not the read-only mount.
         app_name = sys.executable.split("/Contents/")[0].rsplit("/", 1)[-1]
         st.error(
-            "macOS opened this quarantined app read-only, so settings can't save. "
-            f'Quit, run `xattr -dr com.apple.quarantine ~/Downloads/"{app_name}"` '
+            "macOS opened this quarantined app read-only, so settings can't save, and it has quit. "
+            f'Run `xattr -dr com.apple.quarantine ~/Downloads/"{app_name}"` '
             f"in Terminal (adjust the path if the app is elsewhere), then reopen it. {sad_emoji}"
         )
+        if quit_token:
+            # Quit for the user, so reopening starts a fresh, writable instance.
+            st.markdown(_QUIT_STYLE, unsafe_allow_html=True)
+            threading.Timer(1, os._exit, (0,)).start()
+        st.stop()
+
+    # The power button links here with this launch's token. `quit_token and` matters:
+    # without a token, a page with no ?quit would compare None with None.
+    if quit_token and st.query_params.get("quit") == quit_token:
+        st.info("FLIM Playground has quit. You can close its tabs.")
+        st.markdown(_QUIT_STYLE, unsafe_allow_html=True)
+        # Exit once the goodbye has reached the browser.
+        threading.Timer(1, os._exit, (0,)).start()
         st.stop()
 
     st.markdown(
@@ -136,7 +169,13 @@ def render_top_menu(space_below="0"):
     menu_html += (
         "<span title='FLIM Playground version' "
         f"style='{version_margin}; color:#666; font-size:0.8em;'>"
-        f"{html.escape(get_version_label())}</span></div>"
+        f"{html.escape(get_version_label())}</span>"
     )
+    if quit_token:
+        # Without a target, st.markdown opens links in a new tab.
+        menu_html += (
+            f"<a href='/?quit={quit_token}' target='_self' title='Quit FLIM Playground' "
+            f"aria-label='Quit' style='{_link_style(False)} margin-left:12px;'>{_POWER_ICON}</a>"
+        )
 
-    st.markdown(menu_html, unsafe_allow_html=True)
+    st.markdown(menu_html + "</div>", unsafe_allow_html=True)

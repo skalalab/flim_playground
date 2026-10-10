@@ -1,5 +1,6 @@
 """The desktop launcher follows app sessions, independent of browser processes."""
 
+import os
 import threading
 from types import SimpleNamespace
 
@@ -211,6 +212,23 @@ def test_monitor_error_does_not_shut_down_app(run_monitor):
     shutdowns, _, _ = run_monitor([(0, True), (5, RuntimeError("unavailable"))])
 
     assert not shutdowns
+
+
+def test_shutdown_leaves_other_streamlit_processes_alone(monkeypatch):
+    """A dev server or another Streamlit app outlives this app's exit."""
+    terminated, exits = [], []
+    dev_server = SimpleNamespace(
+        info={"pid": 4242, "name": "streamlit", "cmdline": ["streamlit", "run", "app.py"]},
+        terminate=lambda: terminated.append(4242),
+        wait=lambda timeout=None: None,
+    )
+    monkeypatch.setattr(psutil, "process_iter", lambda *args: [dev_server])
+    monkeypatch.setattr(os, "_exit", exits.append)
+
+    launcher.aggressive_shutdown()
+
+    assert exits == [0]
+    assert not terminated
 
 
 def test_cancelled_server_start_stops_monitor_immediately(run_monitor):
