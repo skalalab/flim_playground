@@ -1,10 +1,11 @@
 """Column review UI for editing a session-local working copy.
 
 Profile matching and role rules live in ``profile_matching`` and ``column_roles``.
-Review hides analysis until Save or Cancel resumes it. Edited roles and groups
+Review hides analysis until Use, Save, or Cancel resumes it. Edited roles and groups
 reach the saved profile only through ``save_working_copy``.
 """
 import html
+from copy import deepcopy
 
 import streamlit as st
 
@@ -27,8 +28,6 @@ from src.dataset_io import (
 )
 from src.emojis import happy_emoji, sad_emoji
 from src.profile_matching import (
-    chooser_is_needed,
-    chooser_options,
     exact_match,
     rank_profiles,
 )
@@ -39,7 +38,7 @@ from src.widgets.analysis_config_widgets import (
     MAX_PROFILES,
     all_profile_columns,
     delete_profile,
-    list_profiles,
+    get_analysis_hints,
     profile_roles_and_groups,
     rename_profile,
     save_working_copy,
@@ -56,9 +55,9 @@ _STATE_KEYS = (
     "_review_fingerprint", "_review_roles", "_review_groups", "_review_group_names",
     "_review_source", "_review_confirmed", "_review_previous_roles", "_review_known_cols",
     "_review_notices", "_review_opened", "_review_saved_as", "_review_numeric_cols",
-    "_review_reopened", "_review_chooser", "_review_delete_armed", "_review_manage_open",
+    "_review_delete_armed", "_review_manage_open",
     "_review_configured_row_id", "_review_picks_stale", "_review_overwrite_armed",
-    "_review_preserve_controls",
+    "_review_preserve_controls", "_review_snapshot", "_review_baseline",
 )
 # Export needs the configured Row ID, including blank for generated row numbers.
 # Keep this key in the same file-scoped reset as the rest of review state.
@@ -82,6 +81,35 @@ _GEN = "_review_editor_gen"
 # File-scoped keys preserve selections and typed names through editor corrections
 # while resetting them when the file fingerprint changes.
 _FILE_GEN = "_review_file_gen"
+
+
+_COPY_KEYS = (
+    "_review_roles", "_review_groups", "_review_group_names", "_review_source",
+    "_review_saved_as", "_review_known_cols", "_review_numeric_cols", "_review_baseline",
+    "_review_configured_row_id",
+)
+
+
+def reset_upload_review():
+    """Uploader on_change callback: discard decisions even for identical file names."""
+    for key in _STATE_KEYS:
+        st.session_state.pop(key, None)
+    st.session_state[_FILE_GEN] = _file_gen() + 1
+    _bump_editor()
+
+
+def _assignments():
+    return deepcopy((st.session_state.get("_review_roles", {}),
+                     st.session_state.get("_review_groups", {}),
+                     st.session_state.get("_review_group_names", [])))
+
+
+def _status():
+    changed = _assignments() != st.session_state.get("_review_baseline")
+    name = _applied_profile()
+    if name:
+        return f"{name} · edited for this upload" if changed else name
+    return "This upload only" if changed else "Auto-detected"
 
 
 def _fingerprint(uploaded_file, df):
@@ -153,24 +181,33 @@ def _clear_picks(columns):
 
 
 def _load_working_copy(df, picked):
-    """Build the table's contents from a chooser pick, discarding any edits in flight."""
+    """Build a new draft from saved decisions and read-only hints, replacing edits."""
     source = None if picked == AUTO_DETECT else picked
     profile_roles, profile_groups, profile_names = ({}, {}, [])
     if source:
         profile_roles, profile_groups, profile_names = profile_roles_and_groups(source)
     roles, groups, numeric_cols = build_working_copy(
-        df, profile_roles, profile_groups, profile_group_names=profile_names)
+        df, profile_roles, profile_groups, profile_group_names=profile_names,
+        **get_analysis_hints())
     st.session_state._review_roles = roles
     st.session_state._review_groups = groups
     # Preserve stored group order and empty groups before adding newly detected groups.
     # The reserved ungrouped label cannot also name a real group.
-    names = [name for name in dict.fromkeys(profile_names) if name != UNGROUPED_LABEL]
+    names = [name for name in dict.fromkeys(profile_names) if name not in (NO_GROUP, UNGROUPED_LABEL)]
     for col in df.columns:
         group = groups.get(col)
         if group and group not in names:
             names.append(group)
     st.session_state._review_group_names = names
     st.session_state._review_source = picked
+    # A saved source baseline includes absent columns, so schema changes count as edits.
+    baseline_groups = {col: group for col, group in profile_groups.items()
+                       if profile_roles.get(col) == ROLE_NUMERICAL and group
+                       and group not in (NO_GROUP, UNGROUPED_LABEL)}
+    baseline_names = [name for name in dict.fromkeys(profile_names)
+                      if name not in (NO_GROUP, UNGROUPED_LABEL)]
+    st.session_state._review_baseline = deepcopy(
+        (profile_roles, baseline_groups, baseline_names) if source else (roles, groups, names))
     # A previously saved name no longer identifies this replacement working copy.
     st.session_state.pop("_review_saved_as", None)
     st.session_state._review_previous_roles = dict(roles)
@@ -208,7 +245,7 @@ def applied_summary(decision):
     # Omit the optional single Row ID from the role-count summary.
     tally = " · ".join(f"{n} {ROLE_LABELS[role]}" for role, n in counts.items()
                        if n and role != ROLE_ROW_ID)
-    name = _applied_profile() or "Auto-detected"
+    name = _status()
     # The summary provides review access even when an exact match skips the gate.
     # Content-width children and nowrap keep the pencil beside the summary text.
     with st.container(key="review_summary", horizontal=True,
@@ -266,7 +303,7 @@ def ignored_columns():
 def review_gate(uploaded_file, df):
     """Return the confirmed decision, or render review and return None.
 
-    An exact match auto-applies only on initial entry and when its roles are valid.
+    Initial entry validates a unique exact profile or inference immediately.
     While review is open, analysis is hidden and captured controls are preserved.
     Load profile lists as needed and share them with child renderers.
     """
@@ -277,22 +314,15 @@ def review_gate(uploaded_file, df):
         reopen_gate()
     fingerprint = _fingerprint(uploaded_file, df)
     if st.session_state.get("_review_fingerprint") != fingerprint:
-        for key in _STATE_KEYS:
-            st.session_state.pop(key, None)
+        reset_upload_review()
         st.session_state._review_fingerprint = fingerprint
-        # Reset file-scoped widget identities so selections and names cannot carry over.
-        st.session_state[_FILE_GEN] = _file_gen() + 1
-        _bump_editor()
 
     if not st.session_state.get("_review_confirmed") and not st.session_state.get("_review_opened"):
         profiles = all_profile_columns()
         matched = exact_match(set(df.columns), profiles)
-        if matched:
-            _load_working_copy(df, matched)
-            # A matching column set can still contain an invalid Row ID. Show review
-            # when the loaded roles would block analysis.
-            st.session_state._review_confirmed = not review_blocking_reason(
-                df, st.session_state._review_roles)
+        _load_working_copy(df, matched or AUTO_DETECT)
+        st.session_state._review_confirmed = not review_blocking_reason(
+            df, st.session_state._review_roles)
 
     control_keys = st.session_state.get("_review_preserve_controls")
     if control_keys:
@@ -302,39 +332,22 @@ def review_gate(uploaded_file, df):
         return _decision()
 
     st.session_state._review_opened = True
-    # Keep the chooser's visibility fixed for the whole opening, even if a pick
-    # changes whether a profile matches exactly.
-    if "_review_chooser" not in st.session_state:
-        if profiles is None:
-            profiles = all_profile_columns()
-        st.session_state._review_chooser = chooser_is_needed(
-            _applied_profile(), set(df.columns), profiles)
     _render_gate(uploaded_file, df, profiles)
-    # Review hides analysis, including on reopen. Save and Cancel rerun before
+    # Review hides analysis, including on reopen. Use, Save, and Cancel rerun before
     # a confirmed decision reaches the page.
     return None
 
 
 def _render_gate(uploaded_file, df, profiles=None):
-    """Render profile choice, column editing, save controls, and profile management.
-
-    Reuse profiles supplied by the gate. When the chooser is hidden, only
-    profile names are needed.
-    """
+    """Render optional saved profiles, the populated editor, exits, and management."""
     name = getattr(uploaded_file, "name", "the uploaded file")
     # Render the filename literally inside the Markdown caption.
     st.caption(f"Read {len(df.columns)} columns × {len(df):,} rows from {code_span(name)}")
 
-    if st.session_state.get("_review_chooser", True):
-        if profiles is None:
-            profiles = all_profile_columns()
-        saved_names = list(profiles)
-        _chooser(df, profiles)
-        # A chooser click loads _review_source before rerunning.
-        if st.session_state.get("_review_source") is None:
-            return
-    else:
-        saved_names = list(profiles) if profiles is not None else list_profiles()
+    if profiles is None:
+        profiles = all_profile_columns()
+    saved_names = list(profiles)
+    _chooser(df, profiles)
 
     for notice in st.session_state.pop("_review_notices", []):
         st.info(notice)
@@ -357,47 +370,32 @@ def _render_gate(uploaded_file, df, profiles=None):
     if numbering:
         st.info(numbering)
     _buttons(df, saved_names)
-    _manage_profiles(saved_names)
+    _manage_profiles(saved_names, df)
 
 
 def _chooser(df, profiles):
-    """Show candidates in ranked order and load only an explicit pick.
-
-    The source lives in session state independently of the buttons, so other
-    actions can replace the working copy after the chooser renders.
-    """
-    file_cols = set(df.columns)
-    fits = {fit.name: fit for fit in rank_profiles(file_cols, profiles)}
-    options = chooser_options(file_cols, profiles, AUTO_DETECT)
+    """Offer related saved profiles in rank order on every editor opening."""
+    fits = [fit for fit in rank_profiles(set(df.columns), profiles) if fit.shared]
+    if not fits:
+        return
+    st.markdown("**Apply a saved profile (optional)**")
     picked = st.session_state.get("_review_source")
-
-    st.markdown("**Which profile describes this file?**")
-    for option in options:
-        if option == AUTO_DETECT:
-            _pick_row(df, option, option, picked)
-            continue
-        fit = fits[option]
-        _pick_row(df, option, f"{option}  —  {len(fit.shared)} shared · "
+    for fit in fits:
+        _pick_row(df, fit.name, f"{fit.name}  —  {len(fit.shared)} shared · "
                   f"{len(fit.missing)} missing · {len(fit.new)} new", picked)
-
-    if picked is None:
-        # The table and save controls wait for a chooser option to be selected.
-        st.caption("Ranked by how many of this file's columns each profile already "
-                   "knows; profiles sharing none are left out. Pick one to fill in "
-                   "the table below.")
-    elif len(options) > 1:
-        st.caption("Changing this rebuilds the table below and discards your edits.")
+    st.caption("Applying a profile replaces the draft below and keeps review open.")
 
 
 def _pick_row(df, name, label, picked):
     """Load a clicked chooser option and rerun to update every row's selection."""
     if st.button(label, key=f"review_pick_{name}",
-                 type="primary" if name == picked else "tertiary") and name != picked:
+                 type="secondary" if name == picked else "tertiary"):
         _load_working_copy(df, name)
+        st.session_state._review_confirmed = False
         st.rerun()
 
 
-def _manage_profiles(saved_names):
+def _manage_profiles(saved_names, df=None):
     """Render rename/delete controls for all saved profiles, sorted by name.
 
     Keep the panel open after actions that remount it. Use a stable panel label
@@ -411,7 +409,7 @@ def _manage_profiles(saved_names):
         for name in names:
             with st.container(key=f"review_manage_row_{name}"):
                 if st.session_state.get(_DELETE_ARMED) == name:
-                    _delete_confirm(name)
+                    _delete_confirm(name, df)
                 else:
                     _manage_row(name)
 
@@ -442,7 +440,7 @@ def _rename_row(name):
             _rename_and_refresh(name, new_name)
 
 
-def _delete_confirm(name):
+def _delete_confirm(name, df=None):
     """Confirm deletion in place for the profile named by ``_DELETE_ARMED``.
 
     The armed profile name is server state, so confirmation cannot move to a
@@ -453,7 +451,7 @@ def _delete_confirm(name):
         st.text(f"Delete {name}? Its roles and groups go with it.")
     with cols[1]:
         if st.button("Delete", key=f"review_delete_{name}", type="primary", width="stretch"):
-            _delete_and_refresh(name)
+            _delete_and_refresh(name, df)
     with cols[2]:
         if st.button("Keep", key=f"review_delete_cancel_{name}", width="stretch"):
             st.session_state.pop(_DELETE_ARMED, None)
@@ -470,17 +468,17 @@ def _rename_and_refresh(old, new):
     for key in ("_review_source", "_review_saved_as"):
         if st.session_state.get(key) == old:
             st.session_state[key] = (new or "").strip()
+    snapshot = st.session_state.get("_review_snapshot")
+    if snapshot:
+        for key in ("_review_source", "_review_saved_as"):
+            if snapshot.get(key) == old:
+                snapshot[key] = (new or "").strip()
     st.session_state[_MANAGE_OPEN] = True
     st.rerun()
 
 
-def _delete_and_refresh(name):
-    """Delete a profile and reset review if it supplied the current working copy.
-
-    Check both applied and selected names because Save-as can leave them
-    different. Clearing the copy also restores the chooser and removes Cancel:
-    there is no saved decision to resume once its profile is deleted.
-    """
+def _delete_and_refresh(name, df=None):
+    """Invalidate deleted snapshot sources; rebuild a deleted draft with remaining hints."""
     error = delete_profile(name)
     if error:
         st.error(f"{error} {sad_emoji}")
@@ -489,12 +487,13 @@ def _delete_and_refresh(name):
     st.session_state.pop(_DELETE_ARMED, None)
     # Keep management open when the changed row list remounts it.
     st.session_state[_MANAGE_OPEN] = True
-    if name in (_applied_profile(), st.session_state.get("_review_source")):
-        for key in ("_review_source", "_review_saved_as", "_review_roles", "_review_groups",
-                    "_review_group_names", "_review_known_cols", "_review_previous_roles",
-                    "_review_reopened", "_review_preserve_controls"):
-            st.session_state.pop(key, None)
-        st.session_state._review_chooser = True
+    snapshot = st.session_state.get("_review_snapshot") or {}
+    snapshot_source = snapshot.get("_review_saved_as") or snapshot.get("_review_source")
+    if name == snapshot_source or name == _applied_profile():
+        st.session_state.pop("_review_snapshot", None)
+    if name == _applied_profile():
+        _load_working_copy(df, AUTO_DETECT)
+    st.session_state._review_confirmed = False
     st.rerun()
 
 
@@ -727,12 +726,8 @@ def _delete_group(name):
 
 
 def exit_actions(applied, reopened):
-    """Offer one save action, plus Cancel when reopening a saved decision.
-
-    An applied profile is updated; an auto-detected copy needs a profile name.
-    Initial review cannot finish without saving.
-    """
-    actions = [("save", applied) if applied else ("save_as_new", None)]
+    """Offer upload-only Use, optional persistence, and Cancel for a valid snapshot."""
+    actions = [("use", None), ("save", applied) if applied else ("save_as_new", None)]
     if reopened:
         actions.append(("cancel", None))
     return actions
@@ -744,7 +739,7 @@ def _buttons(df, saved_names):
     names = st.session_state._review_group_names
     source = _applied_profile()
     blocked = review_blocking_reason(df, roles)
-    actions = exit_actions(source, st.session_state.get("_review_reopened", False))
+    actions = exit_actions(source, bool(st.session_state.get("_review_snapshot")))
 
     # Save-as uses adjacent slots for its button and name field.
     widths = [width for kind, _ in actions
@@ -752,9 +747,14 @@ def _buttons(df, saved_names):
     cols = st.columns([*widths, 2])
     slots = iter(cols)
     for kind, profile in actions:
-        if kind == "save":
+        if kind == "use":
             with next(slots):
-                if st.button(f"💾 Save to {profile} & use", type="primary",
+                if st.button("Use for this upload", key="review_use", type="primary",
+                             width="stretch", disabled=bool(blocked)):
+                    _close_review()
+        elif kind == "save":
+            with next(slots):
+                if st.button(f"💾 Save to {profile} & use",
                              width="stretch", disabled=bool(blocked)):
                     _save_and_close(profile, roles, groups, names)
         elif kind == "save_as_new":
@@ -762,12 +762,18 @@ def _buttons(df, saved_names):
                          saved_names)
         else:
             with next(slots):
-                if st.button("Cancel", width="stretch",
+                if st.button("Cancel", key="review_cancel", width="stretch",
                              help="Discard these edits and go back"):
-                    # Restore saved roles and groups before resuming analysis.
-                    _load_working_copy(df, source)
-                    st.session_state._review_confirmed = True
-                    st.rerun()
+                    snapshot = st.session_state._review_snapshot
+                    for key in _COPY_KEYS:
+                        if key in snapshot:
+                            st.session_state[key] = deepcopy(snapshot[key])
+                        else:
+                            st.session_state.pop(key, None)
+                    st.session_state._review_previous_roles = dict(st.session_state._review_roles)
+                    st.session_state._review_picks_stale = True
+                    _bump_editor()
+                    _close_review()
     if blocked:
         cols[-1].error(blocked)
 
@@ -799,7 +805,7 @@ def _save_as_new(button_slot, name_slot, roles, groups, names, blocked, saved_na
         # Give initial-save and overwrite-confirm actions distinct widget identities.
         if st.button("⚠️ Replace profile" if armed else "💾 Save profile as",
                      key=f"review_save_as_{'confirm' if armed else 'new'}_{_file_gen()}",
-                     type="primary", width="stretch", disabled=bool(blocked),
+                     width="stretch", disabled=bool(blocked),
                      help=f"{len(saved_names)} of {MAX_PROFILES} profiles saved. "
                           "An existing name overwrites that profile."):
             if not armed and typed in saved_names:
@@ -811,14 +817,26 @@ def _save_as_new(button_slot, name_slot, roles, groups, names, blocked, saved_na
 
 def _save_and_close(name, roles, groups, group_names):
     """Save the working copy and resume analysis only when the write succeeds."""
-    error = save_working_copy(name, roles, groups, group_names=group_names)
+    try:
+        error = save_working_copy(name, roles, groups, group_names=group_names)
+    except OSError as exc:
+        error = str(exc)
     if error:
         st.error(f"{error} {sad_emoji}")
         return
     st.session_state.pop(_OVERWRITE_ARMED, None)
     st.session_state._review_saved_as = name.strip()
-    st.session_state._review_confirmed = True
+    st.session_state._review_source = name.strip()
+    st.session_state._review_known_cols = set(roles)
+    st.session_state._review_baseline = _assignments()
     st.toast(f"Saved to {code_span(name.strip())} {happy_emoji}")
+    _close_review()
+
+
+def _close_review():
+    st.session_state._review_confirmed = True
+    st.session_state.pop("_review_snapshot", None)
+    _decision()
     st.rerun()
 
 
@@ -830,11 +848,9 @@ def reopen_gate():
     those keys alive while analysis is hidden; the page clears the captured set
     after a resumed analysis render completes.
     """
+    if st.session_state.get("_review_confirmed"):
+        st.session_state._review_snapshot = deepcopy({
+            key: st.session_state[key] for key in _COPY_KEYS if key in st.session_state})
     st.session_state._review_confirmed = False
-    # Auto-apply can return before setting this flag; mark it here to keep review open.
     st.session_state._review_opened = True
-    st.session_state._review_reopened = True
-    st.session_state._review_chooser = chooser_is_needed(
-        _applied_profile(), set(st.session_state.get("_review_roles") or {}),
-        all_profile_columns())
     st.session_state._review_preserve_controls = analysis_control_keys(st.session_state)

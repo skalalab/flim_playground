@@ -2,11 +2,14 @@
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src import config
 
 _PAGE = str(Path(__file__).resolve().parents[1] / "main.py")
+pytestmark = pytest.mark.usefixtures("isolated_config_paths")
 
 
 def test_fresh_install_no_config_does_not_crash(tmp_path, monkeypatch):

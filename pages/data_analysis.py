@@ -13,7 +13,6 @@ from src.dataset_io import (
     _render_reject,
     _render_warning,
     interpret_table,
-    load_table,
     read_table,
     resolve_effective_fov_col,
 )
@@ -48,9 +47,6 @@ from src.vis.univar import (
     render_histogram_summaries,
 )
 from src.widgets.analysis_config_widgets import (
-    get_categorical_cols_analysis,
-    get_fov_name_col_analysis,
-    get_unique_row_id_col,
     working_copy_arguments,
 )
 from src.widgets.analysis_widget_state import (
@@ -81,6 +77,7 @@ from src.widgets.review_table_widget import (
     configured_row_id,
     ignored_columns,
     review_gate,
+    reset_upload_review,
 )
 from src.widgets.selection_widgets import (
     multi_feature_select_widget,
@@ -181,9 +178,7 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
         "delimiter": delimiter,
         # Export the applied review's configured ID. A blank name lets the script
         # generate the same row IDs instead of requiring a generated column in the file.
-        "unique_row_id_col": configured_row_id()
-        if not st.session_state.get("_use_data_extraction", True)
-        else get_unique_row_id_col(True),
+        "unique_row_id_col": configured_row_id(),
         # Include the configured FOV column only when it exists in the data.
         "fov_name_col": st.session_state.get("effective_fov_name_col"),
         "method": method,
@@ -196,9 +191,7 @@ def _export_script_button(method, uploaded_file, categorical_cols, color_by, opa
         "subcolor_by": subcolor_by,
         "categorical_cols": list(categorical_cols) if categorical_cols else [],
         # Match the app's coercion skip set and removal of ignored columns.
-        "ignored_cols": ignored_columns()
-        if not st.session_state.get("_use_data_extraction", True)
-        else [],
+        "ignored_cols": ignored_columns(),
         "analysis_columns": st.session_state.get("analysis_columns"),
         "point_size": st.session_state.plot_point_size,
         "axis_label_size": st.session_state.plot_axis_label_size,
@@ -362,29 +355,12 @@ with col1:
             # Hidden, not collapsed: the label's space keeps both option lists on the same rows.
             label_visibility="hidden",
         )
-    # Checked means the table came from somewhere else; the default is Data Extraction
-    # output, except online, where Data Extraction is not part of the deployment and a
-    # visitor's own table is the likely upload. "Data Extraction" then names the download.
-    extraction_here = data_extraction_available()
-    extraction_link = "/data_extraction" if extraction_here else DESKTOP_APP_URL
-    extraction_name = "Data Extraction" if extraction_here else f"[Data Extraction]({extraction_link})"
-    use_data_extraction = not st.checkbox(
-        "**Use a table from another source**",
-        value=not extraction_here,
-        help=f"Leave this off for the file you downloaded from {extraction_name}. "
-             "Turn it on for any other table — you'll review its columns before analysis.",
-    )
-    st.session_state._use_data_extraction = use_data_extraction
-    # Loading resolves a blank configured ID to a generated row-number column.
-    configured_row_id_col = get_unique_row_id_col(use_data_extraction)
-    unique_row_id_col = configured_row_id_col
-    # Hover labels use the user's column name, or "ID" for generated row numbers.
-    row_id_label = "Cell ID" if use_data_extraction else (configured_row_id_col or "ID")
-    categorical_cols = get_categorical_cols_analysis(use_data_extraction)
-    instruction_text = (f"Upload the file obtained from [Data Extraction]({extraction_link}) directly."
-                        if use_data_extraction else "Upload your table")
+    extraction_link = "/data_extraction" if data_extraction_available() else DESKTOP_APP_URL
+    categorical_cols = []
+    unique_row_id_col = ""
+    row_id_label = "ID"
     uploaded_file = st.file_uploader(
-        instruction_text,
+        "Upload your table",
         # The label is read by assistive technology only; the dropzone explains itself.
         label_visibility="collapsed",
         # Kept in sync with SUPPORTED_SUFFIXES and dataset_io._diagnose_table.
@@ -392,48 +368,34 @@ with col1:
              "or OpenDocument (.ods). The table must be a plain grid: column names on the first "
              "row, one row per data point, and — in a spreadsheet — on the first sheet.",
         type=[suffix.lstrip(".") for suffix in SUPPORTED_SUFFIXES],
-        # Keep the upload when switching between extraction data and user tables.
         key="analysis_file_upload",
+        on_change=reset_upload_review,
     )
     decision = None
-    # Only extraction data has a designated FOV column for hover text.
-    configured_fov_col = get_fov_name_col_analysis(use_data_extraction)
+    df, feature_groups_dict, upload_complete, delimiter = None, None, False, ","
     try:
-        if use_data_extraction:
-            df, feature_groups_dict, upload_complete, delimiter, unique_row_id_col = load_table(
-                uploaded_file, categorical_cols)
-        else:
-            # Review the raw headers and dtypes before interpreting column roles.
-            df, feature_groups_dict, upload_complete, delimiter = None, None, False, ","
-            if uploaded_file is not None:
-                raw, _read_meta, delimiter, scope_warning, error_msg = read_table(uploaded_file)
-                if error_msg != "":
-                    _render_reject(error_msg, scope_warning)
-                else:
-                    # Review uses the wide column; loader messages stay beside the upload.
-                    with col2:
-                        decision = review_gate(uploaded_file, raw)
-                    if decision is None:
-                        # Keep file warnings visible while review owns the page.
-                        _render_warning(scope_warning)
-                        # The review screen owns this run. Clear analysis/export data,
-                        # then stop before rendering any analysis controls or plots.
-                        st.session_state.vis_df = None
-                        st.session_state.analysis_columns = None
-                        st.stop()
-                    if decision is not None:
-                        args = working_copy_arguments(
-                            decision["roles"], decision["groups"], decision["group_names"])
-                        categorical_cols = args["categorical_cols"]
-                        row_id_label = args["unique_row_id_col"] or "ID"
-                        df, feature_groups_dict, upload_complete, unique_row_id_col = interpret_table(
-                            # configured_fov_col is "" on this branch: a field-of-view
-                            # column here is an ordinary categorical, named by no role.
-                            raw, categorical_cols, args["unique_row_id_col"], configured_fov_col,
-                            ignored_cols=args["ignored_cols"], feature_groups=args["feature_groups"],
-                            scope_warning=scope_warning, use_data_extraction=False)
-                        # Identify the applied profile and allow reopening review after a reject.
-                        applied_summary(decision)
+        if uploaded_file is not None:
+            raw, _read_meta, delimiter, scope_warning, error_msg = read_table(uploaded_file)
+            if error_msg != "":
+                _render_reject(error_msg, scope_warning)
+            else:
+                with col2:
+                    decision = review_gate(uploaded_file, raw)
+                if decision is None:
+                    _render_warning(scope_warning)
+                    st.session_state.vis_df = None
+                    st.session_state.analysis_columns = None
+                    st.session_state.effective_fov_name_col = None
+                    st.stop()
+                args = working_copy_arguments(
+                    decision["roles"], decision["groups"], decision["group_names"])
+                categorical_cols = args["categorical_cols"]
+                row_id_label = args["unique_row_id_col"] or "ID"
+                df, feature_groups_dict, upload_complete, unique_row_id_col = interpret_table(
+                    raw, categorical_cols, args["unique_row_id_col"], None,
+                    ignored_cols=args["ignored_cols"], feature_groups=args["feature_groups"],
+                    scope_warning=scope_warning, use_data_extraction=False)
+                applied_summary(decision)
     except Exception as e:
         st.error(f"Failed to process the uploaded file: {e} {sad_emoji}")
         df, feature_groups_dict, upload_complete, delimiter = None, None, False, ","
@@ -441,7 +403,7 @@ with col1:
     # Capture the analysis columns before plotting adds derived columns, for export parity.
     st.session_state.analysis_columns = list(df.columns) if df is not None else None
     # Resolve hover metadata and phasor availability from the current frame.
-    fov_name_col = resolve_effective_fov_col(df, configured_fov_col)
+    fov_name_col = None
     st.session_state.effective_fov_name_col = fov_name_col
     _channel_harmonics = _compute_channel_harmonics(feature_groups_dict) if feature_groups_dict else {}
     st.session_state.phasor_available = any(
@@ -452,7 +414,7 @@ with col1:
 
     if upload_complete:
         if method in univar_methods:
-            selected_var = single_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
+            selected_var = single_feature_select_widget(feature_groups_dict, n_per_row=2)
             if method == "Feature Comparison":
                 ef_col1, ef_col2 = st.columns(2)
                 mean_or_median = None
@@ -470,11 +432,11 @@ with col1:
 
         elif method in bivar_methods:
             if "2D" in method:
-                selected_x, selected_y = twod_single_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
+                selected_x, selected_y = twod_single_feature_select_widget(feature_groups_dict, n_per_row=2)
             elif method == "Phasor Plot":
                 selected_channel, selected_harmonic, f = phasor_params_widget(feature_groups_dict)
         elif method in multivar_methods:
-            selected_features = multi_feature_select_widget(feature_groups_dict, data_extraction=use_data_extraction, n_per_row=2)
+            selected_features = multi_feature_select_widget(feature_groups_dict, n_per_row=2)
             if method == "Dimension Reduction":                
                 dr_method = st.radio("Dimension Reduction Method", ["UMAP", "PCA", "t-SNE"], horizontal=True, key="analysis_control_dr_method")
                 if dr_method == "UMAP":
@@ -886,9 +848,9 @@ with col2:
         else:
             st.markdown(f"<h5 style='text-align: center; color: red'>No data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)
 
-    elif uploaded_file is None and not use_data_extraction:
-        st.info("**Upload a dataset to get started.** Its columns will be "
-                f"automatically parsed {happy_emoji}")
+    elif uploaded_file is None:
+        st.info("**Upload a dataset to get started**: your own table or one from "
+                f"[Data Extraction]({extraction_link}). Its columns will be automatically parsed {happy_emoji}.")
 
 
 # A closing review may trigger another rerun when method availability changes.

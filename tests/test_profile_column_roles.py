@@ -5,9 +5,15 @@ the user reviewed.
 import sys
 from pathlib import Path
 
+import pytest
+import toml
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src import config
 from src.widgets import analysis_config_widgets as acw
+
+pytestmark = pytest.mark.usefixtures("isolated_config_paths")
 
 
 def _profile(**cfg):
@@ -187,3 +193,81 @@ def test_known_columns_include_the_ignored_ones(monkeypatch):
 
     assert acw.profile_known_columns() == {
         "cell_id", "image_name", "treatment", "n.t1.mean", "Area", "notes"}
+
+
+@pytest.fixture
+def read_only_hints(monkeypatch):
+    def unexpected_save(*args, **kwargs):
+        pytest.fail("Collecting analysis hints must not save either config")
+    monkeypatch.setattr(config, "save_config", unexpected_save)
+    monkeypatch.setattr(acw, "save_config", unexpected_save)
+
+
+@pytest.mark.parametrize("stored", [None, "", {"profiles": {}},
+                                   {"profiles": {"empty": {}}}])
+def test_missing_or_empty_analysis_adds_no_hints(
+        isolated_config_paths, read_only_hints, stored):
+    extraction_path, analysis_path = isolated_config_paths
+    if stored is not None:
+        analysis_path.write_text(
+            stored if isinstance(stored, str) else toml.dumps(stored), encoding="utf-8")
+    before = analysis_path.read_bytes() if analysis_path.exists() else None
+
+    assert acw.get_analysis_hints() == config.get_extraction_hints()
+    assert not extraction_path.exists()
+    assert (analysis_path.read_bytes() if analysis_path.exists() else None) == before
+
+
+def test_analysis_hints_only_add_effective_categories_from_all_profiles(
+        isolated_config_paths, read_only_hints):
+    extraction_path, analysis_path = isolated_config_paths
+    extraction_path.write_text(toml.dumps({
+        "categorical_cols": ["Extraction first"],
+        "all_feature_extractors": ["Custom extractor"],
+    }), encoding="utf-8")
+    analysis_path.write_text(toml.dumps({
+        "current_profile": "active",
+        "profiles": {
+            "inactive": {
+                "unique_row_id_col": "analysis-id",
+                "categorical_cols": [" Shared ", "Cross-role", "analysis-id", "Shared"],
+                "fov_name_col": " field ",
+                "all_numerical_features": ["Cross-role", "number"],
+                "ignored_cols": ["ignored", "Shared", "Cross-role"],
+                "feature_groups": {"not a hint": ["number"]},
+            },
+            "active": {
+                "unique_row_id_col": "active-id", "fov_name_col": "active-id",
+                "categorical_cols": ["Active category", " Shared ", ""],
+                "all_numerical_features": ["another number"],
+            },
+        },
+    }), encoding="utf-8")
+    before = (extraction_path.read_bytes(), analysis_path.read_bytes())
+
+    hints = acw.get_analysis_hints()
+    assert hints == {
+        **config.get_extraction_hints(),
+        "categorical_hints": ["Extraction first", "image_name", " Shared ",
+                              "Cross-role", "Shared", " field ", "Active category"],
+    }
+    assert hints["id_hints"] == ["cell_id"]
+    assert (extraction_path.read_bytes(), analysis_path.read_bytes()) == before
+
+
+def test_legacy_analysis_hints_preserve_names_and_the_file(
+        isolated_config_paths, read_only_hints):
+    extraction_path, analysis_path = isolated_config_paths
+    extraction_path.write_text('unique_cell_id_col = ""\nfov_name_col = ""\n',
+                               encoding="utf-8")
+    analysis_path.write_text('# Legacy analysis settings stay unchanged.\n'
+                             'unique_row_id_col = "id"\n'
+                             'categorical_cols = ["Batch", "id", "Batch", "batch"]\n'
+                             'fov_name_col = " field "\n'
+                             'all_numerical_features = ["measurement"]\n', encoding="utf-8")
+    before = (extraction_path.read_bytes(), analysis_path.read_bytes())
+
+    hints = acw.get_analysis_hints()
+    assert hints["id_hints"] == []
+    assert hints["categorical_hints"] == ["Batch", "batch", " field "]
+    assert (extraction_path.read_bytes(), analysis_path.read_bytes()) == before

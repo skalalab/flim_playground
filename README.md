@@ -27,7 +27,7 @@ Use the desktop application to configure channels, calibrate measurements, fit f
 
 ### Analyze any tabular dataset
 
-Data Analysis accepts CSV, TSV/TXT, Excel, and OpenDocument tables from any source as long as it is tabular (it could be a [flower dataset](./example_data/Data_Analysis/iris.csv). A column-review step identifies row IDs, categorical metadata, measurements, and feature groups before you explore the data with:
+Data Analysis accepts CSV, TSV/TXT, Excel, and OpenDocument tables from any source, including a [flower dataset](./example_data/Data_Analysis/iris.csv). Columns are automatically parsed into row IDs, categorical metadata, measurements, and feature groups. An optional column editor lets you review and adjust those choices. Explore the data with:
 
 - feature histograms and comparisons;
 - two-dimensional distributions, phasor plots, and dimensional reduction;
@@ -224,7 +224,7 @@ FLIM Playground is released under the [MIT License](LICENSE).
 - 🔬 **QPI, a new imaging modality** — A channel can now be quantitative phase imaging (QPI): give it an OPD image and a cell mask. FLIM Playground covers configuration (for dry mass conversion), calibration (for background correction), and extraction.
 - 🧭 **Separate by, in every module** — Split any plot by a categorical column: stacked rows in *Feature Histogram*, one full-size switchable view in *2D Feature Distribution* and *Phasor Plot*, and an overview beside a highlight grid in *Dimension Reduction*. Statistics, GMM fits, and counts follow the selected category, and the Python export reproduces the whole composition.
 - 🫧 **Collapse by** — Pick a categorical column and the single row points collapse to one dot per category within each group, so the plot and its statistics compare category (e.g. patient_id) means in *Feature Comparison* and *2D Feature Distribution*.
-- 🧾 **Bring your own table** — Upload CSV, TSV/TXT, Excel, or OpenDocument. A column-review table opens with one row per column, its role (row ID, categorical, measurement) and its feature group already guessed, and saves as an analysis profile — the next file with the same columns picks that profile itself. Row ID and FOV columns are optional.
+- 🧾 **Bring your own table** — Upload CSV, TSV/TXT, Excel, or OpenDocument. Columns and groups are inferred automatically, or recalled from an exact saved profile. Use the pencil to review roles and groups, apply changes for this upload, or save a reusable profile. Row IDs are optional; image/FOV names are ordinary categories.
 - ⚡ **Speed & scale** — Point plots switch to WebGL above 5,000 points, so large figures no longer freeze the page on scroll, and lifetime curve fitting runs across CPU cores.
 - 🧪 **Derived features** — Build new measurements from arithmetic over existing ones, **including across channels** (redox ratios like `A / (A + B)`), written before extraction ever runs and appended as a **Derived Features** group in *Data Analysis*.
 - 🗂️ **Configuration profiles** — Save up to 10 extraction setups (channels, suffixes, extractors, fixed lifetimes, laser rate, …) and switch between them in one click. *Data Analysis* configurations are profile-based too.

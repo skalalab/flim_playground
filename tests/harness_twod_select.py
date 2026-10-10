@@ -8,8 +8,6 @@ import streamlit as st
 
 from src.widgets.selection_widgets import twod_single_feature_select_widget
 
-# Rebuilt every rerun on purpose: the widget mutates the dict in place, removing
-# the x-axis pick so it cannot also be chosen for y.
 feature_groups_dict = {
     "Lifetime fit_nadh": ["Lifetime fit_nadh: t1", "Lifetime fit_nadh: t2"],
     "Derived Features": ["Derived: ratio", "Derived: sum"],

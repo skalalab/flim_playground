@@ -50,7 +50,7 @@ def _means(frame, color_by, logged=False):
 
 
 @pytest.fixture
-def page(monkeypatch):
+def page(monkeypatch, install_page_table):
     from streamlit.testing.v1 import AppTest
 
     frame = _frame()
@@ -58,8 +58,6 @@ def page(monkeypatch):
     monkeypatch.setattr(acw, "get_categorical_cols_analysis", lambda *a, **k: CATEGORIES)
     monkeypatch.setattr(acw, "get_fov_name_col_analysis", lambda *a, **k: "image_name")
     monkeypatch.setattr(acw, "get_unique_row_id_col", lambda *a, **k: "cell_id")
-    monkeypatch.setattr(dataset_io, "load_table", lambda *a, **k: (
-        frame.copy(), {"Uncategorized Features": [X, Y]}, True, ",", "cell_id"))
 
     plot, generate = bivar.feature_2d_distribution_plot, export_script.generate_script
     pearson, gmm = bivar.pearsonr, bivar._find_best_gmm
@@ -95,6 +93,7 @@ def page(monkeypatch):
             frame = pd.concat([frame, frame.assign(
                 cell_id=frame.cell_id + "_repeat", day="Day 10",
                 **{X: frame[X] + 20, Y: frame[Y] * 2 + 15})], ignore_index=True)
+        install_page_table(frame.copy(), {"Uncategorized Features": [X, Y]}, "cell_id", ",")
         at = AppTest.from_file(PAGE).run(timeout=90)
         assert not at.exception
         at.radio[0].set_value("**Bivariate**")
@@ -196,7 +195,7 @@ def test_clearing_2d_collapse_restores_cell_level_analysis(page):
     assert not at.exception
     assert len(seen["data"]) == len(frame.dropna(subset=[X, Y]))
     assert seen["kwargs"]["opacity_by"] is None
-    assert seen["kwargs"]["fov_name_col"] == "image_name"
+    assert seen["kwargs"]["fov_name_col"] is None
     assert seen["state"]["method_params"]["collapse_by"] is None
 
 

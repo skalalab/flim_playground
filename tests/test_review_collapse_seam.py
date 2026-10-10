@@ -1,6 +1,6 @@
-"""User-table review decisions feed Collapse by, plotting, and export.
+"""Confirmed review decisions feed Collapse by, plotting, and export.
 Categoricals come from the working copy, FOV has no designated role, and identifiers
-may be generated. AppTest drives the chooser by prefix and then _review_confirmed.
+may be generated. AppTest uses the real gate with immediately valid inference.
 """
 import sys
 from pathlib import Path
@@ -13,9 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import src.dataset_io as dataset_io
-from src.widgets import analysis_config_widgets as acw
 from src.widgets import visualization_widgets as vw
-from src.widgets.review_table_widget import AUTO_DETECT
 
 _PAGE = str(ROOT / "pages" / "data_analysis.py")
 
@@ -40,24 +38,31 @@ def _frame():
                 "dish": dish,
                 "treatment": treatment,
                 "day": day,
-                # Fractional values keep this measurement from qualifying as a generated Row ID.
+                # Unique numeric measurements retain the Numerical role.
                 "nadh_tm_mean": 1200.0 + 10 * i + j + 0.37,
             })
     return pd.DataFrame(rows)
 
 
 @pytest.fixture
-def page(tmp_path, monkeypatch):
-    monkeypatch.setattr(acw, "_ANALYSIS_CONFIG_PATH", tmp_path / "analysis_config.toml")
+def page(tmp_path, monkeypatch, isolated_config_paths):
     frame = _frame()
-    monkeypatch.setattr(st, "file_uploader", lambda *a, **k: _Upload())
+    uploaded = [False]
+    def uploader(*args, **kwargs):
+        if not uploaded[0]:
+            uploaded[0] = True
+            callback = kwargs.get("on_change")
+            if callback:
+                callback()
+        return _Upload()
+    monkeypatch.setattr(st, "file_uploader", uploader)
     monkeypatch.setattr(dataset_io, "read_table",
                         lambda _u: (frame.copy(), {}, ",", "", ""))
     return tmp_path
 
 
 def _gated(page, **session):
-    """The page past the gate, on the user-table branch, roles auto-detected."""
+    """Valid auto-detection enters analysis through the actual gate."""
     from streamlit.testing.v1 import AppTest
 
     at = AppTest.from_file(_PAGE)
@@ -65,18 +70,8 @@ def _gated(page, **session):
         at.session_state[key] = value
     at.run(timeout=90)
     assert not at.exception, at.exception
-    at.checkbox[0].check().run(timeout=90)
-    assert not at.exception, at.exception
-    for widget in at.button:
-        if str(widget.label).startswith(AUTO_DETECT):
-            widget.click().run(timeout=90)
-            break
-    else:
-        raise AssertionError("no auto-detect row in the chooser")
-    assert not at.exception, at.exception
-    at.session_state._review_confirmed = True
-    at.run(timeout=90)
-    assert not at.exception, at.exception
+    assert at.session_state._review_confirmed
+    assert not (page / "analysis_config.toml").exists()
     return at
 
 
@@ -104,8 +99,8 @@ def test_the_gate_hands_its_categoricals_to_collapse_by(page):
     assert "Collapse by" in _labels(at), _labels(at)
     colour = set(at.session_state[vw.COLOR_BY_KEY])
     offered = set(_options(at, "Collapse by"))
-    assert colour == {"image_name"}, colour
-    assert offered == {"dish", "treatment", "day"}, offered
+    assert colour == {"dish"}, colour
+    assert offered == {"image_name", "treatment", "day"}, offered
     # Freeing the slot must hand the column back, which is the direction of the chain.
     next(b for b in at.multiselect if b.label.startswith("Color by")).set_value(
         ["treatment"]).run(timeout=90)
@@ -116,6 +111,7 @@ def test_the_gate_hands_its_categoricals_to_collapse_by(page):
 def test_a_user_table_collapses_without_a_designated_fov_column(page):
     """User-table collapse works without a designated FOV column."""
     at = _pick_feature(_gated(page))
+    at.multiselect(key=vw.COLOR_BY_KEY).set_value(["treatment"]).run(timeout=90)
     box = next(b for b in at.selectbox if b.label == "Collapse by")
     box.set_value("dish").run(timeout=90)
     assert not at.exception, at.exception
@@ -136,6 +132,7 @@ def test_collapsing_by_an_invented_row_number_table(page, monkeypatch):
     assert df is not None
     assert any(c.startswith("Row number") for c in df.columns), list(df.columns)
     at = _pick_feature(at)
+    at.multiselect(key=vw.COLOR_BY_KEY).set_value(["treatment"]).run(timeout=90)
     box = next(b for b in at.selectbox if b.label == "Collapse by")
     box.set_value("dish").run(timeout=90)
     assert not at.exception, at.exception
@@ -155,6 +152,7 @@ def test_the_exported_script_of_a_collapsed_user_table_compiles(page, monkeypatc
                         lambda state: seen.append(dict(state)) or real(state))
 
     at = _pick_feature(_gated(page))
+    at.multiselect(key=vw.COLOR_BY_KEY).set_value(["treatment"]).run(timeout=90)
     box = next(b for b in at.selectbox if b.label == "Collapse by")
     box.set_value("dish").run(timeout=90)
     assert not at.exception, at.exception

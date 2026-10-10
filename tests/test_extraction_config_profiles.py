@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 import toml
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -19,6 +20,13 @@ from src.config import (
     create_profile,
     delete_profile,
 )
+
+pytestmark = pytest.mark.usefixtures("isolated_config_paths")
+
+BUILTIN_EXTRACTORS = [
+    "Lifetime fit", "Lifetime fit free", "Intensity morphology",
+    "Intensity texture", "Dry-mass statistics", "Spatial texture",
+]
 
 
 # ---- migration ---------------------------------------------------------
@@ -139,3 +147,110 @@ def test_legacy_flat_config_read_through_accessor(tmp_path, monkeypatch):
     p = _write(tmp_path, {"flim_decay_input_type": "Decay (2D)", "num_channels": 1})
     monkeypatch.setattr(config, "_CONFIG_PATH", p)
     assert config.get_decay_input_type() == "Decay (2D)"
+
+
+# Analysis reads hints from every profile without changing extraction settings.
+
+@pytest.fixture
+def read_only_hints(monkeypatch):
+    def unexpected_save(*args, **kwargs):
+        pytest.fail("Collecting extraction hints must not save config")
+    monkeypatch.setattr(config, "save_config", unexpected_save)
+
+
+@pytest.mark.parametrize("stored", [None, "", {}, {"profiles": {}},
+                                   {"profiles": {"empty": {}}}])
+def test_missing_or_empty_extraction_hints_use_defaults(
+        isolated_config_paths, read_only_hints, stored):
+    path, analysis_path = isolated_config_paths
+    if stored is not None:
+        path.write_text(stored if isinstance(stored, str) else toml.dumps(stored),
+                        encoding="utf-8")
+    before = path.read_bytes() if path.exists() else None
+
+    assert config.get_extraction_hints() == {
+        "id_hints": ["cell_id"],
+        "categorical_hints": ["image_name"],
+        "extractor_hints": BUILTIN_EXTRACTORS,
+        "channel_hints": [],
+    }
+    assert path.exists() == (stored is not None)
+    assert (path.read_bytes() if path.exists() else None) == before
+    assert not analysis_path.exists()
+
+
+def test_extraction_hints_include_inactive_profiles_and_exact_names(
+        tmp_path, read_only_hints):
+    path = _write(tmp_path, {
+        "current_profile": "active",
+        "profiles": {
+            "inactive": {
+                "unique_cell_id_col": " Cell ID ", "fov_name_col": " Field ",
+                "categorical_cols": ["Treatment", "treatment", "Treatment"],
+                "all_feature_extractors": ["Custom extractor", "Lifetime fit"],
+                "num_channels": 2,
+                "ch1": {"channel_name": "NADH",
+                        "Decay (2D)": {"selected_feature_extractors": ["Channel only"]},
+                        "Decay (3/4D)": {"selected_feature_extractors": ["Other input"]}},
+                "ch2": {"channel_name": ""},
+            },
+            "active": {
+                "unique_cell_id_col": "cell_id", "fov_name_col": "image_name",
+                "categorical_cols": ["treatment", "Batch", " Cell ID ", ""],
+                "all_feature_extractors": ["Custom extractor", "custom extractor"],
+                "num_channels": 2,
+                "ch1": {"channel_name": "nadh",
+                        "Decay (2D)": {"selected_feature_extractors": ["Channel only"]}},
+            },
+        },
+    })
+    before = path.read_bytes()
+
+    assert config.get_extraction_hints() == {
+        "id_hints": [" Cell ID ", "cell_id"],
+        "categorical_hints": ["Treatment", "treatment", " Field ", "Batch",
+                              " Cell ID ", "image_name"],
+        "extractor_hints": BUILTIN_EXTRACTORS + ["Custom extractor", "Channel only",
+                                                  "Other input", "custom extractor"],
+        "channel_hints": ["NADH", "nadh", "ch2"],
+    }
+    assert path.read_bytes() == before
+    # Existing extraction accessors still read the active profile only.
+    assert config.get_unique_cell_id_col() == "cell_id"
+    assert config.get_fov_name_col() == "image_name"
+    assert config.get_categorical_cols() == ["treatment", "Batch", " Cell ID ", ""]
+    assert config.get_all_feature_extractors() == ["Custom extractor", "custom extractor"]
+
+
+@pytest.mark.parametrize(("settings", "ids", "categories"), [
+    ({}, ["cell_id"], ["image_name"]),
+    ({"unique_cell_id_col": "", "fov_name_col": ""}, [], []),
+    ({"unique_cell_id_col": "renamed", "fov_name_col": "fov"}, ["renamed"], ["fov"]),
+])
+def test_extraction_hints_distinguish_missing_and_blank_names(
+        tmp_path, read_only_hints, settings, ids, categories):
+    _write(tmp_path, {"profiles": {"one": settings, "duplicate": dict(settings)}})
+    hints = config.get_extraction_hints()
+    assert hints["id_hints"] == ids
+    assert hints["categorical_hints"] == categories
+
+
+def test_legacy_extraction_hints_normalize_only_in_memory(
+        isolated_config_paths, read_only_hints):
+    path, _ = isolated_config_paths
+    path.write_text('# Keep this legacy file exactly as stored.\n'
+                    'unique_cell_id_col = "object"\n'
+                    'categorical_cols = ["Condition", "Condition"]\n'
+                    'all_feature_extractors = ["Legacy extractor"]\n', encoding="utf-8")
+    before = path.read_bytes()
+
+    assert config.get_extraction_hints() == {
+        "id_hints": ["object"], "categorical_hints": ["Condition", "image_name"],
+        "extractor_hints": BUILTIN_EXTRACTORS + ["Legacy extractor"],
+        "channel_hints": [],
+    }
+    assert path.read_bytes() == before
+
+
+def test_builtin_extractor_names_keep_the_configuration_order():
+    assert list(config.BUILTIN_FEATURE_EXTRACTORS) == BUILTIN_EXTRACTORS

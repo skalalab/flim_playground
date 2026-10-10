@@ -36,54 +36,35 @@ NO_GROUP = "—"
 UNGROUPED_LABEL = "Uncategorized"
 
 
-def _is_whole_number_column(series):
-    """Whether every value is whole, including integers stored as floats.
+def detect_column_roles(df, guess_row_id=True, id_hints=(),
+                        categorical_hints=(), assigned_roles=None):
+    """Infer only unknown columns using exact name hints, then emptiness and dtype.
 
-    Modulo rejects fractional and infinite values; unsupported types return False.
+    Preserve every present assignment, including a cleared former Row ID. With no
+    assigned Row ID, choose the leftmost unassigned name in id_hints before reading
+    values. Its raw values are validated later, never used to select a replacement.
+    Numeric coercion belongs to dataset_io.detect_roles, not this pure helper.
     """
-    try:
-        return bool(((series % 1) == 0).all())
-    except TypeError:
-        return False
-
-
-def _is_row_id_candidate(series):
-    """Whether the values qualify as a row-ID candidate, regardless of name or position.
-
-    Values must be non-null and distinct. Booleans are excluded; other numeric
-    values must be whole numbers, and nonnumeric values must stay unique as text.
-    A unique integer measurement can qualify, so the review table exposes the guess.
-    """
-    if series.isna().any() or series.nunique(dropna=False) != len(series):
-        return False
-    if pd.api.types.is_bool_dtype(series):
-        return False        # Booleans remain categorical even when unique.
-    if not pd.api.types.is_numeric_dtype(series):
-        return series.astype(str).is_unique
-    return _is_whole_number_column(series)
-
-
-def detect_column_roles(df, guess_row_id=True):
-    """Guess `{column: role}` from values and dtypes, without cardinality cutoffs.
-
-    Empty columns are Ignore. The leftmost row-ID candidate takes Row ID unless
-    `guess_row_id=False`. Remaining numeric columns are Numerical, except booleans;
-    all others are Categorical. `dataset_io.detect_roles` applies numeric coercion
-    before calling this function.
-    """
+    assigned = {col: role for col, role in (assigned_roles or {}).items()
+                if col in df.columns}
+    row_id = None
+    if guess_row_id and ROLE_ROW_ID not in assigned.values():
+        ids = set(id_hints)
+        row_id = next((col for col in df.columns
+                       if col not in assigned and col in ids), None)
+    categories = set(categorical_hints)
     roles = {}
-    row_id_taken = not guess_row_id
     for col in df.columns:
+        if col in assigned:
+            roles[col] = assigned[col]
+            continue
+        if col == row_id:
+            roles[col] = ROLE_ROW_ID
+            continue
         series = df[col]
         if series.isna().all():
-            # Empty columns are dropped by the loader but still belong to the
-            # profile's known columns. Their float dtype must not imply a feature.
             roles[col] = ROLE_IGNORE
-        elif not row_id_taken and _is_row_id_candidate(series):
-            roles[col] = ROLE_ROW_ID
-            row_id_taken = True
-        elif pd.api.types.is_bool_dtype(series):
-            # pandas considers bool numeric; the analysis treats it as a category.
+        elif col in categories or pd.api.types.is_bool_dtype(series):
             roles[col] = ROLE_CATEGORICAL
         elif pd.api.types.is_numeric_dtype(series):
             roles[col] = ROLE_NUMERICAL
@@ -121,35 +102,88 @@ def sibling_groups(keys_and_groups):
             for key, groups in by_key.items() if len(groups) == 1}
 
 
-def detect_column_groups(columns, existing_groups=None, known_groups=None):
-    """Guess `{column: group}` for new columns, omitting ungrouped columns.
+def _measurement_name(name, extractors):
+    """Return (full extractor/channel key, channel), or None for other names."""
+    head, separator, feature = name.partition(": ")
+    if not separator or not feature:
+        return None
+    for extractor in extractors:
+        prefix = extractor + "_"
+        if head.startswith(prefix) and len(head) > len(prefix):
+            return head, head[len(prefix):]
+    return None
 
-    Pass only columns the profile does not know, preserving saved assignments.
-    In order, each prefix follows its known siblings' shared group, joins an
-    existing group of the same name, or forms a group with another new column
-    sharing that prefix.
 
-    `existing_groups` supplies group names, including empty groups; a mapping or
-    iterable is accepted. `known_groups` maps saved column names to group names.
+def recognized_channel_names(columns, extractor_hints=(), channel_hints=()):
+    """Recognize channels from name hints and full measurement names, in order.
+
+    Column roles do not affect channel recognition. This lets the working-copy
+    caller include all present and saved names without supplying group assignments
+    from nonnumerical columns.
     """
-    existing = set(existing_groups or ())
-    siblings = sibling_groups(
-        (_prefix(col), group) for col, group in (known_groups or {}).items())
-    groups = {}
-    rest = []
+    extractors = sorted(set(extractor_hints), key=len, reverse=True)
+    channels = list(dict.fromkeys(channel_hints))
     for col in columns:
-        prefix = _prefix(col)
-        if prefix is None:
-            continue
-        if prefix in siblings:
-            groups[col] = siblings[prefix]
-        elif prefix in existing:
-            groups[col] = prefix
-        else:
-            rest.append((col, prefix))
+        measurement = _measurement_name(col, extractors)
+        if measurement and measurement[1] not in channels:
+            channels.append(measurement[1])
+    return channels
 
-    shared = Counter(prefix for _col, prefix in rest)
-    groups.update({col: prefix for col, prefix in rest if shared[prefix] > 1})
+
+def detect_column_groups(columns, existing_groups=None, known_groups=None,
+                         extractor_hints=(), channel_hints=()):
+    """Infer groups for NEW Numerical columns from explicit naming hints.
+
+    Saved sibling choices take priority, including None for an ungrouped sibling.
+    Recognized measurements use the full extractor/channel name even as singletons;
+    Derived columns use Derived Features. Recognized channel bookkeeping can join
+    saved bookkeeping siblings or a group named that channel, but creates no group.
+    Other prefixes join saved siblings, an existing name, or 2+ new siblings.
+    Caller-owned existing names include empty groups and retain their own order.
+    """
+    columns = list(columns)
+    known = known_groups or {}
+    existing = set(existing_groups or ())
+    extractors = sorted(set(extractor_hints), key=len, reverse=True)
+    channels = sorted(recognized_channel_names(
+        [*columns, *known], extractor_hints=extractors,
+        channel_hints=channel_hints), key=len, reverse=True)
+
+    def identity(col):
+        measurement = _measurement_name(col, extractors)
+        if measurement:
+            return "measurement", measurement[0]
+        if col.startswith("Derived: "):
+            return "derived", "Derived Features"
+        for channel in channels:
+            if col.startswith(channel + "_"):
+                return "bookkeeping", channel
+        return "generic", _prefix(col)
+
+    def saved_group(group):
+        return None if not group or group in (NO_GROUP, UNGROUPED_LABEL) else group
+
+    siblings = sibling_groups((identity(col), saved_group(group))
+                              for col, group in known.items())
+    identities = {col: identity(col) for col in columns}
+    shared = Counter(key for kind, key in identities.values()
+                     if kind == "generic" and key is not None)
+    groups = {}
+    for col, (kind, key) in identities.items():
+        if key is None:
+            continue
+        if (kind, key) in siblings:
+            group = siblings[kind, key]
+        elif kind in ("measurement", "derived"):
+            group = key
+        elif key in existing:
+            group = key
+        elif kind == "generic" and shared[key] >= 2:
+            group = key
+        else:
+            group = None
+        if group and group != NO_GROUP:
+            groups[col] = group
     return groups
 
 

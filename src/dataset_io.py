@@ -8,12 +8,14 @@ import streamlit as st
 from pandas.errors import EmptyDataError, ParserError
 
 from src.column_roles import (
+    NO_GROUP,
     ROLE_NUMERICAL,
     ROLE_ROW_ID,
     UNGROUPED_LABEL,
     code_span,
     detect_column_groups,
     detect_column_roles,
+    recognized_channel_names,
     validate_roles,
 )
 from src.config import get_all_feature_extractors
@@ -647,13 +649,33 @@ def _numeric_names(coerced):
             if pd.api.types.is_numeric_dtype(coerced[col])}
 
 
-def detect_roles(df, guess_row_id=True):
-    """Guess {column: role} after applying the analysis' numeric coercion to a copy.
+def _roles_and_numeric(df, guess_row_id=True, id_hints=(),
+                       categorical_hints=(), assigned_roles=None):
+    """Select the ID on raw input, then classify a single coerced copy."""
+    raw_roles = detect_column_roles(
+        df, guess_row_id=guess_row_id, id_hints=id_hints,
+        categorical_hints=categorical_hints, assigned_roles=assigned_roles)
+    assigned = dict(assigned_roles or {})
+    assigned.update({col: role for col, role in raw_roles.items()
+                     if role == ROLE_ROW_ID})
+    coerced = _as_the_analysis_reads_it(df)
+    roles = detect_column_roles(coerced, guess_row_id=False,
+                                categorical_hints=categorical_hints,
+                                assigned_roles=assigned)
+    return roles, _numeric_names(coerced)
 
-    Coercion lets mostly numeric text columns receive the same role the loader uses.
+
+def detect_roles(df, guess_row_id=True, id_hints=(),
+                 categorical_hints=(), assigned_roles=None):
+    """Infer unknown roles using hints and the analysis' 1% numeric coercion.
+
+    Select hinted IDs on raw input before coercion; explicit assignments win.
+    Neither this helper nor its pure role detector reads configuration.
     """
-    return detect_column_roles(_as_the_analysis_reads_it(df),
-                               guess_row_id=guess_row_id)
+    roles, _numeric = _roles_and_numeric(
+        df, guess_row_id=guess_row_id, id_hints=id_hints,
+        categorical_hints=categorical_hints, assigned_roles=assigned_roles)
+    return roles
 
 
 def numeric_column_names(df):
@@ -731,40 +753,39 @@ def review_blocking_reason(df, roles):
 
 
 def build_working_copy(df, profile_roles=None, profile_groups=None,
-                       profile_group_names=None):
-    """Build (roles, groups, numeric_columns) for the uploaded file.
+                       profile_group_names=None, id_hints=(), categorical_hints=(),
+                       extractor_hints=(), channel_hints=()):
+    """Return (roles, groups, numeric_columns), preserving present saved decisions.
 
-    Keep saved roles and groups for columns present in the file, guess assignments
-    for new columns, and omit absent columns. Only new Numerical columns receive
-    group guesses, using stored groups as sibling evidence.
-
-    profile_group_names includes empty groups that the column mapping cannot
-    represent. Share one coerced copy between role guessing and numeric detection.
-    All profile state comes from the caller; this function reads no configuration.
+    Only unknown columns receive roles or groups. All hints and profile state come
+    from the caller, with no configuration reads. Missing known Numerical columns
+    still supply sibling evidence, including explicit ungrouped choices. Empty
+    group names and their order remain in the caller's profile_group_names list.
     """
     profile_roles = profile_roles or {}
     profile_groups = profile_groups or {}
-    # Preserve a stored Row ID only when its column is present. Otherwise allow
-    # a new candidate, while avoiding a guess that competes with a retained ID.
-    keeps_row_id = any(profile_roles.get(col) == ROLE_ROW_ID for col in df.columns)
-    # Reuse one coercion pass for both roles and the returned numeric set.
-    coerced = _as_the_analysis_reads_it(df)
-    detected = detect_column_roles(coerced, guess_row_id=not keeps_row_id)
-    roles = {col: profile_roles.get(col, detected[col]) for col in df.columns}
+    roles, numeric = _roles_and_numeric(
+        df, id_hints=id_hints, categorical_hints=categorical_hints,
+        assigned_roles=profile_roles)
     groups = {col: profile_groups[col] for col in df.columns
               if col in profile_roles and col in profile_groups}
     fresh = [col for col in df.columns
              if col not in profile_roles and roles[col] == ROLE_NUMERICAL]
-    existing = set(profile_groups.values()) | set(profile_group_names or ())
-    # User tables use prefix grouping independently of extraction configuration.
-    groups.update(detect_column_groups(fresh, existing_groups=existing,
-                                       known_groups=profile_groups))
-    # Merge the reserved display label into the ungrouped slot so the picker
-    # cannot show duplicate labels with different stored values.
+    existing = list(dict.fromkeys([*(profile_group_names or ()),
+                                  *profile_groups.values()]))
+    known = {col: profile_groups.get(col) for col, role in profile_roles.items()
+             if role == ROLE_NUMERICAL}
+    channels = recognized_channel_names(
+        [*df.columns, *profile_roles], extractor_hints=extractor_hints,
+        channel_hints=channel_hints)
+    groups.update(detect_column_groups(
+        fresh, existing_groups=existing, known_groups=known,
+        extractor_hints=extractor_hints, channel_hints=channels))
     return (roles,
             {col: group for col, group in groups.items()
-             if roles.get(col) == ROLE_NUMERICAL and group != UNGROUPED_LABEL},
-            _numeric_names(coerced))
+             if roles.get(col) == ROLE_NUMERICAL and group
+             and group not in (NO_GROUP, UNGROUPED_LABEL)},
+            numeric)
 
 
 def coerce_majority_numeric_cols(df, skip_cols):

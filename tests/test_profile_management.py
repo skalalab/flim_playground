@@ -5,10 +5,9 @@ from src.column_roles import ROLE_CATEGORICAL, ROLE_IGNORE, ROLE_NUMERICAL, ROLE
 
 
 @pytest.fixture
-def acw(tmp_path, monkeypatch):
+def acw(isolated_config_paths):
     from src.widgets import analysis_config_widgets as module
 
-    monkeypatch.setattr(module, "_ANALYSIS_CONFIG_PATH", tmp_path / "analysis_config.toml")
     module.st.session_state.pop("current_profile", None)
     return module
 
@@ -268,7 +267,7 @@ def test_reuploaded_export_labels_follow_ordinary_detection_and_review(column):
 
     data = pd.DataFrame({"id": ["a", "b", "c", "d"], "measurement": [1.5, 2.5, 3.5, 4.5],
                          column: ["Low", "Low", "High", "High"]})
-    roles = detect_roles(data)
+    roles = detect_roles(data, id_hints=("id",))
     assert roles[column] == ROLE_CATEGORICAL
     args = working_copy_arguments(roles, {})
     assert args["categorical_cols"] == [column]

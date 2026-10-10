@@ -144,7 +144,8 @@ def test_interpret_table_rejects_a_named_row_id_the_frame_lacks():
 # --------------------------------------------------------------- composition
 
 @pytest.mark.parametrize("suffix", [".csv", ".tsv", ".xlsx"])
-def test_load_table_still_returns_what_the_two_halves_produce(suffix, monkeypatch):
+def test_load_table_still_returns_what_the_two_halves_produce(
+        suffix, monkeypatch, isolated_config_paths):
     """Extraction load_table matches read_table plus interpret_table on every read branch."""
     monkeypatch.setattr(dataset_io, "get_unique_row_id_col", lambda *a, **k: "cell_id")
     monkeypatch.setattr(dataset_io, "get_fov_name_col_analysis", lambda *a, **k: "")

@@ -174,7 +174,7 @@ def test_facet_selection_survives_review_and_remount_without_warnings():
 
 
 @pytest.fixture
-def page(monkeypatch):
+def page(monkeypatch, install_page_table):
     frame = pd.DataFrame({"cell_id": [f"c{i}" for i in range(8)],
                           "treatment": ["A", "B"] * 4,
                           "patient": ["p1", "p2", "p3", "p4"] * 2,
@@ -184,9 +184,7 @@ def page(monkeypatch):
                         lambda *a, **k: ["treatment", "patient"])
     monkeypatch.setattr(acw, "get_fov_name_col_analysis", lambda *a, **k: None)
     monkeypatch.setattr(acw, "get_unique_row_id_col", lambda *a, **k: "cell_id")
-    monkeypatch.setattr(dataset_io, "load_table", lambda *a, **k: (
-        frame.copy(), {"Uncategorized Features": ["feature_x", "feature_y"]},
-        True, ",", "cell_id"))
+    install_page_table(frame.copy(), {"Uncategorized Features": ["feature_x", "feature_y"]}, "cell_id", ",")
     seen = {}
 
     def capture_plot(df, **kwargs):

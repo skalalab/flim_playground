@@ -381,13 +381,12 @@ def test_fullscreen_does_not_apply_the_normal_viewport_height_cap():
     assert result["tall"]["layout"]["yaxis"]["domain"] == pytest.approx([.275, .725])
 
 
-def test_data_analysis_routes_dimension_reduction_through_responsive_wrapper(monkeypatch):
+def test_data_analysis_routes_dimension_reduction_through_responsive_wrapper(monkeypatch, install_page_table):
     frame = pd.DataFrame(dict(cell_id=["a", "b", "c"], first=[1., 3., 2.], second=[3., 2., 1.]))
     monkeypatch.setattr(acw, "get_categorical_cols_analysis", lambda *a, **k: [])
     monkeypatch.setattr(acw, "get_fov_name_col_analysis", lambda *a, **k: None)
     monkeypatch.setattr(acw, "get_unique_row_id_col", lambda *a, **k: "cell_id")
-    monkeypatch.setattr(dataset_io, "load_table", lambda *a, **k: (
-        frame.copy(), {"Uncategorized Features": ["first", "second"]}, True, ",", "cell_id"))
+    install_page_table(frame.copy(), {"Uncategorized Features": ["first", "second"]}, "cell_id", ",")
     monkeypatch.setattr(multivar, "dimension_reduction_plot", lambda *a, **k: _figure())
     monkeypatch.setattr(export_script, "generate_script", lambda state: "# test")
     seen = []

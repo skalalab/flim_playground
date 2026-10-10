@@ -166,17 +166,17 @@ def _analysis_page(monkeypatch, url):
     return at
 
 
-def test_online_upload_starts_on_the_visitors_own_table(monkeypatch):
-    # Data Extraction is not part of that deployment, so its output is the unlikely upload.
+def test_online_upload_links_to_the_desktop_data_extraction(monkeypatch):
     at = _analysis_page(monkeypatch, "https://flim-playground.streamlit.app/")
-    assert at.checkbox[0].value is True
-    assert at.session_state._use_data_extraction is False
-    # "Data Extraction" can only mean the download from here.
-    assert _INSTALL_URL in at.checkbox[0].help
+    assert not any("another source" in w.label for w in at.checkbox)
+    assert "_use_data_extraction" not in at.session_state.filtered_state
+    assert _INSTALL_URL in at.info[0].value
+    assert at.get("file_uploader")[0].proto.label == "Upload your table"
 
 
-def test_full_app_upload_starts_on_data_extraction_output(monkeypatch):
+def test_full_app_upload_links_to_data_extraction(monkeypatch):
     at = _analysis_page(monkeypatch, None)
-    assert at.checkbox[0].value is False
-    assert at.session_state._use_data_extraction is True
-    assert _INSTALL_URL not in at.checkbox[0].help
+    assert not any("another source" in w.label for w in at.checkbox)
+    assert "_use_data_extraction" not in at.session_state.filtered_state
+    assert "[Data Extraction](/data_extraction)" in at.info[0].value
+    assert at.info[0].value.startswith("**Upload a dataset to get started**: your own table or one from ")

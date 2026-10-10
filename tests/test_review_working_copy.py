@@ -196,7 +196,7 @@ def frame():
 
 
 def test_with_no_profile_every_column_is_detected(frame):
-    roles, _groups, _numeric = build_working_copy(frame)
+    roles, _groups, _numeric = build_working_copy(frame, id_hints=["cell_id"])
     assert roles == {
         "cell_id": ROLE_ROW_ID,
         "treatment": ROLE_CATEGORICAL,
@@ -220,7 +220,7 @@ def test_a_profile_that_calls_the_identifier_a_measurement_is_obeyed():
     stored = {"alcohol": ROLE_NUMERICAL, "quality": ROLE_NUMERICAL,
               "wine_id": ROLE_NUMERICAL}
 
-    assert detect_roles(frame)["wine_id"] == ROLE_ROW_ID       # what the guess says
+    assert detect_roles(frame, id_hints=["wine_id"])["wine_id"] == ROLE_ROW_ID       # what the guess says
     roles, _groups, _numeric = build_working_copy(frame, profile_roles=stored)
     assert roles == stored                                     # what the profile says
 
@@ -228,7 +228,7 @@ def test_a_profile_that_calls_the_identifier_a_measurement_is_obeyed():
 def test_a_new_column_is_still_guessed_beside_a_profile_that_named_no_identifier():
     """A profile with no Row ID does not prevent a new column from becoming one."""
     frame = pd.DataFrame({"alcohol": [9.4, 9.8, 10.1], "wine_id": [1, 2, 3]})
-    roles, _groups, _numeric = build_working_copy(frame, profile_roles={"alcohol": ROLE_NUMERICAL})
+    roles, _groups, _numeric = build_working_copy(frame, profile_roles={"alcohol": ROLE_NUMERICAL}, id_hints=["wine_id"])
     assert roles["wine_id"] == ROLE_ROW_ID
 
 
@@ -278,8 +278,8 @@ def test_grouping_never_reconsiders_a_column_the_profile_knows(frame):
     _roles, groups, _numeric = build_working_copy(
         frame, profile_roles=profile_roles, profile_groups={})
     assert "nadh_t1_mean" not in groups
-    assert groups["nadh_t2_mean"] == "nadh"
-    assert groups["nadh_t3_mean"] == "nadh"
+    assert "nadh_t2_mean" not in groups
+    assert "nadh_t3_mean" not in groups
 
 
 def test_a_column_the_file_lacks_gets_no_row(frame):
@@ -341,7 +341,7 @@ def test_build_working_copy_hands_back_the_same_numeric_set_as_the_accessor():
         "Area": [100.0, 120.0, 140.0],
     })
 
-    _roles, _groups, numeric = build_working_copy(frame)
+    _roles, _groups, numeric = build_working_copy(frame, id_hints=["cell_id"])
 
     assert numeric == numeric_column_names(frame)
     assert "Area" in numeric and "text" not in numeric
@@ -354,7 +354,7 @@ def test_blocking_a_comma_decimal_table_says_why_it_has_no_measurements():
     from src.dataset_io import review_blocking_reason
 
     df = pd.DataFrame({"cell_id": [1, 2], "t1": ["480,5", "471,2"]})
-    roles, _groups, _numeric = build_working_copy(df)
+    roles, _groups, _numeric = build_working_copy(df, id_hints=["cell_id"])
     reason = review_blocking_reason(df, roles)
     assert "Numerical" in reason
     assert "decimal point as a comma" in reason
@@ -394,7 +394,7 @@ def test_the_guess_comes_back_when_the_profiles_identifier_is_not_in_this_file(f
     """
     renamed = frame.rename(columns={"cell_id": "roi_id"})
     roles, _groups, _numeric = build_working_copy(
-        renamed, profile_roles={"cell_id": ROLE_ROW_ID, "treatment": ROLE_CATEGORICAL})
+        renamed, profile_roles={"cell_id": ROLE_ROW_ID, "treatment": ROLE_CATEGORICAL}, id_hints=["roi_id"])
     assert [col for col, role in roles.items() if role == ROLE_ROW_ID] == ["roi_id"]
 
 
@@ -490,3 +490,67 @@ def test_an_empty_column_marked_numerical_does_not_count_as_a_measurement():
     df = pd.DataFrame({"cell_id": [1, 2], "blank": [None, None]})
     roles = {"cell_id": ROLE_ROW_ID, "blank": ROLE_NUMERICAL}
     assert review_blocking_reason(df, roles) != ""
+
+
+@pytest.mark.parametrize("values", [[1, "1", "c"], [None, None, None], ["a", None, "c"], ["a", "a", "c"]])
+def test_bad_hinted_id_stays_assigned_and_blocks_instead_of_trying_the_next(values):
+    from src.dataset_io import review_blocking_reason
+    df = pd.DataFrame({"cell_id": values, "uuid": ["x", "y", "z"], "area": [100, 200, 300]})
+    original = df.copy(deep=True)
+    roles, _groups, _numeric = build_working_copy(df, id_hints=["cell_id", "uuid"])
+    assert roles == {"cell_id": ROLE_ROW_ID, "uuid": ROLE_CATEGORICAL, "area": ROLE_NUMERICAL}
+    assert "cell_id" in review_blocking_reason(df, roles)
+    pd.testing.assert_frame_equal(df, original)
+
+
+def test_clearing_a_saved_id_does_not_guess_that_known_column_again():
+    df = pd.DataFrame({"cell_id": [1, 2], "area": [100, 200]})
+    roles, _groups, numeric = build_working_copy(df, profile_roles={"cell_id": ROLE_NUMERICAL}, id_hints=["cell_id"])
+    assert roles == {"cell_id": ROLE_NUMERICAL, "area": ROLE_NUMERICAL}
+    assert numeric == {"cell_id", "area"}
+
+
+def test_saved_roles_beat_all_hints_and_groups_remain_numerical_only():
+    df = pd.DataFrame({"cell_id": [1, 2], "code": [3, 4], "Lifetime fit_NADH: T1": [5, 6]})
+    saved = {"cell_id": ROLE_IGNORE, "code": ROLE_NUMERICAL, "Lifetime fit_NADH: T1": ROLE_CATEGORICAL}
+    roles, groups, _numeric = build_working_copy(df, profile_roles=saved,
+        profile_groups={col: "stored" for col in saved}, id_hints=["cell_id"],
+        categorical_hints=["code"], extractor_hints=["Lifetime fit"])
+    assert roles == saved and groups == {"code": "stored"}
+
+
+def test_saved_ungrouped_absent_numerical_siblings_are_evidence():
+    df = pd.DataFrame({"Lifetime fit_NADH: T2": [5, 6]})
+    _roles, groups, _numeric = build_working_copy(df,
+        profile_roles={"Lifetime fit_NADH: T1": ROLE_NUMERICAL}, extractor_hints=["Lifetime fit"])
+    assert groups == {}
+
+
+def test_empty_named_groups_allow_new_columns_to_join_without_reordering_caller_names():
+    names = ["empty", "nadh", "other"]
+    df = pd.DataFrame({"nadh_t1": [5, 6]})
+    _roles, groups, _numeric = build_working_copy(df, profile_group_names=names)
+    assert groups == {"nadh_t1": "nadh"}
+    assert names == ["empty", "nadh", "other"]
+
+
+@pytest.mark.parametrize("saved_role", [ROLE_CATEGORICAL, ROLE_IGNORE])
+@pytest.mark.parametrize("present", [False, True])
+def test_nonnumerical_measurement_names_recognize_channels_without_sibling_groups(saved_role, present):
+    measurement = "Lifetime fit_ch_long: T1"
+    columns = {"ch_long_amp": [5, 6], "ch_long_offset": [7, 8]}
+    if present:
+        columns[measurement] = ["a", "b"]
+    df = pd.DataFrame(columns)
+    _roles, groups, _numeric = build_working_copy(df,
+        profile_roles={measurement: saved_role}, profile_groups={measurement: "lifetime"},
+        extractor_hints=["Lifetime fit"])
+    assert groups == {}
+
+
+def test_nonnumerical_saved_sibling_cannot_attract_a_new_measurement():
+    df = pd.DataFrame({"Lifetime fit_NADH: T2": [5, 6]})
+    _roles, groups, _numeric = build_working_copy(df,
+        profile_roles={"Lifetime fit_NADH: T1": ROLE_CATEGORICAL},
+        profile_groups={"Lifetime fit_NADH: T1": "category group"}, extractor_hints=["Lifetime fit"])
+    assert groups == {"Lifetime fit_NADH: T2": "Lifetime fit_NADH"}

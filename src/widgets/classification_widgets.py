@@ -12,7 +12,11 @@ from src.classify import (
 from src.emojis import happy_emoji, sad_emoji
 from src.vis.plot_defaults import DEFAULT_AXIS_LABEL_FONT_SIZE, DEFAULT_LEGEND_FONT_SIZE
 from src.widgets.visualization_widgets import plot_config_widget
-from src.widgets.analysis_widget_state import control_default, number_input_default
+from src.widgets.analysis_widget_state import (
+    categorical_default,
+    control_default,
+    number_input_default,
+)
 
 CLASSIFIER_OPTIONS = ["Random Forest", "Gradient Boosting", "SVM", "Logistic Regression"]
 
@@ -176,7 +180,12 @@ def classifier_options_widget(df, categorical_cols, fov_name_col, selected_featu
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         if len(available_categories) > 0:
-            classify_by_options = st.multiselect("Classify by", available_categories, default=control_default(st.session_state, "classify_by_multiselect", available_categories[-1]), key="classify_by_multiselect")
+            classify_by_options = st.multiselect(
+                "Classify by", available_categories,
+                default=control_default(st.session_state, "classify_by_multiselect",
+                                        categorical_default(available_categories)),
+                key="classify_by_multiselect",
+            )
         else:
             classify_by_options = []
     with col2:

@@ -13,6 +13,7 @@ from src.column_roles import (
 )
 from src.config import (
     get_categorical_cols,
+    get_extraction_hints,
     get_fov_name_col,
     get_persistent_dir,
     get_unique_cell_id_col,
@@ -167,6 +168,24 @@ def profile_column_roles(profile_cfg=None):
             if col:
                 roles[col] = role
     return roles
+
+
+def get_analysis_hints() -> dict[str, list[str]]:
+    """Combine extraction hints with effective categories from all analysis profiles.
+
+    Profile role precedence excludes stored Row IDs even when a categorical or
+    legacy FOV list repeats them. Other saved roles and groups are not hints.
+    Reading and legacy normalization do not persist any settings.
+    """
+    hints = get_extraction_hints()
+    cfg = _migrate_old_config_to_profiles(load_config(_ANALYSIS_CONFIG_PATH))
+    for profile in cfg.get("profiles", {}).values():
+        roles = profile_column_roles(profile)
+        names = (profile.get("categorical_cols") or []) + [profile.get("fov_name_col") or ""]
+        hints["categorical_hints"].extend(
+            name for name in names if roles.get(name) == ROLE_CATEGORICAL)
+    hints["categorical_hints"] = _dedup(hints["categorical_hints"])
+    return hints
 
 
 def apply_column_roles(profile_cfg, roles):

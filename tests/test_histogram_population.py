@@ -27,7 +27,7 @@ def frame():
 @pytest.mark.parametrize("gmm", [False, True])
 @pytest.mark.parametrize("logged", [False, True])
 def test_page_keeps_individual_units_despite_stale_collapse_settings(
-    monkeypatch, gmm, logged
+    monkeypatch, gmm, logged, install_page_table
 ):
     from streamlit.testing.v1 import AppTest
     from src.vis import univar
@@ -36,8 +36,7 @@ def test_page_keeps_individual_units_despite_stale_collapse_settings(
     source = frame()
     source["day"] = source["day"].fillna("N/A")  # loader normalization
     monkeypatch.setattr(acw, "get_categorical_cols_analysis", lambda *a, **k: ["treatment", "dish", "day"])
-    monkeypatch.setattr(dataset_io, "load_table", lambda *a, **k: (
-        source, {"Uncategorized Features": [FEATURE]}, True, ",", "cell_id"))
+    install_page_table(source, {"Uncategorized Features": [FEATURE]}, "cell_id", ",")
     observed, captured = [], []
     function_name = "feature_gmm_plot" if gmm else "feature_histogram_plot"
     original = getattr(univar, function_name)

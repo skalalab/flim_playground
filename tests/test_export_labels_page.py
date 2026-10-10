@@ -27,7 +27,7 @@ def _with_component_tables(fig, dimensions=2):
 
 @pytest.mark.parametrize("method,legacy", [("Feature Histogram", "GMM_group"),
     ("2D Feature Distribution", "2D_GMM_group")])
-def test_page_captures_export_names_and_disables_both_downloads(monkeypatch, method, legacy):
+def test_page_captures_export_names_and_disables_both_downloads(monkeypatch, method, legacy, install_page_table):
     from src import dataset_io, export_script
     from src.vis import bivar, univar
     from src.widgets import analysis_config_widgets as acw, selection_widgets as sw, visualization_widgets as vw
@@ -37,8 +37,7 @@ def test_page_captures_export_names_and_disables_both_downloads(monkeypatch, met
     monkeypatch.setattr(acw, "get_categorical_cols_analysis", lambda *a, **k: [legacy])
     monkeypatch.setattr(acw, "get_fov_name_col_analysis", lambda *a, **k: None)
     monkeypatch.setattr(acw, "get_unique_row_id_col", lambda *a, **k: "id")
-    monkeypatch.setattr(dataset_io, "load_table", lambda *a, **k: (
-        source.copy(), {"Uncategorized Features": ["x", "y", g, s]}, True, ",", "id"))
+    install_page_table(source.copy(), {"Uncategorized Features": ["x", "y", g, s]}, "id", ",")
     monkeypatch.setattr(sw, "single_feature_select_widget", lambda *a, **k: "x")
     monkeypatch.setattr(sw, "twod_single_feature_select_widget", lambda *a, **k: ("x", "y"))
     monkeypatch.setattr(vw, "phasor_params_widget", lambda *a, **k: ("ch1", 1, .08))
@@ -103,7 +102,7 @@ def test_page_captures_export_names_and_disables_both_downloads(monkeypatch, met
 
 
 @pytest.fixture
-def grouping_page(monkeypatch):
+def grouping_page(monkeypatch, install_page_table):
     """Keep model output stable while the real page owns grouping and export state."""
     from src import dataset_io, export_script
     from src.vis import bivar, univar
@@ -116,8 +115,7 @@ def grouping_page(monkeypatch):
     monkeypatch.setattr(acw, "get_categorical_cols_analysis", lambda *a, **k: ["day", "treatment"])
     monkeypatch.setattr(acw, "get_fov_name_col_analysis", lambda *a, **k: None)
     monkeypatch.setattr(acw, "get_unique_row_id_col", lambda *a, **k: "id")
-    monkeypatch.setattr(dataset_io, "load_table", lambda *a, **k: (
-        source.copy(), {"Uncategorized Features": ["x", "y"]}, True, ",", "id"))
+    install_page_table(source.copy(), {"Uncategorized Features": ["x", "y"]}, "id", ",")
     monkeypatch.setattr(sw, "single_feature_select_widget", lambda *a, **k: "x")
     monkeypatch.setattr(sw, "twod_single_feature_select_widget", lambda *a, **k: ("x", "y"))
 

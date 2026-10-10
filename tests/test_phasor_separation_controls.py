@@ -79,7 +79,7 @@ def test_no_separator_is_default():
     assert new().session_state.result[3] is None
 
 
-def test_analysis_page_passes_separator_to_plot_and_export(monkeypatch):
+def test_analysis_page_passes_separator_to_plot_and_export(monkeypatch, install_page_table):
     from pathlib import Path
     import numpy as np
     import pandas as pd
@@ -94,8 +94,7 @@ def test_analysis_page_passes_separator_to_plot_and_export(monkeypatch):
     monkeypatch.setattr(acw, "get_categorical_cols_analysis", lambda *a, **k: ["day", "treatment"])
     monkeypatch.setattr(acw, "get_fov_name_col_analysis", lambda *a, **k: None)
     monkeypatch.setattr(acw, "get_unique_row_id_col", lambda *a, **k: "id")
-    monkeypatch.setattr(dataset_io, "load_table", lambda *a, **k:
-        (df.copy(), {"Uncategorized Features": [g,s]}, True, ",", "id"))
+    install_page_table(df.copy(), {"Uncategorized Features": [g,s]}, "id", ",")
     seen = {}
     def capture_plot(df, **kwargs):
         seen["plot"] = kwargs

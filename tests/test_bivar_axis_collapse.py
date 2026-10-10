@@ -10,6 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import pytest
 from streamlit.testing.v1 import AppTest
 
 from src.widgets.selection_widgets import resolve_pending_selection
@@ -33,7 +34,7 @@ def test_returns_select_when_every_menu_holds_the_sentinel():
 
 
 def test_resolves_display_name_back_to_full_column():
-    state = {"2d_x_menu_Lifetime fit_nadh": "t1"}
+    state = {"2d_x_menu_Lifetime fit_nadh": "nadh: t1"}
     assert (
         resolve_pending_selection(GROUPS, "2d_x", session_state=state)
         == "Lifetime fit_nadh: t1"
@@ -51,17 +52,17 @@ def test_resolves_derived_features_group_to_its_derived_prefix():
 
 
 def test_returns_select_when_stored_value_left_the_option_list():
-    # Taking t2 on x removes it from y; the pending probe must match y's reset to Select.
+    # A changed schema removes t2; the pending probe must match y's reset to Select.
     reduced = {
         "Lifetime fit_nadh": ["Lifetime fit_nadh: t1"],
         "Derived Features": ["Derived: ratio"],
     }
-    state = {"2d_y_menu_Lifetime fit_nadh": "t2"}
+    state = {"2d_y_menu_Lifetime fit_nadh": "nadh: t2"}
     assert resolve_pending_selection(reduced, "2d_y", session_state=state) == "Select"
 
 
 def test_key_prefix_scopes_the_lookup_to_one_axis():
-    state = {"2d_x_menu_Lifetime fit_nadh": "t1"}
+    state = {"2d_x_menu_Lifetime fit_nadh": "nadh: t1"}
     assert resolve_pending_selection(GROUPS, "2d_y", session_state=state) == "Select"
 
 
@@ -95,7 +96,7 @@ def test_fresh_run_shows_the_x_grid_expanded_and_hides_the_y_grid():
 
 def test_choosing_x_collapses_the_x_grid_and_reveals_the_y_grid():
     at = _run()
-    at.selectbox(X_MENU).select("t1").run()
+    at.selectbox(X_MENU).select("nadh: t1").run()
 
     assert len(at.expander) == 1
     assert at.expander[0].label == "X-axis — Lifetime fit_nadh: t1"
@@ -107,8 +108,8 @@ def test_choosing_x_collapses_the_x_grid_and_reveals_the_y_grid():
 
 def test_choosing_y_collapses_the_y_grid():
     at = _run()
-    at.selectbox(X_MENU).select("t1").run()
-    at.selectbox(Y_MENU).select("t2").run()
+    at.selectbox(X_MENU).select("nadh: t1").run()
+    at.selectbox(Y_MENU).select("nadh: t2").run()
 
     assert len(at.expander) == 2
     assert at.expander[0].label == "X-axis — Lifetime fit_nadh: t1"
@@ -120,8 +121,8 @@ def test_choosing_y_collapses_the_y_grid():
 def test_both_axes_chosen_renders_no_summary_box():
     # The expander labels already name both columns; no extra summary is needed.
     at = _run()
-    at.selectbox(X_MENU).select("t1").run()
-    at.selectbox(Y_MENU).select("t2").run()
+    at.selectbox(X_MENU).select("nadh: t1").run()
+    at.selectbox(Y_MENU).select("nadh: t2").run()
 
     assert len(at.info) == 0
 
@@ -129,9 +130,9 @@ def test_both_axes_chosen_renders_no_summary_box():
 def test_stealing_ys_feature_for_x_reopens_the_y_grid():
     # Taking y's feature on x resets y to Select and restores its expanded picker.
     at = _run()
-    at.selectbox(X_MENU).select("t1").run()
-    at.selectbox(Y_MENU).select("t2").run()
-    at.selectbox(X_MENU).select("t2").run()
+    at.selectbox(X_MENU).select("nadh: t1").run()
+    at.selectbox(Y_MENU).select("nadh: t2").run()
+    at.selectbox(X_MENU).select("nadh: t2").run()
 
     assert len(at.expander) == 1
     assert at.expander[0].label == "X-axis — Lifetime fit_nadh: t2"
@@ -140,7 +141,7 @@ def test_stealing_ys_feature_for_x_reopens_the_y_grid():
 
 def test_clearing_x_restores_the_plain_grid_and_hides_y():
     at = _run()
-    at.selectbox(X_MENU).select("t1").run()
+    at.selectbox(X_MENU).select("nadh: t1").run()
     at.selectbox(X_MENU).select("Select").run()
 
     assert len(at.expander) == 0
@@ -154,3 +155,30 @@ def test_derived_features_pick_labels_the_expander_with_its_real_column():
 
     assert at.expander[0].label == "X-axis — Derived: ratio"
     assert at.text[0].value == "x=Derived: ratio|y=Select"
+
+
+@pytest.mark.parametrize("columns", [
+    ["A_length", "A.length", "A_width"],
+    ["A_length", "A.length", "A_A_length", "A_width"],
+], ids=["label-disappears", "label-aliases-another-column"])
+def test_changing_x_preserves_y_when_shortened_labels_collide(columns, isolated_config_paths):
+    def app(columns):
+        import streamlit as st
+        from src.widgets.selection_widgets import twod_single_feature_select_widget
+
+        x, y = twod_single_feature_select_widget({"A": list(columns)}, data_extraction=False)
+        st.text(f"x={x}|y={y}")
+
+    at = AppTest.from_function(app, args=(columns,)).run()
+    at.selectbox("2d_x_menu_A").select("A_width").run()
+    at.selectbox("2d_y_menu_A").select("A_length").run()
+    assert not at.exception
+    assert at.text[0].value == "x=A_width|y=A_length"
+
+    at.selectbox("2d_x_menu_A").select("A.length").run()
+
+    assert not at.exception
+    assert at.text[0].value == "x=A.length|y=A_length"
+    assert at.selectbox("2d_y_menu_A").value == "A_length"
+    assert "A.length" not in at.selectbox("2d_y_menu_A").options
+    assert at.expander[1].label == "Y-axis — A_length"

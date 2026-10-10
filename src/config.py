@@ -5,6 +5,12 @@ from pathlib import Path
 import toml
 
 
+BUILTIN_FEATURE_EXTRACTORS = (
+    "Lifetime fit", "Lifetime fit free", "Intensity morphology",
+    "Intensity texture", "Dry-mass statistics", "Spatial texture",
+)
+
+
 def get_persistent_dir() -> Path:
     """Return a writable config directory outside the bundled app payload.
 
@@ -126,6 +132,39 @@ def _load_active_profile_cfg(config_path: Path | None = None) -> dict:
     cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
     current = cfg.get("current_profile", "default")
     return cfg.get("profiles", {}).get(current, {})
+
+
+def get_extraction_hints(config_path: Path | None = None) -> dict[str, list[str]]:
+    """Read ordered upload hints from every extraction profile without saving.
+
+    Missing ID/FOV settings use extraction defaults; explicit blanks add nothing.
+    Built-in extractors remain available before the Configuration page has run.
+    All names retain their exact spelling and their first-occurrence order.
+    """
+    cfg = _migrate_extraction_config_to_profiles(load_config(config_path))
+    profiles = cfg.get("profiles") or {"default": {}}
+    hints = {
+        "id_hints": [],
+        "categorical_hints": [],
+        "extractor_hints": list(BUILTIN_FEATURE_EXTRACTORS),
+        "channel_hints": [],
+    }
+    for profile in profiles.values():
+        hints["id_hints"].append(profile.get("unique_cell_id_col", "cell_id"))
+        hints["categorical_hints"].extend(profile.get("categorical_cols") or [])
+        hints["categorical_hints"].append(profile.get("fov_name_col", "image_name"))
+        hints["extractor_hints"].extend(profile.get("all_feature_extractors") or [])
+        for i in range(profile.get("num_channels", 0)):
+            channel_key = f"ch{i + 1}"
+            channel = profile.get(channel_key, {})
+            hints["channel_hints"].append(channel.get("channel_name", channel_key))
+            for settings in channel.values():
+                if isinstance(settings, dict):
+                    hints["extractor_hints"].extend(
+                        settings.get("selected_feature_extractors") or [])
+    return {kind: list(dict.fromkeys(name for name in names if name))
+            for kind, names in hints.items()}
+
 
 def get_current_profile_name(config_path: Path | None = None) -> str:
     cfg = _migrate_extraction_config_to_profiles(load_config(config_path))

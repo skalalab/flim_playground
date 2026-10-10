@@ -9,6 +9,7 @@ from src.vis.plot_defaults import (
     DEFAULT_POINT_SIZE,
 )
 from src.widgets.analysis_widget_state import (
+    categorical_default,
     control_default,
     number_input_default,
     preserve_analysis_controls,
@@ -395,7 +396,7 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
 
     # Resolve grouping before the point-encoding control. Seed and prune through
     # session state only, avoiding duplicate-default warnings from the multiselect.
-    default_color = [available_for_color[0]] if available_for_color else []
+    default_color = categorical_default(available_for_color)
     if COLOR_BY_KEY not in st.session_state:
         st.session_state[COLOR_BY_KEY] = default_color
     pruned_color = prune_to_options(

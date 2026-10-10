@@ -1,3 +1,5 @@
+import re
+
 import streamlit as st
 from src.widgets.multiselect_modes import (
     ALL_LABEL,
@@ -19,24 +21,29 @@ def reset_other_menus(selected_menu, menus):
 
 
 def feature_display_to_column(feature_list, feature_group, data_extraction=True):
-    """Map picker labels to their full DataFrame column names, preserving order.
+    """Split at the first _, . or : when the group identifies the shared prefix.
 
-    Data-extraction labels omit each column's prefix. Resolve them from the
-    columns themselves because group names can differ from those prefixes
-    (e.g. "Derived Features" contains "Derived: <name>"). Uncategorized
-    features and user-table columns retain their full names.
+    The legacy source flag is retained for callers; labels depend solely on the
+    group's current columns. Mixed/renamed groups and empty, duplicate or reserved
+    suffixes retain full names so real columns remain selectable.
     """
-    if data_extraction and "Uncategorized" not in feature_group:
-        return {col.split(": ", 1)[1]: col for col in feature_list}
+    parts = [re.split(r"[_.:]\s*", col, maxsplit=1) for col in feature_list]
+    if (parts and all(len(part) == 2 for part in parts)
+            and parts[0][0] and feature_group.startswith(parts[0][0])
+            and all(prefix == parts[0][0] and suffix
+                    and suffix not in ("Select", ALL_LABEL, EXCEPT_LABEL)
+                    for prefix, suffix in parts)
+            and len({suffix for _, suffix in parts}) == len(parts)):
+        return {suffix: col for col, (_, suffix) in zip(feature_list, parts)}
     return {col: col for col in feature_list}
 
 
-def resolve_pending_selection(feature_groups_dict, key_prefix, data_extraction=True, session_state=None):
+def resolve_pending_selection(feature_groups_dict, key_prefix, data_extraction=True,
+                              session_state=None, excluded_feature=None):
     """Return an axis's selected column before rendering, or "Select" if invalid.
 
     Read each group's keyed selection to choose the grid or expander layout.
-    Validate against current options: the x selection is removed before y
-    renders, so a saved y selection may no longer be available.
+    Validate against current options, excluding the x selection for y.
     """
     if session_state is None:
         session_state = st.session_state
@@ -46,11 +53,12 @@ def resolve_pending_selection(feature_groups_dict, key_prefix, data_extraction=T
             continue
         display_to_col = feature_display_to_column(
             feature_list, feature_group, data_extraction)
-        if stored in display_to_col:
+        if stored in display_to_col and display_to_col[stored] != excluded_feature:
             return display_to_col[stored]
     return "Select"
 
-def single_feature_select_widget(feature_groups_dict, data_extraction=True, n_per_row=2, key_prefix=""):
+def single_feature_select_widget(feature_groups_dict, data_extraction=True, n_per_row=2,
+                                 key_prefix="", excluded_feature=None):
     """Render mutually exclusive feature pickers with ``n_per_row`` groups per row."""
 
     menus = []
@@ -79,7 +87,8 @@ def single_feature_select_widget(feature_groups_dict, data_extraction=True, n_pe
             # Group labels may differ from column prefixes; use the column mapping.
             display_to_col = feature_display_to_column(
                 feature_groups_dict[feature_group], feature_group, data_extraction)
-            display_list = list(display_to_col.keys())
+            display_list = [label for label, column in display_to_col.items()
+                            if column != excluded_feature]
             with cols[i]:
                 current_selection = st.selectbox(
                     f"{feature_group}",
@@ -96,39 +105,39 @@ def single_feature_select_widget(feature_groups_dict, data_extraction=True, n_pe
 
     return selected_var
 
-def _axis_select_block(feature_groups_dict, axis_name, key_prefix, data_extraction=True, n_per_row=2):
+def _axis_select_block(feature_groups_dict, axis_name, key_prefix, data_extraction=True,
+                       n_per_row=2, excluded_feature=None):
     """Render an axis picker and return its selected column, or "Select".
 
     Show an unselected grid inline; place a selected grid in an expander named
     for the full column. The expander mounts collapsed: ``expanded`` sets its
     initial state, so a fresh container is needed to close it after a change.
     """
-    pending = resolve_pending_selection(feature_groups_dict, key_prefix, data_extraction)
+    pending = resolve_pending_selection(
+        feature_groups_dict, key_prefix, data_extraction,
+        excluded_feature=excluded_feature)
 
     if pending == "Select":
         st.write(f"**Select the {axis_name}-axis feature:** ")
         return single_feature_select_widget(
             feature_groups_dict, data_extraction=data_extraction,
-            n_per_row=n_per_row, key_prefix=key_prefix)
+            n_per_row=n_per_row, key_prefix=key_prefix, excluded_feature=excluded_feature)
 
     with st.expander(f"{axis_name.upper()}-axis — {pending}", expanded=False):
         return single_feature_select_widget(
             feature_groups_dict, data_extraction=data_extraction,
-            n_per_row=n_per_row, key_prefix=key_prefix)
+            n_per_row=n_per_row, key_prefix=key_prefix, excluded_feature=excluded_feature)
 
 
 def twod_single_feature_select_widget(feature_groups_dict, data_extraction=True, n_per_row=2):
     selected_x = _axis_select_block(
         feature_groups_dict, "x", "2d_x", data_extraction, n_per_row)
 
-    # Remove x after its picker renders and before building y options.
-    for feature_group in feature_groups_dict.keys():
-        if selected_x in feature_groups_dict[feature_group]:
-            feature_groups_dict[feature_group].remove(selected_x)
-
     if selected_x != "Select":
+        # Keep labels based on complete groups; exclude x only from y's options.
         selected_y = _axis_select_block(
-            feature_groups_dict, "y", "2d_y", data_extraction, n_per_row)
+            feature_groups_dict, "y", "2d_y", data_extraction, n_per_row,
+            excluded_feature=selected_x)
     else:
         selected_y = "Select"
 

@@ -6,6 +6,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import pytest
+
 from src.column_roles import detect_column_groups
 
 # Shared prefixes
@@ -114,12 +116,61 @@ def test_a_sibling_whose_name_has_no_prefix_decides_nothing():
 # Extraction-style column names
 
 
-def test_an_extraction_style_name_is_cut_at_the_earliest_separator_like_any_other():
-    """Extraction-style names use the same prefix rule as every other uploaded column.
-    """
-    groups = detect_column_groups(["Lifetime fit_ch1: T1", "Lifetime fit_ch2: T1",
-                                   "foo_bar: baz", "foo_qux: baz"])
+@pytest.mark.parametrize("channel", ["NADH", "long_channel_name"])
+def test_recognized_measurements_create_full_groups_even_for_singletons(channel):
+    name = f"Lifetime fit_{channel}: T1"
+    assert detect_column_groups([name], extractor_hints=["Lifetime fit"]) == {name: f"Lifetime fit_{channel}"}
 
-    assert groups == {"Lifetime fit_ch1: T1": "Lifetime fit",
-                      "Lifetime fit_ch2: T1": "Lifetime fit",
-                      "foo_bar: baz": "foo", "foo_qux: baz": "foo"}
+
+def test_measurement_channels_have_separate_sibling_keys_and_follow_saved_names():
+    columns = ["Lifetime fit_NADH: T2", "Lifetime fit_FAD: T2", "foo_bar: baz", "foo_qux: baz"]
+    groups = detect_column_groups(columns, extractor_hints=["Lifetime fit"], known_groups={
+        "Lifetime fit_NADH: T1": "renamed NADH", "Lifetime fit_FAD: T1": "renamed FAD"})
+    assert groups == {columns[0]: "renamed NADH", columns[1]: "renamed FAD", columns[2]: "foo", columns[3]: "foo"}
+
+
+@pytest.mark.parametrize("known_group", ["custom", None])
+@pytest.mark.parametrize("column, sibling, hints", [
+    ("Lifetime fit_NADH: T2", "Lifetime fit_NADH: T1", {"extractor_hints": ["Lifetime fit"]}),
+    ("Derived: ratio", "Derived: sum", {}),
+    ("NADH_offset", "NADH_amp", {"channel_hints": ["NADH"]}),
+    ("ordinary_new", "ordinary_old", {}),
+])
+def test_unambiguous_saved_siblings_include_explicit_ungrouped_choices(column, sibling, hints, known_group):
+    expected = {} if known_group is None else {column: known_group}
+    assert detect_column_groups([column], known_groups={sibling: known_group}, **hints) == expected
+
+
+def test_derived_singleton_uses_derived_features_group():
+    assert detect_column_groups(["Derived: ratio"]) == {"Derived: ratio": "Derived Features"}
+
+
+@pytest.mark.parametrize("channel_source", ["hint", "new measurement", "saved measurement"])
+def test_bookkeeping_never_creates_a_channel_group(channel_source):
+    columns = ["NADH_amp", "NADH_offset"]
+    kwargs = {"extractor_hints": ["Lifetime fit"]}
+    if channel_source == "hint":
+        kwargs["channel_hints"] = ["NADH"]
+    elif channel_source == "new measurement":
+        columns.append("Lifetime fit_NADH: T1")
+    else:
+        kwargs["known_groups"] = {"Lifetime fit_NADH: T1": "lifetime"}
+    groups = detect_column_groups(columns, **kwargs)
+    assert "NADH_amp" not in groups and "NADH_offset" not in groups
+
+
+def test_bookkeeping_uses_existing_channel_group_and_longest_channel_match():
+    columns = ["ch_long_amp", "ch_offset"]
+    assert detect_column_groups(columns, existing_groups=["ch", "ch_long"], channel_hints=["ch", "ch_long"]) == {
+        "ch_long_amp": "ch_long", "ch_offset": "ch"}
+
+
+def test_bookkeeping_siblings_do_not_follow_measurement_siblings():
+    assert detect_column_groups(["NADH_offset"], extractor_hints=["Lifetime fit"], known_groups={
+        "Lifetime fit_NADH: T1": "lifetime"}) == {}
+
+
+def test_conflicting_measurement_siblings_fall_back_to_the_full_group():
+    name = "Lifetime fit_NADH: T3"
+    assert detect_column_groups([name], extractor_hints=["Lifetime fit"], known_groups={
+        "Lifetime fit_NADH: T1": "one", "Lifetime fit_NADH: T2": "two"}) == {name: "Lifetime fit_NADH"}

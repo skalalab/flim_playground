@@ -26,6 +26,7 @@ def main():
 
     # Use the same active profile for the controls and configuration fields.
     from src.config import (
+        BUILTIN_FEATURE_EXTRACTORS,
         QPI_ALPHA_DEFAULT,
         QPI_OPD_UNITS,
         _migrate_extraction_config_to_profiles,
@@ -131,14 +132,13 @@ def main():
     qpi_input_types = ["QPI (2D)"]
     all_available_categorical_cols = ["experiment", "patient_id", "day", "hour", "cell_type", "media", "dish", "cell_line", "treatment", "condition", "replicate"]
     spc_output_suffix = {"a1": "_a1[%].asc", "t1": "_t1.asc", "a2": "_a2[%].asc", "t2": "_t2.asc", "a3": "_a3[%].asc", "t3": "_t3.asc"}
-    all_feature_extractors = ["Lifetime fit", "Lifetime fit free", "Intensity morphology", "Intensity texture", "Dry-mass statistics", "Spatial texture"]
     if "all_feature_extractors" not in cfg:
-        cfg["all_feature_extractors"] = all_feature_extractors
+        cfg["all_feature_extractors"] = list(BUILTIN_FEATURE_EXTRACTORS)
     else:
         # Profiles saved before an extractor existed keep their old list, and Data
         # Analysis groups columns by this list: a missing name lands every column of
         # that extractor in Uncategorized Features. Append what is missing.
-        for extractor in all_feature_extractors:
+        for extractor in BUILTIN_FEATURE_EXTRACTORS:
             if extractor not in cfg["all_feature_extractors"]:
                 cfg["all_feature_extractors"].append(extractor)
 

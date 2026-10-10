@@ -334,9 +334,8 @@ def test_every_point_plot_says_id_for_an_invented_row_number():
         assert all("<b>ID:</b> %{text}" in t for t in templates), plot.__name__
 
 
-def test_the_extraction_branch_still_says_cell_id():
-    """pages/data_analysis.py passes "Cell ID" whenever use_data_extraction is on, so
-    the main FLIM workflow's hover is unchanged."""
+def test_point_helpers_accept_an_explicit_cell_id_label():
+    """Compatibility callers can still choose Cell ID as their hover label."""
     for plot in ALL_PLOTS:
         templates = _hover_templates(plot("Cell ID"))
         assert templates, plot.__name__
@@ -391,39 +390,24 @@ def _iris_frame_with_row_numbers():
     })
 
 
-def _run_page(monkeypatch, row_id_col, configured, use_extraction):
-    """Run the analysis page with load_table stubbed because AppTest cannot upload files.
-    """
+def _run_page(install_page_table, configured):
+    """Raw inputs use an ordinary exact profile through the actual review gate."""
     from streamlit.testing.v1 import AppTest
-
-    from src.widgets import analysis_config_widgets as acw
-
-    df = _iris_frame_with_row_numbers() if row_id_col == "Row number" else _frame()
-    monkeypatch.setattr(acw, "get_unique_row_id_col",
-                        lambda use_data_extraction=True: configured)
-    monkeypatch.setattr(acw, "get_fov_name_col_analysis",
-                        lambda use_data_extraction=True: "")
-    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (
-        df, {"Uncategorized Features": ["Sepal length"]}, True, ",", row_id_col))
-
+    df = _iris_frame_with_row_numbers().drop(columns="Row number") if not configured else _frame()
+    install_page_table(df, {"Uncategorized Features": ["Sepal length"]}, configured)
     page = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
-    at = AppTest.from_file(page)
-    at.session_state["_use_data_extraction"] = use_extraction
-    at.run(timeout=90)
-    return at
+    return AppTest.from_file(page).run(timeout=90)
 
 
-def test_the_page_loads_a_table_with_an_invented_row_id(monkeypatch):
-    """The resolved identifier reaches both the plotted frame and the export column snapshot."""
-    at = _run_page(monkeypatch, "Row number", configured="", use_extraction=False)
+def test_the_page_loads_a_table_with_an_invented_row_id(install_page_table):
+    at = _run_page(install_page_table, "")
     assert not at.exception
-    # The prune snapshot the export replays must carry the invented column too.
     assert "Row number" in at.session_state["analysis_columns"]
     assert "Row number" in at.session_state["vis_df"].columns
 
 
-def test_the_page_keeps_a_configured_row_id(monkeypatch):
-    at = _run_page(monkeypatch, "flower_id", configured="flower_id", use_extraction=False)
+def test_the_page_keeps_a_configured_row_id(install_page_table):
+    at = _run_page(install_page_table, "flower_id")
     assert not at.exception
     assert "Row number" not in at.session_state["analysis_columns"]
     assert "flower_id" in at.session_state["analysis_columns"]

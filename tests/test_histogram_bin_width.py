@@ -109,15 +109,14 @@ def test_scale_named_features_do_not_inherit_another_features_width():
 
 
 @pytest.mark.parametrize("can_log", [True, False])
-def test_page_export_captures_the_active_scale_bin_width(monkeypatch, can_log):
+def test_page_export_captures_the_active_scale_bin_width(monkeypatch, can_log, install_page_table):
     from src import dataset_io, export_script
     from src.widgets import analysis_config_widgets as acw
 
     values = np.linspace(1000., 1001., 50) if can_log else np.linspace(-1., 1., 50)
     frame = pd.DataFrame({"cell_id": [f"id{i}" for i in range(50)], "Signal": values})
     monkeypatch.setattr(acw, "get_categorical_cols_analysis", lambda *a, **k: [])
-    monkeypatch.setattr(dataset_io, "load_table", lambda *a, **k: (
-        frame, {"Uncategorized Features": ["Signal"]}, True, ",", "cell_id"))
+    install_page_table(frame, {"Uncategorized Features": ["Signal"]}, "cell_id", ",")
     captured = []
     monkeypatch.setattr(export_script, "generate_script", lambda state: (
         captured.append(state) or "# captured"))
@@ -142,15 +141,14 @@ def test_page_export_captures_the_active_scale_bin_width(monkeypatch, can_log):
 
 @pytest.mark.parametrize("destination", ["gmm", "Feature Comparison"])
 @pytest.mark.parametrize("logged", [False, True])
-def test_page_remembers_bin_widths_while_their_controls_are_hidden(monkeypatch, destination, logged):
+def test_page_remembers_bin_widths_while_their_controls_are_hidden(monkeypatch, destination, logged, install_page_table):
     from src import dataset_io, export_script
     from src.widgets import analysis_config_widgets as acw
 
     frame = pd.DataFrame({"cell_id": [f"id{i}" for i in range(50)],
                           "Signal": np.linspace(1000., 1001., 50)})
     monkeypatch.setattr(acw, "get_categorical_cols_analysis", lambda *a, **k: [])
-    monkeypatch.setattr(dataset_io, "load_table", lambda *a, **k: (
-        frame, {"Uncategorized Features": ["Signal"]}, True, ",", "cell_id"))
+    install_page_table(frame, {"Uncategorized Features": ["Signal"]}, "cell_id", ",")
     monkeypatch.setattr(export_script, "generate_script", lambda state: "# captured")
     at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py"))
     at.session_state["_menu_Uncategorized Features"] = "Signal"

@@ -1,5 +1,5 @@
-"""End-to-end review-gate interaction through AppTest. The uploader and reader are stubbed;
-file parsing is covered separately.
+"""End-to-end review-gate interaction through AppTest. Most cases supply raw frames;
+page-to-export round trips use the real reader and exact uploaded bytes.
 """
 import json
 import sys
@@ -41,14 +41,20 @@ def _frame():
 
 
 @pytest.fixture
-def page(tmp_path, monkeypatch):
+def page(tmp_path, monkeypatch, isolated_config_paths):
     """A Data Analysis page whose uploader always holds `frame`, on a private config."""
-    monkeypatch.setattr(acw, "_ANALYSIS_CONFIG_PATH", tmp_path / "analysis_config.toml")
 
     state = {"frame": _frame(), "name": "table.csv", "warning": ""}
 
+    uploaded = [None]
     def fake_uploader(*_args, **_kwargs):
-        return _Upload(state["name"])
+        signature = None if state["frame"] is None else (state["name"], state["frame"].to_json())
+        if signature != uploaded[0]:
+            uploaded[0] = signature
+            callback = _kwargs.get("on_change")
+            if callback:
+                callback()
+        return None if state["frame"] is None else _Upload(state["name"])
 
     def fake_read_table(_upload):
         return state["frame"].copy(), {}, ",", state["warning"], ""
@@ -65,14 +71,16 @@ def _run(profiles=None, current="p", path=None):
         path.write_text(toml.dumps({"current_profile": current, "profiles": profiles}), encoding="utf-8")
     at = AppTest.from_file(_PAGE)
     at.run(timeout=90)
-    # Turn on "Use a table from another source" -- the branch the gate lives on.
-    at.checkbox[0].check().run(timeout=90)
     return at
 
 
 def _pick(at, value):
     """Click a chooser row by its profile-name prefix, ignoring the displayed match counts.
     """
+    if any(b.key == "review_reopen" for b in at.button):
+        _pencil(at)
+    if value == AUTO_DETECT:
+        return at
     for widget in at.button:
         if str(widget.label).startswith(value):
             widget.click().run(timeout=90)
@@ -95,8 +103,7 @@ def test_a_user_table_never_has_a_designated_fov_column(page, tmp_path):
     """
     at = _run({}, path=tmp_path / "analysis_config.toml")
     at = _pick(at, AUTO_DETECT)
-    at.session_state._review_confirmed = True
-    at.run(timeout=90)
+    _by_key(at, "button", "review_use").click().run(timeout=90)
     assert at.session_state.effective_fov_name_col is None
     assert at.session_state._review_roles["image_name"] == "categorical"
 
@@ -108,8 +115,7 @@ def test_a_legacy_profiles_fov_name_never_leaks_into_a_file_that_did_not_match_i
                          "all_numerical_features": ["something_else"]}},
               current="other", path=tmp_path / "analysis_config.toml")
     at = _pick(at, AUTO_DETECT)
-    at.session_state._review_confirmed = True
-    at.run(timeout=90)
+    _by_key(at, "button", "review_use").click().run(timeout=90)
     assert at.session_state.effective_fov_name_col is None
 
 
@@ -169,7 +175,7 @@ def test_user_tables_hide_phasor_without_a_complete_numerical_pair(
 def test_the_read_line_spans_the_filename_it_names(page, tmp_path):
     """A Markdown caption displays the uploaded filename literally."""
     page["name"] = "*draft*.csv"
-    at = _run({}, path=tmp_path / "analysis_config.toml")
+    at = _pick(_run({}, path=tmp_path / "analysis_config.toml"), AUTO_DETECT)
 
     captions = [str(caption.value) for caption in at.caption]
     read_line = [text for text in captions if text.startswith("Read ")]
@@ -204,6 +210,31 @@ def _configuration(at):
 
 def _pencil(at):
     return _by_key(at, "button", "review_reopen").click().run(timeout=90)
+
+
+def _fresh_render(at):
+    """Render current state after an already executed real-button handler.
+
+    Streamlit 1.54 AppTest merges st.rerun deltas into the prior tree and can retain
+    removed review widgets. A fresh script run supplies no stale widget payload;
+    it leaves the handler's decisions intact and renders the current controls.
+    """
+    assert not at.exception, [e.value for e in at.exception]
+    from streamlit.proto.WidgetStates_pb2 import WidgetStates
+    from streamlit.testing.v1.element_tree import get_widget_state
+
+    live = WidgetStates()
+    for node in at._tree:
+        if node.type == "button":
+            continue
+        try:
+            widget = get_widget_state(node)
+        except KeyError:
+            # Removed widgets are the stale AppTest nodes being discarded.
+            continue
+        if widget is not None:
+            live.widgets.append(widget)
+    return at._run(widget_state=live, timeout=90)
 
 
 def test_reopening_the_table_does_not_reset_the_plot_configuration(page, tmp_path):
@@ -261,7 +292,7 @@ def test_unsaved_role_changes_keep_the_plot_and_exports_hidden(page, tmp_path):
     assert at.session_state._review_roles["Area"] == "numerical"
 
 
-@pytest.mark.parametrize("exit_action", ["Cancel", "Save"])
+@pytest.mark.parametrize("exit_action", ["Cancel", "Save", "Use"])
 @pytest.mark.parametrize("hidden_runs", [0, 2], ids=["immediate", "after-reruns"])
 def test_review_restores_plot_options(
         page, tmp_path, monkeypatch, exit_action, hidden_runs):
@@ -285,6 +316,7 @@ def test_review_restores_plot_options(
         _assert_review_only(at)
     button = next(b for b in at.button if (
         str(b.label) == "Cancel" if exit_action == "Cancel"
+        else b.key == "review_use" if exit_action == "Use"
         else str(b.label).startswith("💾 Save to")))
     monkeypatch.setattr(policies, "_shown_default_value_warning", False)
     at = button.click().run(timeout=90)
@@ -313,6 +345,7 @@ def test_plot_style_survives_switching_analysis_modules(page, tmp_path, analysis
         g_col: [0.2, 0.3, 0.4, 0.5], s_col: [0.15, 0.25, 0.35, 0.45],
     })
     at = _plotting(tmp_path, measurements=["Area", g_col, s_col])
+    at = _by_key(at, "multiselect", "vis_encoding_color_by").set_value(["image_name"]).run(timeout=90)
     expected = {"plot_point_size": 11, "plot_axis_label_size": 20,
                 "plot_legend_size": 16, "plot_colormap": "Set2", "plot_show_group_counts": True}
     for key in ("plot_point_size", "plot_axis_label_size", "plot_legend_size"):
@@ -388,7 +421,7 @@ def test_a_second_file_does_not_inherit_the_first_files_chooser_pick(page, tmp_p
     page["frame"] = pd.DataFrame({"sepal": [1.0, 2.0], "species": ["a", "b"]})
     page["name"] = "iris.csv"
     at.run(timeout=90)
-    assert "_review_source" not in at.session_state
+    assert at.session_state._review_source == AUTO_DETECT
 
 
 # --------------------------------------- a profile whose roles stopped fitting the file
@@ -405,12 +438,12 @@ def test_a_matching_profile_that_can_no_longer_load_the_file_opens_the_table(pag
 
     assert at.session_state._review_confirmed is False        # opened, not applied
     assert at.session_state._review_source == "pdl1"          # ... on pdl1's own roles
-    assert at.session_state._review_chooser is False
     assert not any(str(b.label).startswith(AUTO_DETECT) for b in at.button)
 
     assert any("cell_id" in err.value for err in at.error), [err.value for err in at.error]
     save = [b for b in at.button if "Save to pdl1" in b.label]
     assert save and save[0].disabled, [(b.label, b.disabled) for b in at.button]
+    assert _by_key(at, "button", "review_use").disabled
 
 
 def test_the_reopened_table_can_only_write_back_to_the_profile_it_came_from(page, tmp_path):
@@ -673,8 +706,7 @@ def test_the_chooser_rows_only_pick(page, tmp_path):
     at = _pick(_run({"pdl1": _PDL1, "partial": _PARTIAL}, current="pdl1",
                     path=tmp_path / "analysis_config.toml"), "pdl1")
     picks = {b.key for b in at.button if str(b.key).startswith("review_pick_")}
-    assert picks == {"review_pick_pdl1", "review_pick_partial",
-                     f"review_pick_{AUTO_DETECT}"}, picks
+    assert picks == {"review_pick_pdl1", "review_pick_partial"}, picks
 
 
 def test_manage_lists_every_profile_including_one_sharing_no_column(page, tmp_path):
@@ -695,16 +727,14 @@ def test_manage_lists_every_profile_including_one_sharing_no_column(page, tmp_pa
 
 
 def test_manage_is_reachable_on_the_reopen_of_an_exact_match(page, tmp_path):
-    """Reopening an exact match exposes profile management even though its chooser is
-    suppressed.
-    """
+    """Every editor reopening offers optional saved profiles and management."""
     at = _run({"pdl1": _EXACT, "iris": _IRIS}, current="pdl1",
               path=tmp_path / "analysis_config.toml")
     _by_key(at, "button", "review_reopen").click().run(timeout=90)
 
-    assert at.session_state._review_chooser is False
     keys = {b.key for b in at.button}
-    assert {"review_arm_delete_pdl1", "review_arm_delete_iris"} <= keys, keys
+    assert {"review_pick_pdl1", "review_cancel",
+            "review_arm_delete_pdl1", "review_arm_delete_iris"} <= keys, keys
 
 
 def test_a_new_profile_is_named_in_the_row_rather_than_behind_a_popover(page, tmp_path):
@@ -781,8 +811,8 @@ def test_deleting_the_armed_profile_disarms_the_row(page, tmp_path):
         f"row still armed for a deleted profile: {[b.key for b in at.button]}"
 
 
-def test_deleting_the_picked_profile_sends_the_gate_back_to_choosing(page, tmp_path):
-    """Deleting the working copy's source returns the gate to profile selection."""
+def test_deleting_the_picked_profile_rebuilds_inference(page, tmp_path):
+    """Deleting the draft source keeps a populated inferred editor open."""
     config = tmp_path / "analysis_config.toml"
     at = _pick(_run({"pdl1": _PDL1, "iris": _IRIS}, current="pdl1", path=config), "pdl1")
     assert at.session_state._review_source == "pdl1"
@@ -791,7 +821,7 @@ def test_deleting_the_picked_profile_sends_the_gate_back_to_choosing(page, tmp_p
     _by_key(at, "button", "review_delete_pdl1").click().run(timeout=90)
 
     assert acw.list_profiles() == ["iris"]
-    assert "_review_source" not in at.session_state
+    assert at.session_state._review_source == AUTO_DETECT
     assert not any(str(b.label).startswith("pdl1") for b in at.button)
 
 
@@ -816,29 +846,24 @@ def test_deleting_one_profile_leaves_no_row_armed(page, tmp_path):
     assert {"review_arm_delete_pdl1", "review_arm_delete_partial"} <= keys, keys
 
 
-def test_deleting_the_applied_profile_on_the_reopen_path_reopens_the_chooser(page, tmp_path):
-    """Deleting the applied profile reopens the suppressed chooser and removes its working
-    copy.
-    """
+def test_deleting_the_applied_profile_on_reopen_clears_cancel_and_rebuilds_inference(page, tmp_path):
+    """Deleting the saved source discards Cancel and opens an inferred draft."""
     at = _run({"pdl1": _EXACT, "iris": _IRIS}, current="pdl1",
               path=tmp_path / "analysis_config.toml")
     _by_key(at, "button", "review_reopen").click().run(timeout=90)
-    assert at.session_state._review_chooser is False
+    assert any(b.key == "review_cancel" for b in at.button)
 
     _by_key(at, "button", "review_arm_delete_pdl1").click().run(timeout=90)
     _by_key(at, "button", "review_delete_pdl1").click().run(timeout=90)
+    at = _fresh_render(at)
 
     assert acw.list_profiles() == ["iris"]
-    assert at.session_state._review_chooser is True
-    assert "_review_source" not in at.session_state
+    assert at.session_state._review_source == AUTO_DETECT
     # Cancel cannot restore the deleted profile's decision.
-    assert "_review_reopened" not in at.session_state
+    assert not any(b.key == "review_cancel" for b in at.button)
 
-    # Inspect the delete-triggered run directly. An extra AppTest run can replay stale
-    # editor widgets from its mixed tree after Streamlit has discarded their state.
-    assert not [e.value for e in at.exception], [e.value for e in at.exception]
     labels = [str(b.label) for b in at.button]
-    assert AUTO_DETECT in labels, labels
+    assert "Use for this upload" in labels, labels
     assert not any(label.startswith("pdl1") for label in labels), labels
 
 
@@ -917,9 +942,8 @@ def test_what_the_reader_says_about_the_file_is_shown_while_the_gate_is_open(pag
                        "'ReadMe', was read ('Data' skipped).")
     at = _run(profiles={}, current="", path=tmp_path / "analysis_config.toml")
 
-    # Warnings remain visible in both the initial chooser and the review table.
-    assert [b for b in at.button if str(b.label).startswith(AUTO_DETECT)], \
-        f"chooser not open; wrong state under test: {[str(b.label) for b in at.button]}"
+    # Reader warnings remain visible during immediate analysis and review.
+    assert [b for b in at.button if b.key == "review_reopen"]
     assert [m for m in at.markdown if "ReadMe" in str(m.value)], \
         f"reader warning not rendered on the chooser: {[str(m.value) for m in at.markdown][:6]}"
     at = _pick(at, AUTO_DETECT)
@@ -935,9 +959,8 @@ def test_what_the_reader_says_about_the_file_is_shown_while_the_gate_is_open(pag
     assert [m for m in at.markdown if "ReadMe" in str(m.value)], "warning lost once the gate blocked"
 
 
-@pytest.mark.parametrize("use_data_extraction", [True, False])
 def test_dataset_warnings_share_one_section_across_loading_stages(
-        page, tmp_path, monkeypatch, use_data_extraction):
+        page, tmp_path, monkeypatch):
     from src import config
 
     # Extraction and user-table roles must both match the fixture, independent
@@ -955,8 +978,6 @@ def test_dataset_warnings_share_one_section_across_loading_stages(
                        "categorical_cols": ["image_name", "treatment"],
                        "all_numerical_features": ["Area"], "ignored_cols": ["Empty"]}}
     at = _run(profiles, path=tmp_path / "analysis_config.toml")
-    if use_data_extraction:
-        at.checkbox[0].uncheck().run(timeout=90)
 
     assert not at.exception, [e.value for e in at.exception]
     assert at.session_state.vis_df is not None
@@ -992,7 +1013,7 @@ def test_dataset_rejections_keep_errors_outside_the_warning_section(page, monkey
         error = "does not identify a row on its own"
     else:
         page["frame"]["Area"] = ["a", "b", "c", "d"]
-        error = "No feature found"
+        error = "No column is marked Numerical"
 
     at = AppTest.from_file(_PAGE).run(timeout=90)
 
@@ -1004,9 +1025,253 @@ def test_dataset_rejections_keep_errors_outside_the_warning_section(page, monkey
     assert section.proto.expanded is True
     warnings = " ".join(m.value for m in section.markdown)
     assert "only the first sheet" in warnings
-    if stage != "read":
-        assert "Empty columns are all empty" in warnings
+    # Invalid raw values stop at review, before normalization emits cleanup warnings.
     assert error not in warnings
     assert "Therefore" not in warnings
-    assert any(error in m.value for m in at.markdown)
-    assert any("Therefore" in m.value for m in at.markdown)
+    if stage == "read":
+        assert any(error in m.value for m in at.markdown)
+        assert any("Therefore" in m.value for m in at.markdown)
+    else:
+        assert any(error in e.value for e in at.error)
+        _assert_review_only(at)
+
+
+@pytest.mark.parametrize("saved_source", [False, True])
+def test_upload_only_edits_survive_reopen_cancel_with_analysis_controls(page, tmp_path, saved_source):
+    page["frame"] = _frame().assign(Length=[1.5, 2.5, 3.5, 4.5])
+    config = tmp_path / "analysis_config.toml"
+    if saved_source:
+        at = _plotting(tmp_path, measurements=["Area", "Length"])
+    else:
+        at = _run({}, path=config)
+        next(w for w in at.selectbox if "_menu_" in str(w.key)).select("Area").run(timeout=90)
+        _by_key(at, "multiselect", selection_key("treatment")).set_value(["DMSO"]).run(timeout=90)
+    before_controls = _configuration(at)
+    before_bytes = config.read_bytes()
+    at = _pencil(at)
+    gen = at.session_state._review_editor_gen
+    _by_key(at, "selectbox", f"review_role_{gen}_Length").select("Categorical").run(timeout=90)
+    _by_key(at, "button", "review_use").click().run(timeout=90)
+    _fresh_render(at)
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state._review_confirmed
+    assert _configuration(at) == before_controls
+    assert config.read_bytes() == before_bytes
+    expected = {key: at.session_state[key] for key in (
+        "_review_roles", "_review_groups", "_review_group_names", "_review_source",
+        "_review_known_cols", "_review_baseline", "_review_configured_row_id")}
+    at = _pencil(at)
+    gen = at.session_state._review_editor_gen
+    _by_key(at, "selectbox", f"review_role_{gen}_Area").select("Ignore").run(timeout=90)
+    _by_key(at, "button", "review_cancel").click().run(timeout=90)
+    assert not at.exception, [e.value for e in at.exception]
+    assert {key: at.session_state[key] for key in expected} == expected
+    assert _configuration(at) == before_controls
+    assert config.read_bytes() == before_bytes
+    assert at.get("plotly_chart") and at.get("download_button")
+
+
+def test_deleting_the_draft_source_keeps_analysis_controls_while_editing(page, tmp_path):
+    at = _plotting(tmp_path)
+    before = _configuration(at)
+    at = _pencil(at)
+    _by_key(at, "button", "review_arm_delete_p").click().run(timeout=90)
+    _by_key(at, "button", "review_delete_p").click().run(timeout=90)
+    _fresh_render(at)
+    _assert_review_only(at)
+    assert _configuration(at) == before
+    assert at.session_state._review_source == AUTO_DETECT
+    assert not any(b.key == "review_cancel" for b in at.button)
+    _by_key(at, "button", "review_use").click().run(timeout=90)
+    assert not at.exception, [e.value for e in at.exception]
+    assert at.session_state._review_confirmed
+    assert _configuration(at) == before
+    assert at.get("plotly_chart")
+
+
+@pytest.mark.parametrize("generated,collapse", [(False, False), (True, False), (True, True)])
+def test_actual_page_temporary_review_exports_same_uploaded_bytes(
+        tmp_path, monkeypatch, isolated_config_paths, generated, collapse):
+    """Real reader, editor, capture and executable export share the active decision."""
+    import copy
+    import runpy
+    import matplotlib.pyplot as plt
+    from streamlit.testing.v1 import AppTest
+    from src import export_script
+
+    raw = pd.DataFrame({"cell_id": list("abcdefgh"),
+                        "sample_id": [f"s{i}" for i in range(8)],
+                        "image_name": ["A", "A", "B", "B"] * 2,
+                        "batch": [1, 1, 2, 2, 3, 3, 4, 4],
+                        "Signal": ["1", "3", "5", "7", "9", "11", "13", "15"],
+                        "discard": [20.] * 8})
+    payload = raw.to_csv(index=False, sep=";").encode()
+    from tests.test_table_formats import _uploaded_file
+    uploaded = [False]
+    def uploader(*args, **kwargs):
+        if not uploaded[0]:
+            uploaded[0] = True
+            callback = kwargs.get("on_change")
+            if callback:
+                callback()
+        return _uploaded_file(payload, "roundtrip.txt")
+    monkeypatch.setattr(st, "file_uploader", uploader)
+    captured = []
+    real_generate = export_script.generate_script
+    def capture(state):
+        script = real_generate(state)
+        captured.append((copy.deepcopy(state), script))
+        return script
+    monkeypatch.setattr(export_script, "generate_script", capture)
+    at = AppTest.from_file(_PAGE).run(timeout=90)
+    assert not at.exception, [e.value for e in at.exception]
+    # Uploads enter the real gate without choosing a source.
+    assert at.session_state.filtered_state.get("_review_confirmed") is True, [m.value for m in at.error]
+    at = _pencil(at)
+    def role(column, value):
+        nonlocal at
+        gen = at.session_state._review_editor_gen
+        at = _by_key(at, "selectbox", f"review_role_{gen}_{column}").select(value).run(timeout=90)
+        assert not at.exception, [e.value for e in at.exception]
+    role("batch", "Categorical")
+    role("discard", "Ignore")
+    role("cell_id", "Ignore")
+    role("sample_id", "Ignore" if generated else "Row ID")
+    at = _fresh_render(_by_key(at, "button", "review_use").click().run(timeout=90))
+    assert not isolated_config_paths[1].exists()
+    menu = next(w for w in at.selectbox if "_menu_" in str(w.key) and "Signal" in w.options)
+    at = menu.select("Signal").run(timeout=90)
+    at = _by_key(at, "multiselect", selection_key("batch")).set_value(["1", "2"]).run(timeout=90)
+    at = _by_key(at, "selectbox", "num_filter_feature_0").select("Signal").run(timeout=90)
+    at = _by_key(at, "selectbox", "num_filter_operator_0_Signal").select("<=").run(timeout=90)
+    at = _by_key(at, "number_input", "num_filter_threshold_0_Signal").set_value(6.).run(timeout=90)
+    # An empty intermediate filter hides the controls; choose grouping afterward.
+    at = _by_key(at, "multiselect", "vis_encoding_color_by").set_value(["image_name"]).run(timeout=90)
+    if collapse:
+        at = next(w for w in at.selectbox if w.label == "Collapse by").select("batch").run(timeout=90)
+    assert not at.exception, [e.value for e in at.exception]
+    chart = json.loads(at.get("plotly_chart")[0].proto.spec)
+    hover_name = "batch" if collapse else ("ID" if generated else "sample_id")
+    assert any(f"<b>{hover_name}:</b>" in trace.get("hovertemplate", "")
+               for trace in chart["data"])
+    state, script = captured[-1]
+    assert state["color_by"] == ["image_name"]
+    assert state["method_params"]["collapse_by"] == ("batch" if collapse else None), state["method_params"]
+    assert state["unique_row_id_col"] == ("" if generated else "sample_id")
+    assert state["fov_name_col"] is None
+    assert state["ignored_cols"] == (["cell_id", "sample_id", "discard"] if generated else ["cell_id", "discard"])
+    assert state["delimiter"] == ";"
+    assert state["categorical_cols"] == ["image_name", "batch"]
+    assert state["categorical_filters"] == {"batch": ["1", "2"]}
+    assert state["numerical_filters"] == [("Signal", "<=", 6.)]
+    normalized = at.session_state.vis_df.copy()
+    assert state["analysis_columns"] == list(normalized.columns)
+    assert "discard" not in normalized
+    assert normalized["Signal"].tolist() == [1., 3., 5., 7., 9., 11., 13., 15.]
+    (tmp_path / "roundtrip.txt").write_bytes(payload)
+    script_path = tmp_path / "export.py"
+    script_path.write_text(script)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(plt, "show", lambda: None)
+    try:
+        ns = runpy.run_path(str(script_path))
+    finally:
+        plt.close("all")
+    expected = normalized[normalized.batch.isin(["1", "2"]) & (normalized.Signal <= 6.)]
+    if collapse:
+        from src.collapse import collapse_rows
+        expected, _, _ = collapse_rows(expected, "batch", ["image_name", None],
+                                       "Row number" if generated else "sample_id")
+    assert "discard" not in ns["df"].columns
+    assert "cell_id" not in ns["df"].columns
+    if generated:
+        assert "sample_id" not in ns["df"].columns
+    if collapse:
+        assert ns["_label_col"] == expected.columns[-1]
+    else:
+        assert ns["ROW_ID_COL"] == ("Row number" if generated else "sample_id")
+    pd.testing.assert_frame_equal(ns["df"][list(expected.columns)].reset_index(drop=True),
+                                  expected.reset_index(drop=True), check_dtype=False)
+
+
+
+def test_same_upload_values_revalidate_and_clear_reupload_discards_temporary_roles(page, tmp_path):
+    page["frame"]["Length"] = [1., 2., 3., 4.]
+    at = _run({}, path=tmp_path / "analysis_config.toml")
+    assert at.session_state._review_confirmed
+    at = _pencil(at)
+    gen = at.session_state._review_editor_gen
+    _by_key(at, "selectbox", f"review_role_{gen}_Length").select("Categorical").run(timeout=90)
+    at = _fresh_render(_by_key(at, "button", "review_use").click().run(timeout=90))
+    at.run(timeout=90)
+    assert at.session_state._review_roles["Length"] == "categorical"
+    # Same filename and headers, invalid new raw values: callback must reopen review.
+    page["frame"]["cell_id"] = [1, 1, 3, 4]
+    at.run(timeout=90)
+    _assert_review_only(at)
+    assert at.session_state._review_roles["Length"] == "numerical"
+    assert any("does not identify" in e.value for e in at.error)
+    page["frame"] = None
+    at = _fresh_render(at.run(timeout=90))
+    assert at.session_state.vis_df is None
+    assert at.session_state.analysis_columns is None
+    assert "_review_roles" not in at.session_state.filtered_state
+    assert at.info[0].value.startswith("**Upload a dataset to get started**")
+    page["frame"] = _frame().assign(Length=[1., 2., 3., 4.])
+    at.run(timeout=90)
+    assert not at.exception
+    assert at.session_state._review_confirmed
+    assert at.session_state._review_roles["Length"] == "numerical"
+
+
+def test_new_extraction_channel_schema_uses_inference_without_profile(page, tmp_path):
+    g, s = "Lifetime fit free_new: G(1st)", "Lifetime fit free_new: S(1st)"
+    page["frame"] = _frame().assign(**{g: [.2, .3, .4, .5], s: [.1, .2, .3, .4]})
+    at = _run({}, path=tmp_path / "analysis_config.toml")
+    assert not at.exception
+    assert at.session_state._review_confirmed
+    assert at.session_state.phasor_available
+    assert at.session_state._review_groups[g] == "Lifetime fit free_new"
+    assert at.session_state._review_roles["image_name"] == "categorical"
+    at.session_state["analysis_control_dr_method"] = "PCA"
+    at.radio[0].set_value("**Multivariate**").run(timeout=90)
+    at.radio[1].set_value("Classification").run(timeout=90)
+    assert not at.exception
+    assert "image_name" in _by_key(at, "multiselect", "classify_by_multiselect").options
+
+
+def test_clearing_a_confirmed_temporary_decision_discards_it_before_reupload(page, tmp_path):
+    page["frame"] = _frame().assign(Length=[1., 2., 3., 4.])
+    original = page["frame"].copy()
+    at = _pencil(_run({}, path=tmp_path / "analysis_config.toml"))
+    gen = at.session_state._review_editor_gen
+    _by_key(at, "selectbox", f"review_role_{gen}_Length").select("Categorical").run(timeout=90)
+    at = _fresh_render(_by_key(at, "button", "review_use").click().run(timeout=90))
+    assert at.session_state._review_confirmed
+    assert at.session_state._review_roles["Length"] == "categorical"
+    page["frame"] = None
+    at = _fresh_render(at.run(timeout=90))
+    assert "_review_roles" not in at.session_state.filtered_state
+    assert at.session_state.vis_df is None
+    assert not at.get("download_button")
+    page["frame"] = original
+    at.run(timeout=90)
+    assert not at.exception
+    assert at.session_state._review_confirmed
+    assert at.session_state._review_roles["Length"] == "numerical"
+
+
+def test_structural_rejection_clears_a_previous_plot_and_export(page, tmp_path, monkeypatch):
+    at = _plotting(tmp_path)
+    assert at.get("plotly_chart") and at.get("download_button")
+    page["name"] = "bad.xlsx"
+    monkeypatch.setattr(dataset_io, "read_table", lambda _upload: (
+        None, {}, ",", "", "Unsupported table structure"))
+    at.run(timeout=90)
+    assert not at.exception
+    assert at.session_state.vis_df is None
+    assert at.session_state.analysis_columns is None
+    assert not at.get("plotly_chart")
+    assert not at.get("download_button")
+    assert not any("_menu_" in str(w.key) for w in at.selectbox)
+    assert any("Unsupported table structure" in m.value for m in at.markdown)

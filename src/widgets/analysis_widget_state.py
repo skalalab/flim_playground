@@ -1,4 +1,6 @@
-"""Keep analysis settings while the column-review screen replaces their widgets."""
+"""Defaults and preservation for analysis controls."""
+
+from src.config import get_fov_name_col
 
 _SETTING_KEYS = {
     "compare_pairs", "intersection_threshold", "classify_by_multiselect",
@@ -48,6 +50,12 @@ def preserve_analysis_controls(state, keys):
     for key in keys:
         if key in state:
             state[key] = state[key]
+
+
+def categorical_default(options):
+    """Select the first eligible column other than the configured FOV, or none."""
+    fov_name_col = get_fov_name_col()
+    return [column for column in options if column != fov_name_col][:1]
 
 
 def control_default(state, key, default):

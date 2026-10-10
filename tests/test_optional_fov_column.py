@@ -375,7 +375,7 @@ def test_fresh_visit_shows_phasor_plot(monkeypatch):
     assert "Phasor Plot" in at.radio[1].options
 
 
-def test_phasor_hides_when_loaded_feature_groups_lack_a_complete_gs_pair(monkeypatch):
+def test_phasor_hides_when_loaded_feature_groups_lack_a_complete_gs_pair(monkeypatch, install_page_table):
     """A loaded frame with G but no matching S hides Phasor Plot."""
     from streamlit.testing.v1 import AppTest
 
@@ -388,7 +388,7 @@ def test_phasor_hides_when_loaded_feature_groups_lack_a_complete_gs_pair(monkeyp
         "Uncategorized Features": ["feat1", "feat2"],
         "Lifetime fit free_ch1": ["Lifetime fit free_ch1: G(1st)"],
     }
-    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (df, feature_groups, True, ",", "cell_id"))
+    install_page_table(df, feature_groups, "cell_id", ",")
 
     page = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
     at = AppTest.from_file(page)
@@ -401,7 +401,7 @@ def test_phasor_hides_when_loaded_feature_groups_lack_a_complete_gs_pair(monkeyp
     assert at.session_state["phasor_available"] is False
 
 
-def test_phasor_shows_when_loaded_feature_groups_have_a_complete_gs_pair(monkeypatch):
+def test_phasor_shows_when_loaded_feature_groups_have_a_complete_gs_pair(monkeypatch, install_page_table):
     """A complete G/S pair for one harmonic makes the channel plottable."""
     from streamlit.testing.v1 import AppTest
 
@@ -415,7 +415,7 @@ def test_phasor_shows_when_loaded_feature_groups_have_a_complete_gs_pair(monkeyp
         "Uncategorized Features": ["feat1", "feat2"],
         "Lifetime fit free_ch1": ["Lifetime fit free_ch1: G(1st)", "Lifetime fit free_ch1: S(1st)"],
     }
-    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (df, feature_groups, True, ",", "cell_id"))
+    install_page_table(df, feature_groups, "cell_id", ",")
 
     page = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")
     at = AppTest.from_file(page)
@@ -428,13 +428,12 @@ def test_phasor_shows_when_loaded_feature_groups_have_a_complete_gs_pair(monkeyp
     assert at.session_state["phasor_available"] is True
 
 
-def test_transition_rerun_fires_once_and_then_settles(monkeypatch):
+def test_transition_rerun_fires_once_and_then_settles(monkeypatch, install_page_table):
     """A change in phasor availability triggers at most one rerun; settled state triggers none."""
     import streamlit as st
     from streamlit.testing.v1 import AppTest
 
-    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (
-        _no_fov_frame(), {"Uncategorized Features": ["Lifetime fit_ch1: T1"]}, True, ",", "cell_id"))
+    install_page_table(_no_fov_frame(), {"Uncategorized Features": ["Lifetime fit_ch1: T1"]}, "cell_id", ",")
 
     rerun_calls = []
     real_rerun = st.rerun
@@ -458,8 +457,8 @@ def test_transition_rerun_fires_once_and_then_settles(monkeypatch):
     assert at.radio[1].options == settled_options
 
 
-def test_extraction_happy_path_causes_no_rerun(monkeypatch):
-    """A complete G/S pair matches the preload default, needs no rerun, and retains FOV hover."""
+def test_extraction_shaped_table_has_ordinary_fov_category_and_needs_no_rerun(monkeypatch, install_page_table):
+    """A complete G/S pair matches the preload default, needs no rerun, and treats image_name as an ordinary category."""
     import streamlit as st
     from streamlit.testing.v1 import AppTest
 
@@ -474,7 +473,7 @@ def test_extraction_happy_path_causes_no_rerun(monkeypatch):
     })
     feature_groups = {"Lifetime fit free_ch1": [
         "Lifetime fit free_ch1: G(1st)", "Lifetime fit free_ch1: S(1st)"]}
-    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (df, feature_groups, True, ",", "cell_id"))
+    install_page_table(df, feature_groups, "cell_id", ",")
 
     rerun_calls = []
     real_rerun = st.rerun
@@ -489,4 +488,5 @@ def test_extraction_happy_path_causes_no_rerun(monkeypatch):
     assert not at.exception
     assert rerun_calls == []
     assert at.radio[1].options == ["Feature Comparison", "Feature Histogram"]
-    assert at.session_state["effective_fov_name_col"] == "image_name"
+    assert at.session_state["effective_fov_name_col"] is None
+    assert at.session_state._review_roles["image_name"] == "categorical"

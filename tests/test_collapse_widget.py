@@ -42,20 +42,21 @@ def _replicate_frame():
 
 
 @pytest.fixture
-def page(monkeypatch):
+def page(monkeypatch, install_page_table):
     """The real page, with the uploader bypassed -- AppTest cannot drive a file
-    upload, so the loaded state is modelled by monkeypatching load_table."""
+    upload, so the loaded state is modelled by supplying raw rows to the real gate."""
     from streamlit.testing.v1 import AppTest
 
     frame = _replicate_frame()
     monkeypatch.setattr(acw, "get_categorical_cols_analysis",
                         lambda *a, **k: ["treatment", "dish", "day", "image_name"])
     monkeypatch.setattr(acw, "get_fov_name_col_analysis", lambda *a, **k: "image_name")
-    monkeypatch.setattr(dataset_io, "load_table", lambda *_a, **_k: (
-        frame, {"Uncategorized Features": [FEATURE]}, True, ",", "cell_id"))
+    install_page_table(frame, {"Uncategorized Features": [FEATURE]}, "cell_id", ",")
 
     def _run(**session):
         at = AppTest.from_file(PAGE)
+        # The real gate preserves input column order; these tests compare treatments.
+        at.session_state["vis_encoding_color_by"] = ["treatment"]
         for key, value in session.items():
             at.session_state[key] = value
         at.run(timeout=90)
