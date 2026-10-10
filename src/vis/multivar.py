@@ -11,7 +11,6 @@ import threading
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-import umap
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
@@ -45,6 +44,9 @@ def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, ra
             df = pd.DataFrame(principal_components, columns=["PC1", "PC2"])
             exp_var = pca.explained_variance_ratio_ * 100
         elif method == "UMAP":
+            # Importing UMAP compiles numerical routines; defer it until needed.
+            import umap
+
             umap_neighbors = hyperParam_dict.get('n_neighbors', 15)
             umap_min_dist = hyperParam_dict.get('min_dist', 0.1)
             reducer = umap.UMAP(n_neighbors=umap_neighbors,min_dist=umap_min_dist,

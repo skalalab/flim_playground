@@ -6,7 +6,6 @@ import streamlit as st
 
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
-from src.classify import run_classification
 from src.collapse import collapse_rows
 from src.dataset_io import (
     SUPPORTED_SUFFIXES,
@@ -636,6 +635,8 @@ with col2:
                     if error_msg:
                         st.error(error_msg)
                     else:
+                        from src.classify import run_classification
+
                         error_msg, results = run_classification(
                             df_classify,
                             classification_method,

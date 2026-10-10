@@ -2,13 +2,6 @@ from itertools import combinations
 
 import streamlit as st
 
-from src.classify import (
-    create_overall_accuracy_table,
-    create_per_class_metrics_table,
-    plot_confusion_matrix,
-    plot_feature_importance,
-    plot_roc_curve,
-)
 from src.emojis import happy_emoji, sad_emoji
 from src.vis.plot_defaults import DEFAULT_AXIS_LABEL_FONT_SIZE, DEFAULT_LEGEND_FONT_SIZE
 from src.widgets.visualization_widgets import plot_config_widget
@@ -250,6 +243,15 @@ def classifier_options_widget(df, categorical_cols, fov_name_col, selected_featu
         return "", df_classify, sampling_method, class_weight, threshold_method
     
 def classification_plot_widget(results, classification_method, threshold_method):
+    # The controls can render without initializing classifiers or Matplotlib.
+    from src.classify import (
+        create_overall_accuracy_table,
+        create_per_class_metrics_table,
+        plot_confusion_matrix,
+        plot_feature_importance,
+        plot_roc_curve,
+    )
+
     st.subheader("📈 Performance Metrics")
     
     # Display metrics tables side by side.
