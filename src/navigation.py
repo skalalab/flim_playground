@@ -102,13 +102,14 @@ _QUIT_STYLE = "<style>[data-testid='stHeader'], [data-testid='stDialog'] {displa
 def _update_page(tag, asset):
     """Offer ``asset``; on Update now, download it and hand over to ``updater.finish``,
     which replaces the app and reopens it. Ends the script either way."""
-    st.markdown(
-        f"**v{tag}** is available ([what's new ↗]({updater.RELEASE_NOTES_URL})); this is "
-        f"{get_version_label()}. Updating downloads {asset['size'] / 1e6:.0f} MB, then FLIM "
-        "Playground closes and reopens in a new tab. Your settings stay; work running in "
-        "other tabs, such as an extraction, stops."
+    st.subheader(
+        f"Update to v{tag} · [What's new ↗]({updater.RELEASE_NOTES_URL})",
+        anchor=False,
     )
-    if not st.button("Update now", type="primary"):
+    with st.container(horizontal=True, vertical_alignment="center"):
+        update_clicked = st.button("Update now", type="primary")
+        st.markdown("**(Running tasks in all tabs will stop)**", width="content")
+    if not update_clicked:
         st.stop()
     progress = st.progress(0.0, text=f"Downloading v{tag}…")
 
