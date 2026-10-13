@@ -22,7 +22,7 @@ from src.dataset_io import (  # noqa: E402
     review_blocking_reason,
 )
 from src.profile_matching import compare_columns  # noqa: E402
-from src.widgets.analysis_config_widgets import (  # noqa: E402
+from src.analysis_config import (  # noqa: E402
     apply_column_groups,
     apply_column_roles,
     profile_known_columns,

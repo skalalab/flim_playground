@@ -7,8 +7,14 @@ from skimage.measure import regionprops
 
 from src.cell_texture import granularity, mass_displacement, radial_distribution
 from src.decay_io import read_decay
-from src.emojis import sad_emoji
-from src.file_io import get_decay_curves, get_irf, get_lifetime_standard, load_image
+from src.file_io import (
+    file_identity,
+    get_decay_curves,
+    get_irf,
+    get_lifetime_standard,
+    input_file_identities,
+    load_image,
+)
 from src.fit import fit_curves
 from src.fit_helper import (
     create_progress_callback,
@@ -143,17 +149,23 @@ def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask
     single_cell_morph_features_fov = pd.DataFrame.from_dict(single_cell_morph_features_fov, orient='index')
     return "", single_cell_morph_features_fov
 
+def _without_failures(cached, *args):
+    """Call a cached ``(error_msg, result)`` function and drop a failure from its cache.
+
+    A read that fails once, say on a dropped network share, is then retried on the next
+    run instead of being served from the cache until a rescan.
+    """
+    result = cached(*args)
+    if result[0]:
+        cached.clear(*args)
+    return result
+
+
 # max_entries bounds the memory: each entry holds four full-resolution arrays (~6 MB at 552²,
 # ~80 MB at 2048²). The diagnostics cache below stays unbounded; it holds small dicts.
 @st.cache_data(show_spinner="Correcting QPI background...", max_entries=4)
-def corrected_qpi_image(wavefront_path, mask_path, opd_unit, method, degree, expand_pct, channel=-1):
-    """Load one QPI FOV and correct its background.
-
-    ``(error_msg, (corrected_um, surface_um, exclusion, mask, info))``. Keyed on the two
-    paths, the unit, the four settings and the plane: everything it reads, so the calibration
-    preview and the extraction share one computation per FOV. Cleared by
-    ``clear_folder_scan_caches`` (a rescan may replace the files in place).
-    """
+def _corrected_qpi_image_cached(wavefront_path, mask_path, opd_unit, method, degree, expand_pct, channel, input_files):
+    """Body of ``corrected_qpi_image``; ``input_files`` is both files' identity on disk."""
     try:
         image = load_image(wavefront_path, channel)
     except Exception as e:  # noqa: BLE001
@@ -172,17 +184,41 @@ def corrected_qpi_image(wavefront_path, mask_path, opd_unit, method, degree, exp
     return "", (corrected, surface, exclusion, mask, info)
 
 
-@st.cache_data(show_spinner=False)
-def qpi_fov_diagnostics(wavefront_path, mask_path, opd_unit, method, degree, expand_pct, channel=-1):
-    """Calibration readouts for one FOV (``qpi.diagnostics``); ``(error_msg, dict)``.
+def corrected_qpi_image(wavefront_path, mask_path, opd_unit, method, degree, expand_pct, channel=-1):
+    """Load one QPI FOV and correct its background.
 
-    Same key as ``corrected_qpi_image``, which it calls, so the arrays are computed once.
+    ``(error_msg, (corrected_um, surface_um, exclusion, mask, info))``. Cached on the two
+    paths and their size and mtime, the unit, the four settings and the plane: everything it
+    reads, so the calibration preview and the extraction share one computation per FOV and
+    an overwritten file is read again without a rescan. Failures are not kept.
     """
+    files = (file_identity(wavefront_path), file_identity(mask_path))
+    return _without_failures(_corrected_qpi_image_cached, wavefront_path, mask_path, opd_unit, method, degree, expand_pct, channel, files)
+
+
+corrected_qpi_image.clear = _corrected_qpi_image_cached.clear   # Rescan and tests clear through the public name
+
+
+@st.cache_data(show_spinner=False)
+def _qpi_fov_diagnostics_cached(wavefront_path, mask_path, opd_unit, method, degree, expand_pct, channel, input_files):
+    """Body of ``qpi_fov_diagnostics``; same key as ``_corrected_qpi_image_cached``."""
     error_msg, result = corrected_qpi_image(wavefront_path, mask_path, opd_unit, method, degree, expand_pct, channel)
     if error_msg:
         return error_msg, None
     corrected, _, exclusion, mask, info = result
     return "", diagnostics(corrected, mask, exclusion, info)
+
+
+def qpi_fov_diagnostics(wavefront_path, mask_path, opd_unit, method, degree, expand_pct, channel=-1):
+    """Calibration readouts for one FOV (``qpi.diagnostics``); ``(error_msg, dict)``.
+
+    Same key as ``corrected_qpi_image``, which it calls, so the arrays are computed once.
+    """
+    files = (file_identity(wavefront_path), file_identity(mask_path))
+    return _without_failures(_qpi_fov_diagnostics_cached, wavefront_path, mask_path, opd_unit, method, degree, expand_pct, channel, files)
+
+
+qpi_fov_diagnostics.clear = _qpi_fov_diagnostics_cached.clear
 
 
 def get_qpi_features(corrected_um, mask, fov_name, channel_name, constants, selected_feature_extractors):
@@ -640,16 +676,15 @@ def extract_intensity_features(metadata, channel_name, fov_col_name, input_type,
                                 selected_feature_extractors, extracted_morphology_masks):
     """Extract intensity morphology and/or texture features for a channel.
 
-    Return (feature_dfs, error_occurred), where feature_dfs may be empty and
-    error_occurred signals a decay-curve or mask-loading failure requiring the
-    caller to skip this channel.
+    Return ``(error_msg, feature_dfs)``. Any failure, from a read to an extractor, is
+    the caller's to report, and it fails the whole FOV rather than thinning its table.
     """
     int_morph = "Intensity morphology" in selected_feature_extractors
     int_texture = "Intensity texture" in selected_feature_extractors
     feature_dfs = []
 
     if not (int_morph or int_texture):
-        return feature_dfs, False
+        return "", feature_dfs
 
     # Decay (2D) has one cell per CSV row and no mask. Its only intensity feature
     # is intensity_sum, computed from the same per-cell curves as lifetime features.
@@ -658,18 +693,16 @@ def extract_intensity_features(metadata, channel_name, fov_col_name, input_type,
             error_msg, decay_curves = get_decay_curves(
                 metadata, input_type, channel_name, metadata["time_bins"], shift=False)
             if error_msg != "":
-                st.error(f"{error_msg} {sad_emoji}")
-                return feature_dfs, True  # signal caller to skip this channel
+                return error_msg, feature_dfs
             cells = {cell_id: {} for cell_id in decay_curves}
             cells = extract_intensity_sum_2d(channel_name, decay_curves, cells)
             feature_dfs.append(pd.DataFrame.from_dict(cells, orient="index"))
-        return feature_dfs, False
+        return "", feature_dfs
 
     try:
         mask = load_image(metadata[f"{channel_name}_Mask"])
     except Exception as e:
-        st.error(f"Error reading the {channel_name} mask file: {metadata[f'{channel_name}_Mask']}: {e} {sad_emoji}")
-        return feature_dfs, True  # signal caller to skip this channel
+        return _read_fail_msg(channel_name, "mask", metadata[f"{channel_name}_Mask"], e), feature_dfs
 
     if int_morph:
         # Avoid re-extracting morphology if the same mask file was already processed
@@ -677,24 +710,20 @@ def extract_intensity_features(metadata, channel_name, fov_col_name, input_type,
             extracted_morphology_masks.append(metadata[f"{channel_name}_Mask"])
             error_msg, morph_df = get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask)
             if error_msg != "":
-                st.error(f"{error_msg} {sad_emoji}")
-            else:
-                feature_dfs.append(morph_df)
+                return error_msg, feature_dfs
+            feature_dfs.append(morph_df)
 
     if int_texture:
         error_msg, texture_df = get_intensity_texture_features(metadata, channel_name, fov_col_name, mask, input_type)
         if error_msg != "":
-            st.error(f"{error_msg} {sad_emoji}")
-        else:
-            feature_dfs.append(texture_df)
+            return error_msg, feature_dfs
+        feature_dfs.append(texture_df)
 
-    return feature_dfs, False
+    return "", feature_dfs
 
-@st.cache_data
-def fov_extraction(metadata, metadata_dict):
-    """
-    Extract single cell features from one fov
-    """
+@st.cache_data(show_spinner="Extracting features...")
+def _fov_extraction_cached(metadata, metadata_dict, input_files):
+    """Body of ``fov_extraction``; ``input_files`` is every named file's identity on disk."""
     fov_col_name = metadata_dict["fov_name_col"]
     fov_name = metadata[fov_col_name]
     unique_cell_id_colname = metadata_dict["unique_cell_id_col"]
@@ -731,52 +760,48 @@ def fov_extraction(metadata, metadata_dict):
                 fixed_lifetimes = metadata_dict[channel_name].get("fixed_lifetimes", {})
                 error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method, fluorescence_lifetime_standard_image=fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime=fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis=fluorescence_lifetime_standard_time_axis, fixed_lifetimes=fixed_lifetimes)
                 if error_msg != "":
-                    st.error(f"{error_msg} {sad_emoji}")
-                    continue
+                    return error_msg, pd.DataFrame()
                 fov_feature_dfs.append(single_cell_lifetime_features)
-            intensity_dfs, mask_error = extract_intensity_features(
+            error_msg, intensity_dfs = extract_intensity_features(
                 metadata, channel_name, fov_col_name, input_type,
                 selected_feature_extractors, extracted_morphology_masks
             )
-            if mask_error:
-                continue
+            if error_msg != "":
+                return error_msg, pd.DataFrame()
             fov_feature_dfs.extend(intensity_dfs)
         elif imaging_modality == "Intensity-only":
-            intensity_dfs, mask_error = extract_intensity_features(
+            error_msg, intensity_dfs = extract_intensity_features(
                 metadata, channel_name, fov_col_name, input_type,
                 selected_feature_extractors, extracted_morphology_masks
             )
-            if mask_error:
-                continue
+            if error_msg != "":
+                return error_msg, pd.DataFrame()
             fov_feature_dfs.extend(intensity_dfs)
         elif imaging_modality == "QPI":
             # Morphology comes from the shared helper, so two channels over one mask
             # file still emit it once. Dry-mass features need the confirmed recipe.
-            intensity_dfs, mask_error = extract_intensity_features(
+            error_msg, intensity_dfs = extract_intensity_features(
                 metadata, channel_name, fov_col_name, input_type,
                 selected_feature_extractors, extracted_morphology_masks
             )
-            if mask_error:
-                continue
+            if error_msg != "":
+                return error_msg, pd.DataFrame()
             fov_feature_dfs.extend(intensity_dfs)
             if {"Dry-mass statistics", "Spatial texture"} & set(selected_feature_extractors):
                 recipe = metadata_dict[channel_name].get("background")
                 if recipe is None:
-                    st.error(f"Error: Background correction settings for {channel_name} are missing. Confirm calibration before extracting. {sad_emoji}")
-                    continue
+                    return f"Error: Background correction settings for {channel_name} are missing. Confirm calibration before extracting.", pd.DataFrame()
                 constants = metadata_dict[channel_name]["qpi"]
                 error_msg, corrected = corrected_qpi_image(
                     metadata[f"{channel_name}_QPI (2D)"], metadata[f"{channel_name}_Mask"], constants["opd_unit"],
                     recipe["method"], recipe["degree"], recipe["expand_pct"], int(metadata.get(f"{channel_name}_channel", -1)))
                 if error_msg != "":
-                    st.error(f"{error_msg} {sad_emoji}")
-                    continue
+                    return error_msg, pd.DataFrame()
                 corrected_um, _, _, mask, _ = corrected
                 error_msg, qpi_df = get_qpi_features(corrected_um, mask, fov_name, channel_name, constants, selected_feature_extractors)
                 if error_msg != "":
-                    st.error(f"{error_msg} {sad_emoji}")
-                else:
-                    fov_feature_dfs.append(qpi_df)
+                    return error_msg, pd.DataFrame()
+                fov_feature_dfs.append(qpi_df)
         else:
             return f"Error: Unknown imaging modality '{imaging_modality}' for {channel_name}", pd.DataFrame()
 
@@ -789,3 +814,16 @@ def fov_extraction(metadata, metadata_dict):
         return f"Error: No cells found in the {fov_name}", pd.DataFrame()
 
     return "", single_cell_features_fov
+
+
+def fov_extraction(metadata, metadata_dict):
+    """Extract single cell features from one fov; ``(error_msg, DataFrame)``.
+
+    Cached on the row, the settings and each named file's size and mtime, so an overwritten
+    mask, decay or reference is extracted again without a rescan. A failed FOV is not kept,
+    so a transient read error is retried on the next run.
+    """
+    return _without_failures(_fov_extraction_cached, metadata, metadata_dict, input_file_identities(metadata))
+
+
+fov_extraction.clear = _fov_extraction_cached.clear

@@ -455,7 +455,7 @@ def test_a_fresh_install_creates_no_analysis_profile_at_all(monkeypatch, tmp_pat
     """Every accessor supports an absent config without creating a profile or writing a
     file.
     """
-    from src.widgets import analysis_config_widgets as acw
+    from src import analysis_config as acw
 
     monkeypatch.setattr(acw, "_ANALYSIS_CONFIG_PATH", tmp_path / "analysis_config.toml")
     acw.st.session_state.pop("current_profile", None)

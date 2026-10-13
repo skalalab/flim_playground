@@ -43,6 +43,25 @@ def load_image(path: Union[str, pathlib.PurePath], channel: int = -1) -> np.ndar
         return tifffile.imread(path)
     raise ValueError(f"Unsupported file extension '{path.suffix}'. Supported: .asc, .tiff, .tif")
 
+def file_identity(path):
+    """``(size, mtime_ns)`` of *path*, or None when it cannot be read.
+
+    A cache key for a file's contents: an overwritten mask, decay, image or reference then
+    misses the cache without a rescan. ``decay_io.read_ptu_reference`` keys its cache the
+    same way.
+    """
+    try:
+        stat = os.stat(path)
+    except (OSError, ValueError):
+        return None
+    return stat.st_size, stat.st_mtime_ns
+
+
+def input_file_identities(row):
+    """``file_identity`` of every file a metadata row names, in column order."""
+    return tuple(file_identity(value) for value in row if isinstance(value, (str, os.PathLike)))
+
+
 def read_image_axes(path):
     """``(data, axes)``: the image and tifffile's axis letters for its first series, which
     leave out size-1 axes (``"YX"``, ``"CYX"``, ``"YXS"``); ``"YX"`` for an .asc file."""

@@ -1,7 +1,7 @@
 """In-memory extraction decisions and their automatically maintained output records."""
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 import json
 from numbers import Real
@@ -59,6 +59,7 @@ class ExtractionSession:
     features: pd.DataFrame | None = None
     features_path: Path | None = None
     features_error: str = ""
+    failures: dict = field(default_factory=dict)
 
     @classmethod
     def create(cls, metadata_df, settings, output_folder):
@@ -122,6 +123,7 @@ class ExtractionSession:
         self.features = None
         self.features_path = None
         self.features_error = ""
+        self.failures = {}
 
     def begin_recalibration(self):
         self.calibration_confirmed = False

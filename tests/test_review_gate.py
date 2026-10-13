@@ -28,7 +28,7 @@ class _Upload:
 
 @pytest.fixture
 def acw(isolated_config_paths):
-    from src.widgets import analysis_config_widgets as module
+    from src import analysis_config as module
 
     module.st.session_state.clear()
     return module
@@ -697,12 +697,11 @@ def test_save_clears_temporary_status_or_failure_keeps_use_available(acw, monkey
     gen = at.session_state._review_file_gen
     at = next(w for w in at.text_input if w.key == f"review_save_as_name_{gen}").set_value("new").run()
     if failed_write:
-        original = Path.open
-        def read_only(path, mode="r", *args, **kwargs):
-            if path == acw._ANALYSIS_CONFIG_PATH and "w" in mode:
-                raise PermissionError("read-only configuration")
-            return original(path, mode, *args, **kwargs)
-        monkeypatch.setattr(Path, "open", read_only)
+        # Fail the writer itself: save_config replaces the file through a temporary
+        # one, so a read-only target alone would no longer stop it.
+        def read_only(cfg, path):
+            raise PermissionError("read-only configuration")
+        monkeypatch.setattr(acw, "save_config", read_only)
     at = _click(at, f"review_save_as_new_{gen}")
     assert not at.exception
     if failed_write:

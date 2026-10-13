@@ -86,7 +86,7 @@ def test_analysis_page_passes_separator_to_plot_and_export(monkeypatch, install_
     import plotly.graph_objects as go
     from src import dataset_io, export_script
     from src.vis import bivar
-    from src.widgets import analysis_config_widgets as acw
+    from src import analysis_config as acw
     g, s = "Lifetime fit free_ch1: G(1st)", "Lifetime fit free_ch1: S(1st)"
     df = pd.DataFrame({"id": list("abcdefgh"), "day": ["D1", "D2"] * 4,
                        "treatment": ["A", "A", "B", "B"] * 2,

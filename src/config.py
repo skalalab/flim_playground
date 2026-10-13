@@ -1,5 +1,6 @@
 import os
 import sys
+import uuid
 from pathlib import Path
 
 import toml
@@ -50,11 +51,26 @@ def load_config(config_path: Path | None = None) -> dict:
         return {}
 
 def save_config(cfg: dict, config_path: Path | None = None) -> None:
-    """Persist *cfg* to disk, overwriting the previous config file."""
+    """Persist *cfg* to disk, replacing the previous file only once the new one is complete.
+
+    Write a temporary file beside the target, flush it to disk, then rename it over
+    the old file. A crash, a kill, or a full disk midway leaves the previous
+    configuration readable instead of a truncated file that loads as empty.
+    """
     path_to_save = _CONFIG_PATH if config_path is None else config_path
     path_to_save.parent.mkdir(parents=True, exist_ok=True)
-    with path_to_save.open("w", encoding="utf-8") as fh:
-        toml.dump(cfg, fh)
+    temporary = path_to_save.with_name(f".{path_to_save.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        # os.open applies the process umask like a plain write; mkstemp's 0600 would
+        # hide the settings from other users of a shared install.
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as fh:
+            toml.dump(cfg, fh)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(temporary, path_to_save)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 def name_survives_round_trip(name: str) -> bool:
     """Whether the TOML library preserves *name* as a table key through a save/load.

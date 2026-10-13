@@ -10,6 +10,7 @@ import tifffile
 import toml
 
 from src import config
+from src.celebrate import LAST_EFFECT_KEY
 from src.widgets import lifetime_widgets, metadata_widgets, numeric_extraction_widgets
 
 
@@ -61,7 +62,7 @@ def workflow(tmp_path, monkeypatch):
     def extract(rows, settings):
         state["calls"].append((rows.copy(), settings["fitting_mode"]))
         return pd.DataFrame({"image_name": ["fov1"], "feature": [42.0]},
-                            index=pd.Index(["fov1_1"], name="cell_id"))
+                            index=pd.Index(["fov1_1"], name="cell_id")), {}
 
     monkeypatch.setattr(numeric_extraction_widgets, "fov_extraction_widget", extract)
     app = AppTest.from_file(PAGE).run(timeout=30)
@@ -253,24 +254,27 @@ def test_source_setup_edits_invalidate_preparation(workflow, change):
     assert len(state["calls"]) == 1
 
 
-def no_calibration_app(tmp_path, monkeypatch, kind):
+def no_calibration_app(tmp_path, monkeypatch, kind, names=("sample",)):
     """Open the page on a folder whose channels need no shift calibration."""
     folder = tmp_path / "images"
     folder.mkdir()
     mask = np.zeros((8, 8), dtype=np.uint8)
     mask[1:4, 1:4] = 1
     mask[4:7, 4:7] = 2
-    tifffile.imwrite(folder / "sample_mask.tif", mask)
     if kind == "intensity":
         input_type = "Intensity (2D)"
         extractors = ["Intensity morphology"]
         suffixes = {"Intensity (2D)": "_intensity.tif", "Mask": "_mask.tif"}
-        tifffile.imwrite(folder / "sample_intensity.tif", np.full((8, 8), 100, dtype=np.uint16))
     else:
         input_type = "Decay (3/4D) pixel-prefitted"
         extractors = ["Lifetime fit"]
         suffixes = {"SPCImage t1": "_t1.asc", "Mask": "_mask.tif"}
-        np.savetxt(folder / "sample_t1.asc", np.full((8, 8), 1200.0))
+    for name in names:
+        tifffile.imwrite(folder / f"{name}_mask.tif", mask)
+        if kind == "intensity":
+            tifffile.imwrite(folder / f"{name}_intensity.tif", np.full((8, 8), 100, dtype=np.uint16))
+        else:
+            np.savetxt(folder / f"{name}_t1.asc", np.full((8, 8), 1200.0))
     cfg = {
         "num_channels": 1, "flim_decay_input_type": input_type,
         "fov_name_col": "image_name", "unique_cell_id_col": "cell_id",
@@ -312,6 +316,29 @@ def test_workflows_without_shift_calibration_export_real_features(tmp_path, monk
     assert not button(app, "Start extraction").disabled  # A rerun stays one click away.
     # This is the view that followed the click, so the saved record stays with the features.
     assert saved_metadata_notes(app)
+
+
+def test_a_failed_fov_blocks_export_until_it_is_fixed(tmp_path, monkeypatch):
+    app, folder = no_calibration_app(tmp_path, monkeypatch, "intensity", names=("sample", "broken"))
+    good_mask = tifffile.imread(folder / "broken_mask.tif")
+    # Spoiled after the folder scan, as a half-copied file would be.
+    (folder / "broken_mask.tif").write_text("not a tiff", encoding="utf-8")
+    button(app, "Start extraction").click().run(timeout=30)
+    assert not app.exception, [e.value for e in app.exception]
+    assert not list(folder.glob("single_cell_features_*.csv"))      # nothing exported
+    assert LAST_EFFECT_KEY not in app.session_state                 # no celebration
+    assert [s.value for s in app.success if s.value == "✅ Success!"] == ["✅ Success!"]   # one tile, the good FOV
+    summary = [e.value for e in app.error if "1 of 2" in e.value]
+    assert summary and "broken" in summary[0]
+    run(app)                                                        # the report outlives the tiles
+    assert any("1 of 2" in e.value for e in app.error)
+    tifffile.imwrite(folder / "broken_mask.tif", good_mask)
+    button(app, "Start extraction").click().run(timeout=30)
+    assert not app.exception, [e.value for e in app.exception]
+    assert not app.error, [e.value for e in app.error]
+    features = pd.read_csv(next(folder.glob("single_cell_features_*.csv")))
+    assert sorted(features["cell_id"]) == ["broken_1", "broken_2", "sample_1", "sample_2"]
+    assert LAST_EFFECT_KEY in app.session_state
 
 
 def test_step_round_trip_restores_source_controls_in_browser(workflow, monkeypatch):

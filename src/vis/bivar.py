@@ -7,7 +7,9 @@ from sklearn.linear_model import LinearRegression
 from src.column_roles import code_span
 from src.export_labels import available_label_column, format_export_group_labels
 from src.feature_labels import format_feature_label
-from src.widgets.gmm_tables import gmm_component_table, gmm_group_title, gmm_tables_html
+from src.natural_sort import natural_tuple_sort
+from .gmm_tables import gmm_component_table, gmm_group_title, gmm_tables_html
+from .plot_defaults import get_context_theme_color
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 
 from .dimension_facets import category_facet_groups, dimension_facet_layout
@@ -15,11 +17,9 @@ from .helpers import (
     _find_best_gmm,
     add_interleaved_points_trace,
     format_group_label,
-    get_context_theme_color,
     get_point_visual_mappings,
     hover_field,
     log_negative_error,
-    natural_tuple_sort,
 )
 
 MARGINAL_OPTIONS = ['None', 'gaussian fit', 'boxplot', 'violin']

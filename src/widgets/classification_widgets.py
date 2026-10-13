@@ -264,7 +264,7 @@ def classification_plot_widget(results, classification_method, threshold_method)
     with cols_metrics[1]:
         st.markdown("**Per-Class Metrics**")
         per_class_table = create_per_class_metrics_table(metrics, threshold_method)
-        st.markdown(per_class_table, unsafe_allow_html=True)
+        st.html(per_class_table)   # HTML, not Markdown: class values stay literal
     
     st.markdown("---")  # Divider between tables and plot controls
     

@@ -13,7 +13,7 @@ import pytest
 
 from src.classify import (
     create_overall_accuracy_table,
-    create_per_class_metrics_table,
+    per_class_metric_rows,
     plot_confusion_matrix,
     plot_feature_importance,
     plot_roc_curve,
@@ -106,11 +106,10 @@ def _pixels(fig):
 
 
 def test_export_reports_every_value_shown_in_the_app_metric_tables(classification_case):
-    expected, _, output, state, _ = classification_case
+    expected, _, output, _, _ = classification_case
     metrics = expected["metrics"]
     overall = dict(_table_rows(create_overall_accuracy_table(metrics))[1:])
-    table = _table_rows(create_per_class_metrics_table(
-        metrics, state["method_params"]["threshold_method"]))
+    table = per_class_metric_rows(metrics)
 
     assert "Youden's J" in output, "The export must report the app's per-class Youden's J"
     assert _table_rows(output) == table

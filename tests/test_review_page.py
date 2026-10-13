@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src import dataset_io
 from src.column_roles import NO_GROUP, code_span
-from src.widgets import analysis_config_widgets as acw
+from src import analysis_config as acw
 from src.widgets.filter_widgets import selection_key
 from src.widgets.review_table_widget import (
     AUTO_DETECT,

@@ -31,8 +31,8 @@ from src.profile_matching import (
     exact_match,
     rank_profiles,
 )
-from src.vis.helpers import natural_key
-from src.widgets.analysis_config_widgets import (
+from src.natural_sort import natural_key
+from src.analysis_config import (
     AUTO_DETECT,
     MANAGE_LABEL,
     MAX_PROFILES,

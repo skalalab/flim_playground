@@ -1,3 +1,5 @@
+import html
+
 import numpy as np 
 import pandas as pd
 from sklearn.metrics import roc_curve, auc, confusion_matrix, ConfusionMatrixDisplay
@@ -278,66 +280,63 @@ def create_overall_accuracy_table(metrics_dict):
     
     return f"\n{table}"
 
+PER_CLASS_FIELDS = ("precision", "recall", "specificity", "youdens_j", "f1_score")
+PER_CLASS_HEADER = ["Class", "N", "Precision", "Recall", "Specificity", "Youden's J", "F1 Score"]
+# Which column a threshold-tuning method optimised, marked red in the table.
+_TUNED_COLUMN = {"Balanced Accuracy": "Recall", "F1 Score": "F1 Score"}
+
+_PER_CLASS_STYLES = (
+    "<style>"
+    ".fp-per-class table {border-collapse: collapse; font-variant-numeric: tabular-nums;}"
+    ".fp-per-class th, .fp-per-class td {padding: 0.25rem 1rem 0.25rem 0; text-align: left; white-space: nowrap;}"
+    ".fp-per-class th {border-bottom: 1px solid rgba(128, 128, 128, 0.4);}"
+    ".fp-per-class .fp-tuned {color: red;}"
+    "</style>"
+)
+
+
+def per_class_metric_rows(metrics_dict):
+    """Rows of the per-class table as strings: header, one row per class, and an
+    unweighted Average row when there is more than one class.
+
+    The exported script prints the same rows, so this is the parity contract.
+    """
+    per_class = metrics_dict.get("per_class") or {}
+    rows = [list(PER_CLASS_HEADER)]
+    for label, result in per_class.items():
+        rows.append([str(label), str(result["n"]), *(f"{result[field]:.4f}" for field in PER_CLASS_FIELDS)])
+    class_count = len(per_class)
+    if class_count > 1:
+        total_n = sum(result["n"] for result in per_class.values())
+        rows.append(["Average", f"{total_n / class_count:.2f}",
+                     *(f"{sum(result[field] for result in per_class.values()) / class_count:.4f}"
+                       for field in PER_CLASS_FIELDS)])
+    return rows
+
+
 def create_per_class_metrics_table(metrics_dict, threshold_method):
+    """The per-class metrics as an HTML table for ``st.html``; the tuned metric is red.
+
+    Class values come from the file and are escaped into fixed markup. ``st.html``
+    parses no Markdown, so a value may hold HTML, pipes, backticks or line breaks
+    without changing the table, and the sanitizer stands behind the escaping.
     """
-    Create a markdown table with per-class metrics.
-    
-    Args:
-        metrics_dict: Dictionary containing metrics (from calculate_metrics)
-        threshold_method: Threshold tuning method
-    Returns:
-        str: Markdown formatted table
-    """
-    # Color column header red based on threshold method
-    recall_header = '<span style="color:red">**Recall**</span>' if threshold_method == "Balanced Accuracy" else "Recall"
-    f1_score_header = '<span style="color:red">**F1 Score**</span>' if threshold_method == "F1 Score" else "F1 Score"
-    
-    if 'per_class' not in metrics_dict or not metrics_dict['per_class']:
-        return f"\n    | **Class** | **N** | **Precision** | {recall_header} | **Specificity** | **Youden's J** | {f1_score_header} |\n    |-----------|-------|---------------|------------|-----------------|----------------|--------------|\n    | No data | - | - | - | - | - | - |\n"
-    
-    table = f"    | **Class** | **N** | **Precision** | {recall_header} | **Specificity** | **Youden's J** | {f1_score_header} |\n"
-    table += "    |-----------|-------|---------------|------------|-----------------|----------------|--------------|\n"
-    
-    # Calculate averages for multi-class case
-    num_classes = len(metrics_dict['per_class'])
-    if num_classes > 1:
-        # Initialize accumulators
-        total_n = sum_precision = sum_recall = sum_specificity = sum_youdens_j = sum_f1_score = 0.0
-    
-    for class_name, metrics in metrics_dict['per_class'].items():
-        # Color recall values red if threshold method is Balanced Accuracy
-        recall_value = f'<span style="color:red">{metrics["recall"]:.4f}</span>' if threshold_method == "Balanced Accuracy" else f"{metrics['recall']:.4f}"
-        # Color F1 Score values red if threshold method is F1 Score
-        f1_score_value = f'<span style="color:red">{metrics["f1_score"]:.4f}</span>' if threshold_method == "F1 Score" else f"{metrics['f1_score']:.4f}"
-        youdens_j_value = f"{metrics['youdens_j']:.4f}"
-        table += f"    | {class_name} | {metrics['n']} | {metrics['precision']:.4f} | {recall_value} | {metrics['specificity']:.4f} | {youdens_j_value} | {f1_score_value} |\n"
-        
-        # Accumulate for average calculation
-        if num_classes > 1:
-            total_n += metrics['n']
-            sum_precision += metrics['precision']
-            sum_recall += metrics['recall']
-            sum_specificity += metrics['specificity']
-            sum_youdens_j += metrics['youdens_j']
-            sum_f1_score += metrics['f1_score']
-    
-    # Add average row if more than one class
-    if num_classes > 1:
-        avg_n = total_n / num_classes
-        avg_precision = sum_precision / num_classes
-        avg_recall = sum_recall / num_classes
-        avg_specificity = sum_specificity / num_classes
-        avg_youdens_j = sum_youdens_j / num_classes
-        avg_f1_score = sum_f1_score / num_classes
-        
-        # Color recall average red if threshold method is Balanced Accuracy
-        avg_recall_value = f'<span style="color:red">{avg_recall:.4f}</span>' if threshold_method == "Balanced Accuracy" else f"{avg_recall:.4f}"
-        # Color F1 Score average red if threshold method is F1 Score
-        avg_f1_score_value = f'<span style="color:red">{avg_f1_score:.4f}</span>' if threshold_method == "F1 Score" else f"{avg_f1_score:.4f}"
-        
-        table += f"    | **Average** | {avg_n:.2f} | {avg_precision:.4f} | {avg_recall_value} | {avg_specificity:.4f} | {avg_youdens_j:.4f} | {avg_f1_score_value} |\n"
-    
-    return f"\n{table}"
+    tuned = _TUNED_COLUMN.get(threshold_method)
+    header, *body = per_class_metric_rows(metrics_dict)
+
+    def cell(tag, column, value):
+        marked = ' class="fp-tuned"' if column == tuned else ""
+        return f"<{tag}{marked}>{html.escape(str(value))}</{tag}>"
+
+    head = "<tr>" + "".join(cell("th", column, column) for column in header) + "</tr>"
+    if body:
+        rows = "".join(
+            "<tr>" + "".join(cell("td", column, value) for column, value in zip(header, row)) + "</tr>"
+            for row in body)
+    else:
+        rows = "<tr><td>No data</td>" + "<td>-</td>" * (len(header) - 1) + "</tr>"
+    return (f'{_PER_CLASS_STYLES}<div class="fp-per-class"><table>'
+            f"<thead>{head}</thead><tbody>{rows}</tbody></table></div>")
 
 
 def _build_classifier(method, class_weight, classifier_params, random_state):

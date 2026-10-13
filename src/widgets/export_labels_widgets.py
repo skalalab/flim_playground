@@ -8,7 +8,7 @@ import streamlit as st
 
 from src.column_roles import code_span
 from src.export_labels import normalize_export_labels
-from src.vis.helpers import natural_tuple_sort
+from src.natural_sort import natural_tuple_sort
 from src.widgets.analysis_widget_state import control_default
 from src.widgets.gmm_table_widgets import gmm_component_names_editor
 

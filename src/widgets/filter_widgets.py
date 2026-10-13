@@ -1,5 +1,5 @@
 import streamlit as st
-from src.vis.helpers import natural_tuple_sort
+from src.natural_sort import natural_tuple_sort
 from src.widgets.analysis_widget_state import number_input_default
 from src.widgets.multiselect_modes import (
     ALL_LABEL,

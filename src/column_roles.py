@@ -3,6 +3,7 @@
 Keep this module free of internal imports: both dataset_io and the profile
 widgets use it, and dataset_io already imports those widgets.
 """
+import re
 from collections import Counter
 
 import pandas as pd
@@ -192,9 +193,11 @@ def code_span(text):
 
     Apply this to interpolated values, leaving the message's own Markdown intact.
     The fence exceeds every backtick run in the text; padding protects backticks
-    at either edge under CommonMark's code-span rules.
+    at either edge under CommonMark's code-span rules. Line breaks fold to one space:
+    a blank line would end the span and spill the rest into the prose as markup, and
+    CommonMark renders a single line ending inside a span as a space anyway.
     """
-    text = str(text) or " "
+    text = re.sub(r"[\r\n]+", " ", str(text)) or " "
     longest = run = 0
     for char in text:
         run = run + 1 if char == "`" else 0

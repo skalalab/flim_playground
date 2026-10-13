@@ -10,7 +10,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src import dataset_io
-from src.widgets import analysis_config_widgets as acw
+from src import analysis_config as acw
 
 
 def _profile(**cfg):

@@ -45,7 +45,7 @@ from src.vis.univar import (
     feature_histogram_plot,
     render_histogram_summaries,
 )
-from src.widgets.analysis_config_widgets import (
+from src.analysis_config import (
     working_copy_arguments,
 )
 from src.widgets.analysis_widget_state import (

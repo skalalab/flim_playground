@@ -1,5 +1,4 @@
 import html
-import re
 
 import numpy as np
 import pandas as pd
@@ -11,7 +10,9 @@ from sklearn.mixture import GaussianMixture
 
 from src.column_roles import code_span
 from src.emojis import sad_emoji
+from src.natural_sort import natural_tuple_sort
 from src.vis.plot_defaults import (
+    get_context_theme_color,
     SUPERPLOT_OBSERVATION_MIN_SIZE,
     SUPERPLOT_OBSERVATION_SIZE_SCALE,
     SUPERPLOT_REPLICATE_SIZE_SCALE,
@@ -32,15 +33,6 @@ def hover_field(label, value_ref):
     the template's own HTML tags intact.
     """
     return f"<b>{html.escape(str(label))}:</b> {value_ref}<br>"
-
-
-def get_context_theme_color():
-    """Plot color for the current theme: 'black' in light mode, 'white' otherwise.
-
-    ``st.context.theme.type`` is a plain server-side read, so it costs no rerun. It is
-    None until the browser reports in, which falls through to the dark-mode color.
-    """
-    return "black" if st.context.theme.type == "light" else "white"
 
 
 def point_trace_class(n_points):
@@ -584,23 +576,6 @@ def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_stat
                     lowest_bic = bic
                     best_gmm = gmm
     return best_gmm
-
-def natural_key(s):
-    """Return a tuple for natural sorting: (is_number, number or string)"""
-    # Match decimal or integer numbers (including negative numbers)
-    match = re.search(r'([-+]?\d*\.\d+|\d+)', s)
-    if match:
-        return (0, float(match.group(1)), s)
-    else:
-        return (1, s)
-
-def tuple_natural_key(tup):
-    """Return a tuple of natural keys for each element in the tuple."""
-    return tuple(natural_key(str(x)) for x in tup)
-
-def natural_tuple_sort(strings, delimiter='::'):
-    """Naturally sort each field of delimited strings; callers must supply strings."""
-    return sorted(strings, key=lambda x: tuple_natural_key(x.split(delimiter)))
 
 def _sorted_levels(values):
     """The distinct values of a Series, in natural-sort order."""

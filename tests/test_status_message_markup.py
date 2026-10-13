@@ -37,7 +37,7 @@ def _carries_no_loose_markup(message):
 
 @pytest.fixture
 def acw(tmp_path, monkeypatch):
-    from src.widgets import analysis_config_widgets as module
+    from src import analysis_config as module
 
     monkeypatch.setattr(module, "_ANALYSIS_CONFIG_PATH", tmp_path / "analysis_config.toml")
     module.st.session_state.pop("current_profile", None)
@@ -205,3 +205,49 @@ def test_the_at_the_cap_message_keeps_its_deliberate_bold(acw):
     message = acw.save_working_copy("one too many", roles, {})
 
     assert f"**{acw.MANAGE_LABEL}**" in message, message
+
+
+# ------------------------------------------------------------- line breaks
+
+def test_a_blank_line_cannot_end_the_span():
+    """CommonMark ends a code span at a blank line; the rest would then render as markup."""
+    span = code_span("blank\n\nline<img src=x onerror=alert(1)>")
+
+    assert "\n" not in span and "\r" not in span
+    assert "blank line<img src=x onerror=alert(1)>" in span
+    assert _prose(span) == ""
+
+
+# ------------------------------------------------- classification per-class table
+
+SCORES = {"n": 3, "precision": 1.0, "recall": 0.5, "specificity": 1.0, "youdens_j": 0.5, "f1_score": 0.6667}
+
+
+def test_per_class_rows_carry_the_header_each_class_and_the_average():
+    """One source of rows for the app table, the exported report, and their parity test."""
+    from src.classify import per_class_metric_rows
+
+    rows = per_class_metric_rows({"accuracy": 1.0, "per_class": {"a": SCORES, "b": SCORES}})
+
+    assert rows[0] == ["Class", "N", "Precision", "Recall", "Specificity", "Youden's J", "F1 Score"]
+    assert rows[1] == ["a", "3", "1.0000", "0.5000", "1.0000", "0.5000", "0.6667"]
+    assert rows[-1] == ["Average", "3.00", "1.0000", "0.5000", "1.0000", "0.5000", "0.6667"]
+    assert len(per_class_metric_rows({"accuracy": 1.0, "per_class": {"a": SCORES}})) == 2
+
+
+def test_class_names_stay_literal_in_the_per_class_table():
+    """The table is HTML for st.html: class values are escaped, and nothing is Markdown."""
+    from src.classify import create_per_class_metrics_table
+
+    hostile = "a|b `c` [d](e)\n\nf"
+    metrics = {"accuracy": 1.0, "per_class": {"<img src=x onerror=alert(1)>": SCORES, hostile: SCORES}}
+
+    table = create_per_class_metrics_table(metrics, "F1 Score")
+
+    assert "<img" not in table
+    assert "&lt;img src=x onerror=alert(1)&gt;" in table
+    assert f">{hostile}<" in table                  # literal in HTML; only Markdown would parse it
+    assert "|" not in table.replace(hostile, "")    # no Markdown table left anywhere
+    # The tuned metric is marked on its heading, every class cell, and the Average cell.
+    assert table.count('class="fp-tuned"') == 1 + len(metrics["per_class"]) + 1
+    assert 'class="fp-tuned"' not in create_per_class_metrics_table(metrics, "None")

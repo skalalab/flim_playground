@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from src import dataset_io
-from src.widgets import analysis_config_widgets as acw
+from src import analysis_config as acw
 from src.widgets import visualization_widgets as vw
 
 PAGE = str(Path(__file__).resolve().parents[1] / "pages/data_analysis.py")

@@ -9,7 +9,8 @@ import sys
 import numpy as np
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
-from src.vis.helpers import create_opacity_mapping, natural_tuple_sort
+from src.natural_sort import natural_tuple_sort
+from src.vis.helpers import create_opacity_mapping
 
 FAILS = []
 def check(name, cond, detail=""):

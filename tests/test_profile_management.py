@@ -6,7 +6,7 @@ from src.column_roles import ROLE_CATEGORICAL, ROLE_IGNORE, ROLE_NUMERICAL, ROLE
 
 @pytest.fixture
 def acw(isolated_config_paths):
-    from src.widgets import analysis_config_widgets as module
+    from src import analysis_config as module
 
     module.st.session_state.pop("current_profile", None)
     return module
@@ -221,7 +221,7 @@ def test_the_names_people_actually_type_still_save(acw):
 
 
 def test_working_copy_arguments_carry_the_identifier():
-    from src.widgets.analysis_config_widgets import working_copy_arguments
+    from src.analysis_config import working_copy_arguments
 
     args = working_copy_arguments(ROLES, {})
     assert args["unique_row_id_col"] == "cell_id"
@@ -229,7 +229,7 @@ def test_working_copy_arguments_carry_the_identifier():
 
 def test_a_field_of_view_column_is_a_categorical_like_any_other():
     """The user-table handoff includes FOV names as categoricals and no fov_name_col argument."""
-    from src.widgets.analysis_config_widgets import working_copy_arguments
+    from src.analysis_config import working_copy_arguments
 
     args = working_copy_arguments(dict(ROLES, image_name=ROLE_CATEGORICAL), {})
     assert "image_name" in args["categorical_cols"]
@@ -238,7 +238,7 @@ def test_a_field_of_view_column_is_a_categorical_like_any_other():
 
 
 def test_only_reviewed_categorical_columns_are_included():
-    from src.widgets.analysis_config_widgets import working_copy_arguments
+    from src.analysis_config import working_copy_arguments
 
     args = working_copy_arguments(ROLES, {})
     assert args["categorical_cols"] == ["treatment"]
@@ -253,7 +253,7 @@ def test_only_reviewed_categorical_columns_are_included():
 def test_export_columns_keep_their_reviewed_roles(
         role, is_categorical, column):
     """Default and custom export headers follow the same reviewed roles."""
-    from src.widgets.analysis_config_widgets import working_copy_arguments
+    from src.analysis_config import working_copy_arguments
 
     args = working_copy_arguments({**ROLES, column: role}, {})
     assert args["categorical_cols"] == ["treatment"] + ([column] if is_categorical else [])
@@ -263,7 +263,7 @@ def test_export_columns_keep_their_reviewed_roles(
 def test_reuploaded_export_labels_follow_ordinary_detection_and_review(column):
     import pandas as pd
     from src.dataset_io import detect_roles, interpret_table
-    from src.widgets.analysis_config_widgets import working_copy_arguments
+    from src.analysis_config import working_copy_arguments
 
     data = pd.DataFrame({"id": ["a", "b", "c", "d"], "measurement": [1.5, 2.5, 3.5, 4.5],
                          column: ["Low", "Low", "High", "High"]})
@@ -286,7 +286,7 @@ def test_a_clustering_name_the_file_owns_reaches_the_plots_as_a_measurement():
     import pandas as pd
 
     from src.dataset_io import interpret_table
-    from src.widgets.analysis_config_widgets import working_copy_arguments
+    from src.analysis_config import working_copy_arguments
 
     df = pd.DataFrame({"cell_id": [1, 2, 3, 4],
                        "treatment": ["ctrl", "ctrl", "drug", "drug"],
@@ -306,14 +306,14 @@ def test_a_clustering_name_the_file_owns_reaches_the_plots_as_a_measurement():
 
 
 def test_an_ignored_column_reaches_get_features_by_name():
-    from src.widgets.analysis_config_widgets import working_copy_arguments
+    from src.analysis_config import working_copy_arguments
 
     args = working_copy_arguments(dict(ROLES, notes=ROLE_IGNORE), {})
     assert args["ignored_cols"] == ["notes"]
 
 
 def test_the_groups_travel_by_argument_rather_than_being_read_from_the_active_profile():
-    from src.widgets.analysis_config_widgets import working_copy_arguments
+    from src.analysis_config import working_copy_arguments
 
     args = working_copy_arguments(ROLES, {"Area": "morphology"})
     assert args["feature_groups"] == {"morphology": ["Area"]}
@@ -321,7 +321,7 @@ def test_the_groups_travel_by_argument_rather_than_being_read_from_the_active_pr
 
 def test_a_table_with_no_row_id_hands_over_a_blank_name():
     """Blank means 'this table has none', which resolve_row_id_col turns into numbers."""
-    from src.widgets.analysis_config_widgets import working_copy_arguments
+    from src.analysis_config import working_copy_arguments
 
     args = working_copy_arguments({"Area": ROLE_NUMERICAL}, {})
     assert args["unique_row_id_col"] == ""

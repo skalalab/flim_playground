@@ -891,13 +891,8 @@ def _build_derived_export_helpers(state: dict) -> str:
 def _build_visual_encoding(state: dict, overlap_point: bool = True,
                            group_column_expr: str = '"_color_group"') -> str:
     """Build visual encoding section by extracting real functions."""
-    from src.vis.helpers import (
-        create_opacity_mapping,
-        format_group_label,
-        natural_key,
-        natural_tuple_sort,
-        tuple_natural_key,
-    )
+    from src.natural_sort import natural_key, natural_tuple_sort, tuple_natural_key
+    from src.vis.helpers import create_opacity_mapping, format_group_label
 
     # Include natural-sort dependencies and shared legend wording in Matplotlib format.
     helpers_src = _extract_source(natural_key, tuple_natural_key, natural_tuple_sort,
@@ -981,13 +976,8 @@ print("Figure saved to {fname}.svg")
 
 def _build_feature_histogram(state: dict) -> str:
     """Render every prepared category, sharing calculations with the app."""
-    from src.vis.helpers import (
-        _find_best_gmm,
-        find_intersection,
-        natural_key,
-        natural_tuple_sort,
-        tuple_natural_key,
-    )
+    from src.natural_sort import natural_key, natural_tuple_sort, tuple_natural_key
+    from src.vis.helpers import _find_best_gmm, find_intersection
     from src.vis.histogram import (
         _assign_subpopulation_labels,
         histogram_bin_edges,

@@ -1,3 +1,7 @@
+"""Analysis profile storage: readers and writers for ``analysis_config.toml``.
+
+Imported by the table reader and the review widget alike, so it lives below both.
+"""
 import sys
 from pathlib import Path
 

@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src import dataset_io
 from src.collapse import collapse_rows
 from src.column_roles import code_span
-from src.widgets import analysis_config_widgets as acw
+from src import analysis_config as acw
 from src.widgets import visualization_widgets as vw
 
 PAGE = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")

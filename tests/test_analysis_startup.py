@@ -17,10 +17,10 @@ def test_analysis_starts_without_unused_engines(tmp_path, action):
         from pathlib import Path
 
         from src import config
-        from src.widgets import analysis_config_widgets
+        from src import analysis_config
 
         config._CONFIG_PATH = Path(sys.argv[2]) / "config.toml"
-        analysis_config_widgets._ANALYSIS_CONFIG_PATH = (
+        analysis_config._ANALYSIS_CONFIG_PATH = (
             Path(sys.argv[2]) / "analysis_config.toml")
 
         if sys.argv[1] == "page":

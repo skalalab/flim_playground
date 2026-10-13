@@ -111,7 +111,7 @@ def test_scale_named_features_do_not_inherit_another_features_width():
 @pytest.mark.parametrize("can_log", [True, False])
 def test_page_export_captures_the_active_scale_bin_width(monkeypatch, can_log, install_page_table):
     from src import dataset_io, export_script
-    from src.widgets import analysis_config_widgets as acw
+    from src import analysis_config as acw
 
     values = np.linspace(1000., 1001., 50) if can_log else np.linspace(-1., 1., 50)
     frame = pd.DataFrame({"cell_id": [f"id{i}" for i in range(50)], "Signal": values})
@@ -143,7 +143,7 @@ def test_page_export_captures_the_active_scale_bin_width(monkeypatch, can_log, i
 @pytest.mark.parametrize("logged", [False, True])
 def test_page_remembers_bin_widths_while_their_controls_are_hidden(monkeypatch, destination, logged, install_page_table):
     from src import dataset_io, export_script
-    from src.widgets import analysis_config_widgets as acw
+    from src import analysis_config as acw
 
     frame = pd.DataFrame({"cell_id": [f"id{i}" for i in range(50)],
                           "Signal": np.linspace(1000., 1001., 50)})

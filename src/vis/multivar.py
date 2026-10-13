@@ -14,9 +14,9 @@ import streamlit as st
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
+from .plot_defaults import get_context_theme_color
 from .helpers import (
     add_interleaved_points_trace,
-    get_context_theme_color,
     get_point_visual_mappings,
     hover_field,
     point_trace_class,

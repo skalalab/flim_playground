@@ -14,7 +14,7 @@ from scipy.stats import gaussian_kde
 from src import dataset_io, export_script
 from src.vis import bivar
 from src.vis.helpers import _find_best_gmm
-from src.widgets import analysis_config_widgets as acw
+from src import analysis_config as acw
 from src.widgets import visualization_widgets as vw
 
 PAGE = str(Path(__file__).resolve().parents[1] / "pages" / "data_analysis.py")

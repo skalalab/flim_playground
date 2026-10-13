@@ -1,7 +1,7 @@
 """Pure layout and membership shared by Dimension Reduction and script export."""
 import numpy as np
 
-from .helpers import natural_tuple_sort
+from src.natural_sort import natural_tuple_sort
 
 
 def normalize_dimension_categories(df, columns):

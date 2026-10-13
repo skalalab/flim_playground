@@ -16,7 +16,7 @@ from src.column_roles import (
     validate_roles,
 )
 from src.dataset_io import build_working_copy, detect_roles
-from src.widgets.analysis_config_widgets import (
+from src.analysis_config import (
     apply_column_groups,
     column_groups,
 )

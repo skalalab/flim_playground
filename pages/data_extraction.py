@@ -48,7 +48,10 @@ from src.widgets.metadata_widgets import (
     load_list_data_from_folder_widget,
     preview_metadata_widget,
 )
-from src.widgets.numeric_extraction_widgets import fov_extraction_widget
+from src.widgets.numeric_extraction_widgets import (
+    extraction_failure_summary,
+    fov_extraction_widget,
+)
 from src.widgets.qpi_widgets import choose_background_widget
 
 # Shared labels for the workflow selector and dispatch.
@@ -515,11 +518,15 @@ def render_numeric_step(col1, col2, ctx):
                 st.error(error)
             else:
                 prepared.invalidate_results()
-                features = fov_extraction_widget(prepared.metadata_df, prepared.settings)
-                if not features.empty:
+                features, failures = fov_extraction_widget(prepared.metadata_df, prepared.settings)
+                prepared.failures = failures
+                if not failures and not features.empty:
                     prepared.export_features(features)
                     if not prepared.features_error:
                         celebrate()
+        if prepared.failures:
+            # Outlives the FOV tiles, which render only during the run.
+            st.error(extraction_failure_summary(prepared.failures, len(prepared.metadata_df)))
         if prepared.features is not None:
             st.write(prepared.features.head())
             if prepared.features_error:

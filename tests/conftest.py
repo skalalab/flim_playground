@@ -12,14 +12,13 @@ if ROOT not in sys.path:
 @pytest.fixture
 def isolated_config_paths(tmp_path, monkeypatch):
     """Isolate both config files and guard the repository's saved settings."""
-    from src import config
-    from src.widgets import analysis_config_widgets
+    from src import analysis_config, config
 
     real_paths = [Path(ROOT) / name for name in ("config.toml", "analysis_config.toml")]
     before = [path.read_bytes() if path.exists() else None for path in real_paths]
     paths = (tmp_path / "config.toml", tmp_path / "analysis_config.toml")
     monkeypatch.setattr(config, "_CONFIG_PATH", paths[0])
-    monkeypatch.setattr(analysis_config_widgets, "_ANALYSIS_CONFIG_PATH", paths[1])
+    monkeypatch.setattr(analysis_config, "_ANALYSIS_CONFIG_PATH", paths[1])
     yield paths
     assert [path.read_bytes() if path.exists() else None for path in real_paths] == before
 

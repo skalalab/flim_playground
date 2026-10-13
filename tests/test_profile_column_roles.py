@@ -11,7 +11,7 @@ import toml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src import config
-from src.widgets import analysis_config_widgets as acw
+from src import analysis_config as acw
 
 pytestmark = pytest.mark.usefixtures("isolated_config_paths")
 

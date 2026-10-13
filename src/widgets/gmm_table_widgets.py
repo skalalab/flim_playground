@@ -7,7 +7,7 @@ from html import escape
 import pandas as pd
 import streamlit as st
 
-from src.widgets.gmm_tables import gmm_group_title
+from src.vis.gmm_tables import gmm_group_title
 
 
 def gmm_component_names_editor(tables, entry, *, method, context):

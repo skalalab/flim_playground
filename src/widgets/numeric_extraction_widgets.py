@@ -25,9 +25,21 @@ def check_fov_features(single_fov_cell_features):
     return single_fov_cell_features
             
 
-def fov_extraction_widget(metadata_df, metadata_dict, num_cols=3):
+def extraction_failure_summary(failures, total):
+    """One persistent error block naming each failed FOV; the tiles live only during the run."""
+    lines = "\n".join(f"- {name}: {message}" for name, message in failures.items())
+    return (f"Extraction stopped: {len(failures)} of {total} fields of view failed, so nothing was exported. "
+            f"Fix the files below, then start extraction again; finished fields of view are reused.\n\n{lines}")
 
+
+def fov_extraction_widget(metadata_df, metadata_dict, num_cols=3):
+    """Extract every FOV into one table; ``(features, failures)``.
+
+    ``failures`` maps each failed FOV name to its error. The caller exports only when it
+    is empty, so a features table never silently lacks a field of view.
+    """
     single_cell_features = pd.DataFrame()
+    failures = {}
     fov_name_col = metadata_dict["fov_name_col"]
     fov_names = metadata_df[fov_name_col].tolist()
    
@@ -50,16 +62,17 @@ def fov_extraction_widget(metadata_df, metadata_dict, num_cols=3):
                 with st.container(border=True):
                     st.markdown(f"**{fov_name}**")
                     metadata = metadata_df[metadata_df[fov_name_col] == fov_name].iloc[0]
-                    error_msg, single_cell_features_fov = fov_extraction(metadata, metadata_dict) 
+                    error_msg, single_cell_features_fov = fov_extraction(metadata, metadata_dict)
                     if error_msg != "":
                         st.error(f"{error_msg} {sad_emoji}")
+                        failures[fov_name] = error_msg
                     else:
                         single_cell_features_fov = check_fov_features(single_cell_features_fov)
                         st.success("✅ Success!")
                         single_cell_features = pd.concat([single_cell_features, single_cell_features_fov])
 
     # Use the definitions captured by preparation, independent of later config edits.
-    if not single_cell_features.empty:
+    if not failures and not single_cell_features.empty:
         cols_before = set(single_cell_features.columns)
         single_cell_features, derived_warnings = compute_derived_features(
             single_cell_features, metadata_dict.get("derived_features", [])
@@ -80,4 +93,4 @@ def fov_extraction_widget(metadata_df, metadata_dict, num_cols=3):
                     f"of {total_cells} cell(s) (e.g. from divide-by-zero or a NaN operand)."
                 )
 
-    return single_cell_features
+    return single_cell_features, failures

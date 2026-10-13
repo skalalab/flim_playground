@@ -14,7 +14,7 @@ from streamlit.testing.v1 import AppTest
 
 from src import dataset_io, export_script
 from src.vis import multivar
-from src.widgets import analysis_config_widgets as acw
+from src import analysis_config as acw
 from src.widgets import plot_layout
 
 

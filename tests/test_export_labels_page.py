@@ -30,7 +30,8 @@ def _with_component_tables(fig, dimensions=2):
 def test_page_captures_export_names_and_disables_both_downloads(monkeypatch, method, legacy, install_page_table):
     from src import dataset_io, export_script
     from src.vis import bivar, univar
-    from src.widgets import analysis_config_widgets as acw, selection_widgets as sw, visualization_widgets as vw
+    from src import analysis_config as acw
+    from src.widgets import selection_widgets as sw, visualization_widgets as vw
     g, s = "Lifetime fit free_ch1: G(1st)", "Lifetime fit free_ch1: S(1st)"
     source = pd.DataFrame({"id": ["a", "b", "c"], "x": [1., 2., 3.], "y": [2., 1., 4.],
                            g: [.2, .3, .4], s: [.1, .2, .1], legacy: ["previous"] * 3})
@@ -106,7 +107,8 @@ def grouping_page(monkeypatch, install_page_table):
     """Keep model output stable while the real page owns grouping and export state."""
     from src import dataset_io, export_script
     from src.vis import bivar, univar
-    from src.widgets import analysis_config_widgets as acw, selection_widgets as sw
+    from src import analysis_config as acw
+    from src.widgets import selection_widgets as sw
 
     source = pd.DataFrame({
         "id": ["a", "b", "c", "d"], "x": [-1., 2., 3., 4.], "y": [2., 1., 4., 3.],

@@ -1,4 +1,7 @@
-"""Default plot styling values (Streamlit session state and exported matplotlib scripts)."""
+"""Default plot styling values (Streamlit session state and exported matplotlib scripts),
+and the theme-resolved axis colour. Imports nothing from the project.
+"""
+import streamlit as st
 
 DEFAULT_POINT_SIZE = 5
 DEFAULT_AXIS_LABEL_FONT_SIZE = 24
@@ -16,3 +19,12 @@ SUPERPLOT_REPLICATE_JITTER_WIDTH = 0.1
 # Switch large Plotly point sets to WebGL to avoid one SVG DOM node per point.
 # Smaller sets use SVG without allocating a WebGL context. Script exports use Matplotlib.
 WEBGL_POINT_THRESHOLD = 5000
+
+
+def get_context_theme_color():
+    """Plot color for the current theme: 'black' in light mode, 'white' otherwise.
+
+    ``st.context.theme.type`` is a plain server-side read, so it costs no rerun. It is
+    None until the browser reports in, which falls through to the dark-mode color.
+    """
+    return "black" if st.context.theme.type == "light" else "white"

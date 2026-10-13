@@ -1,6 +1,7 @@
 import streamlit as st
 from streamlit_sortables import sort_items
 
+from src.natural_sort import natural_tuple_sort
 from src.emojis import sad_emoji
 from src.vis.plot_defaults import (
     DEFAULT_AXIS_LABEL_FONT_SIZE,
@@ -735,7 +736,6 @@ def reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by):
     Renders the widget for reordering x-axis groups and updates session state.
     Use this function *after* plotting to allow the user to adjust the order for next render.
     """
-    from src.vis.helpers import natural_tuple_sort
 
     _session_key_sep, session_key_cmp = get_visual_group_keys(filtered_df, selected_var, color_by, separate_by)
 

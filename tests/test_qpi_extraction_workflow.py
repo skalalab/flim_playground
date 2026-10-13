@@ -305,15 +305,43 @@ def test_extraction_emits_all_three_qpi_groups(tmp_path, monkeypatch):
     assert abs(diag["bg_percentiles_after_nm"][2]) < 1.0
 
 
-def test_extraction_without_a_recipe_reports_and_skips_the_channel(tmp_path, monkeypatch):
+def test_extraction_without_a_recipe_fails_the_fov(tmp_path, monkeypatch):
     _, rows, info = _extraction_inputs(tmp_path, monkeypatch, recipe=None)
-    shown = []
-    monkeypatch.setattr("src.fov_extraction.st.error", lambda msg: shown.append(msg))
     err, features = fov_extraction(rows.iloc[0], info)
-    assert err == "", err                                   # morphology still extracted
-    assert not [c for c in features if c.startswith("Dry-mass statistics_QPI: ")]
-    assert len([c for c in features if c.startswith("Intensity morphology_QPI: ")]) == 7
-    assert shown and "Background correction settings for QPI are missing" in shown[0]
+    assert "Background correction settings for QPI are missing" in err
+    assert features.empty
+
+
+def _with_intensity_channel(folder, rows, info, extractors):
+    """Add an Intensity-only channel over the wavefront that shares the QPI mask."""
+    row = rows.iloc[0].copy()
+    row["red_Intensity (2D)"] = str(folder / "fov1_WaveFront.tiff")
+    row["red_Mask"] = row["QPI_Mask"]
+    row["red_input_type"] = "Intensity (2D)"
+    row["red_imaging_modality"] = "Intensity-only"
+    info = dict(info)
+    info["channel_names"] = ["QPI", "red"]
+    info["red"] = {"input_type": "Intensity (2D)", "imaging_modality": "Intensity-only",
+                   "selected_feature_extractors": list(extractors), "input_suffixes": {}}
+    return row, info
+
+
+@pytest.mark.parametrize("step", ["get_intensity_morphology_features", "get_intensity_texture_features", "get_qpi_features"])
+def test_a_failing_channel_step_fails_the_fov(tmp_path, monkeypatch, step):
+    folder, rows, info = _extraction_inputs(tmp_path, monkeypatch)
+    row, info = _with_intensity_channel(folder, rows, info, ["Intensity morphology", "Intensity texture"])
+    monkeypatch.setattr(f"src.fov_extraction.{step}", lambda *a, **k: ("Error: boom", pd.DataFrame()))
+    err, features = fov_extraction(row, info)
+    assert err == "Error: boom"
+    assert features.empty
+
+
+def test_an_unreadable_mask_fails_the_fov_by_name(tmp_path, monkeypatch):
+    _, rows, info = _extraction_inputs(tmp_path, monkeypatch)
+    _failing_once(monkeypatch, "_cellpose")
+    err, features = fov_extraction(rows.iloc[0], info)
+    assert "mask" in err and "fov1_WaveFront_cellpose.tiff" in err and "Host is down" in err
+    assert features.empty
 
 
 def test_extraction_rejects_an_unknown_modality(tmp_path, monkeypatch):
@@ -346,25 +374,90 @@ def test_extraction_dedups_morphology_across_channels_sharing_a_mask(tmp_path, m
     assert len([c for c in features if c.startswith("Intensity morphology_QPI: ")]) == 7
 
 
-def test_rescan_clears_the_correction_cache(tmp_path, monkeypatch):
+def _move_cell_pixels(folder, delta_um):
+    """Rewrite fov1's wavefront with only its cell pixels moved (the fit removes a whole-image offset)."""
+    wavefront = folder / "fov1_WaveFront.tiff"
+    image = tifffile.imread(wavefront).astype(np.float64)
+    mask = tifffile.imread(folder / "fov1_WaveFront_cellpose.tiff")
+    image[mask > 0] += delta_um * 1e-6
+    tifffile.imwrite(wavefront, image.astype(np.float32))
+
+
+def test_an_overwritten_image_is_re_extracted_without_a_rescan(tmp_path, monkeypatch):
     folder, rows, info = _extraction_inputs(tmp_path, monkeypatch)
     err, before = fov_extraction(rows.iloc[0], info)
     assert err == "", err
-    # Raise only the cell pixels (a whole-image offset would be removed by the fit).
-    wavefront = folder / "fov1_WaveFront.tiff"
-    raised = tifffile.imread(wavefront).astype(np.float64)
-    mask = tifffile.imread(folder / "fov1_WaveFront_cellpose.tiff")
-    raised[mask > 0] += 0.1e-6
-    tifffile.imwrite(wavefront, raised.astype(np.float32))
-    from src import fov_extraction as fe
-    fe.fov_extraction.clear()                                # the per-FOV cache alone is not enough
-    err, stale = fov_extraction(rows.iloc[0], info)
+    _move_cell_pixels(folder, 0.1)                           # 200 nm -> 300 nm cells
+    err, fresh = fov_extraction(rows.iloc[0], info)          # nothing cleared, no rescan
+    assert err == "", err
     col = "Dry-mass statistics_QPI: dry_mass_pg"
-    assert stale[col].equals(before[col])                    # correction cache still serves the old image
-    mw.clear_folder_scan_caches()
+    assert (fresh[col] / before[col]).gt(1.3).all()
+
+
+def test_an_overwritten_mask_is_re_extracted_without_a_rescan(tmp_path, monkeypatch):
+    folder, rows, info = _extraction_inputs(tmp_path, monkeypatch)
+    err, before = fov_extraction(rows.iloc[0], info)
+    assert err == "", err
+    assert before.index.tolist() == ["fov1_1", "fov1_2"]
+    mask_path = folder / "fov1_WaveFront_cellpose.tiff"
+    mask = tifffile.imread(mask_path)
+    mask[mask == 2] = 0                                      # cell 2 segmented away
+    tifffile.imwrite(mask_path, mask)
     err, fresh = fov_extraction(rows.iloc[0], info)
     assert err == "", err
-    assert (fresh[col] / before[col]).gt(1.3).all()          # 200 nm -> 300 nm cells
+    assert fresh.index.tolist() == ["fov1_1"]
+
+
+def test_the_calibration_preview_follows_an_overwritten_image(tmp_path, monkeypatch):
+    folder, rows, _ = _extraction_inputs(tmp_path, monkeypatch)
+    from src.fov_extraction import qpi_fov_diagnostics
+    args = (rows.iloc[0]["QPI_QPI (2D)"], rows.iloc[0]["QPI_Mask"], "m", "polynomial", 4, 15.0)
+    err, before = qpi_fov_diagnostics(*args)
+    assert err == "", err
+    assert before["neg_interior_pct"] < 10
+    _move_cell_pixels(folder, -0.5)                          # cells now sit below the background
+    err, after = qpi_fov_diagnostics(*args)
+    assert err == "", err
+    assert after["neg_interior_pct"] > 90
+
+
+def _failing_once(monkeypatch, path_fragment):
+    """Make the first ``load_image`` of a matching path raise, as a dropped network share would."""
+    from src import fov_extraction as fe
+    real = fe.load_image
+    failed = []
+
+    def flaky(path, channel=-1):
+        if not failed and path_fragment in str(path):
+            failed.append(path)
+            raise OSError("Host is down")
+        return real(path, channel)
+
+    monkeypatch.setattr(fe, "load_image", flaky)
+    return failed
+
+
+def test_a_failed_read_is_retried_on_the_next_run(tmp_path, monkeypatch):
+    _, rows, info = _extraction_inputs(tmp_path, monkeypatch)
+    monkeypatch.setattr("src.fov_extraction.st.error", lambda msg: None)
+    failed = _failing_once(monkeypatch, "_cellpose")
+    err, _ = fov_extraction(rows.iloc[0], info)
+    assert err and failed
+    err, features = fov_extraction(rows.iloc[0], info)       # same files, nothing cleared
+    assert err == "", err
+    assert "Dry-mass statistics_QPI: dry_mass_pg" in features
+
+
+def test_a_failed_correction_is_retried_on_the_next_run(tmp_path, monkeypatch):
+    _, rows, _ = _extraction_inputs(tmp_path, monkeypatch)
+    from src.fov_extraction import corrected_qpi_image
+    args = (rows.iloc[0]["QPI_QPI (2D)"], rows.iloc[0]["QPI_Mask"], "m", "polynomial", 4, 15.0)
+    failed = _failing_once(monkeypatch, "_WaveFront.tiff")
+    err, _ = corrected_qpi_image(*args)
+    assert "Host is down" in err and failed
+    err, result = corrected_qpi_image(*args)
+    assert err == "", err
+    assert result is not None
 
 
 # ---- Calibration ------------------------------------------------------------------

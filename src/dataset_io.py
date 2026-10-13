@@ -20,7 +20,7 @@ from src.column_roles import (
 )
 from src.config import get_all_feature_extractors
 from src.emojis import happy_emoji, sad_emoji
-from src.widgets.analysis_config_widgets import (
+from src.analysis_config import (
     get_fov_name_col_analysis,
     get_unique_row_id_col,
 )

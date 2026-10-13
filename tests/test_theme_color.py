@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from streamlit.testing.v1 import AppTest
 
-from src.vis.helpers import get_context_theme_color
+from src.vis.plot_defaults import get_context_theme_color
 
 ROOT = str(Path(__file__).resolve().parents[1])
 
@@ -15,7 +15,7 @@ SCRIPT = f"""
 import sys
 sys.path.insert(0, {ROOT!r})
 import streamlit as st
-from src.vis.helpers import get_context_theme_color
+from src.vis.plot_defaults import get_context_theme_color
 
 first = get_context_theme_color()
 second = get_context_theme_color()
@@ -24,10 +24,10 @@ st.text(f"{{first}}|{{second}}")
 
 
 def test_streamlit_theme_component_is_gone():
-    import src.vis.helpers as helpers
+    from src.vis import plot_defaults
 
-    assert not hasattr(helpers, "st_theme")
-    assert not hasattr(helpers, "get_theme_color")
+    assert not hasattr(plot_defaults, "st_theme")
+    assert not hasattr(plot_defaults, "get_theme_color")
 
 
 def test_returns_a_plotly_usable_color():

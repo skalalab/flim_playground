@@ -13,7 +13,7 @@ import streamlit as st
 
 from src.fov_extraction import corrected_qpi_image, qpi_fov_diagnostics
 from src.qpi import DEFAULT_BACKGROUND, KEPT_FRACTION_WARNING, line_scan, mass_factor
-from src.vis.helpers import get_context_theme_color
+from src.vis.plot_defaults import get_context_theme_color
 
 _METHOD_LABELS = {"none": "already corrected", "polynomial": "polynomial surface", "inpainting": "inpainting"}
 _DEGREES = [2, 4, 6]

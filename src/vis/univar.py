@@ -13,6 +13,7 @@ from .histogram import _assign_subpopulation_labels as _assign_subpopulation_lab
 from .superplot import (add_superplot_observations, add_superplot_summary,
                         summarize_superplot, superplot_display_frame)
 from .plot_defaults import (
+    get_context_theme_color,
     SUPERPLOT_REPLICATE_JITTER_WIDTH,
     SUPERPLOT_REPLICATE_LINE_WIDTH,
     SUPERPLOT_REPLICATE_SIZE_SCALE,
@@ -20,7 +21,7 @@ from .plot_defaults import (
 
 from src.feature_labels import format_feature_label
 from src.widgets.analysis_widget_state import number_input_default
-from src.widgets.gmm_tables import gmm_component_table, gmm_tables_html
+from .gmm_tables import gmm_component_table, gmm_tables_html
 from src.widgets.visualization_widgets import (
     comparison_pair_widget,
     gmm_hyperParams_widget,
@@ -35,7 +36,6 @@ from .helpers import (
     create_subcolor_map,
     create_color_map,
     format_group_label,
-    get_context_theme_color,
     get_point_visual_mappings,
     hover_field,
     interleave_point_batches,

@@ -628,8 +628,9 @@ def clear_folder_scan_caches():
     _scan_2d_decay_files.clear()
     _scan_intensity_images.clear()
     clear_ptu_reference_cache()
-    # These caches key on metadata paths, so replacing a reference in place
-    # otherwise leaves the old shifts and calibrated features visible.
+    # The shift caches key on metadata paths, so replacing a reference in place
+    # otherwise leaves the old shifts visible. The extraction caches also key on each
+    # file's size and mtime and refresh on their own; clearing them here frees memory.
     from src.choose_shift import choose_shift_fit, choose_shift_fit_free
     from src.fov_extraction import (
         corrected_qpi_image,

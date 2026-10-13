@@ -8,7 +8,8 @@ import numpy as np
 import pandas as pd
 
 from src.export_labels import available_label_column, format_export_group_labels
-from .helpers import _find_best_gmm, find_intersection, natural_tuple_sort
+from src.natural_sort import natural_tuple_sort
+from .helpers import _find_best_gmm, find_intersection
 
 
 def histogram_bin_settings(values):
