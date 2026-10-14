@@ -167,13 +167,13 @@ def test_the_already_exists_error_spans_the_new_name(acw):
 @pytest.mark.parametrize("name", MARKUP_NAMES)
 def test_the_thin_group_warning_spans_its_group_and_its_section(name, monkeypatch):
     """Group and section labels come from file values and must display literally."""
-    from src.vis import helpers
+    from src.vis import feature_comparison
 
     captured = []
-    monkeypatch.setattr(helpers.st, "warning", lambda text, **kw: captured.append(text))
+    monkeypatch.setattr(feature_comparison.st, "warning", lambda text, **kw: captured.append(text))
     df = pd.DataFrame({"grp": ["ctrl", "ctrl", name], "Area": [1.0, 2.0, 3.0]})
 
-    helpers._add_effect_size_annotations(
+    feature_comparison._add_effect_size_annotations(
         go.Figure(), df, "Area", ["ctrl", name], "grp", [("ctrl", name)], "black",
         selected_pairs=[("ctrl", name)], statistical_test="Independent t-test",
         section_label=name)

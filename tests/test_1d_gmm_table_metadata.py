@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.vis import histogram, univar
+from src.vis import feature_histogram
 
 
 class StubGMM:
@@ -51,8 +51,8 @@ def frame():
 
 @pytest.fixture(autouse=True)
 def settings(monkeypatch):
-    monkeypatch.setattr(univar.st, "session_state", {})
-    monkeypatch.setattr(univar, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(feature_histogram.st, "session_state", {})
+    monkeypatch.setattr(feature_histogram, "get_context_theme_color", lambda: "black")
 
 
 @pytest.mark.parametrize("intersection", [False, True])
@@ -65,15 +65,15 @@ def settings(monkeypatch):
 ])
 def test_metadata_matches_prepared_fit_order_stats_and_assignments(
         monkeypatch, intersection, color_by, separate_by, expected_keys):
-    monkeypatch.setattr(histogram, "_find_best_gmm", lambda values, **_kwargs: StubGMM(values))
-    monkeypatch.setattr(histogram, "find_intersection",
+    monkeypatch.setattr(feature_histogram, "_find_best_gmm", lambda values, **_kwargs: StubGMM(values))
+    monkeypatch.setattr(feature_histogram, "find_intersection",
                         lambda _w1, m1, _s1, _w2, m2, _s2: (m1 + m2) / 2)
     data = frame()
     before = data.copy(deep=True)
-    prepared = histogram.prepare_histogram(
+    prepared = feature_histogram.prepare_histogram(
         data, "value", color_by, separate_by, apply_gmm=True,
         intersection_threshold=intersection, label_column="Assigned population")
-    fig = univar._histogram_figure(prepared, "tab10", False)
+    fig = feature_histogram._histogram_figure(prepared, "tab10", False)
 
     tables = fig.layout.meta["gmm_component_tables"]
     assert [(table["category"], table["group"]) for table in tables] == expected_keys
@@ -121,12 +121,12 @@ def test_uneditable_fits_and_count_mode_have_no_component_tables(monkeypatch, mo
             raise ValueError("singular fit")
         return StubGMM(values, n_components=1 if mode == "single" else 3)
 
-    monkeypatch.setattr(histogram, "_find_best_gmm", fit)
+    monkeypatch.setattr(feature_histogram, "_find_best_gmm", fit)
     data = frame()
     if mode == "sparse":
         data["value"] = 1.
-    prepared = histogram.prepare_histogram(data, "value", apply_gmm=mode != "count")
-    fig = univar._histogram_figure(prepared, "tab10", False)
+    prepared = feature_histogram.prepare_histogram(data, "value", apply_gmm=mode != "count")
+    fig = feature_histogram._histogram_figure(prepared, "tab10", False)
 
     assert fig.layout.meta["gmm_component_tables"] == []
     summary = fig.layout.meta["histogram_summaries"][0]["groups"][0]
@@ -147,9 +147,9 @@ def rendering_events(monkeypatch):
     def record(kind, value, **_kwargs):
         events.append((kind, value))
 
-    monkeypatch.setattr(univar.st, "expander", lambda *a, **k: pytest.fail("GMM details must stay visible"))
-    monkeypatch.setattr(univar.st, "info", lambda value: record("info", value))
-    monkeypatch.setattr(univar.st, "markdown", lambda value, **kwargs: record("markdown", value, **kwargs))
+    monkeypatch.setattr(feature_histogram.st, "expander", lambda *a, **k: pytest.fail("GMM details must stay visible"))
+    monkeypatch.setattr(feature_histogram.st, "info", lambda value: record("info", value))
+    monkeypatch.setattr(feature_histogram.st, "markdown", lambda value, **kwargs: record("markdown", value, **kwargs))
     return events, record
 
 
@@ -158,16 +158,16 @@ def mixed_figure(monkeypatch):
         # One category has a single-component group alongside its editable fit.
         return StubGMM(values, n_components=1 if 20 < np.mean(values) < 30 else 3)
 
-    monkeypatch.setattr(histogram, "_find_best_gmm", fit)
-    monkeypatch.setattr(histogram, "find_intersection",
+    monkeypatch.setattr(feature_histogram, "_find_best_gmm", fit)
+    monkeypatch.setattr(feature_histogram, "find_intersection",
                         lambda _w1, m1, _s1, _w2, m2, _s2: (m1 + m2) / 2)
     data = frame()
     # A failed/sparse group keeps its notice inside the second category.
     data.loc[(data["day"] == "Day 10") & (data["treatment"] == "drug"), "value"] = 120.
-    prepared = histogram.prepare_histogram(
+    prepared = feature_histogram.prepare_histogram(
         data, "value", ["treatment"], "day", apply_gmm=True,
         intersection_threshold=True)
-    return univar._histogram_figure(prepared, "tab10", False)
+    return feature_histogram._histogram_figure(prepared, "tab10", False)
 
 
 def test_callback_renders_matching_tables_in_each_category_and_keeps_other_details(monkeypatch):
@@ -179,7 +179,7 @@ def test_callback_renders_matching_tables_in_each_category_and_keeps_other_detai
         return {row["source_label"]: f'Population {row["component"]}'
                 for table in tables for row in table["rows"]}
 
-    result = univar.render_histogram_summaries(fig, component_editor=editor)
+    result = feature_histogram.render_histogram_summaries(fig, component_editor=editor)
 
     callbacks = [tables for kind, tables in events if kind == "editor"]
     assert len(callbacks) == 2
@@ -207,7 +207,7 @@ def test_without_callback_keeps_all_static_tables_and_returns_empty_names(monkey
     fig = mixed_figure(monkeypatch)
     events, _record = rendering_events(monkeypatch)
 
-    assert univar.render_histogram_summaries(fig) == {}
+    assert feature_histogram.render_histogram_summaries(fig) == {}
 
     html_events = [value for kind, value in events
                    if kind == "markdown" and "flim-gmm-table" in value]
@@ -226,15 +226,15 @@ def test_callback_falls_back_to_static_tables_when_descriptors_are_absent(monkey
     def editor(_tables):
         pytest.fail("Legacy figures have no editable component tables")
 
-    assert univar.render_histogram_summaries(fig, component_editor=editor) == {}
+    assert feature_histogram.render_histogram_summaries(fig, component_editor=editor) == {}
     assert sum(kind == "markdown" and "flim-gmm-table" in value
                for kind, value in events) == 2
 
 
 def test_count_summaries_return_empty_mapping_without_rendering(monkeypatch):
-    prepared = histogram.prepare_histogram(frame(), "value")
-    fig = univar._histogram_figure(prepared, "tab10", False)
+    prepared = feature_histogram.prepare_histogram(frame(), "value")
+    fig = feature_histogram._histogram_figure(prepared, "tab10", False)
     events, _record = rendering_events(monkeypatch)
 
-    assert univar.render_histogram_summaries(fig, component_editor=lambda tables: {}) == {}
+    assert feature_histogram.render_histogram_summaries(fig, component_editor=lambda tables: {}) == {}
     assert events == []

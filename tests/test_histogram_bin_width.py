@@ -49,7 +49,7 @@ def _plot_app():
     import numpy as np
     import pandas as pd
     import streamlit as st
-    from src.vis.univar import feature_histogram_plot
+    from src.vis.feature_histogram import feature_histogram_plot
 
     logged = st.checkbox("Log X", key="logged")
     values = np.linspace(1000., 1001., 50)

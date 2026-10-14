@@ -7,17 +7,17 @@ import pandas as pd
 import pytest
 
 from src.collapse import collapse_rows
-from src.vis import univar
+from src.vis import feature_comparison
 
 
 @pytest.fixture
 def controls(monkeypatch):
     settings = {"overlay": "None"}
-    monkeypatch.setattr(univar.st, "session_state", {"plot_show_group_counts": False})
-    monkeypatch.setattr(univar.st, "container", lambda *args, **kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(univar.st, "checkbox", lambda label, value=False, **kwargs: value)
-    monkeypatch.setattr(univar, "get_context_theme_color", lambda: "black")
-    monkeypatch.setattr(univar, "comparison_overlay_widget", lambda *args: settings["overlay"])
+    monkeypatch.setattr(feature_comparison.st, "session_state", {"plot_show_group_counts": False})
+    monkeypatch.setattr(feature_comparison.st, "container", lambda *args, **kwargs: contextlib.nullcontext())
+    monkeypatch.setattr(feature_comparison.st, "checkbox", lambda label, value=False, **kwargs: value)
+    monkeypatch.setattr(feature_comparison, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(feature_comparison, "comparison_overlay_widget", lambda *args: settings["overlay"])
     return settings
 
 
@@ -36,7 +36,7 @@ def _render(source, controls, **kwargs):
     if controls["overlay"] == "SuperPlot":
         primary, row_id, _ = collapse_rows(source, "dish", ["treatment", "batch"], "id")
         extra = dict(collapse_by="dish", source_df=source, source_row_id_col="id")
-    fig = univar.feature_comparison_plot(
+    fig = feature_comparison.feature_comparison_plot(
         primary, row_id, None, "value", ["treatment"], separate_by="batch", **extra, **kwargs)
     return fig, primary, row_id
 
@@ -98,7 +98,7 @@ def _filtered_app():
     import streamlit as st
     from src.widgets.filter_widgets import filters_widget
     from src.widgets.visualization_widgets import visual_encoding_channels_widget
-    from src.vis.univar import feature_comparison_plot
+    from src.vis.feature_comparison import feature_comparison_plot
 
     source = pd.DataFrame({"id": ["a1", "a2", "b1", "b2"], "batch": ["A", "A", "B", "B"],
                            "treatment": ["B", "B", "A", "A"], "value": [1., 2., 3., 4.]})

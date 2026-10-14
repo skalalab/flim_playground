@@ -15,14 +15,14 @@ import streamlit as st
 from src.collapse import collapse_rows
 from src.dataset_io import check_and_fix_df
 from src.export_script import generate_script
-from src.vis import bivar
+from src.vis import distribution_2d
 
 
 @pytest.fixture(autouse=True)
 def _headless(monkeypatch):
     monkeypatch.setattr(plt, "show", lambda: None)
     monkeypatch.setattr(st, "session_state", {"plot_show_group_counts": True})
-    monkeypatch.setattr(bivar, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(distribution_2d, "get_context_theme_color", lambda: "black")
 
 
 def _source():
@@ -78,7 +78,7 @@ def _run(tmp_path, monkeypatch, marginal, category, *, collapse=False, logged=Fa
             frame, "dish", ["treatment", state["separate_by"]], "id")
         shape = None if shape in varied else shape
         opacity = None if opacity in varied else opacity
-    app, _, _ = bivar.feature_2d_distribution_plot(
+    app, _, _ = distribution_2d.feature_2d_distribution_plot(
         frame, row_id, None, "x", "y", color_by=["treatment"],
         shape_by=shape, opacity_by=opacity, separate_by=state["separate_by"],
         analysis_options={"marginal_plot_type": marginal, "fit_regression": False,

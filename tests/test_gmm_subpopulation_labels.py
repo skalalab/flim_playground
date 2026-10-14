@@ -8,7 +8,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.vis.univar import _assign_subpopulation_labels
+from src.vis.feature_histogram import _assign_subpopulation_labels
 
 
 class _FakeGMM:

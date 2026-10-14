@@ -35,7 +35,7 @@ def place_phasor_legend(ax, handles, legend_size, frequency_label):
 
 def draw_phasor_background(ax, f, harmonic, annotation_size):
     """Render the app's reference geometry and its three numeric axis labels."""
-    from src.vis.bivar import phasor_reference_geometry
+    from src.vis.phasor import phasor_reference_geometry
 
     geometry = phasor_reference_geometry(f, harmonic)
     ax.plot(geometry['curve_x'], geometry['curve_y'], color='black', linewidth=2, zorder=1)
@@ -62,9 +62,9 @@ def draw_phasor_background(ax, f, harmonic, annotation_size):
 
 def _build_phasor_plot(state: dict) -> str:
     from src.export_labels import available_label_column
-    from src.vis.bivar import (
+    from src.vis.dimension_facets import category_panel_rows
+    from src.vis.phasor import (
         _phasor_panel_rows,
-        category_panel_rows,
         phasor_columns,
         phasor_reference_geometry,
         resolve_phasor_category,
@@ -189,7 +189,7 @@ if SEPARATE_BY is not None:
 """
 
 
-# The app's Phasor figure sets its own title font (Arial 20, src/vis/bivar.py).
+# The app's Phasor figure sets its own title font (Arial 20, src/vis/phasor.py).
 _PHASOR_TITLE_FONT_SIZE = 20
 
 

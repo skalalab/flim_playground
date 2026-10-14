@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.vis.bivar import phasor_columns, resolve_phasor_category
+from src.vis.phasor import phasor_columns, resolve_phasor_category
 
 
 def test_phasor_columns_name_the_channel_and_harmonic():

@@ -6,7 +6,7 @@ import plotly.graph_objects as go
 import pytest
 import streamlit as st
 
-from src.vis import bivar, helpers
+from src.vis import phasor, helpers
 
 NAME = "Lifetime Markers"
 G = "Lifetime fit free_ch1: G(1st)"
@@ -18,7 +18,7 @@ def settings(monkeypatch):
     state = {"plot_show_group_counts": False}
     monkeypatch.setattr(st, "session_state", state)
     monkeypatch.setattr(helpers, "get_context_theme_color", lambda: "black")
-    monkeypatch.setattr(bivar, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(phasor, "get_context_theme_color", lambda: "black")
     return state
 
 
@@ -49,7 +49,7 @@ def test_same_name_data_and_legend_follow_independent_size_controls(trace_type):
 
 def test_actual_reference_keeps_its_size_even_if_its_display_name_changes():
     fig = go.Figure()
-    bivar._create_phasor_background(fig, "black")
+    phasor._create_phasor_background(fig, "black")
     reference, = [trace for trace in fig.data if trace.mode == "markers"]
     coordinates = np.array([reference.x, reference.y])
     reference.name = "Reference lifetimes"
@@ -83,14 +83,14 @@ def test_phasor_reference_and_same_name_data_keep_distinct_styles(
     settings["plot_show_group_counts"] = show_counts
     monkeypatch.setattr(helpers, "WEBGL_POINT_THRESHOLD", 0 if webgl else 100000)
     source = _frame()
-    base, result = bivar.phasor_plot(
+    base, result = phasor.phasor_plot(
         source, "id", None, "ch1", color_by=["treatment"], shape_by="shape", opacity_by="opacity",
         separate_by="day" if separated else None)
     pd.testing.assert_frame_equal(result, source)
     categories = ["Day 2", "Day 10"] if separated else [None]
     for category in categories:
         if category is not None:
-            bivar.select_phasor_category(base, category)
+            phasor.select_phasor_category(base, category)
         styled = helpers.apply_plot_styling(go.Figure(base), 12, 16, 20)
         reference, = [trace for trace in styled.data
                       if trace.name == NAME and trace.text is None and not trace.showlegend]

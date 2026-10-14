@@ -112,8 +112,7 @@ def _print_distribution_statistics(result, label):
 def _build_2d_distribution(state: dict) -> str:
     """One builder for both layouts: the separation only adds panels beside the overview."""
     from src.feature_labels import format_feature_label
-    from src.vis.bivar import (
-        category_panel_rows,
+    from src.vis.distribution_2d import (
         distribution_fit_groups,
         distribution_ranges,
         gmm_ellipse_params,
@@ -121,6 +120,7 @@ def _build_2d_distribution(state: dict) -> str:
     from src.vis.dimension_facets import (
         MAIN_PLOT_LABEL,
         category_facet_groups,
+        category_panel_rows,
         dimension_facet_layout,
         focus_facet_label,
         focus_slot_keys,
@@ -293,7 +293,7 @@ for g in color_groups:
     gdf = marginal_frame[marginal_frame[FD_GROUP_COLUMN] == g]
 
     # Guard each marginal on its own axis, as the app does (_plot_marginal_density
-    # in src/vis/bivar.py returns early per axis), so a constant y still draws x.
+    # in src/vis/distribution_2d.py returns early per axis), so a constant y still draws x.
     if ax_top is not None and gdf[SELECTED_X].nunique() > 1:
         try:
             draw_distribution_marginal(

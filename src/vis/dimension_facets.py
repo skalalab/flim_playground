@@ -284,3 +284,18 @@ def facet_focus_from_click(fig, selection, current=None):
     if slot == 0:
         return None
     return as_facet_key(keys[slot - 1]) if slot <= len(keys) else current
+
+
+# Ordered positional memberships per separate-by level; 2D Distribution, Phasor and their exports share it.
+def category_panel_rows(df, separate_by=None, color_by=None):
+    """Ordered positional memberships, shared verbatim with script export."""
+    if separate_by is None:
+        return [(None, np.arange(len(df)))]
+    if not isinstance(separate_by, str) or separate_by not in df.columns:
+        raise ValueError("Separate by must be one categorical column present in the data.")
+    colors = [color_by] if isinstance(color_by, str) else list(color_by or [])
+    if separate_by in colors:
+        raise ValueError("Separate by cannot also be used for Color by.")
+    values = df[separate_by].astype(str).where(df[separate_by].notna(), "N/A")
+    return [(level, np.flatnonzero(values.to_numpy() == level))
+            for level in natural_tuple_sort(values.unique())]

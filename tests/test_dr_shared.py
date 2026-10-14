@@ -7,7 +7,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.vis.multivar import dimension_axis_titles, reduce_dimensions
+from src.vis.dimension_reduction import dimension_axis_titles, reduce_dimensions
 
 
 def test_reduce_dimensions_pca_names_components_and_reports_variance():

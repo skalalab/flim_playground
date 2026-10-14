@@ -14,8 +14,8 @@ import pandas as pd
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 from src.natural_sort import natural_tuple_sort  # noqa: E402
-from src.vis.helpers import create_subcolor_map  # noqa: E402
-from src.vis.univar import feature_comparison_plot  # noqa: E402
+from src.vis.feature_comparison import create_subcolor_map  # noqa: E402
+from src.vis.feature_comparison import feature_comparison_plot  # noqa: E402
 
 FAILS = []
 

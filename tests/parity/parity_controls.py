@@ -235,12 +235,12 @@ def run_hist(ctrl, tag):
         # data_analysis.py log-transforms upstream of the plot function
         plot_df[VAR] = np.log10(plot_df[VAR] + 1e-6)
     if ctrl.get("apply_gmm"):
-        from src.vis.univar import feature_gmm_plot
+        from src.vis.feature_histogram import feature_gmm_plot
 
         fig, _out = feature_gmm_plot(plot_df, VAR, ctrl.get("color_by", ["treatment"]),
                                      colormap=ctrl.get("colormap", "tab10"), log_x=log_x)
     else:
-        from src.vis.univar import feature_histogram_plot
+        from src.vis.feature_histogram import feature_histogram_plot
 
         fig = feature_histogram_plot(plot_df, VAR, ctrl.get("color_by", ["treatment"]),
                                      colormap=ctrl.get("colormap", "tab10"), log_x=log_x)
@@ -257,7 +257,7 @@ def run_hist(ctrl, tag):
 
 def run_fc(ctrl, tag):
     patch_streamlit()
-    from src.vis.univar import feature_comparison_plot
+    from src.vis.feature_comparison import feature_comparison_plot
 
     df = _load(ctrl)
     plot_df = df.copy()
@@ -321,7 +321,7 @@ def run_2d(ctrl, tag):
                      "Marginal Plot Type": ctrl.get("marginal_plot_type", "None"),
                      "Log X": ctrl.get("log_x", False),
                      "Log Y": ctrl.get("log_y", False)})
-    from src.vis.bivar import feature_2d_distribution_plot
+    from src.vis.distribution_2d import feature_2d_distribution_plot
 
     df = _load(ctrl)
     fig, _md, _out = feature_2d_distribution_plot(
@@ -345,7 +345,7 @@ def run_2d(ctrl, tag):
 
 def run_phasor(ctrl, tag):
     patch_streamlit()
-    from src.vis.bivar import phasor_plot
+    from src.vis.phasor import phasor_plot
 
     df = _load(ctrl)
     fig, _out = phasor_plot(df.copy(), "cell_id", "image_name", "nadh",
@@ -364,7 +364,7 @@ def run_phasor(ctrl, tag):
 
 def run_dr(ctrl, tag):
     patch_streamlit()
-    from src.vis.multivar import dimension_reduction_plot
+    from src.vis.dimension_reduction import dimension_reduction_plot
 
     df = _load(ctrl)
     method = ctrl.get("dr_method", "PCA")

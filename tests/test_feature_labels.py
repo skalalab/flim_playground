@@ -128,7 +128,7 @@ def test_2d_distribution_hover_uses_flim_notation():
     st.session_state.plot_point_size = 5
     st.session_state.plot_axis_label_size = 18
     st.session_state.plot_legend_size = 16
-    from src.vis.bivar import feature_2d_distribution_plot
+    from src.vis.distribution_2d import feature_2d_distribution_plot
 
     rows = []
     for i, grp in enumerate(["a", "b"]):
@@ -166,7 +166,7 @@ def test_feature_comparison_hover_uses_flim_notation():
     st.session_state.plot_point_size = 5
     st.session_state.plot_axis_label_size = 18
     st.session_state.plot_legend_size = 16
-    from src.vis.univar import feature_comparison_plot
+    from src.vis.feature_comparison import feature_comparison_plot
 
     rows = []
     for grp in ["a", "b"]:
@@ -237,7 +237,7 @@ def test_histogram_and_gmm_wrap_log_x_axis_label():
     st.session_state.plot_point_size = 5
     st.session_state.plot_axis_label_size = 18
     st.session_state.plot_legend_size = 16
-    from src.vis.univar import feature_histogram_plot, feature_gmm_plot
+    from src.vis.feature_histogram import feature_histogram_plot, feature_gmm_plot
 
     col = "Lifetime fit_nadh: t1"
     pretty = format_feature_label(col)  # "nadh τ₁ (ps)"

@@ -16,9 +16,9 @@ def _build_feature_histogram(state: dict) -> str:
     """Render every prepared category, sharing calculations with the app."""
     from src.feature_labels import format_feature_label
     from src.natural_sort import natural_key, natural_tuple_sort, tuple_natural_key
-    from src.vis.helpers import _find_best_gmm, find_intersection, log10_columns
-    from src.vis.histogram import (
+    from src.vis.feature_histogram import (
         _assign_subpopulation_labels,
+        find_intersection,
         histogram_bin_edges,
         histogram_bin_settings,
         histogram_gmm,
@@ -27,6 +27,7 @@ def _build_feature_histogram(state: dict) -> str:
         histogram_skewness,
         prepare_histogram,
     )
+    from src.vis.helpers import _find_best_gmm, log10_columns
 
     helpers = [natural_key, tuple_natural_key, natural_tuple_sort,
                histogram_legend_label, create_color_map, plotly_dash_style, histogram_bin_settings,

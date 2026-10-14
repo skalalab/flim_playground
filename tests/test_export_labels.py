@@ -53,8 +53,8 @@ def test_defaults_and_absent_assignments_return_independent_copies():
     ("histogram", "GMM_group"), ("2d", "2D_GMM_group")])
 @pytest.mark.parametrize("separate_by", [None, "day"])
 def test_model_outputs_preserve_previously_exported_columns(method, legacy, separate_by):
-    from src.vis.histogram import prepare_histogram
-    from src.vis.bivar import feature_2d_distribution_plot
+    from src.vis.feature_histogram import prepare_histogram
+    from src.vis.distribution_2d import feature_2d_distribution_plot
     rng = np.random.default_rng(9)
     centers = np.tile(np.repeat([.2, .8], 20), 2)
     data = pd.DataFrame({"id": [str(i) for i in range(80)], "day": np.repeat(["D1", "D2"], 40),
@@ -74,7 +74,7 @@ def test_model_outputs_preserve_previously_exported_columns(method, legacy, sepa
 
 
 def test_phasor_retains_all_complete_rows_without_adding_an_export_column():
-    from src.vis.bivar import phasor_plot
+    from src.vis.phasor import phasor_plot
     data = pd.DataFrame({"id": list("abcde"), "group": ["fit"] * 4 + ["skip"],
         "Lifetime fit free_ch1: G(1st)": [.1, .11, .8, .81, .5],
         "Lifetime fit free_ch1: S(1st)": [.1, .11, .3, .31, .2]}, index=[0] * 5)

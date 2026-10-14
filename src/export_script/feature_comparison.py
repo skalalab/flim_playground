@@ -20,8 +20,9 @@ from src.vis.plot_defaults import (
 def get_effect_size_threshold_capture(session_state, effect_size_method, selected_var, separate_by):
     """Read the effect-size threshold the app's widgets wrote to session state.
 
-    Mirrors the widget keys and defaults in src/vis/helpers.py (non-separate
-    path) and src/vis/univar.py (separate path): the key suffix is the selected
+    Mirrors the widget keys and defaults in src/vis/feature_comparison.py, read by
+    _add_effect_size_annotations (non-separate path) and feature_comparison_plot
+    (separate path): the key suffix is the selected
     variable; Glass's Delta defaults to 0.7 and Absolute Cohen's d to 0.5 on
     both paths. `separate_by` changes neither default.
     """
@@ -35,25 +36,26 @@ def get_effect_size_threshold_capture(session_state, effect_size_method, selecte
 def _build_feature_comparison(state: dict) -> str:
     from src.export_labels import available_label_column
     from src.vis import subcolor_palette
-    from src.vis.helpers import (
+    from src.vis.helpers import _palette_rgb, _sorted_levels
+    from src.vis.feature_comparison import (
         _calculate_effect_size,
         _compute_bracket_position,
         _density_at_points,
         _estimate_density_1d,
-        _palette_rgb,
-        _sorted_levels,
         box_statistics,
         bracket_positioning_metrics,
         cohens_d,
+        comparison_labels,
+        comparison_layout,
         create_subcolor_map,
         glass_delta,
         interleave_point_batches,
         p_value_stars,
         plan_effect_size_brackets,
         sina_offsets,
+        summarize_superplot,
+        superplot_display_frame,
     )
-    from src.vis.superplot import summarize_superplot, superplot_display_frame
-    from src.vis.univar import comparison_labels, comparison_layout
 
     # Inline the app's density helpers for identical sina jitter and degenerate-data
     # handling. Include the palette module before its callers and name _sorted_levels

@@ -14,9 +14,9 @@ import streamlit as st
 
 from src.dataset_io import check_and_fix_df
 from src.export_script import generate_script
-from src.vis import bivar, helpers, multivar, univar
+from src.vis import distribution_2d, phasor, helpers, dimension_reduction, feature_histogram
 from src.vis.dimension_facets import focus_facet_figure
-from src.vis.histogram import prepare_histogram
+from src.vis.feature_histogram import prepare_histogram
 
 
 def _source():
@@ -60,7 +60,7 @@ def _case(tmp_path, monkeypatch, method, *, separate=False, focus=False,
     }
     monkeypatch.setitem(st.session_state, "plot_show_group_counts", True)
     monkeypatch.setattr(plt, "show", lambda: None)
-    for module in (bivar, helpers, multivar, univar):
+    for module in (distribution_2d, phasor, helpers, dimension_reduction, feature_histogram):
         monkeypatch.setattr(module, "get_context_theme_color", lambda: "black")
     if method == "Feature Histogram":
         state.update(shape_by=None, opacity_by=None)
@@ -70,14 +70,14 @@ def _case(tmp_path, monkeypatch, method, *, separate=False, focus=False,
         prepared = prepare_histogram(
             frame, "x", ["group"], separator, apply_gmm=gmm,
             max_components=gmm_components, intersection_threshold=gmm)
-        app = univar._histogram_figure(prepared, colormap, False)
+        app = feature_histogram._histogram_figure(prepared, colormap, False)
     elif method == "2D Feature Distribution":
         params = {"selected_x": "x", "selected_y": "y",
                   "marginal_plot_type": marginal, "fit_regression": regression,
                   "fit_gmm_2d": gmm, "gmm_max_components": 2,
                   "gmm_min_weight_threshold": .1,
                   "facet_focus": "Day 10" if focus else None}
-        app, _, _ = bivar.feature_2d_distribution_plot(
+        app, _, _ = distribution_2d.feature_2d_distribution_plot(
             frame, "id", None, "x", "y", color_by=["group"],
             shape_by="shape", opacity_by="opacity", colormap=colormap,
             separate_by=separator, analysis_options={
@@ -87,16 +87,16 @@ def _case(tmp_path, monkeypatch, method, *, separate=False, focus=False,
     elif method == "Phasor Plot":
         params = {"selected_channel": "Ch1", "phasor_harmonic": 1,
                   "phasor_f": .08, "phasor_category": "Day 10" if separate else None}
-        app, _ = bivar.phasor_plot(
+        app, _ = phasor.phasor_plot(
             frame, "id", None, "Ch1", color_by=["group"],
             shape_by="shape", opacity_by="opacity", colormap=colormap,
             separate_by=separator)
-        bivar.select_phasor_category(app, params["phasor_category"])
+        phasor.select_phasor_category(app, params["phasor_category"])
     else:
         state["separate_by"] = [separator] if separator else []
         params = {"selected_features": ["x", "y"], "dr_method": "PCA",
                   "facet_focus": ("Day 10",) if focus else None}
-        app = multivar.dimension_reduction_plot(
+        app = dimension_reduction.dimension_reduction_plot(
             frame, "id", None, ["x", "y"], colored_by=["group"],
             shape_by="shape", opacity_by="opacity", colormap=colormap,
             method="PCA", separate_by=state["separate_by"])

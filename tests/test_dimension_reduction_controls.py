@@ -8,7 +8,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from src import dataset_io, export_script
-from src.vis import multivar
+from src.vis import dimension_reduction
 from src import analysis_config as acw
 from src.widgets import visualization_widgets as vw
 
@@ -195,7 +195,7 @@ def page(monkeypatch, install_page_table):
         seen["state"] = state
         return "# captured analysis"
 
-    monkeypatch.setattr(multivar, "dimension_reduction_plot", capture_plot)
+    monkeypatch.setattr(dimension_reduction, "dimension_reduction_plot", capture_plot)
     monkeypatch.setattr(export_script, "generate_script", capture_export)
     return seen
 

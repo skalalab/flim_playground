@@ -33,7 +33,7 @@ def test_analysis_starts_without_unused_engines(tmp_path, action):
         else:
             import numpy as np
             import pandas as pd
-            from src.vis.multivar import dimension_reduction
+            from src.vis.dimension_reduction import dimension_reduction
 
             frame = pd.DataFrame({"x": [1., 2., 4., 8.], "y": [3., 1., 5., 2.]})
             coordinates, variance = dimension_reduction(frame, method="PCA")

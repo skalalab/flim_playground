@@ -8,7 +8,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.vis.helpers import _estimate_density_1d, glass_delta, cohens_d
+from src.vis.feature_comparison import _estimate_density_1d, glass_delta, cohens_d
 
 
 def test_density_constant_column_returns_zero_density_not_crash():

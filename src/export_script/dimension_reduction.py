@@ -22,7 +22,7 @@ def _build_dimension_reduction(state: dict) -> str:
         focus_slot_keys,
         normalize_dimension_categories,
     )
-    from src.vis.multivar import dimension_axis_titles, reduce_dimensions
+    from src.vis.dimension_reduction import dimension_axis_titles, reduce_dimensions
     from src.vis.plot_defaults import (
         PANEL_CONTEXT_ALPHA,
         PANEL_CONTEXT_COLOR,

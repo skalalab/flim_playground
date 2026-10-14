@@ -17,7 +17,7 @@ import streamlit as st
 from src.collapse import collapse_rows
 from src.dataset_io import check_and_fix_df
 from src.export_script import generate_script
-from src.vis import univar
+from src.vis import feature_comparison
 
 
 @pytest.fixture(autouse=True)
@@ -25,8 +25,8 @@ def _headless(monkeypatch):
     monkeypatch.setattr(plt, "show", lambda: None)
     monkeypatch.setattr(st, "session_state", {"plot_show_group_counts": True})
     monkeypatch.setattr(st, "container", lambda *args, **kwargs: contextlib.nullcontext())
-    monkeypatch.setattr(univar, "get_context_theme_color", lambda: "black")
-    monkeypatch.setattr(univar, "comparison_overlay_widget", lambda *args: "Boxplot")
+    monkeypatch.setattr(feature_comparison, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(feature_comparison, "comparison_overlay_widget", lambda *args: "Boxplot")
 
 
 def _state(*, separated=False, logged=False, collapsed=False, encoded=False, color_by=None):
@@ -63,7 +63,7 @@ def _run(tmp_path, monkeypatch, source, state):
             primary, collapse_by, [*state["color_by"], state["separate_by"]], row_id)
     monkeypatch.setattr(st, "checkbox", lambda label, value=False, **kwargs:
                         state["method_params"]["log_y"] if label == "Log Y" else value)
-    app = univar.feature_comparison_plot(
+    app = feature_comparison.feature_comparison_plot(
         primary, row_id, None, "value", state["color_by"],
         separate_by=state["separate_by"], shape_by=state["shape_by"],
         opacity_by=state["opacity_by"], collapse_by=collapse_by)

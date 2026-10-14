@@ -85,7 +85,7 @@ def test_analysis_page_passes_separator_to_plot_and_export(monkeypatch, install_
     import pandas as pd
     import plotly.graph_objects as go
     from src import dataset_io, export_script
-    from src.vis import bivar
+    from src.vis import phasor
     from src import analysis_config as acw
     g, s = "Lifetime fit free_ch1: G(1st)", "Lifetime fit free_ch1: S(1st)"
     df = pd.DataFrame({"id": list("abcdefgh"), "day": ["D1", "D2"] * 4,
@@ -104,7 +104,7 @@ def test_analysis_page_passes_separator_to_plot_and_export(monkeypatch, install_
     def capture_export(state):
         seen["export"] = state
         return "# test"
-    monkeypatch.setattr(bivar, "phasor_plot", capture_plot)
+    monkeypatch.setattr(phasor, "phasor_plot", capture_plot)
     monkeypatch.setattr(export_script, "generate_script", capture_export)
     page = str(Path(__file__).resolve().parents[1] / "pages/data_analysis.py")
     at = AppTest.from_file(page).run(timeout=90)

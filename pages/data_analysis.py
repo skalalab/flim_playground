@@ -23,25 +23,29 @@ from src.export_labels import (
 )
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import DESKTOP_APP_URL, data_extraction_available, render_top_menu
-from src.vis.bivar import (
-    phasor_columns,
+from src.vis.distribution_2d import (
     distribution_controls,
     feature_2d_distribution_plot,
-    phasor_plot,
     render_distribution_component_tables,
+)
+from src.vis.phasor import (
+    phasor_columns,
+    phasor_plot,
     select_phasor_category,
 )
 from src.vis.dimension_facets import focus_facet_figure
 from src.vis.helpers import apply_plot_styling, log10_columns, log_negative_error
-from src.vis.multivar import dimension_reduction_plot
+from src.vis.dimension_reduction import dimension_reduction_plot
 from src.vis.plot_defaults import (
     DEFAULT_AXIS_LABEL_FONT_SIZE,
     DEFAULT_COLORMAP,
     DEFAULT_LEGEND_FONT_SIZE,
     DEFAULT_POINT_SIZE,
 )
-from src.vis.univar import (
+from src.vis.feature_comparison import (
     feature_comparison_plot,
+)
+from src.vis.feature_histogram import (
     feature_gmm_plot,
     feature_histogram_plot,
     render_histogram_summaries,
@@ -552,7 +556,7 @@ with col2:
                             Choose the one in which all the components are at least of x% weight and has the lowest BIC score. \
                             The default x% is 10%.")
 
-                        # Apply log transform if requested (consistent with bivar.py)
+                        # Apply log transform if requested (consistent with distribution_2d.py)
                         if log_x:
                             plot_df, _skipped_log = log10_columns(plot_df, [selected_var])
                             if _skipped_log:

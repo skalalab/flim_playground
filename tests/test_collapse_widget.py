@@ -325,10 +325,10 @@ FEATURE_KEY = "_menu_Uncategorized Features"
 
 def test_superplot_page_retains_source_and_exports_its_overlay(page, monkeypatch):
     from src import export_script
-    from src.vis import univar
+    from src.vis import feature_comparison
 
     frames, states, figures = [], [], []
-    render = univar.feature_comparison_plot
+    render = feature_comparison.feature_comparison_plot
     generate = export_script.generate_script
 
     def spy(df, *args, **kwargs):
@@ -341,7 +341,7 @@ def test_superplot_page_retains_source_and_exports_its_overlay(page, monkeypatch
         states.append(state)
         return generate(state)
 
-    monkeypatch.setattr(univar, "feature_comparison_plot", spy)
+    monkeypatch.setattr(feature_comparison, "feature_comparison_plot", spy)
     monkeypatch.setattr(export_script, "generate_script", capture)
     at = page(**{FEATURE_KEY: FEATURE, vw.COLOR_BY_KEY: ["treatment"],
                  vw.COLLAPSE_BY_KEY: "dish", vw.POINT_MODE_KEY: "subcolor",
@@ -445,16 +445,16 @@ def test_the_hover_names_the_replicate_and_carries_its_count(monkeypatch):
 
     import streamlit as st
 
-    from src.vis import univar
+    from src.vis import feature_comparison
 
     monkeypatch.setattr(st, "columns", lambda spec, **kw: tuple(
         contextlib.nullcontext() for _ in (spec if isinstance(spec, list) else range(spec))))
     monkeypatch.setattr(st, "checkbox", lambda label, value=False, **kw: value)
-    monkeypatch.setattr(univar, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(feature_comparison, "get_context_theme_color", lambda: "black")
 
     collapsed, label_col, _varied = collapse_rows(
         _replicate_frame(), "dish", ["treatment"], "cell_id")
-    fig = univar.feature_comparison_plot(
+    fig = feature_comparison.feature_comparison_plot(
         collapsed, label_col, None, FEATURE, color_by=["treatment"], row_id_label="dish")
 
     points = [t for t in fig.data if getattr(t, "mode", None)]
@@ -492,7 +492,7 @@ def test_cohens_d_needs_a_degree_of_freedom_in_BOTH_groups(sizes):
     """Pooled variance requires at least two samples in each group."""
     import numpy as np
 
-    from src.vis.helpers import cohens_d
+    from src.vis.feature_comparison import cohens_d
 
     n1, n2 = sizes
     with warnings.catch_warnings():
@@ -507,7 +507,7 @@ def test_glass_delta_needs_one_only_in_the_control_group():
     treatment group is legitimate and must not be guarded away."""
     import numpy as np
 
-    from src.vis.helpers import glass_delta
+    from src.vis.feature_comparison import glass_delta
 
     assert np.isnan(glass_delta(np.array([1.0]), np.array([5.0, 6.0, 7.0]), "Mean"))
     assert not np.isnan(glass_delta(np.array([1.0, 2.0, 3.0]), np.array([5.0]), "Mean"))
@@ -518,7 +518,7 @@ def test_one_replicate_per_group_yields_no_effect_size_and_no_numpy_warning(meth
     """Insufficient replicate counts return NaN without emitting numpy warnings."""
     import numpy as np
 
-    from src.vis.helpers import _calculate_effect_size
+    from src.vis.feature_comparison import _calculate_effect_size
 
     with warnings.catch_warnings():
         warnings.simplefilter("error", RuntimeWarning)
@@ -533,7 +533,7 @@ def test_two_replicates_per_group_still_compute(method):
     """Groups with enough replicates still receive a finite effect size."""
     import numpy as np
 
-    from src.vis.helpers import _calculate_effect_size
+    from src.vis.feature_comparison import _calculate_effect_size
 
     value = _calculate_effect_size(
         pd.Series([1.0, 1.2]), pd.Series([2.0, 2.4]), method, "Mean")
@@ -558,13 +558,13 @@ def _run_annotations(monkeypatch, counts, pairs, *, effect_size="Absolute Cohen'
     """Call the real annotator with Streamlit's warning captured."""
     import plotly.graph_objects as go
 
-    from src.vis import helpers
+    from src.vis import feature_comparison
 
     warned = []
-    monkeypatch.setattr(helpers.st, "warning", lambda msg, **kw: warned.append(msg))
-    monkeypatch.setattr(helpers.st, "number_input", lambda *a, **kw: 0.0)
+    monkeypatch.setattr(feature_comparison.st, "warning", lambda msg, **kw: warned.append(msg))
+    monkeypatch.setattr(feature_comparison.st, "number_input", lambda *a, **kw: 0.0)
 
-    helpers._add_effect_size_annotations(
+    feature_comparison._add_effect_size_annotations(
         fig=go.Figure(), df=_stats_frame(counts), selected_var="val",
         compare_groups=list(counts), group_col_name="grp",
         all_possible_pairs=pairs, annotation_color="black",
@@ -644,11 +644,11 @@ def test_an_empty_group_still_counts_as_thin(monkeypatch):
     frame.loc[frame["grp"] == "drug", "val"] = float("nan")
     import plotly.graph_objects as go
 
-    from src.vis import helpers
+    from src.vis import feature_comparison
 
     warned = []
-    monkeypatch.setattr(helpers.st, "warning", lambda msg, **kw: warned.append(msg))
-    helpers._add_effect_size_annotations(
+    monkeypatch.setattr(feature_comparison.st, "warning", lambda msg, **kw: warned.append(msg))
+    feature_comparison._add_effect_size_annotations(
         fig=go.Figure(), df=frame, selected_var="val", compare_groups=["ctrl", "drug"],
         group_col_name="grp", all_possible_pairs=[("ctrl", "drug")],
         annotation_color="black", effect_size_method="Absolute Cohen's d",

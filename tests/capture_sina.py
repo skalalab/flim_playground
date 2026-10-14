@@ -6,7 +6,7 @@ coordinates; numeric baselines also detect changes to the KDE, grid, or random s
 import json, sys
 import numpy as np, pandas as pd
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
-from src.vis.univar import feature_comparison_plot
+from src.vis.feature_comparison import feature_comparison_plot
 
 rng = np.random.default_rng(5)
 rows = []

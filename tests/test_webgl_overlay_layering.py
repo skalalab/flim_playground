@@ -18,9 +18,10 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.vis import helpers
-from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
-from src.vis.multivar import dimension_reduction_plot
-from src.vis.univar import feature_comparison_plot
+from src.vis.distribution_2d import feature_2d_distribution_plot
+from src.vis.phasor import phasor_plot
+from src.vis.dimension_reduction import dimension_reduction_plot
+from src.vis.feature_comparison import feature_comparison_plot
 
 # Enable only overlay checkboxes so data-transform controls cannot alter the fixture.
 OVERLAY_TOGGLES = {

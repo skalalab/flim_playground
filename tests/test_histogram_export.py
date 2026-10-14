@@ -12,7 +12,7 @@ import pytest
 from chart_theme_checks import assert_theme_axes, assert_theme_title
 
 from src.export_script import generate_script
-from src.vis.histogram import histogram_bin_edges, prepare_histogram
+from src.vis.feature_histogram import histogram_bin_edges, prepare_histogram
 
 
 def _state(*, separate_by="day", color_by=None, gmm=False,

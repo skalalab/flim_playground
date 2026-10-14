@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src.feature_labels import format_feature_label
-from src.vis.histogram import histogram_labels
+from src.vis.feature_histogram import histogram_labels
 
 
 def _prepared(**overrides):

@@ -30,7 +30,7 @@ def test_page_keeps_individual_units_despite_stale_collapse_settings(
     monkeypatch, gmm, logged, install_page_table
 ):
     from streamlit.testing.v1 import AppTest
-    from src.vis import univar
+    from src.vis import feature_histogram
     from src import export_script
 
     source = frame()
@@ -39,13 +39,13 @@ def test_page_keeps_individual_units_despite_stale_collapse_settings(
     install_page_table(source, {"Uncategorized Features": [FEATURE]}, "cell_id", ",")
     observed, captured = [], []
     function_name = "feature_gmm_plot" if gmm else "feature_histogram_plot"
-    original = getattr(univar, function_name)
+    original = getattr(feature_histogram, function_name)
 
     def record(data, selected_var, color_by, **kwargs):
         observed.append((data.copy(), kwargs.copy()))
         return original(data, selected_var, color_by, **kwargs)
 
-    monkeypatch.setattr(univar, function_name, record)
+    monkeypatch.setattr(feature_histogram, function_name, record)
     original_export = export_script.generate_script
     monkeypatch.setattr(export_script, "generate_script", lambda state: (
         captured.append(state) or original_export(state)))

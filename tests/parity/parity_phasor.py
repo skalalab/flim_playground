@@ -30,7 +30,7 @@ R = Results()
 
 def app_phasor(df, harmonic, color_by):
     patch_streamlit()
-    from src.vis.bivar import phasor_plot
+    from src.vis.phasor import phasor_plot
 
     return phasor_plot(df.copy(), "cell_id", "image_name", CHANNEL,
                        color_by=color_by, colormap="tab10", f=0.08, harmonic=harmonic)

@@ -6,7 +6,7 @@ import sys
 import numpy as np
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parent.parent))
-from src.vis.helpers import interleave_point_batches
+from src.vis.feature_comparison import interleave_point_batches
 
 FAILS = []
 def check(name, cond, detail=""):

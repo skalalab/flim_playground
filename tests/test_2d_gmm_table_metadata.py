@@ -6,7 +6,7 @@ import pytest
 import streamlit as st
 
 from src.column_roles import code_span
-from src.vis import bivar
+from src.vis import distribution_2d
 
 
 class StubGMM:
@@ -69,9 +69,9 @@ def test_separated_metadata_uses_fitted_stats_and_canonical_source_labels(monkey
         fitted.append(model)
         return model
 
-    monkeypatch.setattr(bivar, "_find_best_gmm", fit)
+    monkeypatch.setattr(distribution_2d, "_find_best_gmm", fit)
     data = frame()
-    fig, legacy_summary, result = bivar.feature_2d_distribution_plot(
+    fig, legacy_summary, result = distribution_2d.feature_2d_distribution_plot(
         data, "id", None, "x", "y", color_by=["treatment"], shape_by="shape",
         separate_by="day", analysis_options=options())
 
@@ -103,8 +103,8 @@ def test_separated_metadata_uses_fitted_stats_and_canonical_source_labels(monkey
 
 
 def test_separated_statistics_list_every_level_and_keep_the_legacy_summary(monkeypatch):
-    monkeypatch.setattr(bivar, "_find_best_gmm", lambda values, **_kwargs: StubGMM(values, 2))
-    fig, legacy_summary, _ = bivar.feature_2d_distribution_plot(
+    monkeypatch.setattr(distribution_2d, "_find_best_gmm", lambda values, **_kwargs: StubGMM(values, 2))
+    fig, legacy_summary, _ = distribution_2d.feature_2d_distribution_plot(
         frame(), "id", None, "x", "y", color_by=["treatment"], separate_by="day",
         analysis_options=options())
 
@@ -124,8 +124,8 @@ def test_separated_statistics_list_every_level_and_keep_the_legacy_summary(monke
 
 
 def test_combined_metadata_has_none_category_and_stats_without_gmm_html(monkeypatch):
-    monkeypatch.setattr(bivar, "_find_best_gmm", lambda values, **_kwargs: StubGMM(values, 2))
-    fig, legacy_summary, result = bivar.feature_2d_distribution_plot(
+    monkeypatch.setattr(distribution_2d, "_find_best_gmm", lambda values, **_kwargs: StubGMM(values, 2))
+    fig, legacy_summary, result = distribution_2d.feature_2d_distribution_plot(
         frame(), "id", None, "x", "y", analysis_options=options())
 
     assert fig.layout.meta["distribution_statistics"] == legacy_summary.split("<style>", 1)[0].rstrip()
@@ -143,8 +143,8 @@ def test_combined_metadata_has_none_category_and_stats_without_gmm_html(monkeypa
 ])
 def test_color_and_separation_each_qualify_source_labels_independently(
         monkeypatch, color_by, separate_by, expected):
-    monkeypatch.setattr(bivar, "_find_best_gmm", lambda values, **_kwargs: StubGMM(values, 2))
-    fig, _, _ = bivar.feature_2d_distribution_plot(
+    monkeypatch.setattr(distribution_2d, "_find_best_gmm", lambda values, **_kwargs: StubGMM(values, 2))
+    fig, _, _ = distribution_2d.feature_2d_distribution_plot(
         frame(), "id", None, "x", "y", color_by=color_by, separate_by=separate_by,
         analysis_options=options())
 
@@ -161,8 +161,8 @@ def test_zero_or_single_component_fit_has_no_structured_table(
     def fit(values, **_kwargs):
         return None if fit_result is None else StubGMM(values, 1)
 
-    monkeypatch.setattr(bivar, "_find_best_gmm", fit)
-    fig, legacy_summary, result = bivar.feature_2d_distribution_plot(
+    monkeypatch.setattr(distribution_2d, "_find_best_gmm", fit)
+    fig, legacy_summary, result = distribution_2d.feature_2d_distribution_plot(
         frame(), "id", None, "x", "y", analysis_options=options())
 
     assert fig.layout.meta["gmm_component_tables"] == []
@@ -174,7 +174,7 @@ def test_zero_or_single_component_fit_has_no_structured_table(
 def test_invalid_group_has_no_structured_table_and_retains_notices():
     data = frame().iloc[:3].copy()
     data["y"] = 1.
-    fig, _, result = bivar.feature_2d_distribution_plot(
+    fig, _, result = distribution_2d.feature_2d_distribution_plot(
         data, "id", None, "x", "y", analysis_options=options())
 
     assert fig.layout.meta["gmm_component_tables"] == []

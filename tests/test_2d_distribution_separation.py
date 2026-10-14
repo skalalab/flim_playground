@@ -6,7 +6,7 @@ import pytest
 import streamlit as st
 
 from src.column_roles import code_span
-from src.vis import bivar, dimension_facets, helpers
+from src.vis import distribution_2d, dimension_facets, helpers
 
 
 def frame():
@@ -42,7 +42,7 @@ def plot(data, **kwargs):
                       dict(log_x=False, log_y=False, marginal_plot_type="gaussian fit",
                            fit_regression=True, fit_gmm=True,
                            max_components=2, min_weight_threshold=.1))
-    return bivar.feature_2d_distribution_plot(
+    return distribution_2d.feature_2d_distribution_plot(
         data, "id", None, "x", "y", color_by=["treatment"],
         shape_by="shape", opacity_by="opacity", separate_by="day", **kwargs)
 
@@ -185,7 +185,7 @@ def test_statistics_list_every_level_in_panel_order_and_no_category_metadata():
     for key in ("distribution_summaries", "distribution_statistics_summaries",
                 "distribution_category", "distribution_summary"):
         assert key not in meta
-    assert not hasattr(bivar, "select_distribution_category")
+    assert not hasattr(distribution_2d, "select_distribution_category")
     statistics = meta["distribution_statistics"]
     # No heading names a level; each line's own title does, in panel order.
     assert code_span("day") not in statistics
@@ -238,13 +238,13 @@ def test_level_names_with_markdown_metacharacters_do_not_leak_formatting():
 
 def test_models_fit_each_category_colour_group_and_labels_stay_qualified(monkeypatch):
     calls = []
-    real = bivar._find_best_gmm
+    real = distribution_2d._find_best_gmm
 
     def capture(values, **kwargs):
         calls.append(np.asarray(values).copy())
         return real(values, **kwargs)
 
-    monkeypatch.setattr(bivar, "_find_best_gmm", capture)
+    monkeypatch.setattr(distribution_2d, "_find_best_gmm", capture)
     _fig, _, result = plot(frame())
     assert len(calls) == 5
     for (day, treatment), group in result.groupby([result.day.fillna("N/A"), "treatment"]):
@@ -301,13 +301,13 @@ def test_webgl_overlays_use_the_foreground_renderer(monkeypatch):
 @pytest.mark.parametrize("separator", [["day"], "absent", "treatment"])
 def test_invalid_separator_rejected(separator):
     with pytest.raises(ValueError, match="Separate by"):
-        bivar.feature_2d_distribution_plot(frame(), "id", None, "x", "y",
+        distribution_2d.feature_2d_distribution_plot(frame(), "id", None, "x", "y",
                                            color_by=["treatment"], separate_by=separator,
                                            analysis_options={})
 
 
 def test_marginal_none_removes_the_strip_axes_and_fills_the_frame():
-    fig, _, _ = bivar.feature_2d_distribution_plot(
+    fig, _, _ = distribution_2d.feature_2d_distribution_plot(
         frame(), "id", None, "x", "y", color_by=["treatment"],
         analysis_options=dict(log_x=False, log_y=False, marginal_plot_type="None",
                               fit_regression=False, fit_gmm=False,

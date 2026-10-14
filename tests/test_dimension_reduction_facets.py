@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 import streamlit as st
 
-from src.vis import helpers, multivar
+from src.vis import helpers, dimension_reduction
 
 
 @pytest.fixture
@@ -20,7 +20,7 @@ def frame():
 
 
 def plot(frame, **kwargs):
-    return multivar.dimension_reduction_plot(
+    return dimension_reduction.dimension_reduction_plot(
         frame, "id", "fov", ["x", "y"], colored_by=["type", "state"],
         shape_by="type", opacity_by="state", method="PCA", **kwargs)
 
@@ -117,13 +117,13 @@ def test_hover_has_identifiers_and_fov_on_every_foreground_panel(frame):
 
 
 def test_display_changes_hit_embedding_cache(frame, monkeypatch):
-    multivar.dimension_reduction.clear()
+    dimension_reduction.dimension_reduction.clear()
     calls = []
-    original = multivar.StandardScaler.fit_transform
+    original = dimension_reduction.StandardScaler.fit_transform
     def counted(self, X, *args, **kwargs):
         calls.append(X.copy())
         return original(self, X, *args, **kwargs)
-    monkeypatch.setattr(multivar.StandardScaler, "fit_transform", counted)
+    monkeypatch.setattr(dimension_reduction.StandardScaler, "fit_transform", counted)
     plot(frame)
     plot(frame, separate_by=["type"])
     plot(frame, separate_by=["state", "type"])

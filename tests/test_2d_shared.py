@@ -7,7 +7,7 @@ from scipy.stats import chi2
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.vis.bivar import gmm_ellipse_params
+from src.vis.distribution_2d import gmm_ellipse_params
 from src.vis.plot_defaults import panel_point_size
 
 

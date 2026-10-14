@@ -286,7 +286,7 @@ def test_removed_or_retyped_separator_is_pruned(state):
 def marginal_app():
     import streamlit as st
 
-    from src.vis.bivar import distribution_controls
+    from src.vis.distribution_2d import distribution_controls
 
     st.session_state.options = distribution_controls("x", "y")
 

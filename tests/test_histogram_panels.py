@@ -5,9 +5,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.vis import univar
+from src.vis import feature_histogram
 from src.vis.helpers import apply_plot_styling
-from src.vis.histogram import prepare_histogram as prepare
+from src.vis.feature_histogram import prepare_histogram as prepare
 
 
 def source():
@@ -52,9 +52,9 @@ def test_undefined_skewness_and_no_color_by_keep_sparse_observations():
 
 
 def test_count_figure_stacks_local_curves_and_styles_every_axis(monkeypatch):
-    assert "separate_by" in inspect.signature(univar.feature_histogram_plot).parameters
-    monkeypatch.setattr(univar.st, "session_state", {"plot_show_group_counts": True})
-    fig = univar.feature_histogram_plot(source(), "value", ["treatment"], separate_by="day")
+    assert "separate_by" in inspect.signature(feature_histogram.feature_histogram_plot).parameters
+    monkeypatch.setattr(feature_histogram.st, "session_state", {"plot_show_group_counts": True})
+    fig = feature_histogram.feature_histogram_plot(source(), "value", ["treatment"], separate_by="day")
     assert len(fig.data) == 3
     assert [trace.xaxis for trace in fig.data] == ["x", "x2", "x3"]
     assert [sum(trace.y) for trace in fig.data] == [5, 5, 2]
@@ -98,10 +98,10 @@ def bimodal_source():
 def test_each_panel_legend_has_optional_local_counts_and_skewness_only_in_count_mode(
     monkeypatch, gmm, show_counts
 ):
-    monkeypatch.setattr(univar.st, "session_state", {"plot_show_group_counts": show_counts})
+    monkeypatch.setattr(feature_histogram.st, "session_state", {"plot_show_group_counts": show_counts})
     data = prepare(bimodal_source(), "value", ["treatment"], "day", apply_gmm=gmm,
                    max_components=2)
-    fig = apply_plot_styling(univar._histogram_figure(data, "tab10", False), 5, 24, 18)
+    fig = apply_plot_styling(feature_histogram._histogram_figure(data, "tab10", False), 5, 24, 18)
     for row, panel in enumerate(data["panels"], 1):
         legend_id = "legend" + (str(row) if row > 1 else "")
         traces = [trace for trace in fig.data if trace.legend == legend_id]
@@ -122,10 +122,10 @@ def test_each_panel_legend_has_optional_local_counts_and_skewness_only_in_count_
 @pytest.mark.parametrize("separate_by", [None, "day"])
 @pytest.mark.parametrize("legend_size", [14, 32])
 def test_gmm_legends_reserve_space_outside_aligned_plot_axes(monkeypatch, separate_by, legend_size):
-    monkeypatch.setattr(univar.st, "session_state", {"plot_show_group_counts": True})
+    monkeypatch.setattr(feature_histogram.st, "session_state", {"plot_show_group_counts": True})
     data = prepare(bimodal_source(), "value", ["treatment"], separate_by, apply_gmm=True,
                    max_components=2)
-    fig = apply_plot_styling(univar._histogram_figure(data, "tab10", False), 5, 32, legend_size)
+    fig = apply_plot_styling(feature_histogram._histogram_figure(data, "tab10", False), 5, 32, legend_size)
     for row in range(1, len(data["panels"]) + 1):
         suffix = str(row) if row > 1 else ""
         legend = fig.layout["legend" + suffix]
@@ -141,9 +141,9 @@ def test_gmm_legends_reserve_space_outside_aligned_plot_axes(monkeypatch, separa
 
 @pytest.mark.parametrize("theme", ["black", "white"])
 def test_category_titles_use_only_the_value_and_match_the_axes(monkeypatch, theme):
-    monkeypatch.setattr(univar, "get_context_theme_color", lambda: theme)
+    monkeypatch.setattr(feature_histogram, "get_context_theme_color", lambda: theme)
     monkeypatch.setattr("src.vis.helpers.get_context_theme_color", lambda: theme)
-    fig = univar.feature_histogram_plot(source(), "value", ["treatment"], separate_by="day")
+    fig = feature_histogram.feature_histogram_plot(source(), "value", ["treatment"], separate_by="day")
     fig = apply_plot_styling(fig, 5, 36, 20)
     assert [title.text for title in fig.layout.annotations] == ["Day 2", "Day 10", "N/A"]
     assert all(title.font.color == theme for title in fig.layout.annotations)
@@ -152,15 +152,15 @@ def test_category_titles_use_only_the_value_and_match_the_axes(monkeypatch, them
 
 
 def test_gmm_fits_each_panel_locally_and_assigns_by_position(monkeypatch):
-    from src.vis import histogram
+    from src.vis import feature_histogram
     fitted = []
-    original = histogram._find_best_gmm
+    original = feature_histogram._find_best_gmm
 
     def recording(values, **kwargs):
         fitted.append(values.copy())
         return original(values, **kwargs)
 
-    monkeypatch.setattr(histogram, "_find_best_gmm", recording)
+    monkeypatch.setattr(feature_histogram, "_find_best_gmm", recording)
     frame = bimodal_source()
     data = prepare(frame, "value", ["treatment"], separate_by="day", apply_gmm=True,
                    max_components=2, intersection_threshold=True)
@@ -183,8 +183,8 @@ def test_gmm_fits_each_panel_locally_and_assigns_by_position(monkeypatch):
 
 
 def test_gmm_fallback_and_sparse_failures_stay_local(monkeypatch):
-    from src.vis import histogram
-    original = histogram._find_best_gmm
+    from src.vis import feature_histogram
+    original = feature_histogram._find_best_gmm
 
     def selective_fit(values, **kwargs):
         if values.max() > 200:
@@ -194,8 +194,8 @@ def test_gmm_fallback_and_sparse_failures_stay_local(monkeypatch):
     def no_intersection(*args):
         raise ValueError("not bracketed")
 
-    monkeypatch.setattr(histogram, "_find_best_gmm", selective_fit)
-    monkeypatch.setattr(histogram, "find_intersection", no_intersection)
+    monkeypatch.setattr(feature_histogram, "_find_best_gmm", selective_fit)
+    monkeypatch.setattr(feature_histogram, "find_intersection", no_intersection)
     frame = pd.concat([bimodal_source(), source()], ignore_index=True)
     data = prepare(frame, "value", ["treatment"], separate_by="day", apply_gmm=True,
                    max_components=2, intersection_threshold=True)
@@ -215,10 +215,10 @@ def test_gmm_fallback_and_sparse_failures_stay_local(monkeypatch):
 
 
 def test_single_component_curve_stays_visible_and_unassigned(monkeypatch):
-    assert "separate_by" in inspect.signature(univar.feature_gmm_plot).parameters
-    monkeypatch.setattr(univar, "gmm_hyperParams_widget", lambda: (1, .1))
-    monkeypatch.setattr(univar.st, "checkbox", lambda *a, **k: False)
-    fig, out = univar.feature_gmm_plot(source(), "value", [], separate_by="day")
+    assert "separate_by" in inspect.signature(feature_histogram.feature_gmm_plot).parameters
+    monkeypatch.setattr(feature_histogram, "gmm_hyperParams_widget", lambda: (1, .1))
+    monkeypatch.setattr(feature_histogram.st, "checkbox", lambda *a, **k: False)
+    fig, out = feature_histogram.feature_gmm_plot(source(), "value", [], separate_by="day")
     assert len(out) == 12 and out["GMM_group"].isna().all()
     curves = [trace for trace in fig.data if len(trace.x) > 1]
     assert len(curves) == 2
@@ -235,7 +235,7 @@ def test_invalid_histogram_separators_are_rejected(separator):
 @pytest.mark.parametrize("values", [[2.], [2., 2., 2.]])
 def test_a_single_bin_has_a_visible_count_marker_after_styling(values):
     data = pd.DataFrame({"value": values})
-    fig = univar.feature_histogram_plot(data, "value")
+    fig = feature_histogram.feature_histogram_plot(data, "value")
     fig = apply_plot_styling(fig, 5, 24, 18)
     trace = fig.data[0]
     assert list(trace.y) == [len(values)]
@@ -248,7 +248,7 @@ def test_a_single_bin_has_a_visible_count_marker_after_styling(values):
 @pytest.mark.parametrize("gmm", [False, True])
 def test_stacked_panels_align_and_show_only_the_bottom_x_axis(gmm):
     prepared = prepare(source(), "value", ["treatment"], separate_by="day", apply_gmm=gmm)
-    fig = apply_plot_styling(univar._histogram_figure(prepared, "tab10", False), 5, 36, 20)
+    fig = apply_plot_styling(feature_histogram._histogram_figure(prepared, "tab10", False), 5, 36, 20)
     axes = [fig.layout.xaxis, fig.layout.xaxis2, fig.layout.xaxis3]
     assert all(axis.domain == axes[-1].domain for axis in axes)
     assert all(axis.range == axes[-1].range for axis in axes)
@@ -260,7 +260,7 @@ def test_stacked_panels_align_and_show_only_the_bottom_x_axis(gmm):
 
 
 def test_large_fonts_leave_room_between_category_headers_and_previous_axis_ticks():
-    fig = univar.feature_histogram_plot(source(), "value", ["treatment"], separate_by="day")
+    fig = feature_histogram.feature_histogram_plot(source(), "value", ["treatment"], separate_by="day")
     fig = apply_plot_styling(fig, 5, 36, 20)
     plot_height = fig.layout.height - fig.layout.margin.t - fig.layout.margin.b
     axes = [fig.layout.yaxis, fig.layout.yaxis2, fig.layout.yaxis3]
@@ -273,21 +273,21 @@ def test_large_fonts_leave_room_between_category_headers_and_previous_axis_ticks
 
 def test_styling_an_empty_separated_population_keeps_a_valid_empty_figure():
     data = pd.DataFrame({"value": [np.nan], "day": ["Day 2"]})
-    fig = univar.feature_histogram_plot(data, "value", separate_by="day")
+    fig = feature_histogram.feature_histogram_plot(data, "value", separate_by="day")
     fig = apply_plot_styling(fig, 5, 36, 20)
     assert not fig.data
     assert fig.layout.yaxis.range == (0, 1)
 
 
 def test_gmm_does_not_allocate_count_bins_or_use_a_saved_count_width(monkeypatch):
-    from src.vis import histogram
+    from src.vis import feature_histogram
 
     def no_count_binning(*a, **k):
         pytest.fail("Density fits must not allocate unused count bins")
 
-    monkeypatch.setattr(histogram, "histogram_bin_edges", no_count_binning)
+    monkeypatch.setattr(feature_histogram, "histogram_bin_edges", no_count_binning)
     data = pd.DataFrame({"value": np.r_[np.linspace(0, 1, 200), 1e7]})
-    prepared = histogram.prepare_histogram(data, "value", apply_gmm=True, max_components=1,
+    prepared = feature_histogram.prepare_histogram(data, "value", apply_gmm=True, max_components=1,
                                            bin_width=.1)
     assert prepared["x_range"] == [0, 1e7]
     assert len(prepared["bin_edges"]) == 2
@@ -296,9 +296,9 @@ def test_gmm_does_not_allocate_count_bins_or_use_a_saved_count_width(monkeypatch
 
 
 def test_separated_threshold_values_stay_in_details_without_overlapping_chart_labels(monkeypatch):
-    monkeypatch.setattr(univar, "gmm_hyperParams_widget", lambda: (2, .1))
-    monkeypatch.setattr(univar.st, "checkbox", lambda *a, **k: True)
-    fig, _ = univar.feature_gmm_plot(bimodal_source(), "value", ["treatment"], separate_by="day")
+    monkeypatch.setattr(feature_histogram, "gmm_hyperParams_widget", lambda: (2, .1))
+    monkeypatch.setattr(feature_histogram.st, "checkbox", lambda *a, **k: True)
+    fig, _ = feature_histogram.feature_gmm_plot(bimodal_source(), "value", ["treatment"], separate_by="day")
     assert len(fig.layout.shapes) == 3
     assert [annotation.text for annotation in fig.layout.annotations] == [
         "Day 2", "Day 10", "N/A"]

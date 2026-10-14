@@ -18,8 +18,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
-from src.vis import univar  # noqa: E402
-from src.vis.univar import feature_comparison_plot  # noqa: E402
+from src.vis import feature_comparison  # noqa: E402
+from src.vis.feature_comparison import feature_comparison_plot  # noqa: E402
 
 VAR = "redox_ratio"
 BASE = dict(unique_row_id_col="cell_id", fov_name_col="image_name", selected_var=VAR,
@@ -64,18 +64,18 @@ def build_df():
 @contextlib.contextmanager
 def boxplot_on():
     """Enable boxplots in bare-mode Streamlit, which otherwise returns widget defaults."""
-    real = univar.st.selectbox
+    real = feature_comparison.st.selectbox
 
     def fake(label, options, key=None, **kwargs):
         if label == "Overlay":
             return "Boxplot"
         return real(label, options, key=key, **kwargs)
 
-    univar.st.selectbox = fake
+    feature_comparison.st.selectbox = fake
     try:
         yield
     finally:
-        univar.st.selectbox = real
+        feature_comparison.st.selectbox = real
 
 
 def point_xy(fig, precision=9):
@@ -104,7 +104,7 @@ def boxes(fig):
 
 
 def expected_box(values):
-    """What univar.py computes, on the pooled group: percentiles plus the mean."""
+    """What feature_comparison.py computes, on the pooled group: percentiles plus the mean."""
     return (round(float(np.percentile(values, 25)), 9),
             round(float(np.percentile(values, 50)), 9),
             round(float(np.percentile(values, 75)), 9),

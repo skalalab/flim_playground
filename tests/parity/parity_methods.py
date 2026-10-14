@@ -50,7 +50,7 @@ def _app_bin_edges(df, var):
 def histogram():
     print("\n=== Feature Histogram — inhibitors.csv ===")
     patch_streamlit()
-    from src.vis.univar import feature_histogram_plot
+    from src.vis.feature_histogram import feature_histogram_plot
 
     df, _ = load_app_df(CSV, CATS, "cell_id", "image_name")
     fig = feature_histogram_plot(df.copy(), VAR, ["treatment"], colormap="tab10", log_x=False)
@@ -84,7 +84,7 @@ def histogram():
 def histogram_gmm(intersection):
     print(f"\n=== Feature Histogram + GMM (intersection={intersection}) — inhibitors.csv ===")
     patch_streamlit({"Use intersection as threshold": intersection})
-    from src.vis.univar import feature_gmm_plot
+    from src.vis.feature_histogram import feature_gmm_plot
 
     df, _ = load_app_df(CSV, CATS, "cell_id", "image_name")
     _fig, app_out = feature_gmm_plot(df.copy(), VAR, ["treatment"], colormap="tab10", log_x=False)
@@ -133,7 +133,7 @@ def feature_comparison(separate_by, effect_size, statistical_test="Welch's t-tes
     print(f"\n=== Feature Comparison (separate_by={separate_by}, effect={effect_size}, "
           f"test={statistical_test}, collapse_by={collapse_by}) ===")
     patch_streamlit()
-    from src.vis.univar import feature_comparison_plot
+    from src.vis.feature_comparison import feature_comparison_plot
 
     df, _ = load_app_df(CSV, CATS, "cell_id", "image_name")
     # Match the page's replicate collapse before calling the plot function.
@@ -234,7 +234,7 @@ def two_d(marginal, fit_gmm, separate_by=None, focus=None):
           f"separate_by={separate_by}, focus={focus}) ===")
     # Exercise only marginal types offered by the app.
     patch_streamlit({"2D Gaussian Mixture Model": fit_gmm, "Marginal Plot Type": marginal})
-    from src.vis.bivar import feature_2d_distribution_plot
+    from src.vis.distribution_2d import feature_2d_distribution_plot
 
     df, _ = load_app_df(CSV, CATS, "cell_id", "image_name")
     fig, _table_md, _app_out = feature_2d_distribution_plot(
@@ -336,7 +336,7 @@ def dimension_reduction(method, cat_filters=None):
     print(f"\n=== Dimension Reduction ({method}) — inhibitors.csv"
           f"{' filtered ' + str(cat_filters) if cat_filters else ''} ===")
     patch_streamlit()
-    from src.vis.multivar import dimension_reduction_plot
+    from src.vis.dimension_reduction import dimension_reduction_plot
 
     df, _ = load_app_df(CSV, CATS, "cell_id", "image_name")
     feats = ["Lifetime fit_nadh: t1", "Lifetime fit_nadh: t2", "Lifetime fit_nadh: a1",
@@ -376,9 +376,9 @@ def promoted_legends():
     import streamlit as st
 
     patch_streamlit({"2D Gaussian Mixture Model": False, "Marginal Plot Type": "None"})
-    from src.vis.bivar import feature_2d_distribution_plot
+    from src.vis.distribution_2d import feature_2d_distribution_plot
     from src.vis.dimension_facets import focus_facet_figure
-    from src.vis.multivar import dimension_reduction_plot
+    from src.vis.dimension_reduction import dimension_reduction_plot
 
     def check(name, fig, ax):
         app = sorted(plain_legend_label(t.name) for t in fig.data
@@ -431,7 +431,7 @@ def analysis_columns_prune():
     print("\n=== ANALYSIS_COLUMNS prune — inhibitors.csv, categorical_cols=['treatment'] ===")
     narrow = ["treatment"]
     patch_streamlit({"Use intersection as threshold": False})
-    from src.vis.univar import feature_gmm_plot
+    from src.vis.feature_histogram import feature_gmm_plot
 
     df, _ = load_app_df(CSV, narrow, "cell_id", "image_name")
     dropped = {"cell_line", "dish"}

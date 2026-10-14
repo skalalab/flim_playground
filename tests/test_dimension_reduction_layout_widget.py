@@ -13,7 +13,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from src import dataset_io, export_script
-from src.vis import multivar
+from src.vis import dimension_reduction
 from src import analysis_config as acw
 from src.widgets import plot_layout
 
@@ -387,7 +387,7 @@ def test_data_analysis_routes_dimension_reduction_through_responsive_wrapper(mon
     monkeypatch.setattr(acw, "get_fov_name_col_analysis", lambda *a, **k: None)
     monkeypatch.setattr(acw, "get_unique_row_id_col", lambda *a, **k: "cell_id")
     install_page_table(frame.copy(), {"Uncategorized Features": ["first", "second"]}, "cell_id", ",")
-    monkeypatch.setattr(multivar, "dimension_reduction_plot", lambda *a, **k: _figure())
+    monkeypatch.setattr(dimension_reduction, "dimension_reduction_plot", lambda *a, **k: _figure())
     monkeypatch.setattr(export_script, "generate_script", lambda state: "# test")
     seen = []
     monkeypatch.setattr(plot_layout, "dimension_reduction_chart",

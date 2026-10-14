@@ -7,7 +7,7 @@ import pytest
 import streamlit as st
 
 from src.collapse import collapse_rows
-from src.vis import univar
+from src.vis import feature_comparison
 from src.vis.helpers import apply_plot_styling
 
 
@@ -31,14 +31,14 @@ def controls(monkeypatch):
                         settings["connect_means"] if label == "Connect means" else value)
     monkeypatch.setattr(st, "selectbox", lambda label, options, **kw:
                         settings["overlay"] if label == "Overlay" else options[0])
-    monkeypatch.setattr(univar, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(feature_comparison, "get_context_theme_color", lambda: "black")
     return settings
 
 
 def render(source, **kwargs):
     primary, label, _ = collapse_rows(source.dropna(subset=["value"]), "dish",
                                      ["treatment", kwargs.get("separate_by")], "cell_id")
-    return univar.feature_comparison_plot(
+    return feature_comparison.feature_comparison_plot(
         primary, label, None, "value", ["treatment"], row_id_label="dish",
         collapse_by="dish", source_df=source, source_row_id_col="cell_id",
         source_fov_name_col="image_name", source_row_id_label="cell_id", **kwargs)
@@ -167,16 +167,15 @@ def test_statistical_inputs_stay_collapsed_and_brackets_require_significance(
     source.loc[0, "value"] = 200
     if significant:
         source.loc[source["treatment"] == "Drug", "value"] -= 200
-    import src.vis.helpers as helpers
-    real_test = helpers.ttest_ind
+    real_test = feature_comparison.ttest_ind
     sizes = []
 
     def spy(a, b, **kwargs):
         sizes.append((len(a), len(b)))
         return real_test(a, b, **kwargs)
 
-    monkeypatch.setattr(helpers, "ttest_ind", spy)
-    monkeypatch.setattr(helpers, "comparison_pair_widget", lambda pairs: pairs)
+    monkeypatch.setattr(feature_comparison, "ttest_ind", spy)
+    monkeypatch.setattr(feature_comparison, "comparison_pair_widget", lambda pairs: pairs)
     fig = render(source, statistical_test=statistical_test)
     assert sizes == [(3, 3)]
     assert len(fig.layout.shapes) == (3 if significant else 0)

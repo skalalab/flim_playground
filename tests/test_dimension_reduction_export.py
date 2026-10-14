@@ -250,7 +250,7 @@ def test_gray_context_matches_app_styling(tmp_path, monkeypatch):
 def test_point_and_legend_diameters_and_label_fonts_match_the_app(
         tmp_path, monkeypatch, point_size, separate_by):
     from src.vis.helpers import apply_plot_styling
-    from src.vis.multivar import dimension_reduction_plot
+    from src.vis.dimension_reduction import dimension_reduction_plot
 
     state = _state(separate_by)
     state.update(point_size=point_size, axis_label_size=24, legend_size=18)
@@ -385,7 +385,7 @@ def test_generated_coordinates_and_groups_do_not_overwrite_uploaded_categories(t
 @pytest.mark.parametrize("separate_by", [[], ["row"], ["row", "column"]])
 def test_export_preserves_global_interleaved_app_draw_order(tmp_path, monkeypatch, separate_by):
     import streamlit as st
-    from src.vis import multivar
+    from src.vis import dimension_reduction
 
     frame = pd.concat([_frame().iloc[:6].assign(
         id=lambda df: df["id"] + f"_{repeat}",
@@ -394,9 +394,9 @@ def test_export_preserves_global_interleaved_app_draw_order(tmp_path, monkeypatc
     ) for repeat in range(4)], ignore_index=True)
     state = _state(separate_by)
     namespace = _run(tmp_path, monkeypatch, state, frame)
-    monkeypatch.setattr(multivar, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(dimension_reduction, "get_context_theme_color", lambda: "black")
     monkeypatch.setitem(st.session_state, "plot_show_group_counts", True)
-    app = multivar.dimension_reduction_plot(
+    app = dimension_reduction.dimension_reduction_plot(
         frame, "id", None, ["feature_a", "feature_b"],
         colored_by=["color"], shape_by="shape", opacity_by="opacity",
         method="PCA", separate_by=separate_by,
@@ -416,7 +416,7 @@ def test_export_preserves_global_interleaved_app_draw_order(tmp_path, monkeypatc
 
 @pytest.mark.parametrize("separate_by", [[], ["row", "column"]])
 def test_all_reducers_fit_once_and_match_the_apps_global_embedding(tmp_path, monkeypatch, separate_by):
-    from src.vis.multivar import dimension_reduction
+    from src.vis.dimension_reduction import dimension_reduction
     import sklearn.decomposition
     import sklearn.manifold
     import umap

@@ -12,7 +12,7 @@ import pytest
 from scipy.stats import gaussian_kde
 
 from src import dataset_io, export_script
-from src.vis import bivar
+from src.vis import distribution_2d
 from src.vis.helpers import _find_best_gmm
 from src import analysis_config as acw
 from src.widgets import visualization_widgets as vw
@@ -59,8 +59,8 @@ def page(monkeypatch, install_page_table):
     monkeypatch.setattr(acw, "get_fov_name_col_analysis", lambda *a, **k: "image_name")
     monkeypatch.setattr(acw, "get_unique_row_id_col", lambda *a, **k: "cell_id")
 
-    plot, generate = bivar.feature_2d_distribution_plot, export_script.generate_script
-    pearson, gmm = bivar.pearsonr, bivar._find_best_gmm
+    plot, generate = distribution_2d.feature_2d_distribution_plot, export_script.generate_script
+    pearson, gmm = distribution_2d.pearsonr, distribution_2d._find_best_gmm
 
     def capture_plot(df, **kwargs):
         seen["input"], seen["kwargs"] = df.copy(), kwargs
@@ -81,10 +81,10 @@ def page(monkeypatch, install_page_table):
         seen["gmm"].append(np.asarray(data).copy())
         return gmm(data, **kwargs)
 
-    monkeypatch.setattr(bivar, "feature_2d_distribution_plot", capture_plot)
+    monkeypatch.setattr(distribution_2d, "feature_2d_distribution_plot", capture_plot)
     monkeypatch.setattr(export_script, "generate_script", capture_export)
-    monkeypatch.setattr(bivar, "pearsonr", capture_pearson)
-    monkeypatch.setattr(bivar, "_find_best_gmm", capture_gmm)
+    monkeypatch.setattr(distribution_2d, "pearsonr", capture_pearson)
+    monkeypatch.setattr(distribution_2d, "_find_best_gmm", capture_gmm)
 
     def run(*, collapse="dish", color_by=None, logged=False, marginal="gaussian fit",
             separate=None, point_mode="shape", point_column="day", repeat_days=False):

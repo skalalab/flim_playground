@@ -11,10 +11,11 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from src import dataset_io
-from src.vis.bivar import feature_2d_distribution_plot, phasor_plot
+from src.vis.distribution_2d import feature_2d_distribution_plot
+from src.vis.phasor import phasor_plot
 from src.vis.helpers import hover_field
-from src.vis.multivar import dimension_reduction_plot
-from src.vis.univar import feature_comparison_plot
+from src.vis.dimension_reduction import dimension_reduction_plot
+from src.vis.feature_comparison import feature_comparison_plot
 
 
 def _frame():

@@ -740,7 +740,7 @@ def test_exported_gmm_group_numbering_matches_app(tmp_path, monkeypatch):
     group1 is the smallest-mean component, matching the displayed component table.
     """
     from src.vis.helpers import _find_best_gmm
-    from src.vis.univar import _assign_subpopulation_labels
+    from src.vis.feature_histogram import _assign_subpopulation_labels
 
     # Three well-separated components: sklearn's internal component order is then
     # unlikely (1 in 6) to coincide with ascending-mean order by chance.
@@ -876,7 +876,7 @@ def _app_lifetime_markers(f, harmonic):
     """The app's marker coordinates, read back off its Plotly figure."""
     import plotly.graph_objects as go
 
-    from src.vis.bivar import _create_phasor_background
+    from src.vis.phasor import _create_phasor_background
 
     fig = go.Figure()
     _create_phasor_background(fig, "black", f, harmonic)
@@ -1448,7 +1448,7 @@ def test_export_gmm_log_x_label(tmp_path, monkeypatch):
 
 
 def test_export_feature_comparison_log_y_label(tmp_path, monkeypatch):
-    """Feature Comparison y-axis is relabeled log₁₀(feature) when LOG_Y, matching the app (univar.py:788)."""
+    """Feature Comparison y-axis is relabeled log₁₀(feature) when LOG_Y, matching the app (feature_comparison.py)."""
     col = "Lifetime fit_nadh: t1"
     state = _base_state(
         "Feature Comparison", categorical_cols=["treatment"], color_by=["treatment"],
@@ -1573,15 +1573,15 @@ def _app_feature_comparison_fig(df, monkeypatch, separate_by="day"):
 
     import streamlit as st
 
-    from src.vis import univar
+    from src.vis import feature_comparison
 
     monkeypatch.setattr(st, "columns", lambda spec, **kw: tuple(
         contextlib.nullcontext() for _ in (spec if isinstance(spec, list) else range(spec))))
     monkeypatch.setattr(st, "checkbox", lambda label, value=False, **kw: value)
     monkeypatch.setattr(st, "session_state", {}, raising=False)
-    monkeypatch.setattr(univar, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(feature_comparison, "get_context_theme_color", lambda: "black")
 
-    return univar.feature_comparison_plot(
+    return feature_comparison.feature_comparison_plot(
         df, "cell_id", "image_name", "feature_a",
         color_by=["treatment"], separate_by=separate_by,
     )
@@ -1632,16 +1632,16 @@ def _app_section_annotations(df, monkeypatch, axis_label_size=24):
 
     import streamlit as st
 
-    from src.vis import univar
+    from src.vis import feature_comparison
 
     monkeypatch.setattr(st, "columns", lambda spec, **kw: tuple(
         contextlib.nullcontext() for _ in (spec if isinstance(spec, list) else range(spec))))
     monkeypatch.setattr(st, "checkbox", lambda label, value=False, **kw: value)
     monkeypatch.setattr(st, "session_state", {"plot_axis_label_size": axis_label_size},
                         raising=False)
-    monkeypatch.setattr(univar, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(feature_comparison, "get_context_theme_color", lambda: "black")
 
-    fig = univar.feature_comparison_plot(
+    fig = feature_comparison.feature_comparison_plot(
         df, "cell_id", "image_name", "feature_a",
         color_by=["treatment"], separate_by="day",
     )
@@ -1712,10 +1712,10 @@ def test_app_section_header_is_theme_aware(tmp_path, monkeypatch):
 
     import streamlit as st
 
-    from src.vis import univar
-    monkeypatch.setattr(univar, "get_context_theme_color", lambda: "white")
+    from src.vis import feature_comparison
+    monkeypatch.setattr(feature_comparison, "get_context_theme_color", lambda: "white")
     monkeypatch.setattr(st, "session_state", {"plot_axis_label_size": 24}, raising=False)
-    fig = univar.feature_comparison_plot(
+    fig = feature_comparison.feature_comparison_plot(
         df, "cell_id", "image_name", "feature_a",
         color_by=["treatment"], separate_by="day")
     dark = [a for a in fig.layout.annotations if a.yref == "paper"]
@@ -1931,7 +1931,7 @@ def _stub_streamlit_for_plots(monkeypatch, show_counts):
 
     In-plot widgets return their own `value=` defaults, which is the state the export
     capture assumes; only the count toggle is set explicitly. session_state is a dict
-    with attribute access because multivar.dimension_reduction stores a lock on it.
+    with attribute access because dimension_reduction.dimension_reduction stores a lock on it.
     """
     import contextlib
     import importlib
@@ -1959,7 +1959,7 @@ def _stub_streamlit_for_plots(monkeypatch, show_counts):
     monkeypatch.setattr(st, "write", lambda *a, **kw: None)
     monkeypatch.setattr(st, "warning", lambda *a, **kw: None)
     monkeypatch.setattr(st, "session_state", session, raising=False)
-    for mod_name in ("univar", "bivar", "multivar"):
+    for mod_name in ("feature_comparison", "feature_histogram", "distribution_2d", "phasor", "dimension_reduction"):
         mod = importlib.import_module(f"src.vis.{mod_name}")
         monkeypatch.setattr(mod, "get_context_theme_color", lambda: "black")
     return session
@@ -2011,11 +2011,11 @@ _COUNTS = {"ctrl": 17, "drug": 23}
 
 @pytest.mark.parametrize("show_counts", [True, False])
 def test_feature_comparison_legend_counts_match_the_app(tmp_path, monkeypatch, show_counts):
-    from src.vis import univar
+    from src.vis import feature_comparison
 
     df = _counts_df(_COUNTS)
     _stub_streamlit_for_plots(monkeypatch, show_counts)
-    app_fig = univar.feature_comparison_plot(
+    app_fig = feature_comparison.feature_comparison_plot(
         df.copy(), "cell_id", "image_name", "feature_a", color_by=["treatment"])
     state = _base_state("Feature Comparison", categorical_cols=["treatment"],
                         color_by=["treatment"], show_group_counts=show_counts,
@@ -2029,11 +2029,11 @@ def test_feature_comparison_legend_counts_match_the_app(tmp_path, monkeypatch, s
 def test_separate_by_legend_counts_are_group_totals_not_section_subtotals(
         tmp_path, monkeypatch, show_counts):
     """Separate-by legends count each color group over the whole frame, across all sections."""
-    from src.vis import univar
+    from src.vis import feature_comparison
 
     df = _counts_df(_COUNTS)
     _stub_streamlit_for_plots(monkeypatch, show_counts)
-    app_fig = univar.feature_comparison_plot(
+    app_fig = feature_comparison.feature_comparison_plot(
         df.copy(), "cell_id", "image_name", "feature_a",
         color_by=["treatment"], separate_by="cell_line")
     state = _base_state("Feature Comparison", categorical_cols=["treatment", "cell_line"],
@@ -2050,11 +2050,11 @@ def test_separate_by_legend_counts_are_group_totals_not_section_subtotals(
 
 @pytest.mark.parametrize("show_counts", [True, False])
 def test_histogram_legend_counts_match_the_app(tmp_path, monkeypatch, show_counts):
-    from src.vis import univar
+    from src.vis import feature_histogram
 
     df = _counts_df(_COUNTS)
     _stub_streamlit_for_plots(monkeypatch, show_counts)
-    app_fig = univar.feature_histogram_plot(df.copy(), "feature_a", color_by=["treatment"])
+    app_fig = feature_histogram.feature_histogram_plot(df.copy(), "feature_a", color_by=["treatment"])
     state = _base_state("Feature Histogram", categorical_cols=["treatment"],
                         color_by=["treatment"], show_group_counts=show_counts,
                         method_params={"selected_var": "feature_a", "log_x": False,
@@ -2073,11 +2073,11 @@ def test_gmm_legend_counts_sit_inside_the_gmm_suffixed_label(tmp_path, monkeypat
     """The GMM curve is labelled "<group> GMM"; the count belongs to that whole label,
     and the per-component curves below it carry no count at all — as in the app.
     """
-    from src.vis import univar
+    from src.vis import feature_histogram
 
     df = _bimodal_df(n_per_mode=25)
     _stub_streamlit_for_plots(monkeypatch, show_counts)
-    app_fig, _ = univar.feature_gmm_plot(df.copy(), "feature_a", color_by=["treatment"])
+    app_fig, _ = feature_histogram.feature_gmm_plot(df.copy(), "feature_a", color_by=["treatment"])
     state = _base_state("Feature Histogram", categorical_cols=["treatment"],
                         color_by=["treatment"], show_group_counts=show_counts,
                         method_params={"selected_var": "feature_a", "log_x": False,
@@ -2097,11 +2097,11 @@ def test_gmm_legend_counts_sit_inside_the_gmm_suffixed_label(tmp_path, monkeypat
 
 @pytest.mark.parametrize("show_counts", [True, False])
 def test_2d_legend_counts_match_the_app(tmp_path, monkeypatch, show_counts):
-    from src.vis import bivar
+    from src.vis import distribution_2d
 
     df = _counts_df(_COUNTS)
     _stub_streamlit_for_plots(monkeypatch, show_counts)
-    app_fig, _, _ = bivar.feature_2d_distribution_plot(
+    app_fig, _, _ = distribution_2d.feature_2d_distribution_plot(
         df.copy(), "cell_id", "image_name", "feature_a", "feature_b",
         color_by=["treatment"], marginal_plot_type="gaussian fit")
     state = _base_state("2D Feature Distribution", categorical_cols=["treatment"],
@@ -2119,12 +2119,12 @@ def test_phasor_legend_counts_match_the_app(tmp_path, monkeypatch, show_counts):
     """Phasor counts exclude rows missing either G or S.
     The fixture blanks four of thirty G values to check filtering before counting.
     """
-    from src.vis import bivar
+    from src.vis import phasor
 
     df = _phasor_df()
     df.loc[df.index[:4], "Lifetime fit free_Ch1: G(1st)"] = np.nan
     _stub_streamlit_for_plots(monkeypatch, show_counts)
-    app_fig, _ = bivar.phasor_plot(df.copy(), "cell_id", "image_name", "Ch1",
+    app_fig, _ = phasor.phasor_plot(df.copy(), "cell_id", "image_name", "Ch1",
                                    color_by=["treatment"], f=0.08, harmonic=1)
     ns = _run_script(tmp_path, _phasor_state(1, show_group_counts=show_counts), df, monkeypatch)
     exported = _export_legend_labels(ns["ax"])
@@ -2135,11 +2135,11 @@ def test_phasor_legend_counts_match_the_app(tmp_path, monkeypatch, show_counts):
 
 @pytest.mark.parametrize("show_counts", [True, False])
 def test_dimension_reduction_legend_counts_match_the_app(tmp_path, monkeypatch, show_counts):
-    from src.vis import multivar
+    from src.vis import dimension_reduction
 
     df = _counts_df(_COUNTS)
     _stub_streamlit_for_plots(monkeypatch, show_counts)
-    app_fig = multivar.dimension_reduction_plot(
+    app_fig = dimension_reduction.dimension_reduction_plot(
         df.copy(), "cell_id", "image_name", ["feature_a", "feature_b"],
         colored_by=["treatment"], method="PCA")
     state = _base_state("Dimension Reduction", categorical_cols=["treatment"],
@@ -2307,13 +2307,13 @@ def _app_feature_comparison_fig_collapsed(collapsed, label_col, monkeypatch):
 
     import streamlit as st
 
-    from src.vis import univar
+    from src.vis import feature_comparison
 
     monkeypatch.setattr(st, "columns", lambda spec, **kw: tuple(
         contextlib.nullcontext() for _ in (spec if isinstance(spec, list) else range(spec))))
     monkeypatch.setattr(st, "checkbox", lambda label, value=False, **kw: value)
-    monkeypatch.setattr(univar, "get_context_theme_color", lambda: "black")
-    return univar.feature_comparison_plot(
+    monkeypatch.setattr(feature_comparison, "get_context_theme_color", lambda: "black")
+    return feature_comparison.feature_comparison_plot(
         collapsed, label_col, None, "feature_a", color_by=["treatment"],
         row_id_label="dish")
 

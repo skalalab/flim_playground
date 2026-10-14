@@ -303,8 +303,8 @@ def test_point_traces_build_without_a_customdata_column():
 
 def test_the_point_plots_render_without_a_fov_column():
     """Every plot omits FOV hover references when no FOV column is resolved."""
-    from src.vis.bivar import feature_2d_distribution_plot
-    from src.vis.univar import feature_comparison_plot
+    from src.vis.distribution_2d import feature_2d_distribution_plot
+    from src.vis.feature_comparison import feature_comparison_plot
 
     df = pd.DataFrame({
         "cell_id": [f"c{i}" for i in range(12)],

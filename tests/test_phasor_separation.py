@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 import streamlit as st
 
-from src.vis import bivar, helpers
+from src.vis import phasor, helpers
 
 G = "Lifetime fit free_ch1: G(1st)"
 S = "Lifetime fit free_ch1: S(1st)"
@@ -36,7 +36,7 @@ def settings(monkeypatch):
 
 
 def plot(data, **kwargs):
-    return bivar.phasor_plot(data, "id", None, "ch1", color_by=["treatment"],
+    return phasor.phasor_plot(data, "id", None, "ch1", color_by=["treatment"],
                              shape_by="shape", opacity_by="opacity", **kwargs)
 
 
@@ -64,7 +64,7 @@ def test_category_views_partition_retained_rows_with_global_encodings(settings):
     assert fig.layout.meta["phasor_categories"] == ["Day 2", "Day 10", "N/A"]
     assert fig.layout.meta["phasor_category"] == "Day 2"
     for level in ["Day 2", "Day 10", "N/A"]:
-        bivar.select_phasor_category(fig, level)
+        phasor.select_phasor_category(fig, level)
         traces = points(fig)
         expected = result[result.day.fillna("N/A") == level]
         assert sorted(i for t in traces for i in t.text) == sorted(expected.id)
@@ -84,7 +84,7 @@ def test_category_views_partition_retained_rows_with_global_encodings(settings):
 def test_background_always_shows_only_other_categories(settings):
     fig, result = plot(frame(), separate_by="day")
     for level in ["Day 2", "Day 10", "N/A"]:
-        bivar.select_phasor_category(fig, level)
+        phasor.select_phasor_category(fig, level)
         expected = sorted(map(tuple, result.loc[result.day.fillna("N/A") != level, [G,S]].to_numpy()))
         assert sorted((x,y) for t in context(fig) for x,y in zip(t.x,t.y)) == expected
         for trace in context(fig):
@@ -93,7 +93,7 @@ def test_background_always_shows_only_other_categories(settings):
             assert trace.hoverinfo == "skip"
         assert sum(len(t.text) for t in points(fig)) == (12 if level == "N/A" else 24)
     # Filtering out the selected level falls back to the first natural value.
-    bivar.select_phasor_category(fig, "Day 99")
+    phasor.select_phasor_category(fig, "Day 99")
     assert fig.layout.meta["phasor_category"] == "Day 2"
 
 
@@ -122,7 +122,7 @@ def test_counts_and_legend_follow_active_category(settings):
     assert sum("drug" in name for name in names) == 1
     assert any("ctrl" in name and "12" in name for name in names)
     assert any("drug" in name and "12" in name for name in names)
-    bivar.select_phasor_category(fig, "N/A")
+    phasor.select_phasor_category(fig, "N/A")
     styled = helpers.apply_plot_styling(fig, 5, 16, 14)
     names = [t.name for t in styled.data if t.showlegend]
     assert any("ctrl" in name and "12" in name for name in names)
@@ -141,11 +141,11 @@ def test_color_inputs_and_repeated_identifiers_keep_positional_membership(settin
     data = frame()
     data.index = [0] * len(data)
     data.id = "repeated ID"
-    fig, result = bivar.phasor_plot(data, "id", None, "ch1", color_by=color_by,
+    fig, result = phasor.phasor_plot(data, "id", None, "ch1", color_by=color_by,
                                    separate_by="day")
     assert len(result) == 60
     for level in ["Day 2", "Day 10", "N/A"]:
-        bivar.select_phasor_category(fig, level)
+        phasor.select_phasor_category(fig, level)
         actual = sorted((x, y) for t in points(fig) for x, y in zip(t.x, t.y))
         expected = sorted(map(tuple, result.loc[result.day.fillna("N/A") == level, [G,S]].to_numpy()))
         assert actual == expected
@@ -188,7 +188,7 @@ def test_phasor_hover_preserves_row_identity_fov_and_previous_annotations(settin
     data["fov"] = [f"image{i}" for i in range(len(data))]
     data["treatment"] = data.treatment.replace("ctrl", "ctrl <A>")
     data["k_means_cluster"] = "previous labels"
-    fig, result = bivar.phasor_plot(data, "id", "fov", "ch1", color_by=color_by,
+    fig, result = phasor.phasor_plot(data, "id", "fov", "ch1", color_by=color_by,
                                    separate_by=separate_by, row_id_label="Cell ID")
     assert result.k_means_cluster.eq("previous labels").all()
     assert "k_means_cluster_2" not in result
@@ -196,7 +196,7 @@ def test_phasor_hover_preserves_row_identity_fov_and_previous_annotations(settin
     rows = {(row[G], row[S]): row for _, row in result.iterrows()}
     categories = fig.layout.meta["phasor_categories"] if separate_by else [None]
     for category in categories:
-        bivar.select_phasor_category(fig, category)
+        phasor.select_phasor_category(fig, category)
         for trace in points(fig):
             assert "<b>Cell ID:</b> %{text}" in trace.hovertemplate
             assert "<b>fov:</b> %{customdata}" in trace.hovertemplate

@@ -3,6 +3,7 @@ from streamlit_sortables import sort_items
 
 from src.natural_sort import natural_tuple_sort
 from src.emojis import sad_emoji
+from src.vis.dimension_facets import as_facet_key, facet_focus_from_click
 from src.vis.plot_defaults import (
     DEFAULT_AXIS_LABEL_FONT_SIZE,
     DEFAULT_COLORMAP,
@@ -79,7 +80,6 @@ def facet_focus_selection(fig, state_key):
     A level a filter removed, or a different separation column, forgets it —
     two columns can share a value, so the level alone does not identify it.
     """
-    from src.vis.dimension_facets import as_facet_key
 
     block = _facet_focus_block(fig)
     keys = [as_facet_key(key) for key in block.get("keys") or []]
@@ -102,7 +102,6 @@ def facet_click_focus(fig, event, state_key):
     Clicking the promoted panel changes nothing and still redraws: the chart has
     to be remounted for Plotly to stop dimming everything the click left out.
     """
-    from src.vis.dimension_facets import facet_focus_from_click
 
     selection = getattr(event, "selection", None) if event is not None else None
     points = (selection or {}).get("points") or []
@@ -585,7 +584,7 @@ def histogram_bin_width_key(selected_var, log_x=False):
 
 def histogram_bin_width_widget(x_data, key=None):
     """Choose the shared bin width once for all histogram panels."""
-    from src.vis.histogram import histogram_bin_edges, histogram_bin_settings
+    from src.vis.feature_histogram import histogram_bin_edges, histogram_bin_settings
 
     edges, default_width, max_width = histogram_bin_settings(x_data)
     if default_width is None:

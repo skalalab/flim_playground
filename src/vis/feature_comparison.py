@@ -1,235 +1,41 @@
-import html
+"""Feature Comparison: box, violin, strip and sina plots with effect sizes and statistics.
+
+Pure computation (layout, labels, effect sizes, bracket planning, densities, SuperPlot
+summaries) is shared with standalone export and embedded with inspect.getsource(); the
+Plotly half draws it in the app. It knows nothing about Collapse by: the page hands it an
+already-collapsed frame.
+"""
 from itertools import combinations
 
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from plotly.subplots import make_subplots
+from scipy.stats import gaussian_kde, median_abs_deviation, ttest_ind
 
 from src.column_roles import code_span
-from src.export_labels import format_export_group_labels
-from .histogram import histogram_labels, histogram_legend_label, prepare_histogram
-from .histogram import _assign_subpopulation_labels as _assign_subpopulation_labels
-from .superplot import (add_superplot_observations, add_superplot_summary,
-                        summarize_superplot, superplot_display_frame)
-from .plot_defaults import (
-    get_context_theme_color,
-    SUPERPLOT_REPLICATE_JITTER_WIDTH,
-    SUPERPLOT_REPLICATE_LINE_WIDTH,
-    SUPERPLOT_REPLICATE_SIZE_SCALE,
-)
-
 from src.feature_labels import format_feature_label
 from src.widgets.analysis_widget_state import number_input_default
-from .gmm_tables import gmm_component_table, gmm_tables_html
-from src.widgets.visualization_widgets import (
-    comparison_pair_widget,
-    gmm_hyperParams_widget,
-    histogram_bin_width_widget,
-    comparison_overlay_widget,
-)
-
+from src.widgets.visualization_widgets import comparison_overlay_widget, comparison_pair_widget
 from .helpers import (
-    box_statistics,
-    sina_offsets,
-    _add_effect_size_annotations,
+    _palette_rgb,
+    _sorted_levels,
     add_point_legend_traces,
-    create_subcolor_map,
-    create_color_map,
     format_group_label,
     get_point_visual_mappings,
     hover_field,
-    interleave_point_batches,
     log_negative_error,
     point_trace_class,
 )
-
-
-def feature_histogram_plot(df, selected_var, color_by=None, colormap="tab10", log_x=False,
-                           separate_by=None):
-    """Count curves in full-width category rows, with one set of bin controls."""
-    from src.widgets.analysis_widget_state import preserve_analysis_controls
-    from src.widgets.visualization_widgets import histogram_bin_width_key
-
-    width_keys = [histogram_bin_width_key(selected_var, scale) for scale in (False, True)]
-    width_key = histogram_bin_width_key(selected_var, log_x)
-    legacy_key = f"hist_bin_width_{selected_var}"
-    if not any(key in st.session_state for key in width_keys) and legacy_key in st.session_state:
-        # The previous shared value belongs to the scale currently on screen.
-        st.session_state[width_key] = st.session_state[legacy_key]
-    preserve_analysis_controls(st.session_state, width_keys)
-    edges = histogram_bin_width_widget(df[selected_var].dropna(), key=width_key)
-    prepared = prepare_histogram(df, selected_var, color_by, separate_by, bin_edges=edges)
-    return _histogram_figure(prepared, colormap, log_x)
-
-
-def feature_gmm_plot(df, selected_var, color_by=None, colormap="tab10", log_x=False,
-                     separate_by=None, label_column=None):
-    """Category-local GMM curves and a positionally labeled analyzed dataframe."""
-    max_components, min_weight = gmm_hyperParams_widget()
-    intersection = st.checkbox(
-        "Use intersection as threshold", value=False, key="intersection_threshold",
-        help="Use intersections between adjacent components as thresholds within each "
-             "category and color group. If unavailable, use the highest posterior probability.")
-    prepared = prepare_histogram(
-        df, selected_var, color_by, separate_by, apply_gmm=True,
-        max_components=max_components, min_weight_threshold=min_weight,
-        intersection_threshold=intersection, label_column=label_column)
-    return _histogram_figure(prepared, colormap, log_x), prepared["df"]
-
-
-def _histogram_figure(prepared, colormap, log_x):
-    """Render panel legends and serialize optional GMM details for display below."""
-    theme = get_context_theme_color()
-    panels = prepared["panels"]
-    separate_by = prepared["separate_by"]
-    rows = max(1, len(panels))
-    fig = make_subplots(
-        rows=rows, cols=1, shared_xaxes=True, shared_yaxes=True,
-        vertical_spacing=min(0.16, 80 / (300 * rows)) if rows > 1 else 0,
-        subplot_titles=[html.escape(str(p['category']))
-                        for p in panels] if separate_by else None)
-    fig.update_annotations(font_color=theme)
-    colors = create_color_map(prepared["color_groups"], overlap_point=False, colormap=colormap)
-    show_counts = st.session_state.get("plot_show_group_counts", False)
-    gmm_mode = prepared["apply_gmm"]
-    dash_styles = ["dash", "dot", "dashdot", "longdash", "longdashdot"]
-    summaries = []
-    component_tables = []
-    for row, panel in enumerate(panels, 1):
-        summary = dict(category=panel["category"], groups=[])
-        legend_id = "legend" + (str(row) if row > 1 else "")
-        yaxis = "yaxis" + (str(row) if row > 1 else "")
-        fig.update_layout({legend_id: dict(
-            orientation="v", x=1.02 if gmm_mode else 1, y=fig.layout[yaxis].domain[1],
-            xanchor="left" if gmm_mode else "right", yanchor="top", xref="paper", yref="paper",
-            font=dict(color=theme),
-            bgcolor="rgba(255,255,255,0.85)" if theme == "black" else "rgba(30,30,30,0.85)",
-            groupclick="togglegroup", tracegroupgap=4)})
-        for group in panel["groups"]:
-            color = group["color_group"]
-            rank = prepared["color_groups"].index(color) * 10
-            label = f"{color} GMM" if gmm_mode else color
-            name = html.escape(histogram_legend_label(
-                label, group["count"], group["skewness"], show_counts,
-                show_skewness=not gmm_mode)).replace("\n", "<br>")
-            legend_group = f"{row}:{color}"
-            hover = hover_field("Group", html.escape(str(group["label"]))) + f"n={group['count']}<br>"
-            if not gmm_mode or len(group["pdf"]):
-                fig.add_trace(go.Scatter(
-                    x=group["x"] if gmm_mode else prepared["bin_centers"],
-                    y=group["pdf"] if gmm_mode else group["counts"],
-                    mode="lines+markers" if not gmm_mode and len(prepared["bin_centers"]) == 1 else "lines",
-                    marker=dict(color=colors[color], size=6), name=name,
-                    line=dict(color=colors[color], width=2), legendgroup=legend_group,
-                    legend=legend_id, showlegend=True, legendrank=rank,
-                    hovertemplate=hover + hover_field("Density" if gmm_mode else "Count", "%{y}") + "<extra></extra>"),
-                    row=row, col=1)
-            else:
-                # Sparse fits still contribute their optional local count.
-                fig.add_trace(go.Scatter(
-                    x=[None], y=[None], mode="lines", name=name,
-                    legendgroup=legend_group, legend=legend_id, legendrank=rank,
-                    line=dict(color=colors[color], width=2), showlegend=True,
-                    hoverinfo="skip"), row=row, col=1)
-            component_rows = []
-            if gmm_mode:
-                editable_rows = []
-                for component in group["components"]:
-                    component_rank = component["rank"]
-                    mean_sd = f"{component['mean']:.2f} ± {component['std']:.2f}"
-                    component_rows.append((component_rank,
-                                           mean_sd,
-                                           f"{component['weight']:.2f}"))
-                    if len(group["components"]) <= 1:
-                        continue
-                    editable_rows.append(dict(
-                        source_label=format_export_group_labels(
-                            [component_rank - 1], color, separate_by=separate_by,
-                            category=panel["category"], color_by=prepared["color_by"])[0],
-                        component=component_rank, x_mean_sd=mean_sd,
-                        weight=float(component["weight"])))
-                    fig.add_trace(go.Scatter(
-                        x=group["x"], y=component["density"], mode="lines",
-                        name=f"{html.escape(str(color))} Component {component_rank}",
-                        legendgroup=legend_group, legend=legend_id,
-                        legendrank=rank + component_rank, showlegend=True,
-                        line=dict(color=colors[color], width=1,
-                                  dash=dash_styles[(component_rank - 1) % len(dash_styles)]),
-                        hovertemplate=hover + f"Component {component_rank}<br>Density: %{{y}}<extra></extra>"),
-                        row=row, col=1)
-                if editable_rows and group.get("gmm") is not None:
-                    component_tables.append(dict(
-                        category=panel["category"], group=color,
-                        features=[prepared["selected_var"]], rows=editable_rows,
-                        h_index=group["h_index"]))
-                for threshold in group["thresholds"] if group["thresholds"] is not None else []:
-                    fig.add_shape(type="line", x0=threshold, x1=threshold,
-                                  y0=0, y1=max(group["pdf"]),
-                                  line=dict(color=colors[color], width=2, dash="dash"), opacity=0.5,
-                                  row=row, col=1)
-                    if not separate_by:
-                        fig.add_annotation(x=threshold, y=max(group["pdf"]) * 1.05,
-                                           text=f"Threshold ({threshold:.2f})", showarrow=False,
-                                           font=dict(color=theme), row=row, col=1)
-            summary["groups"].append(dict(
-                label=group["label"], color_group=color,
-                count=group["count"], color=colors[color],
-                skewness=float(group["skewness"]) if np.isfinite(group["skewness"]) else None,
-                components=component_rows, h_index=group.get("h_index"),
-                thresholds=list(group["thresholds"]) if group.get("thresholds") is not None else [],
-                notices=group.get("notices", [])))
-        summaries.append(summary)
-    labels = histogram_labels(prepared, log_x)
-    fig.update_xaxes(title=dict(text="", font=dict(color=theme)),
-                     tickfont=dict(color=theme), showgrid=False, zeroline=False,
-                     range=prepared["x_range"], visible=False)
-    fig.update_xaxes(title_text=labels["x"], visible=True, showticklabels=True, row=rows, col=1)
-    fig.update_yaxes(title=dict(text=labels["y"], font=dict(color=theme)),
-                     tickfont=dict(color=theme), showgrid=True, zeroline=False,
-                     range=prepared["y_range"])
-    fig.update_layout(
-        title=dict(text=labels["title"], font=dict(color=theme)),
-        height=300 * rows + 130 if separate_by else 450,
-        hovermode="x unified", margin=dict(l=60, r=20, t=80, b=100, autoexpand=True),
-        meta=dict(histogram=True, histogram_summaries=summaries,
-                  histogram_gmm=gmm_mode, histogram_separator=separate_by,
-                  histogram_feature=prepared["selected_var"],
-                  gmm_component_tables=component_tables))
-    return fig
-
-
-def render_histogram_summaries(fig, component_editor=None):
-    """Render category-local GMM details and return optional component name edits."""
-    meta = fig.layout.meta
-    value_names = {}
-    if not meta["histogram_gmm"]:
-        return value_names
-    component_tables = {
-        (table["category"], table["group"]): table
-        for table in meta.get("gmm_component_tables", []) if len(table["rows"]) > 1
-    } if component_editor is not None else {}
-    for panel in meta["histogram_summaries"]:
-        # No per-level heading: every title below already names its level.
-        tables = []
-        editable_tables = []
-        for group in panel["groups"]:
-            for notice in group["notices"]:
-                st.info(f"{code_span(group['label'])}: {notice}")
-            component_table = component_tables.get((panel["category"], group.get("color_group")))
-            if component_table is not None and len(group["components"]) > 1:
-                editable_tables.append(component_table)
-            elif group["components"]:
-                tables.append(gmm_component_table(
-                    group["label"], group["components"], [meta["histogram_feature"]],
-                    h_index=group["h_index"]))
-            for i, threshold in enumerate(group["thresholds"], 1):
-                st.markdown(f"Threshold for {code_span(group['label'])} between component {i} and {i+1}: **{threshold:.2f}**")
-        if editable_tables:
-            value_names.update(component_editor(editable_tables))
-        if tables:
-            st.markdown(gmm_tables_html(tables), unsafe_allow_html=True)
-    return value_names
+from .plot_defaults import (
+    SUPERPLOT_OBSERVATION_MIN_SIZE,
+    SUPERPLOT_OBSERVATION_OPACITY_SCALE,
+    SUPERPLOT_OBSERVATION_SIZE_SCALE,
+    SUPERPLOT_REPLICATE_JITTER_WIDTH,
+    SUPERPLOT_REPLICATE_LINE_WIDTH,
+    SUPERPLOT_REPLICATE_SIZE_SCALE,
+    get_context_theme_color,
+)
 
 
 # Match Plotly's box width for unit-spaced groups: (1 - boxgap) * (1 - boxgroupgap).
@@ -353,7 +159,7 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
             raise ValueError("SuperPlot requires the original observations before Collapse by.")
         source_df = source_df.dropna(subset=[selected_var]).copy().reset_index(drop=True)
 
-    # Apply log transform if requested (consistent with bivar.py)
+    # Apply log transform if requested (consistent with distribution_2d.py)
     if log_y:
         if (df[selected_var] < 0).any() or (superplot and (source_df[selected_var] < 0).any()):
             st.error(log_negative_error(selected_var))
@@ -905,3 +711,551 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
     if COLOR_GROUP_COL_NAME in df.columns:
         df.drop(columns=[COLOR_GROUP_COL_NAME], inplace=True)
     return fig
+
+
+# SuperPlot overlay: observation and summary layers for replicate points.
+def summarize_superplot(df, selected_var, group_cols):
+    """One equally weighted mean and sample SEM per group of replicate points.
+
+    Self-contained apart from pandas/numpy so the standalone export can inline it.
+    A singleton has an undefined SEM; its mean remains available for plotting.
+    Grouping keys stay in the index so user column names cannot collide with
+    the count, mean, and sem statistic columns.
+    """
+    return (df.groupby(group_cols, sort=False, observed=True, dropna=False)[selected_var]
+            .agg(count="count", mean="mean", sem="sem"))
+
+
+def add_superplot_observations(fig, source, selected_var, color_by, separate_by,
+                              shape_by, opacity_by, subcolor_by, color_map,
+                              shape_map, opacity_map, subcolor_map, x_position,
+                              scatter_cls, point_size, row_id_col, row_id_label,
+                              fov_name_col, pretty_var, group_col="compare_group"):
+    """Draw source observations using the main layer's maps and group positions.
+
+    The caller owns this source copy. Add its grouping columns for later visual
+    bounds calculations, while keeping source values out of statistical inputs.
+    """
+    get_point_visual_mappings(
+        source, color_by=color_by, shape_by=shape_by, opacity_by=opacity_by,
+        separate_by=separate_by, group_col_name=group_col, overlap_point=False)
+    group_cols = [group_col] + ([separate_by] if separate_by else [])
+    hover = hover_field(pretty_var, "%{y:.3f}")
+    hover += hover_field(row_id_label, "%{text}")
+    has_fov = fov_name_col is not None and fov_name_col in source.columns
+    if has_fov:
+        hover += hover_field(fov_name_col, "%{customdata}")
+    hover += "<extra></extra>"
+
+    for key, rows in source.groupby(group_cols, sort=False, observed=True):
+        color_group, *section = key if isinstance(key, tuple) else (key,)
+        x = x_position(section[0] if section else None, color_group)
+        if x is None or color_group not in color_map:
+            continue
+        values = rows[selected_var].to_numpy()
+        xs = x + sina_offsets(values, 0.35)
+        shapes = (rows[shape_by].map(shape_map).fillna("circle").to_numpy()
+                  if shape_by and shape_map else np.repeat("circle", len(rows)))
+        opacities = (rows[opacity_by].map(opacity_map).fillna(1.0).to_numpy(dtype=float)
+                     if opacity_by and opacity_map else np.ones(len(rows))) * SUPERPLOT_OBSERVATION_OPACITY_SCALE
+        labels = rows[row_id_col].to_numpy() if row_id_col in rows else rows.index.astype(str).to_numpy()
+        fovs = rows[fov_name_col].to_numpy() if has_fov else None
+        if subcolor_map:
+            levels = rows[subcolor_by].fillna("N/A").astype(str).to_numpy()
+            batches = interleave_point_batches({level: np.flatnonzero(levels == level) for level in subcolor_map})
+        else:
+            batches = [(color_group, np.arange(len(rows)))]
+        for value, mask in batches:
+            fig.add_trace(scatter_cls(
+                x=xs[mask], y=values[mask], text=labels[mask],
+                customdata=fovs[mask] if has_fov else None,
+                mode="markers", showlegend=False, name=str(value),
+                legendgroup=f"subcolor\x1f{value}" if subcolor_map else color_group,
+                marker=dict(size=max(SUPERPLOT_OBSERVATION_MIN_SIZE,
+                                     point_size * SUPERPLOT_OBSERVATION_SIZE_SCALE),
+                            color=subcolor_map[value] if subcolor_map else color_map[color_group],
+                            symbol=shapes[mask], opacity=opacities[mask],
+                            line=dict(width=0)),
+                hovertemplate=hover, meta={"superplot_role": "observation"},
+                **({"zorder": 0} if scatter_cls is go.Scatter else {})))
+
+
+def add_superplot_summary(fig, summary, separate_by, x_position, scatter_cls, color,
+                          group_col="compare_group"):
+    """Draw mean bars and capped SEM above observations, below replicate dots."""
+    for key, row in summary.iterrows():
+        keys = key if isinstance(key, tuple) else (key,)
+        group = dict(zip(summary.index.names, keys))
+        x = x_position(group.get(separate_by) if separate_by else None, group[group_col])
+        if x is None:
+            continue
+        mean, sem = float(row["mean"]), float(row["sem"])
+        xs, ys = [x - 0.2, x + 0.2], [mean, mean]
+        if np.isfinite(sem):
+            low, high = mean - sem, mean + sem
+            xs += [None, x, x, None, x - 0.1, x + 0.1, None, x - 0.1, x + 0.1]
+            ys += [None, low, high, None, low, low, None, high, high]
+        fig.add_trace(scatter_cls(
+            x=xs, y=ys, mode="lines", line=dict(color=color, width=2),
+            name="Mean ± SEM", showlegend=False, hoverinfo="skip",
+            meta={"superplot_role": "summary", "count": int(row["count"]),
+                  "mean": mean, "sem": sem if np.isfinite(sem) else None},
+            **({"zorder": 1} if scatter_cls is go.Scatter else {})))
+
+
+def superplot_display_frame(source, summary, selected_var, group_cols):
+    """Bounds for annotation placement include cells and both ends of each SEM.
+
+    These synthetic rows are strictly for geometry, never statistical analysis.
+    """
+    ends = []
+    for sign in (-1, 1):
+        frame = summary.index.to_frame(index=False)
+        frame[selected_var] = (summary["mean"] + sign * summary["sem"].fillna(0)).to_numpy()
+        ends.append(frame)
+    return pd.concat([source[[*group_cols, selected_var]], *ends], ignore_index=True)
+
+
+# Effect sizes, bracket planning, density and sina helpers: only Feature Comparison and its export use them.
+def glass_delta(group1, group2, mean_or_median):
+    # Glass's delta uses group1 as control; its spread needs at least two samples.
+    if len(group1) < 2:
+        return np.nan
+    if mean_or_median == "Mean": 
+        diff = np.mean(group2) - np.mean(group1)
+        group1_sd = np.std(group1, ddof=1)  # Using Bessel's correction with ddof=1
+    else:
+        diff = np.median(group2) - np.median(group1)
+        # use MAD (median_absolute_deviation)
+        # scale: normal: divides by 0.67449 → multiplies by 1.4826 internally
+        group1_sd = median_abs_deviation(group1, scale='normal')
+
+    if group1_sd == 0:  # constant control group -> effect size undefined (avoid inf/nan divide)
+        return np.nan
+    return diff / group1_sd
+
+
+def cohens_d(group1, group2, mean_or_median):
+    """Compute absolute Cohen's d (|d|) for two independent samples."""
+    # sample sizes
+    n1, n2 = len(group1), len(group2)
+
+    # Each group needs at least two samples for its sample variance,
+    # regardless of the combined sample count.
+    if n1 < 2 or n2 < 2:
+        return np.nan
+
+    if mean_or_median == "Mean": 
+        # mean difference
+        diff = np.mean(group1) - np.mean(group2)
+         # unbiased sample variances
+        s1_2, s2_2 = np.var(group1, ddof=1), np.var(group2, ddof=1)
+        # pooled standard deviation
+        pooled_sd = np.sqrt(((n1 - 1)*s1_2 + (n2 - 1)*s2_2) / (n1 + n2 - 2))
+    else:
+        diff = np.median(group1) - np.median(group2)
+        mad_1, mad_2 = median_abs_deviation(group1, scale="normal"), median_abs_deviation(group2, scale="normal")
+        pooled_sd = np.sqrt(((n1 - 1) * mad_1**2 + (n2 - 1) * mad_2**2) /
+                     (n1 + n2 - 2))
+    if pooled_sd == 0:  # no pooled spread -> effect size undefined (avoid inf/nan divide)
+        return np.nan
+    return abs(diff / pooled_sd)
+
+
+def _calculate_effect_size(group1_data, group2_data, method: str, mean_or_median):
+    """
+    Calculates the effect size between two groups using the specified method.
+    """
+    if group1_data.empty or group2_data.empty:
+        return None
+    if method == "Glass's Delta":
+        return glass_delta(group1_data, group2_data, mean_or_median)
+    elif method == "Absolute Cohen's d":
+        return cohens_d(group1_data, group2_data, mean_or_median)
+    raise ValueError(f"Unsupported effect size method: {method}")
+
+
+def p_value_stars(pval):
+    """Significance stars: four at 1e-4, three at 1e-3, two at 0.01, one at 0.05, none above."""
+    if pd.isna(pval):
+        return ""
+    for stars, cutoff in (("****", 0.0001), ("***", 0.001), ("**", 0.01), ("*", 0.05)):
+        if pval <= cutoff:
+            return stars
+    return ""
+
+
+def bracket_positioning_metrics(data_range):
+    """Bracket spacing as fractions of the data range, one scale across every section."""
+    return {
+        'offset_from_data_abs': 0.05 * data_range,
+        'vertical_spacing_abs': 0.08 * data_range,
+        'bracket_vertical_length_abs': 0.03 * data_range,
+        'text_offset_from_bracket_abs': 0.03 * data_range,
+        'text_height_allowance_for_collision_abs': 0.04 * data_range,
+    }
+
+
+def _compute_bracket_position(x_start, x_end, region_max_y, positioning_metrics, drawn_annotations_list):
+    """Compute bracket y-position with collision detection. Framework-agnostic (pure math).
+
+    Args:
+        x_start, x_end: Horizontal span of the bracket.
+        region_max_y: Maximum y value in the spanned data region.
+        positioning_metrics: Dict with offset_from_data_abs, vertical_spacing_abs,
+            bracket_vertical_length_abs, text_offset_from_bracket_abs,
+            text_height_allowance_for_collision_abs.
+        drawn_annotations_list: List of previously drawn annotations (modified in-place).
+
+    Returns:
+        (y_bracket_top, y_text_center, bracket_length) or None if positioning fails.
+    """
+    offset_abs = positioning_metrics['offset_from_data_abs']
+    spacing_abs = positioning_metrics['vertical_spacing_abs']
+    bracket_h = positioning_metrics['bracket_vertical_length_abs']
+    text_offset = positioning_metrics['text_offset_from_bracket_abs']
+    text_h = positioning_metrics['text_height_allowance_for_collision_abs']
+
+    y_candidate = region_max_y + offset_abs
+
+    for _ in range(50):
+        y_text_center = y_candidate + text_offset + (text_h / 2)
+        y_bottom = y_candidate - bracket_h
+        y_top = y_text_center + (text_h / 2)
+
+        collision = False
+        for ann in drawn_annotations_list:
+            x_overlap = max(x_start, ann['x_start']) < min(x_end, ann['x_end'])
+            if x_overlap:
+                y_overlap = max(y_bottom, ann['y_bottom']) < min(y_top, ann['y_top'])
+                if y_overlap:
+                    y_candidate = ann['y_top'] + spacing_abs
+                    collision = True
+                    break
+
+        if not collision:
+            drawn_annotations_list.append({
+                'x_start': x_start, 'x_end': x_end,
+                'y_bottom': y_bottom, 'y_top': y_top,
+                'y_bracket_draw': y_candidate, 'y_text_draw': y_text_center
+            })
+            return y_candidate, y_text_center, bracket_h
+
+    # Fallback
+    y_text_center = y_candidate + text_offset + (text_h / 2)
+    y_bottom = y_candidate - bracket_h
+    y_top = y_text_center + (text_h / 2)
+    drawn_annotations_list.append({
+        'x_start': x_start, 'x_end': x_end,
+        'y_bottom': y_bottom, 'y_top': y_top,
+        'y_bracket_draw': y_candidate, 'y_text_draw': y_text_center
+    })
+    return y_candidate, y_text_center, bracket_h
+
+
+def plan_effect_size_brackets(df, selected_var, group_column, pairs, position_map, *,
+                              effect_size_method, mean_or_median, threshold, statistical_test,
+                              data_range, fallback_y=None, display_df=None):
+    """Plan the comparison brackets of one section without drawing them.
+
+    Samples come from ``df``; bracket heights clear the drawn frame ``display_df``
+    (replicate means plus observations and SEM ends in a SuperPlot). Pairs are
+    processed left to right, shorter spans first, and stacked where they collide.
+    Returns ``(brackets, skipped)``: one dict per drawn bracket (``pair``, ``x_start``,
+    ``x_end``, ``y_top``, ``y_text``, ``height``, ``text``, ``effect_size``, ``p_value``)
+    and the pairs with an empty group. Shared verbatim with exported scripts.
+    """
+    frame = df if display_df is None else display_df
+    metrics = bracket_positioning_metrics(data_range)
+    ordered = sorted(pairs, key=lambda pair: (min(position_map[pair[0]], position_map[pair[1]]),
+                                              max(position_map[pair[0]], position_map[pair[1]])))
+    brackets, skipped, drawn = [], [], []
+    for pair in ordered:
+        group1 = df.loc[df[group_column] == pair[0], selected_var].dropna()
+        group2 = df.loc[df[group_column] == pair[1], selected_var].dropna()
+        if group1.empty or group2.empty:
+            skipped.append(pair)
+            continue
+        p_value = np.nan
+        if statistical_test != "None":
+            try:
+                _, p_value = ttest_ind(group1, group2, equal_var=statistical_test == "Independent t-test",
+                                       nan_policy='omit')
+            except Exception:
+                p_value = np.nan
+        stars = p_value_stars(p_value)
+        effect_size = None
+        if effect_size_method != "None":
+            effect_size = _calculate_effect_size(group1, group2, effect_size_method, mean_or_median)
+            if not (effect_size is not None and abs(effect_size) >= threshold):
+                continue
+            text = f"{effect_size:.2f}{stars}" if stars else f"Δ={effect_size:.2f}"
+        elif stars:
+            text = stars
+        else:
+            continue
+        x_start, x_end = sorted((position_map[pair[0]], position_map[pair[1]]))
+        spanned = [group for group, pos in position_map.items() if x_start <= pos <= x_end]
+        region_max = frame.loc[frame[group_column].isin(spanned), selected_var].max(skipna=True)
+        if pd.isna(region_max):
+            region_max = 0 if fallback_y is None or pd.isna(fallback_y) else fallback_y
+        result = _compute_bracket_position(x_start, x_end, region_max, metrics, drawn)
+        if result is None:
+            continue
+        y_top, y_text, height = result
+        brackets.append({"pair": pair, "x_start": x_start, "x_end": x_end, "y_top": y_top,
+                         "y_text": y_text, "height": height, "text": text,
+                         "effect_size": effect_size, "p_value": p_value})
+    return brackets, skipped
+
+
+def _draw_plotly_bracket(fig, bracket, annotation_color):
+    """Draw one planned bracket: a top line, two legs and the centred label."""
+    x_start, x_end, y_top = bracket["x_start"], bracket["x_end"], bracket["y_top"]
+    fig.add_shape(type="line", x0=x_start, y0=y_top, x1=x_end, y1=y_top,
+                  line=dict(width=1.5, color=annotation_color))
+    for x_pos_single in [x_start, x_end]:
+        fig.add_shape(type="line", x0=x_pos_single, y0=y_top, x1=x_pos_single,
+                      y1=y_top - bracket["height"], line=dict(width=1.5, color=annotation_color))
+    fig.add_annotation(x=(x_start + x_end) / 2, y=bracket["y_text"], text=bracket["text"],
+                       showarrow=False, font=dict(size=12, color=annotation_color), align="center")
+
+
+def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, annotation_color, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None, statistical_test: str = "None", global_data_range=None, section_label=None, display_df=None):
+    """
+    Adds effect size annotations to the figure.
+    Manages selection of pairs, calculation of effect sizes, and calls annotation plotting.
+    
+    Args:
+        position_map: Optional dict mapping group names to actual x-positions for separate sections
+        selected_pairs: Optional pre-selected pairs to avoid showing the widget again
+        threshold: Optional pre-set threshold to avoid showing the widget again
+        global_data_range: Optional tuple (global_min, global_max) for consistent spacing across sections
+        section_label: Optional separate_by section name, so the thin-group notice below
+            can say which section it is talking about (this runs once per section)
+    """
+    # Geometry may include observation/summary overlays; samples always come from df.
+    annotation_df = df if display_df is None else display_df
+    if not all_possible_pairs:
+        return
+
+    # Only show widget if pairs aren't pre-selected
+    if selected_pairs is None:
+        selected_pairs = comparison_pair_widget(all_possible_pairs)
+
+    # Warn about requested pairs with fewer than two points in a group,
+    # so an uncomputable comparison is distinguishable from no difference.
+    if selected_pairs and (effect_size_method != "None" or statistical_test != "None"):
+        counts = {}
+        for pair in selected_pairs:
+            for group in pair:
+                if group not in counts:
+                    counts[group] = int(
+                        df[df[group_col_name] == group][selected_var].notna().sum())
+        thin = [group for group in compare_groups if counts.get(group, 2) < 2]
+        thin += [group for group in counts if counts[group] < 2 and group not in thin]
+        if thin:
+            # Escape file-provided group and section names for Markdown warnings.
+            named = ", ".join(
+                f"{code_span(group)} ({counts[group]} point"
+                f"{'' if counts[group] == 1 else 's'})"
+                for group in thin)
+            where = f" in {code_span(section_label)}" if section_label else ""
+            asked = []
+            if effect_size_method != "None":
+                asked.append("effect size")
+            if statistical_test != "None":
+                asked.append("p-value")
+            st.warning(
+                f"No {' or '.join(asked)} for pairs involving {named}{where} — a spread "
+                f"needs at least two points, so nothing is drawn for them.")
+
+    if not selected_pairs or (effect_size_method == "None" and statistical_test == "None"):
+        return
+
+    # One scale for every section: the global data range when the caller supplies it.
+    if global_data_range is not None:
+        global_min_y, global_max_y = global_data_range
+    else:
+        global_max_y = annotation_df[selected_var].max(skipna=True)
+        global_min_y = annotation_df[selected_var].min(skipna=True)
+    if pd.isna(global_max_y) or pd.isna(global_min_y) or len(df[selected_var].dropna()) < 2:
+        data_range_y = 1  # Default if overall data is all NaN or not enough points
+    else:
+        data_range_y = global_max_y - global_min_y
+    if data_range_y == 0:  # Avoid zero spacing when every value is the same
+        data_range_y = 1
+
+    # --- Threshold input based on selected method ---
+    if effect_size_method != "None" and threshold is None:
+        threshold = 0.0
+        threshold_key_suffix = selected_var
+        if effect_size_method == "Glass's Delta":
+            threshold = st.number_input("Glass's Delta Threshold", value=number_input_default(st.session_state, f"glass_delta_thresh_{threshold_key_suffix}", 0.7), min_value=0.0, max_value=3.0, step=0.05,
+                                        key=f"glass_delta_thresh_{threshold_key_suffix}")
+        elif effect_size_method == "Absolute Cohen's d":
+            threshold = st.number_input(
+                "Absolute Cohen's d threshold",
+                value=number_input_default(st.session_state, f"cohens_d_thresh_{threshold_key_suffix}", 0.5),
+                min_value=0.0,
+                max_value=3.0,
+                step=0.1,
+                key=f"cohens_d_thresh_{threshold_key_suffix}",
+            )
+
+    if position_map is None:
+        position_map = {group: index for index, group in enumerate(compare_groups)}
+    brackets, skipped = plan_effect_size_brackets(
+        df, selected_var, group_col_name, selected_pairs, position_map,
+        effect_size_method=effect_size_method, mean_or_median=mean_or_median,
+        threshold=0.0 if threshold is None else threshold, statistical_test=statistical_test,
+        data_range=data_range_y, fallback_y=global_min_y, display_df=annotation_df)
+    if effect_size_method != "None":
+        for pair in skipped:
+            st.warning(f"Skipping pair {pair} due to empty data for one or both groups.")
+    for bracket in brackets:
+        _draw_plotly_bracket(fig, bracket, annotation_color)
+
+
+def interleave_point_batches(index_by_level, num_batches=15, random_seed=42):
+    """Split each level's point indices into batches and cycle through the levels.
+
+    Return ``[(level, indices), ...]`` in trace order. Interleaving limits occlusion
+    bias between levels. A seeded shuffle avoids grouping batches by input row order
+    without changing point coordinates. Aim for at least five points per batch to
+    limit trace overhead.
+    """
+    import math
+
+    rng = np.random.default_rng(random_seed)
+    batched = []
+    for level, indices in index_by_level.items():
+        indices = np.asarray(indices)
+        if not len(indices):
+            continue
+        shuffled = indices.copy()
+        rng.shuffle(shuffled)
+        count = min(num_batches, max(1, len(shuffled) // 5))
+        size = math.ceil(len(shuffled) / count)
+        batched.append((level, [shuffled[i:i+size] for i in range(0, len(shuffled), size)]))
+
+    ordered = []
+    for round_index in range(max((len(b) for _level, b in batched), default=0)):
+        for level, batches in batched:
+            if round_index < len(batches):
+                ordered.append((level, batches[round_index]))
+    return ordered
+
+
+def create_subcolor_map(df, subcolor_by, group_col, color_groups, engine="plotly",
+                                  colormap="tab10"):
+    """Map nested categorical values to consistent colors across the figure.
+
+    Return a naturally ordered ``{value: color}`` map, or None when inactive. Nulls
+    become "N/A". Generate a palette for the value count, seeded by the first colormap
+    entry, to avoid cycling into duplicate colors.
+
+    "plotly" returns rgba strings; "mpl" returns RGB tuples for script export.
+    """
+    from src.vis.subcolor_palette import make_palette_cached
+
+    if (not subcolor_by or subcolor_by not in df.columns
+            or group_col not in df.columns or not len(color_groups)):
+        return None
+
+    values = df[subcolor_by].fillna("N/A").astype(str)
+    groups = df[group_col].astype(str)
+    # Allocate colors only to values in groups drawn by the figure.
+    in_figure = groups.isin([str(group) for group in color_groups])
+    all_values = _sorted_levels(values[in_figure])
+    if not len(all_values):
+        return None
+    # Score palette colors at the same alpha used by comparison points and script export.
+    palette = make_palette_cached(_palette_rgb(colormap, 1)[0], len(all_values), alpha=0.7)
+
+    colour_of = {}
+    for index, value in enumerate(all_values):
+        red, green, blue = palette[index]
+        if engine == "mpl":
+            colour_of[value] = (red, green, blue)
+        else:
+            # Round RGB bytes to match the exported palette. Marker opacity supplies alpha.
+            colour_of[value] = (
+                f"rgba({round(red * 255)}, {round(green * 255)}, {round(blue * 255)}, 1.0)"
+            )
+
+    return colour_of
+
+
+def _estimate_density_1d(y_values, bw_method='scott'):
+    """Return a KDE callable, or zero density when no valid KDE exists.
+
+    Fewer than two finite points, constant values, or a singular covariance
+    use the fallback so points and boxes can render without a density shape.
+    """
+    y_values = np.asarray(y_values, dtype=float)
+    y_values = y_values[np.isfinite(y_values)]
+    zero_density = lambda y: np.zeros_like(np.asarray(y, dtype=float))
+    if len(y_values) < 2 or np.ptp(y_values) == 0:
+        return zero_density
+    try:
+        return gaussian_kde(y_values, bw_method=bw_method)
+    except np.linalg.LinAlgError:
+        # Near-singular covariance (e.g. all-but-one identical) can still slip past
+        # the ptp check; fall back rather than crash.
+        return zero_density
+
+
+def _density_at_points(y_values, grid_size=1024, bw_method='scott'):
+    """Estimate density at each point by interpolating a KDE evaluated on a grid.
+
+    Grid evaluation costs O(n * grid_size), avoiding O(n²) evaluation at all
+    training points. Combine uniform and quantile spacing to resolve both the
+    full range and dense regions of heavy-tailed data.
+
+    Return zeros for inputs with no valid KDE.
+    """
+    y_values = np.asarray(y_values, dtype=float)
+    finite = y_values[np.isfinite(y_values)]
+    # Reject degenerate inputs before building the increasing grid np.interp needs.
+    if len(finite) < 2 or np.ptp(finite) == 0:
+        return np.zeros_like(y_values)
+
+    kde = _estimate_density_1d(y_values, bw_method=bw_method)
+    if not isinstance(kde, gaussian_kde):
+        # _estimate_density_1d hit its LinAlgError fallback and returned zero_density.
+        return np.zeros_like(y_values)
+
+    half = max(2, grid_size // 2)
+    grid = np.unique(np.concatenate([
+        np.linspace(finite.min(), finite.max(), half),
+        np.quantile(finite, np.linspace(0, 1, half)),
+    ]))
+    return np.interp(y_values, grid, kde(grid))
+
+
+def sina_offsets(values, max_jitter, seed=42):
+    """Horizontal sina offsets: random signs scaled by local density.
+
+    The rng is scoped to one colour group, which owns the x position, so shape
+    and opacity change point styling only and never move a point. A degenerate
+    density (a constant column has no KDE) spreads points with uniform jitter so
+    they stay visible instead of stacking into one dot.
+    """
+    densities = _density_at_points(values)
+    if len(densities) > 0 and np.max(densities) > 0:
+        normalized = densities / np.max(densities)
+    else:
+        normalized = np.ones_like(densities)
+    rng = np.random.default_rng(seed=seed)
+    return rng.uniform(-1, 1, size=len(values)) * normalized * max_jitter
+
+
+def box_statistics(values):
+    """Quartiles, 1.5 IQR fences capped at the observed extrema, and the mean of one box."""
+    q1, median, q3 = np.percentile(values, [25, 50, 75])
+    iqr = q3 - q1
+    return dict(q1=q1, median=median, q3=q3,
+                lower_fence=max(q1 - 1.5 * iqr, np.min(values)),
+                upper_fence=min(q3 + 1.5 * iqr, np.max(values)),
+                mean=np.mean(values))

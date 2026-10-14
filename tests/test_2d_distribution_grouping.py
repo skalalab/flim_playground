@@ -1,6 +1,6 @@
 """The 2D distribution's per-group analysis (correlation, regression, marginal
 densities) must key on COLOR groups only — never fan out across shape/opacity
-sub-groups. This matches the plot's own GMM block (bivar.py), the phasor
+sub-groups. This matches the plot's own GMM block (distribution_2d.py), the phasor
 k-means block, feature-comparison statistics, and the exported script.
 """
 import sys
@@ -12,7 +12,7 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.vis.bivar import feature_2d_distribution_plot
+from src.vis.distribution_2d import feature_2d_distribution_plot
 
 
 def _two_color_two_shape_df():

@@ -16,7 +16,7 @@ import streamlit as st
 from src.collapse import collapse_rows
 from src.dataset_io import check_and_fix_df
 from src.export_script import generate_script
-from src.vis import bivar, univar
+from src.vis import distribution_2d, phasor, feature_comparison
 from src.vis.helpers import apply_plot_styling
 
 
@@ -33,7 +33,7 @@ def _headless_widgets(monkeypatch):
         contextlib.nullcontext() for _ in range(spec if isinstance(spec, int) else len(spec))])
     monkeypatch.setattr(st, "checkbox", lambda label, value=False, **kw: value)
     monkeypatch.setattr(st, "number_input", lambda label, value=0, **kw: value)
-    monkeypatch.setattr(univar, "comparison_overlay_widget", lambda *a: "None")
+    monkeypatch.setattr(feature_comparison, "comparison_overlay_widget", lambda *a: "None")
 
 
 def _state(method, **overrides):
@@ -121,8 +121,8 @@ def test_comparison_preserves_a_feature_named_like_the_internal_group(
     if overlay == "SuperPlot":
         primary, row_id, _ = collapse_rows(app_df, "dish", ["treatment"], "id")
         np.testing.assert_allclose(ns["source_df"]["_color_group"], app_df["_color_group"])
-    monkeypatch.setattr(univar, "comparison_overlay_widget", lambda *a: overlay)
-    fig = univar.feature_comparison_plot(
+    monkeypatch.setattr(feature_comparison, "comparison_overlay_widget", lambda *a: overlay)
+    fig = feature_comparison.feature_comparison_plot(
         primary, row_id, None, "_color_group", ["treatment"],
         collapse_by=state["method_params"]["collapse_by"], source_df=app_df,
         source_row_id_col="id")
@@ -144,7 +144,7 @@ def test_comparison_preserves_a_category_named_like_the_internal_group(
                    method_params={"selected_var": "x"})
     app_df, ns = _run(tmp_path, monkeypatch, source, state)
     pd.testing.assert_series_equal(ns["df"]["_color_group"], app_df["_color_group"])
-    fig = univar.feature_comparison_plot(app_df, "id", None, "x", ["treatment"],
+    fig = feature_comparison.feature_comparison_plot(app_df, "id", None, "x", ["treatment"],
                                         **{channel: "_color_group"})
     app_points = sorted((x, y) for trace in _app_traces(fig) for x, y in zip(trace.x, trace.y))
     export_points = sorted(tuple(point) for collection in _collections(ns["ax"])
@@ -159,7 +159,7 @@ def test_phasor_encodings_describe_only_complete_observations(tmp_path, monkeypa
     state = _state("Phasor Plot", **channels, method_params={
         "selected_channel": "Ch1", "phasor_harmonic": 1, "phasor_f": .08})
     app_df, ns = _run(tmp_path, monkeypatch, source, state)
-    fig, _ = bivar.phasor_plot(app_df, "id", None, "Ch1", color_by=["treatment"], **channels)
+    fig, _ = phasor.phasor_plot(app_df, "id", None, "Ch1", color_by=["treatment"], **channels)
     assert list(ns["color_map"]) == ["B", "C"]
     assert "lost" not in ns["shape_map"]
     assert "0" not in ns["opacity_map"]
@@ -178,7 +178,7 @@ def test_phasor_opacity_matches_the_apps_effective_alpha(
     state = _state("Phasor Plot", color_by=color_by, shape_by=shape_by, opacity_by="opacity",
                    method_params={"selected_channel": "Ch1", "phasor_harmonic": 1, "phasor_f": .08})
     app_df, ns = _run(tmp_path, monkeypatch, _source(), state)
-    fig, _ = bivar.phasor_plot(app_df, "id", None, "Ch1", color_by=color_by,
+    fig, _ = phasor.phasor_plot(app_df, "id", None, "Ch1", color_by=color_by,
                               shape_by=shape_by, opacity_by="opacity")
     expected, actual = _phasor_styles(fig, ns["ax"])
     np.testing.assert_allclose(actual[:, 5], expected[:, 5])
@@ -197,14 +197,14 @@ def test_ordinary_point_sizes_follow_the_app_diameter_control(
     app_df, ns = _run(tmp_path, monkeypatch, _source(),
                       _state(method, point_size=point_size, method_params=params))
     if method == "Feature Comparison":
-        monkeypatch.setattr(univar, "comparison_overlay_widget", lambda *a: overlay)
-        fig = univar.feature_comparison_plot(app_df, "id", None, "x", ["treatment"])
+        monkeypatch.setattr(feature_comparison, "comparison_overlay_widget", lambda *a: overlay)
+        fig = feature_comparison.feature_comparison_plot(app_df, "id", None, "x", ["treatment"])
     elif method == "2D Feature Distribution":
-        fig, _, _ = bivar.feature_2d_distribution_plot(
+        fig, _, _ = distribution_2d.feature_2d_distribution_plot(
             app_df, "id", None, "x", "y", color_by=["treatment"],
             analysis_options={"marginal_plot_type": "None"})
     else:
-        fig, _ = bivar.phasor_plot(app_df, "id", None, "Ch1", color_by=["treatment"])
+        fig, _ = phasor.phasor_plot(app_df, "id", None, "Ch1", color_by=["treatment"])
     fig = apply_plot_styling(fig, point_size, 12, 10)
     assert {trace.marker.size for trace in _app_traces(fig)} == {point_size}
     axis = ns["ax_main"] if method == "2D Feature Distribution" else ns["ax"]
@@ -226,7 +226,7 @@ def test_unseparated_2d_reports_each_groups_regression_and_gmm_statistics(
         "fit_gmm_2d": True, "gmm_max_components": 2, "gmm_min_weight_threshold": .1,
         "marginal_plot_type": "None"})
     app_df, ns = _run(tmp_path, monkeypatch, source, state, save=True)
-    _, _, expected_df = bivar.feature_2d_distribution_plot(
+    _, _, expected_df = distribution_2d.feature_2d_distribution_plot(
         app_df, "id", None, "x", "y", color_by=["treatment"], analysis_options={
             "fit_regression": True, "fit_gmm": True, "max_components": 2,
             "min_weight_threshold": .1, "marginal_plot_type": "None"})
@@ -235,7 +235,7 @@ def test_unseparated_2d_reports_each_groups_regression_and_gmm_statistics(
     assert output.count("slope=") == output.count("intercept=") == 2
     # Read expected values from the app's actual shared fit computation.
     app_df["group"] = app_df["treatment"]
-    results, _ = bivar.distribution_fit_groups(
+    results, _ = distribution_2d.distribution_fit_groups(
         app_df, "x", "y", "group", ["A", "B"], [(None, np.arange(len(app_df)))],
         fit_regression=True, fit_gmm=True, max_components=2, color_by=["treatment"])
     rows = re.findall(r"^\s*\| ([12]) \| ([-\d.]+) \| ([-\d.]+) \| ([-\d.]+) \| ([-\d.]+) \| ([-\d.]+) \|$",

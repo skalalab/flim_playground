@@ -29,7 +29,7 @@ def _with_component_tables(fig, dimensions=2):
     ("2D Feature Distribution", "2D_GMM_group")])
 def test_page_captures_export_names_and_disables_both_downloads(monkeypatch, method, legacy, install_page_table):
     from src import dataset_io, export_script
-    from src.vis import bivar, univar
+    from src.vis import distribution_2d, phasor, feature_comparison, feature_histogram
     from src import analysis_config as acw
     from src.widgets import selection_widgets as sw, visualization_widgets as vw
     g, s = "Lifetime fit free_ch1: G(1st)", "Lifetime fit free_ch1: S(1st)"
@@ -44,8 +44,8 @@ def test_page_captures_export_names_and_disables_both_downloads(monkeypatch, met
     monkeypatch.setattr(vw, "phasor_params_widget", lambda *a, **k: ("ch1", 1, .08))
     figure = lambda: go.Figure(go.Scatter(x=[1, 2, 3], y=[2, 1, 4]),
                                layout={"meta": {"histogram_gmm": False}})
-    monkeypatch.setattr(univar, "feature_comparison_plot", lambda *a, **k: figure())
-    monkeypatch.setattr(univar, "feature_histogram_plot", lambda *a, **k: figure())
+    monkeypatch.setattr(feature_comparison, "feature_comparison_plot", lambda *a, **k: figure())
+    monkeypatch.setattr(feature_histogram, "feature_histogram_plot", lambda *a, **k: figure())
     outputs, captured = [], []
 
     def model(data, *args, **kwargs):
@@ -63,9 +63,9 @@ def test_page_captures_export_names_and_disables_both_downloads(monkeypatch, met
         fig, result = model(data, *args, **kwargs)
         return _with_component_tables(fig, dimensions=1), result
 
-    monkeypatch.setattr(univar, "feature_gmm_plot", model_histogram)
-    monkeypatch.setattr(bivar, "feature_2d_distribution_plot", model_2d)
-    monkeypatch.setattr(bivar, "phasor_plot", model)
+    monkeypatch.setattr(feature_histogram, "feature_gmm_plot", model_histogram)
+    monkeypatch.setattr(distribution_2d, "feature_2d_distribution_plot", model_2d)
+    monkeypatch.setattr(phasor, "phasor_plot", model)
     monkeypatch.setattr(export_script, "generate_script", lambda state: captured.append(state) or "# analysis")
     at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "pages/data_analysis.py"))
     at.run(timeout=60)
@@ -106,7 +106,7 @@ def test_page_captures_export_names_and_disables_both_downloads(monkeypatch, met
 def grouping_page(monkeypatch, install_page_table):
     """Keep model output stable while the real page owns grouping and export state."""
     from src import dataset_io, export_script
-    from src.vis import bivar, univar
+    from src.vis import distribution_2d, feature_comparison, feature_histogram
     from src import analysis_config as acw
     from src.widgets import selection_widgets as sw
 
@@ -138,10 +138,10 @@ def grouping_page(monkeypatch, install_page_table):
         fig, result = model(data, *args, **kwargs)
         return _with_component_tables(fig, dimensions=1), result
 
-    monkeypatch.setattr(univar, "feature_comparison_plot", lambda *a, **k: figure())
-    monkeypatch.setattr(univar, "feature_histogram_plot", lambda *a, **k: figure())
-    monkeypatch.setattr(univar, "feature_gmm_plot", model_histogram)
-    monkeypatch.setattr(bivar, "feature_2d_distribution_plot", model_2d)
+    monkeypatch.setattr(feature_comparison, "feature_comparison_plot", lambda *a, **k: figure())
+    monkeypatch.setattr(feature_histogram, "feature_histogram_plot", lambda *a, **k: figure())
+    monkeypatch.setattr(feature_histogram, "feature_gmm_plot", model_histogram)
+    monkeypatch.setattr(distribution_2d, "feature_2d_distribution_plot", model_2d)
     captured = []
     monkeypatch.setattr(export_script, "generate_script", lambda state: captured.append(state) or "# analysis")
     at = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "pages/data_analysis.py"))
@@ -193,7 +193,7 @@ def test_gmm_table_renames_use_shared_export_mapping_and_replace_static_tables(g
 
 
 def test_histogram_single_component_keeps_read_only_details_without_rename_controls(grouping_page, monkeypatch):
-    from src.vis import univar
+    from src.vis import feature_histogram
 
     def single_component(data, *args, **kwargs):
         fig = _with_component_tables(go.Figure(), dimensions=1)
@@ -204,7 +204,7 @@ def test_histogram_single_component_keeps_read_only_details_without_rename_contr
         result[kwargs["label_column"]] = None
         return fig, result
 
-    monkeypatch.setattr(univar, "feature_gmm_plot", single_component)
+    monkeypatch.setattr(feature_histogram, "feature_gmm_plot", single_component)
     at, captured = grouping_page
     at.session_state.analysis_control_apply_gmm = True
     at.radio[1].set_value("Feature Histogram").run(timeout=60)

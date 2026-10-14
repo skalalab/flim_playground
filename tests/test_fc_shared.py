@@ -11,7 +11,7 @@ import plotly.graph_objects as go
 import pytest
 from scipy.stats import ttest_ind
 
-from src.vis.helpers import (
+from src.vis.feature_comparison import (
     _add_effect_size_annotations,
     _density_at_points,
     box_statistics,
@@ -21,7 +21,7 @@ from src.vis.helpers import (
     plan_effect_size_brackets,
     sina_offsets,
 )
-from src.vis.univar import comparison_labels, comparison_layout
+from src.vis.feature_comparison import comparison_labels, comparison_layout
 
 
 def test_comparison_layout_orders_groups_and_spaces_sections():
@@ -128,9 +128,9 @@ def test_plan_effect_size_brackets_star_only_drops_insignificant_pairs():
 
 def test_app_brackets_follow_the_shared_plan(monkeypatch):
     """The Plotly figure draws exactly the planned brackets (geometry pinned before the extraction)."""
-    from src.vis import helpers
+    from src.vis import feature_comparison
 
-    monkeypatch.setattr(helpers.st, "warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr(feature_comparison.st, "warning", lambda *args, **kwargs: None)
     fig = go.Figure()
     _add_effect_size_annotations(
         fig, _bracket_frame(), "val", ["a", "b", "c"], "grp", [("a", "b"), ("a", "c"), ("b", "c")],
@@ -149,9 +149,9 @@ def test_app_brackets_in_separated_sections_follow_the_shared_plan(monkeypatch):
     """Per-section calls with the global range (geometry pinned before the extraction)."""
     from itertools import combinations
 
-    from src.vis import helpers
+    from src.vis import feature_comparison
 
-    monkeypatch.setattr(helpers.st, "warning", lambda *args, **kwargs: None)
+    monkeypatch.setattr(feature_comparison.st, "warning", lambda *args, **kwargs: None)
     frame = pd.DataFrame({
         "sec": ["s1"] * 12 + ["s2"] * 8,
         "grp": ["a"] * 4 + ["b"] * 4 + ["c"] * 4 + ["a"] * 4 + ["b"] * 4,

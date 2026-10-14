@@ -16,7 +16,7 @@ import streamlit as st
 
 from src.dataset_io import check_and_fix_df
 from src.export_script import generate_script
-from src.vis import bivar
+from src.vis import distribution_2d, phasor
 
 
 G = "Lifetime fit free_Ch1: G(1st)"
@@ -33,7 +33,8 @@ def _headless(monkeypatch):
     monkeypatch.setattr(st, "columns", lambda spec, **kw: [
         contextlib.nullcontext() for _ in range(spec if isinstance(spec, int) else len(spec))])
     monkeypatch.setattr(st, "checkbox", lambda label, value=False, **kw: value)
-    monkeypatch.setattr(bivar, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(distribution_2d, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(phasor, "get_context_theme_color", lambda: "black")
 
 
 def _source():
@@ -109,16 +110,16 @@ def _app_plot(frame, state, *, separated):
         "separate_by": state["separate_by"] if separated else None,
     }
     if state["method"] == "2D Feature Distribution":
-        figure, _, _ = bivar.feature_2d_distribution_plot(
+        figure, _, _ = distribution_2d.feature_2d_distribution_plot(
             frame.copy(), "id", None, "x", "y", **channels,
             analysis_options={
                 "marginal_plot_type": "None", "fit_regression": False,
                 "fit_gmm": False, "log_x": False, "log_y": False,
             })
     else:
-        figure, _ = bivar.phasor_plot(frame.copy(), "id", None, "Ch1", **channels)
+        figure, _ = phasor.phasor_plot(frame.copy(), "id", None, "Ch1", **channels)
         if separated:
-            bivar.select_phasor_category(figure, state["method_params"]["phasor_category"])
+            phasor.select_phasor_category(figure, state["method_params"]["phasor_category"])
     return figure
 
 

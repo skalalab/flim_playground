@@ -16,7 +16,7 @@ from matplotlib.markers import MarkerStyle
 from scipy.stats import ttest_ind
 
 from src.export_script import generate_script
-from src.vis.helpers import _density_at_points, cohens_d
+from src.vis.feature_comparison import _density_at_points, cohens_d
 
 
 def _state(*, overlay="SuperPlot", separate_by="day", logged=False, collapse_by="dish"):
@@ -372,7 +372,7 @@ def test_app_and_export_match_both_layers_and_sem_with_custom_section_order(
     import streamlit as st
 
     from src.collapse import collapse_rows
-    from src.vis import univar
+    from src.vis import feature_comparison
     from src.vis.helpers import apply_plot_styling
 
     source = _source()
@@ -390,10 +390,10 @@ def test_app_and_export_match_both_layers_and_sem_with_custom_section_order(
     monkeypatch.setattr(st, "selectbox", lambda label, options, **kwargs:
                         "SuperPlot" if label == "Overlay" else options[0])
     monkeypatch.setattr(st, "caption", lambda *args, **kwargs: None)
-    monkeypatch.setattr(univar, "get_context_theme_color", lambda: "black")
+    monkeypatch.setattr(feature_comparison, "get_context_theme_color", lambda: "black")
     retained = _retained(source).reset_index(drop=True)
     primary, label, _ = collapse_rows(retained, "dish", ["treatment", "day"], "cell_id")
-    app = univar.feature_comparison_plot(
+    app = feature_comparison.feature_comparison_plot(
         primary, label, None, "value", ["treatment"], shape_by="shape", opacity_by="opacity",
         separate_by="day", custom_order=custom_order, subcolor_by=subcolor_by,
         row_id_label="dish", collapse_by="dish", source_df=retained,
