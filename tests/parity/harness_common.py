@@ -127,7 +127,7 @@ def run_export(state, csv_path, workdir, transform=None):
 def apply_filters(df, state):
     """Apply a state's categorical/numerical filters app-side.
 
-    Mirrors src/export_script.py::_build_filters, which the script emits right after
+    Mirrors src/export_script/skeleton.py::_build_filters, which the script emits right after
     loading. The app reaches the same frame through filters_widget(); doing it here keeps
     both sides on identical rows without needing the widget.
     """

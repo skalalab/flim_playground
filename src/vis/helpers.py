@@ -12,6 +12,7 @@ from src.column_roles import code_span
 from src.emojis import sad_emoji
 from src.natural_sort import natural_tuple_sort
 from src.vis.plot_defaults import (
+    panel_point_size,
     get_context_theme_color,
     SUPERPLOT_OBSERVATION_MIN_SIZE,
     SUPERPLOT_OBSERVATION_SIZE_SCALE,
@@ -24,6 +25,22 @@ from src.widgets.visualization_widgets import comparison_pair_widget
 
 def log_negative_error(var_name):
     return f"Cannot apply log to {var_name}: contains negative values. {sad_emoji}"
+
+
+def log10_columns(df, columns):
+    """Return a copy with log10(x + 1e-6) applied to ``columns``, and the columns skipped.
+
+    A column holding a negative value is left untouched and reported, so the caller
+    shows ``log_negative_error`` for it. Columns are handled in order.
+    """
+    df = df.copy()
+    skipped = []
+    for column in columns:
+        if (df[column] < 0).any():
+            skipped.append(column)
+        else:
+            df[column] = np.log10(df[column] + 1e-6)
+    return df, skipped
 
 
 def hover_field(label, value_ref):
@@ -189,9 +206,29 @@ def _calculate_effect_size(group1_data, group2_data, method: str, mean_or_median
         return glass_delta(group1_data, group2_data, mean_or_median)
     elif method == "Absolute Cohen's d":
         return cohens_d(group1_data, group2_data, mean_or_median)
-    else:
-        st.warning(f"Unsupported effect size method: {method}")
-        return None
+    raise ValueError(f"Unsupported effect size method: {method}")
+
+
+def p_value_stars(pval):
+    """Significance stars: four at 1e-4, three at 1e-3, two at 0.01, one at 0.05, none above."""
+    if pd.isna(pval):
+        return ""
+    for stars, cutoff in (("****", 0.0001), ("***", 0.001), ("**", 0.01), ("*", 0.05)):
+        if pval <= cutoff:
+            return stars
+    return ""
+
+
+def bracket_positioning_metrics(data_range):
+    """Bracket spacing as fractions of the data range, one scale across every section."""
+    return {
+        'offset_from_data_abs': 0.05 * data_range,
+        'vertical_spacing_abs': 0.08 * data_range,
+        'bracket_vertical_length_abs': 0.03 * data_range,
+        'text_offset_from_bracket_abs': 0.03 * data_range,
+        'text_height_allowance_for_collision_abs': 0.04 * data_range,
+    }
+
 
 def _compute_bracket_position(x_start, x_end, region_max_y, positioning_metrics, drawn_annotations_list):
     """Compute bracket y-position with collision detection. Framework-agnostic (pure math).
@@ -250,70 +287,73 @@ def _compute_bracket_position(x_start, x_end, region_max_y, positioning_metrics,
     return y_candidate, y_text_center, bracket_h
 
 
-def _annotate_single_effect_size(fig, pair_strings, effect_size_value, compare_groups_list,
-                                 drawn_annotations_list, positioning_metrics,
-                                 original_df, data_column_name, group_column_name_in_df,
-                                 overall_min_y_val, data_range_y, annotation_color, position_map=None,
-                                 star_text: str = None, show_effect_size: bool = True):
+def plan_effect_size_brackets(df, selected_var, group_column, pairs, position_map, *,
+                              effect_size_method, mean_or_median, threshold, statistical_test,
+                              data_range, fallback_y=None, display_df=None):
+    """Plan the comparison brackets of one section without drawing them.
+
+    Samples come from ``df``; bracket heights clear the drawn frame ``display_df``
+    (replicate means plus observations and SEM ends in a SuperPlot). Pairs are
+    processed left to right, shorter spans first, and stacked where they collide.
+    Returns ``(brackets, skipped)``: one dict per drawn bracket (``pair``, ``x_start``,
+    ``x_end``, ``y_top``, ``y_text``, ``height``, ``text``, ``effect_size``, ``p_value``)
+    and the pairs with an empty group. Shared verbatim with exported scripts.
     """
-    Adds a single effect size annotation (bracket and text) to the figure,
-    handling y-positioning and collision detection.
-    """
-    if position_map is not None:
-        x_positions = [position_map[pair_strings[0]], position_map[pair_strings[1]]]
-        x_start_new = min(x_positions)
-        x_end_new = max(x_positions)
-        spanned_group_names = [group for group, pos in position_map.items()
-                             if pos >= x_start_new and pos <= x_end_new]
-    else:
-        x_indices = [compare_groups_list.index(pair_strings[0]), compare_groups_list.index(pair_strings[1])]
-        x_start_new = min(x_indices)
-        x_end_new = max(x_indices)
-        spanned_group_names = compare_groups_list[x_start_new : x_end_new + 1]
-    df_in_span = original_df[original_df[group_column_name_in_df].isin(spanned_group_names)]
-    current_region_max_y = df_in_span[data_column_name].max(skipna=True)
+    frame = df if display_df is None else display_df
+    metrics = bracket_positioning_metrics(data_range)
+    ordered = sorted(pairs, key=lambda pair: (min(position_map[pair[0]], position_map[pair[1]]),
+                                              max(position_map[pair[0]], position_map[pair[1]])))
+    brackets, skipped, drawn = [], [], []
+    for pair in ordered:
+        group1 = df.loc[df[group_column] == pair[0], selected_var].dropna()
+        group2 = df.loc[df[group_column] == pair[1], selected_var].dropna()
+        if group1.empty or group2.empty:
+            skipped.append(pair)
+            continue
+        p_value = np.nan
+        if statistical_test != "None":
+            try:
+                _, p_value = ttest_ind(group1, group2, equal_var=statistical_test == "Independent t-test",
+                                       nan_policy='omit')
+            except Exception:
+                p_value = np.nan
+        stars = p_value_stars(p_value)
+        effect_size = None
+        if effect_size_method != "None":
+            effect_size = _calculate_effect_size(group1, group2, effect_size_method, mean_or_median)
+            if not (effect_size is not None and abs(effect_size) >= threshold):
+                continue
+            text = f"{effect_size:.2f}{stars}" if stars else f"Δ={effect_size:.2f}"
+        elif stars:
+            text = stars
+        else:
+            continue
+        x_start, x_end = sorted((position_map[pair[0]], position_map[pair[1]]))
+        spanned = [group for group, pos in position_map.items() if x_start <= pos <= x_end]
+        region_max = frame.loc[frame[group_column].isin(spanned), selected_var].max(skipna=True)
+        if pd.isna(region_max):
+            region_max = 0 if fallback_y is None or pd.isna(fallback_y) else fallback_y
+        result = _compute_bracket_position(x_start, x_end, region_max, metrics, drawn)
+        if result is None:
+            continue
+        y_top, y_text, height = result
+        brackets.append({"pair": pair, "x_start": x_start, "x_end": x_end, "y_top": y_top,
+                         "y_text": y_text, "height": height, "text": text,
+                         "effect_size": effect_size, "p_value": p_value})
+    return brackets, skipped
 
-    if pd.isna(current_region_max_y):
-        current_region_max_y = overall_min_y_val
-        if pd.isna(current_region_max_y):
-            current_region_max_y = 0
 
-    result = _compute_bracket_position(
-        x_start_new, x_end_new, current_region_max_y,
-        positioning_metrics, drawn_annotations_list
-    )
-    if result is None:
-        return
+def _draw_plotly_bracket(fig, bracket, annotation_color):
+    """Draw one planned bracket: a top line, two legs and the centred label."""
+    x_start, x_end, y_top = bracket["x_start"], bracket["x_end"], bracket["y_top"]
+    fig.add_shape(type="line", x0=x_start, y0=y_top, x1=x_end, y1=y_top,
+                  line=dict(width=1.5, color=annotation_color))
+    for x_pos_single in [x_start, x_end]:
+        fig.add_shape(type="line", x0=x_pos_single, y0=y_top, x1=x_pos_single,
+                      y1=y_top - bracket["height"], line=dict(width=1.5, color=annotation_color))
+    fig.add_annotation(x=(x_start + x_end) / 2, y=bracket["y_text"], text=bracket["text"],
+                       showarrow=False, font=dict(size=12, color=annotation_color), align="center")
 
-    final_y_bracket_top, final_y_text_annotation_center, bracket_vertical_length_abs = result
-
-    # Add bracket lines (Plotly)
-    fig.add_shape(
-        type="line", x0=x_start_new, y0=final_y_bracket_top,
-        x1=x_end_new, y1=final_y_bracket_top,
-        line=dict(width=1.5, color=annotation_color)
-    )
-    for x_pos_single in [x_start_new, x_end_new]:
-        fig.add_shape(
-            type="line", x0=x_pos_single, y0=final_y_bracket_top,
-            x1=x_pos_single, y1=final_y_bracket_top - bracket_vertical_length_abs,
-            line=dict(width=1.5, color=annotation_color)
-        )
-    # Build annotation text
-    if show_effect_size and star_text:
-        annotation_text = f"{effect_size_value:.2f}{star_text}"
-    elif show_effect_size and not star_text:
-        annotation_text = f"Δ={effect_size_value:.2f}"
-    elif (not show_effect_size) and star_text:
-        annotation_text = star_text
-    else:
-        annotation_text = ""
-
-    fig.add_annotation(
-        x=(x_start_new + x_end_new) / 2, y=final_y_text_annotation_center,
-        text=annotation_text, showarrow=False, font=dict(size=12, color=annotation_color),
-        align="center"
-    )
 
 def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_col_name, all_possible_pairs, annotation_color, effect_size_method="None", mean_or_median=None, position_map=None, selected_pairs=None, threshold=None, statistical_test: str = "None", global_data_range=None, section_label=None, display_df=None):
     """
@@ -364,174 +404,52 @@ def _add_effect_size_annotations(fig, df, selected_var, compare_groups, group_co
                 f"No {' or '.join(asked)} for pairs involving {named}{where} — a spread "
                 f"needs at least two points, so nothing is drawn for them.")
 
-    # Precompute star texts if a statistical test is requested
-    pair_to_star = {}
-    if selected_pairs and statistical_test != "None":
-        for pair in selected_pairs:
-            group1 = df[df[group_col_name] == pair[0]][selected_var].dropna()
-            group2 = df[df[group_col_name] == pair[1]][selected_var].dropna()
-            if group1.empty or group2.empty:
-                continue
-            equal_var = (statistical_test == "Independent t-test")
-            try:
-                _, pval = ttest_ind(group1, group2, equal_var=equal_var, nan_policy='omit')
-            except Exception:
-                pval = np.nan
-            # Map p-value to stars
-            if pd.isna(pval):
-                stars = ""
-            elif pval <= 0.0001:
-                stars = "****"
-            elif pval <= 0.001:
-                stars = "***"
-            elif pval <= 0.01:
-                stars = "**"
-            elif pval <= 0.05:
-                stars = "*"
-            else:
-                stars = ""
-            pair_to_star[pair] = stars
+    if not selected_pairs or (effect_size_method == "None" and statistical_test == "None"):
+        return
 
-    if selected_pairs and effect_size_method != "None":
-        drawn_annotations = []  # List to store details of drawn annotations for collision detection
+    # One scale for every section: the global data range when the caller supplies it.
+    if global_data_range is not None:
+        global_min_y, global_max_y = global_data_range
+    else:
+        global_max_y = annotation_df[selected_var].max(skipna=True)
+        global_min_y = annotation_df[selected_var].min(skipna=True)
+    if pd.isna(global_max_y) or pd.isna(global_min_y) or len(df[selected_var].dropna()) < 2:
+        data_range_y = 1  # Default if overall data is all NaN or not enough points
+    else:
+        data_range_y = global_max_y - global_min_y
+    if data_range_y == 0:  # Avoid zero spacing when every value is the same
+        data_range_y = 1
 
-        # --- Define vertical spacing parameters (relative to data range) ---
-        # Use global_data_range if provided for consistent spacing across separate sections
-        if global_data_range is not None:
-            global_min_y, global_max_y = global_data_range
-        else:
-            global_max_y = annotation_df[selected_var].max(skipna=True)
-            global_min_y = annotation_df[selected_var].min(skipna=True)
-
-        if pd.isna(global_max_y) or pd.isna(global_min_y) or len(df[selected_var].dropna()) < 2:
-            data_range_y = 1  # Default if overall data is all NaN or not enough points
-        else:
-            data_range_y = global_max_y - global_min_y
-
-        if data_range_y == 0:  # Avoid division by zero or if all values are the same
-            data_range_y = 1 # Use a nominal range to prevent zero spacing
-
-        # Calculate absolute positioning metrics once
-        positioning_metrics = {
-            'offset_from_data_abs': 0.05 * data_range_y,
-            'vertical_spacing_abs': 0.08 * data_range_y,
-            'bracket_vertical_length_abs': 0.03 * data_range_y,
-            'text_offset_from_bracket_abs': 0.03 * data_range_y,
-            'text_height_allowance_for_collision_abs': 0.04 * data_range_y
-        }
-
-        # Process pairs left to right, with shorter spans first when starts coincide.
-        if position_map is not None:
-            # Use actual positions for sorting when position_map is provided
-            sorted_pairs = sorted(selected_pairs,
-                                  key=lambda p: (min(position_map[p[0]], position_map[p[1]]),
-                                                 max(position_map[p[0]], position_map[p[1]])))
-        else:
-            # Use group indices for sorting in regular plots
-            sorted_pairs = sorted(selected_pairs,
-                                  key=lambda p: (min(compare_groups.index(p[0]), compare_groups.index(p[1])),
-                                                 max(compare_groups.index(p[0]), compare_groups.index(p[1]))))
-
-        # --- Threshold input based on selected method ---
-        if threshold is None:
-            threshold = 0.0
-            threshold_key_suffix = selected_var
-            if effect_size_method == "Glass's Delta":
-                threshold = st.number_input("Glass's Delta Threshold", value=number_input_default(st.session_state, f"glass_delta_thresh_{threshold_key_suffix}", 0.7), min_value=0.0, max_value=3.0, step=0.05,
-                                            key=f"glass_delta_thresh_{threshold_key_suffix}")
-            elif effect_size_method == "Absolute Cohen's d":
-                threshold = st.number_input(
-                    "Absolute Cohen's d threshold",
-                    value=number_input_default(st.session_state, f"cohens_d_thresh_{threshold_key_suffix}", 0.5),
-                    min_value=0.0,
-                    max_value=3.0,
-                    step=0.1,
-                    key=f"cohens_d_thresh_{threshold_key_suffix}",
-                )
-
-        for pair in sorted_pairs:
-            group1_data = df[df[group_col_name] == pair[0]][selected_var].dropna()
-            group2_data = df[df[group_col_name] == pair[1]][selected_var].dropna()
-
-            if group1_data.empty or group2_data.empty:
-                st.warning(f"Skipping pair {pair} due to empty data for one or both groups.")
-                continue
-            effect_size_value = _calculate_effect_size(group1_data, group2_data, effect_size_method, mean_or_median)
-
-            if effect_size_value is not None and abs(effect_size_value) >= threshold:
-                stars = pair_to_star.get(pair)
-                _annotate_single_effect_size(
-                    fig=fig,
-                    pair_strings=pair,
-                    effect_size_value=effect_size_value,
-                    compare_groups_list=compare_groups,
-                    drawn_annotations_list=drawn_annotations, # This list is modified in-place
-                    positioning_metrics=positioning_metrics,
-                    original_df=annotation_df,
-                    data_column_name=selected_var,
-                    group_column_name_in_df=group_col_name,
-                    overall_min_y_val=global_min_y, # Pass global_min_y for fallback
-                    data_range_y=data_range_y,
-                    annotation_color=annotation_color,
-                    position_map=position_map,
-                    star_text=stars,
-                    show_effect_size=True
-                )
-    # If only statistical tests were requested (no effect size), add star-only annotations
-    if selected_pairs and effect_size_method == "None" and statistical_test != "None":
-        drawn_annotations = []
-
-        # Use global_data_range if provided for consistent spacing across separate sections
-        if global_data_range is not None:
-            global_min_y, global_max_y = global_data_range
-        else:
-            global_max_y = annotation_df[selected_var].max(skipna=True)
-            global_min_y = annotation_df[selected_var].min(skipna=True)
-        if pd.isna(global_max_y) or pd.isna(global_min_y) or len(df[selected_var].dropna()) < 2:
-            data_range_y = 1
-        else:
-            data_range_y = global_max_y - global_min_y
-        if data_range_y == 0:
-            data_range_y = 1
-
-        positioning_metrics = {
-            'offset_from_data_abs': 0.05 * data_range_y,
-            'vertical_spacing_abs': 0.08 * data_range_y,
-            'bracket_vertical_length_abs': 0.03 * data_range_y,
-            'text_offset_from_bracket_abs': 0.03 * data_range_y,
-            'text_height_allowance_for_collision_abs': 0.04 * data_range_y
-        }
-
-        if position_map is not None:
-            sorted_pairs = sorted(selected_pairs,
-                                  key=lambda p: (min(position_map[p[0]], position_map[p[1]]),
-                                                 max(position_map[p[0]], position_map[p[1]])))
-        else:
-            sorted_pairs = sorted(selected_pairs,
-                                  key=lambda p: (min(compare_groups.index(p[0]), compare_groups.index(p[1])),
-                                                 max(compare_groups.index(p[0]), compare_groups.index(p[1]))))
-
-        for pair in sorted_pairs:
-            stars = pair_to_star.get(pair, "")
-            if not stars:
-                continue
-            _annotate_single_effect_size(
-                fig=fig,
-                pair_strings=pair,
-                effect_size_value=0.0,
-                compare_groups_list=compare_groups,
-                drawn_annotations_list=drawn_annotations,
-                positioning_metrics=positioning_metrics,
-                original_df=annotation_df,
-                data_column_name=selected_var,
-                group_column_name_in_df=group_col_name,
-                overall_min_y_val=global_min_y,
-                data_range_y=data_range_y,
-                annotation_color=annotation_color,
-                position_map=position_map,
-                star_text=stars,
-                show_effect_size=False
+    # --- Threshold input based on selected method ---
+    if effect_size_method != "None" and threshold is None:
+        threshold = 0.0
+        threshold_key_suffix = selected_var
+        if effect_size_method == "Glass's Delta":
+            threshold = st.number_input("Glass's Delta Threshold", value=number_input_default(st.session_state, f"glass_delta_thresh_{threshold_key_suffix}", 0.7), min_value=0.0, max_value=3.0, step=0.05,
+                                        key=f"glass_delta_thresh_{threshold_key_suffix}")
+        elif effect_size_method == "Absolute Cohen's d":
+            threshold = st.number_input(
+                "Absolute Cohen's d threshold",
+                value=number_input_default(st.session_state, f"cohens_d_thresh_{threshold_key_suffix}", 0.5),
+                min_value=0.0,
+                max_value=3.0,
+                step=0.1,
+                key=f"cohens_d_thresh_{threshold_key_suffix}",
             )
+
+    if position_map is None:
+        position_map = {group: index for index, group in enumerate(compare_groups)}
+    brackets, skipped = plan_effect_size_brackets(
+        df, selected_var, group_col_name, selected_pairs, position_map,
+        effect_size_method=effect_size_method, mean_or_median=mean_or_median,
+        threshold=0.0 if threshold is None else threshold, statistical_test=statistical_test,
+        data_range=data_range_y, fallback_y=global_min_y, display_df=annotation_df)
+    if effect_size_method != "None":
+        for pair in skipped:
+            st.warning(f"Skipping pair {pair} due to empty data for one or both groups.")
+    for bracket in brackets:
+        _draw_plotly_bracket(fig, bracket, annotation_color)
+
 
 @st.cache_data(show_spinner=False)
 def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_state=42):
@@ -832,7 +750,7 @@ def apply_plot_styling(fig, point_size, axis_label_size, legend_size):
                                      if superplot_role == 'observation' else
                                      point_size * SUPERPLOT_REPLICATE_SIZE_SCALE
                                      if superplot_role == 'replicate' else
-                                     max(1, point_size - 2) if is_facet or is_context else point_size)
+                                     panel_point_size(point_size) if is_facet or is_context else point_size)
 
     # Facet-grid row labels share the legend's font control.
     annotation_size = legend_size if facet_grid else axis_label_size
@@ -979,6 +897,33 @@ def _density_at_points(y_values, grid_size=1024, bw_method='scott'):
         np.quantile(finite, np.linspace(0, 1, half)),
     ]))
     return np.interp(y_values, grid, kde(grid))
+
+def sina_offsets(values, max_jitter, seed=42):
+    """Horizontal sina offsets: random signs scaled by local density.
+
+    The rng is scoped to one colour group, which owns the x position, so shape
+    and opacity change point styling only and never move a point. A degenerate
+    density (a constant column has no KDE) spreads points with uniform jitter so
+    they stay visible instead of stacking into one dot.
+    """
+    densities = _density_at_points(values)
+    if len(densities) > 0 and np.max(densities) > 0:
+        normalized = densities / np.max(densities)
+    else:
+        normalized = np.ones_like(densities)
+    rng = np.random.default_rng(seed=seed)
+    return rng.uniform(-1, 1, size=len(values)) * normalized * max_jitter
+
+
+def box_statistics(values):
+    """Quartiles, 1.5 IQR fences capped at the observed extrema, and the mean of one box."""
+    q1, median, q3 = np.percentile(values, [25, 50, 75])
+    iqr = q3 - q1
+    return dict(q1=q1, median=median, q3=q3,
+                lower_fence=max(q1 - 1.5 * iqr, np.min(values)),
+                upper_fence=min(q3 + 1.5 * iqr, np.max(values)),
+                mean=np.mean(values))
+
 
 def add_interleaved_points_trace(
     fig,

@@ -14,7 +14,11 @@ import streamlit as st
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
-from .plot_defaults import get_context_theme_color
+from .plot_defaults import (
+    PANEL_CONTEXT_ALPHA,
+    PANEL_CONTEXT_COLOR,
+    get_context_theme_color,
+)
 from .helpers import (
     add_interleaved_points_trace,
     get_point_visual_mappings,
@@ -28,36 +32,55 @@ from .dimension_facets import (
 )
 
 
+def reduce_dimensions(X, method="UMAP", hyperParam_dict=None, n_components=2, random_state=42):
+    """Standardize and embed: named coordinates, and PCA's explained variance in percent.
+
+    Pure, so exported scripts paste it; the app calls it through the cached,
+    locked ``dimension_reduction`` wrapper below.
+    """
+    hyperParam_dict = hyperParam_dict or {}
+    exp_var = None
+    # Standardize features before dimensionality reduction.
+    X_std = StandardScaler().fit_transform(X)
+    if method == "PCA":
+        # Seeded like UMAP/t-SNE below: svd_solver="auto" can pick the randomized
+        # solver on larger inputs, which varies between reruns unless seeded.
+        pca = PCA(n_components=n_components, random_state=random_state)
+        principal_components = pca.fit_transform(X_std)
+        df = pd.DataFrame(principal_components, columns=["PC1", "PC2"])
+        exp_var = pca.explained_variance_ratio_ * 100
+    elif method == "UMAP":
+        # Importing UMAP compiles numerical routines; defer it until needed.
+        import umap
+
+        umap_neighbors = hyperParam_dict.get('n_neighbors', 15)
+        umap_min_dist = hyperParam_dict.get('min_dist', 0.1)
+        reducer = umap.UMAP(n_neighbors=umap_neighbors, min_dist=umap_min_dist,
+                            metric='euclidean', n_components=n_components, random_state=random_state)
+        df = pd.DataFrame(reducer.fit_transform(X_std), columns=["UMAP1", "UMAP2"])
+    elif method == "t-SNE":
+        perplexity = hyperParam_dict.get('perplexity', 15)
+        early_exaggeration = hyperParam_dict.get('early_exaggeration', 12)
+        tsne = TSNE(n_components=n_components, perplexity=perplexity,
+                    early_exaggeration=early_exaggeration, random_state=random_state)
+        df = pd.DataFrame(tsne.fit_transform(X_std), columns=["t-SNE1", "t-SNE2"])
+    return df, exp_var
+
+
+def dimension_axis_titles(coordinates, exp_var):
+    """Axis titles: the embedding's column names, with PCA's explained variance appended."""
+    titles = [str(column) for column in coordinates.columns[:2]]
+    if exp_var is not None:
+        titles = [f"{title}({variance:.2f}%)" for title, variance in zip(titles, exp_var)]
+    return titles
+
+
 @st.cache_data()
 def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, random_state=42):
-    exp_var = None
     if 'dr_lock' not in st.session_state:
         st.session_state.dr_lock = threading.Lock()
     with st.session_state.dr_lock:
-        # Standardize features before dimensionality reduction.
-        X_std = StandardScaler().fit_transform(X)
-        if method == "PCA":
-            # Seeded like UMAP/t-SNE below: svd_solver="auto" can pick the randomized
-            # solver on larger inputs, which varies between reruns unless seeded.
-            pca = PCA(n_components=n_components, random_state=random_state)
-            principal_components = pca.fit_transform(X_std)
-            df = pd.DataFrame(principal_components, columns=["PC1", "PC2"])
-            exp_var = pca.explained_variance_ratio_ * 100
-        elif method == "UMAP":
-            # Importing UMAP compiles numerical routines; defer it until needed.
-            import umap
-
-            umap_neighbors = hyperParam_dict.get('n_neighbors', 15)
-            umap_min_dist = hyperParam_dict.get('min_dist', 0.1)
-            reducer = umap.UMAP(n_neighbors=umap_neighbors,min_dist=umap_min_dist,
-                metric='euclidean', n_components=n_components, random_state=random_state)
-            df = pd.DataFrame(reducer.fit_transform(X_std), columns=["UMAP1", "UMAP2"])
-        elif method == "t-SNE":
-            perplexity = hyperParam_dict.get('perplexity', 15)
-            early_exaggeration = hyperParam_dict.get('early_exaggeration', 12)
-            tsne = TSNE(n_components=n_components, perplexity=perplexity, early_exaggeration=early_exaggeration, random_state=random_state)
-            df = pd.DataFrame(tsne.fit_transform(X_std), columns=["t-SNE1", "t-SNE2"])
-    return df, exp_var
+        return reduce_dimensions(X, method, hyperParam_dict, n_components, random_state)
 
 def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_features, colored_by=None, opacity_by=None, shape_by=None, colormap="tab10", method="UMAP", hyperParam_dict=None, row_id_label="ID", separate_by=None):
     """Show one global embedding beside optional categorical highlight maps."""
@@ -82,7 +105,7 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
             label += "_"
         axis_columns.append(label)
     df_reduced[axis_columns] = coordinates.iloc[:, :2].to_numpy()
-    axis_labels = list(coordinates.columns[:2])
+    axis_titles = dimension_axis_titles(coordinates, exp_var)
     x_range, y_range = dimension_ranges(*coordinates.iloc[:, :2].to_numpy().T)
     composition = dimension_facet_layout(groups, x_range, y_range)
 
@@ -124,10 +147,8 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
         xaxis, yaxis = f"x{suffix}", f"y{suffix}"
         small = index > 1
         for dimension, bounds, domain, anchor, title in (
-                ("x", x_range, panel["x_domain"], yaxis, axis_labels[0]),
-                ("y", y_range, panel["y_domain"], xaxis, axis_labels[1])):
-            if exp_var is not None:
-                title += f"({exp_var[0 if dimension == 'x' else 1]:.2f}%)"
+                ("x", x_range, panel["x_domain"], yaxis, axis_titles[0]),
+                ("y", y_range, panel["y_domain"], xaxis, axis_titles[1])):
             fig.update_layout(**{f"{dimension}axis{suffix}": dict(
                 domain=domain, anchor=anchor, range=bounds, matches=dimension if small else None,
                 title=dict(text=None if small else title, font=dict(color=theme_color)),
@@ -145,7 +166,7 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
             fig.add_trace(scatter_cls(
                 x=context[axis_columns[0]], y=context[axis_columns[1]],
                 xaxis=xaxis, yaxis=yaxis, mode="markers", name="Other groups",
-                marker=dict(color="#b8b8b8", opacity=0.25),
+                marker=dict(color=PANEL_CONTEXT_COLOR, opacity=PANEL_CONTEXT_ALPHA),
                 hoverinfo="skip", showlegend=False,
                 meta=dict(facet_role="context", facet_slot=slot),
             ))

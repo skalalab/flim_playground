@@ -1,7 +1,7 @@
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
-from scipy.stats import chi2, gaussian_kde, pearsonr
+from scipy.stats import gaussian_kde, pearsonr
 from sklearn.linear_model import LinearRegression
 
 from src.column_roles import code_span
@@ -9,7 +9,7 @@ from src.export_labels import available_label_column, format_export_group_labels
 from src.feature_labels import format_feature_label
 from src.natural_sort import natural_tuple_sort
 from .gmm_tables import gmm_component_table, gmm_group_title, gmm_tables_html
-from .plot_defaults import get_context_theme_color
+from .plot_defaults import OVERVIEW_MODEL_WIDTH, PANEL_CONTEXT_ALPHA, PANEL_CONTEXT_COLOR, PANEL_MODEL_WIDTH, get_context_theme_color
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
 
 from .dimension_facets import category_facet_groups, dimension_facet_layout
@@ -19,6 +19,7 @@ from .helpers import (
     format_group_label,
     get_point_visual_mappings,
     hover_field,
+    log10_columns,
     log_negative_error,
 )
 
@@ -234,15 +235,22 @@ def _create_phasor_background(fig, theme_color, f=0.08, harmonic=1):
         xanchor='left'
     )
 
+def gmm_ellipse_params(covariance):
+    """Angle in degrees, width and height of a component's 95% probability ellipse.
+
+    Shared by the app's Plotly outline and the exported script's Ellipse patch.
+    """
+    from scipy.stats import chi2
+
+    eigenvalues, eigenvectors = np.linalg.eigh(covariance)
+    angle = np.degrees(np.arctan2(eigenvectors[1, 0], eigenvectors[0, 0]))
+    width, height = 2 * np.sqrt(eigenvalues * chi2.ppf(0.95, df=2))
+    return angle, width, height
+
+
 def _plot_gmm_ellipse(fig, mean_x, mean_y, cov, color, name_prefix, i, scatter_cls=go.Scatter):
     """Helper function to plot GMM ellipses."""
-   # Calculate eigenvalues and eigenvectors for ellipse orientation
-    eigenvals, eigenvecs = np.linalg.eigh(cov)
-    angle = np.degrees(np.arctan2(eigenvecs[1, 0], eigenvecs[0, 0]))
-    # Scale the ellipse to 95% probability for a 2D Gaussian.
-    r = np.sqrt(chi2.ppf(0.95, df=2))
-    width = 2 * r * np.sqrt(eigenvals[0])
-    height = 2 * r * np.sqrt(eigenvals[1])
+    angle, width, height = gmm_ellipse_params(cov)
 
     # Generate ellipse points
     theta = np.linspace(0, 2*np.pi, 100)
@@ -363,6 +371,8 @@ def distribution_fit_groups(df, x_col, y_col, group_col, color_groups, panels,
 
 def distribution_ranges(df, x_col, y_col, results):
     """Common independent X/Y bounds include all data and fitted overlays."""
+    from scipy.stats import chi2
+
     values = [list(df[x_col]), list(df[y_col])]
     radius = np.sqrt(chi2.ppf(.95, df=2))
     for result in results:
@@ -423,12 +433,11 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                if analysis_options is None else analysis_options)
     marginal = options.get('marginal_plot_type', marginal_plot_type)
     pretty_x, pretty_y = format_feature_label(selected_x), format_feature_label(selected_y)
-    for column, enabled in [(selected_x, options.get('log_x')), (selected_y, options.get('log_y'))]:
-        if enabled:
-            if (df[column] < 0).any():
-                st.error(log_negative_error(column))
-            else:
-                df[column] = np.log10(df[column] + 1e-6)
+    df, skipped = log10_columns(df, [column for column, enabled in
+                                     [(selected_x, options.get('log_x')), (selected_y, options.get('log_y'))]
+                                     if enabled])
+    for column in skipped:
+        st.error(log_negative_error(column))
     # Keep the returned metadata unchanged; normalize only the rendering copy.
     result_df = df.copy()
     if separate_by:
@@ -491,7 +500,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                     fig.add_trace(point_cls(
                         x=df.iloc[other][selected_x], y=df.iloc[other][selected_y],
                         xaxis=xaxis, yaxis=yaxis, mode='markers',
-                        marker=dict(color='#b8b8b8', opacity=.25, symbol='circle'),
+                        marker=dict(color=PANEL_CONTEXT_COLOR, opacity=PANEL_CONTEXT_ALPHA, symbol='circle'),
                         hoverinfo='skip', showlegend=False,
                         meta=dict(facet_role='context', facet_slot=slot)))
             for trace in base.data:
@@ -537,7 +546,7 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
             # A model belongs to its own panel; colour already encodes Color by
             # and leaves no channel to attribute an overlay on the overview.
             overlay_axes = dict(zip(('xaxis', 'yaxis'), panel_axis[level])) if separate_by else {}
-            overlay_width = 1 if separate_by else 2
+            overlay_width = PANEL_MODEL_WIDTH if separate_by else OVERVIEW_MODEL_WIDTH
             if result['pearson'] is not None:
                 coefficient, p_value = result['pearson']
                 lines.append(f"\n**{label}:** Pearson r = **{coefficient:.2f}** (p = {p_value:.3g})")
@@ -732,6 +741,23 @@ def _phasor_panel_rows(df, separate_by=None, color_by=None):
     return category_panel_rows(df, separate_by, color_by)
 
 
+def phasor_columns(channel, harmonic):
+    """The G/S column names and harmonic label of a channel's phasor features.
+
+    Harmonic 1 is "1st"; any other is "2nd", the only other harmonic the picker offers.
+    """
+    label = "1st" if harmonic == 1 else "2nd"
+    prefix = f"Lifetime fit free_{channel}: "
+    return f"{prefix}G({label})", f"{prefix}S({label})", label
+
+
+def resolve_phasor_category(levels, requested=None):
+    """The category to show: the requested one when present, else the first, else None."""
+    if not levels:
+        return None
+    return requested if requested in levels else levels[0]
+
+
 def select_phasor_category(fig, category=None):
     """Select prepared traces without refitting models or changing the G/S axes.
 
@@ -742,7 +768,7 @@ def select_phasor_category(fig, category=None):
     if not isinstance(meta, dict) or not meta.get("phasor_categories"):
         return fig
     categories = meta["phasor_categories"]
-    category = category if category in categories else categories[0]
+    category = resolve_phasor_category(categories, category)
     for trace in fig.data:
         trace_meta = trace.meta
         if not isinstance(trace_meta, dict) or "phasor_role" not in trace_meta:
@@ -770,7 +796,7 @@ def _compose_phasor_categories(base, df, panels, separate_by, row_id_col,
     for level, positions in panels:
         fig.add_trace(point_cls(
             x=df.iloc[positions][g_col].to_numpy(), y=df.iloc[positions][s_col].to_numpy(),
-            mode="markers", marker=dict(color="#b8b8b8", opacity=.18, symbol="circle", size=3),
+            mode="markers", marker=dict(color=PANEL_CONTEXT_COLOR, opacity=.18, symbol="circle", size=3),
             showlegend=False, hoverinfo="skip",
             meta=dict(phasor_role="context", category=level)))
     for level, positions in panels:
@@ -826,15 +852,7 @@ def phasor_plot(df, unique_row_id_col, fov_name_col, selected_channel, color_by=
     # Create the figure
     fig = go.Figure()
 
-    feature_prefix = "Lifetime fit free_" + selected_channel + ": "
-    if harmonic == 1:
-        harmonic_str = "1st"
-        g_feature = f"{feature_prefix}G(1st)"
-        s_feature = f"{feature_prefix}S(1st)"
-    elif harmonic == 2:
-        harmonic_str = "2nd"
-        g_feature = f"{feature_prefix}G(2nd)"
-        s_feature = f"{feature_prefix}S(2nd)"
+    g_feature, s_feature, harmonic_str = phasor_columns(selected_channel, harmonic)
 
     # drop rows with NaN values in the g_feature and s_feature columns
     df = df[df[g_feature].notna() & df[s_feature].notna()].copy()

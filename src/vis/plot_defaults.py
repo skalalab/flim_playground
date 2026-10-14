@@ -20,6 +20,17 @@ SUPERPLOT_REPLICATE_JITTER_WIDTH = 0.1
 # Smaller sets use SVG without allocating a WebGL context. Script exports use Matplotlib.
 WEBGL_POINT_THRESHOLD = 5000
 
+# Faceted maps and grey context points: the panel geometry the app and exported scripts share.
+PANEL_CONTEXT_COLOR = "#b8b8b8"
+PANEL_CONTEXT_ALPHA = 0.25
+PANEL_MODEL_WIDTH = 1      # a model drawn in its own category map
+OVERVIEW_MODEL_WIDTH = 2   # a model drawn on the whole-dataset axes
+
+
+def panel_point_size(point_size):
+    """Marker size of faceted and context points: two below the main size, at least 1."""
+    return max(1, point_size - 2)
+
 
 def get_context_theme_color():
     """Plot color for the current theme: 'black' in light mode, 'white' otherwise.

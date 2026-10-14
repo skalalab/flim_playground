@@ -8,7 +8,7 @@ from plotly.subplots import make_subplots
 
 from src.column_roles import code_span
 from src.export_labels import format_export_group_labels
-from .histogram import histogram_legend_label, prepare_histogram
+from .histogram import histogram_labels, histogram_legend_label, prepare_histogram
 from .histogram import _assign_subpopulation_labels as _assign_subpopulation_labels
 from .superplot import (add_superplot_observations, add_superplot_summary,
                         summarize_superplot, superplot_display_frame)
@@ -30,8 +30,9 @@ from src.widgets.visualization_widgets import (
 )
 
 from .helpers import (
+    box_statistics,
+    sina_offsets,
     _add_effect_size_annotations,
-    _density_at_points,
     add_point_legend_traces,
     create_subcolor_map,
     create_color_map,
@@ -179,20 +180,16 @@ def _histogram_figure(prepared, colormap, log_x):
                 thresholds=list(group["thresholds"]) if group.get("thresholds") is not None else [],
                 notices=group.get("notices", [])))
         summaries.append(summary)
-    pretty_var = format_feature_label(prepared["selected_var"])
-    x_label = f"log₁₀({pretty_var})" if log_x else pretty_var
-    title = "Gaussian Mixture Model fit" if gmm_mode else "Frequency histogram"
-    suffix = f" by {html.escape(', '.join(prepared['color_by']))}" if prepared["color_by"] else ""
+    labels = histogram_labels(prepared, log_x)
     fig.update_xaxes(title=dict(text="", font=dict(color=theme)),
                      tickfont=dict(color=theme), showgrid=False, zeroline=False,
                      range=prepared["x_range"], visible=False)
-    fig.update_xaxes(title_text=x_label, visible=True, showticklabels=True, row=rows, col=1)
-    y_label = ("Density" if separate_by else "Probability Density") if gmm_mode else "Count"
-    fig.update_yaxes(title=dict(text=y_label, font=dict(color=theme)),
+    fig.update_xaxes(title_text=labels["x"], visible=True, showticklabels=True, row=rows, col=1)
+    fig.update_yaxes(title=dict(text=labels["y"], font=dict(color=theme)),
                      tickfont=dict(color=theme), showgrid=True, zeroline=False,
                      range=prepared["y_range"])
     fig.update_layout(
-        title=dict(text=f"{title} of {pretty_var}{suffix}", font=dict(color=theme)),
+        title=dict(text=labels["title"], font=dict(color=theme)),
         height=300 * rows + 130 if separate_by else 450,
         hovermode="x unified", margin=dict(l=60, r=20, t=80, b=100, autoexpand=True),
         meta=dict(histogram=True, histogram_summaries=summaries,
@@ -261,6 +258,68 @@ def _add_box_outline_above_gl(fig, x, q1, median, q3, lower_fence, upper_fence, 
         fig.add_shape(type="line", x0=x, x1=x, y0=base, y1=fence, line=outline, **common)
         fig.add_shape(type="line", x0=x - cap, x1=x + cap, y0=fence, y1=fence,
                       line=outline, **common)
+
+
+def comparison_layout(compare_groups, separate_groups, present_cells, custom_order=None,
+                      section_gap=0.5):
+    """Slots, sections, ticks and dividers of a Feature Comparison figure.
+
+    ``present_cells`` holds the (section, colour group) pairs with observations and
+    is read only when ``separate_groups`` is given. A custom order moves the listed
+    groups first and keeps the rest in their natural order. Positions are keyed
+    (section, group) when separated, else by group; the ``all_data`` placeholder
+    group gets a blank tick. Shared verbatim with exported scripts.
+    """
+    from itertools import combinations
+
+    def ordered(groups, key):
+        groups = list(groups)
+        if custom_order and key in custom_order:
+            first = [group for group in custom_order[key] if group in groups]
+            return first + [group for group in groups if group not in first]
+        return groups
+
+    compare = ordered(compare_groups, "compare_groups")
+    separate = ordered(separate_groups or [], "separate_groups")
+    layout = {"compare_groups": compare, "separate_groups": separate,
+              "compare_pairs": list(combinations(compare, 2)),
+              "x_positions": {}, "tick_positions": [], "tick_labels": [],
+              "sections": [], "dividers": []}
+    if not separate:
+        for index, group in enumerate(compare):
+            layout["x_positions"][group] = index
+            layout["tick_positions"].append(index)
+            layout["tick_labels"].append("" if group == "all_data" else group)
+        return layout
+    position = 0
+    for index, section in enumerate(separate):
+        cells = [(section, group) for group in compare if (section, group) in present_cells]
+        if index > 0:
+            # The divider sits at the centre of the gap between neighbouring sections.
+            layout["dividers"].append(position + (section_gap - 1) / 2)
+            position += section_gap
+        start = position
+        for cell in cells:
+            layout["x_positions"][cell] = position
+            layout["tick_positions"].append(position)
+            layout["tick_labels"].append("" if cell[1] == "all_data" else cell[1])
+            position += 1
+        layout["sections"].append({"group": section, "combinations": cells,
+                                   "center": (start + position - 1) / 2 if cells else start})
+    return layout
+
+
+def comparison_labels(selected_var, color_by, *, log_y, separate_by, opacity_by, shape_by,
+                      subcolor_by, engine="plotly"):
+    """Title and y-axis label shared by the app's figure and exported scripts."""
+    pretty_var = format_feature_label(selected_var, engine=engine)
+    encodings = [f"{name}: {column}" for name, column in (
+        ("separated by", separate_by), ("opacity", opacity_by),
+        ("shape", shape_by), ("subcolor", subcolor_by)) if column and str(column).strip()]
+    title = f"Distribution of {pretty_var} by {', '.join(color_by)}"
+    if encodings:
+        title += f" ({', '.join(encodings)})"
+    return {"title": title, "y": f"log₁₀({pretty_var})" if log_y else pretty_var}
 
 
 def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, color_by, opacity_by=None, shape_by=None, separate_by=None, colormap="tab10", effect_size_method="None", mean_or_median=None, statistical_test="None", custom_order=None, subcolor_by=None, row_id_label="ID", *, collapse_by=None, source_df=None, source_row_id_col=None, source_row_id_label="ID", source_fov_name_col=None):
@@ -335,84 +394,21 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         subcolor_counts = (plotted[subcolor_by].fillna("N/A").astype(str)
                           .value_counts().to_dict())
 
-    # Apply custom order early so compare_pairs uses the reordered groups
-    # This is critical for Glass's Delta where the first group in the pair is the control
-    ordered_compare_groups = list(compare_groups)
-    if custom_order and 'compare_groups' in custom_order:
-        custom_cmp = [g for g in custom_order['compare_groups'] if g in ordered_compare_groups]
-        remaining_cmp = [g for g in ordered_compare_groups if g not in custom_cmp]
-        ordered_compare_groups = custom_cmp + remaining_cmp
-
-    # Generate pairs from ordered groups so Glass's Delta uses correct control group
-    compare_pairs = list(combinations(ordered_compare_groups, 2))
+    layout = comparison_layout(compare_groups, separate_groups, section_color_pairs, custom_order)
+    ordered_compare_groups = layout["compare_groups"]
+    # Pairs come from the ordered groups so Glass's Delta uses the right control group.
+    compare_pairs = layout["compare_pairs"]
+    x_positions = layout["x_positions"]
     point_size = 5
 
     # Track legend entries to avoid duplicates
     legend_entries = set()
 
-    # Calculate x-positions for separate sections - only for existing combinations
-
     if separate_groups:
-        # First, find which combinations actually exist in the data
-        existing_combinations = []
-
-        # Apply custom order to separate_groups if provided
-        ordered_separate_groups = list(separate_groups)
-        if custom_order and 'separate_groups' in custom_order:
-            # Filter to only include groups that are actually in the data, preserving data integrity
-            custom_sep = [g for g in custom_order['separate_groups'] if g in ordered_separate_groups]
-            # Add any missing groups at the end
-            remaining = [g for g in ordered_separate_groups if g not in custom_sep]
-            ordered_separate_groups = custom_sep + remaining
-
-        for separate_group in ordered_separate_groups:
-            section_combinations = []
-
-            # Use ordered_compare_groups (already set with custom order at function start)
-            for color_group in ordered_compare_groups:
-                if (separate_group, color_group) in section_color_pairs:
-                    section_combinations.append((separate_group, color_group))
-            existing_combinations.append(section_combinations)
-
-        # Now calculate positions only for existing combinations
-        x_positions = {}
-        x_tick_positions_actual = []
-        x_tick_labels_actual = []
-        section_spacing = 0.5  # Reduced gap size between sections
-        current_x = 0
-
-        for section_idx, section_combinations in enumerate(existing_combinations):
-            if section_idx > 0:
-                current_x += section_spacing  # Add spacing between sections
-
-            for separate_group, color_group in section_combinations:
-                x_positions[(separate_group, color_group)] = current_x
-                x_tick_positions_actual.append(current_x)
-                x_tick_labels_actual.append("" if color_group == "all_data" else color_group)
-                current_x += 1
-
-        separate_sections_info = []
-        current_x = 0
-        for section_idx, section_combinations in enumerate(existing_combinations):
-            if section_idx > 0:
-                current_x += section_spacing
-            section_start = current_x
-            section_end = current_x + len(section_combinations) - 1
-            section_center = (section_start + section_end) / 2 if section_combinations else current_x
-            # existing_combinations is built in ordered_separate_groups order,
-            # so section_idx indexes both.
-            group_name = ordered_separate_groups[section_idx]
-
-            separate_sections_info.append({
-                'group': group_name,
-                'center': section_center,
-                'combinations': section_combinations
-            })
-            current_x += len(section_combinations)
-    else:
-        # Standard x-positions when no separate_by
-        # ordered_compare_groups is already set with custom order at function start
-        x_positions = {color_group: idx for idx, color_group in enumerate(ordered_compare_groups)}
+        ordered_separate_groups = layout["separate_groups"]
+        x_tick_positions_actual = layout["tick_positions"]
+        x_tick_labels_actual = layout["tick_labels"]
+        separate_sections_info = layout["sections"]
 
     # Sort grouped_list based on the custom order to ensure legend matches x-axis
     # Sort keys: (separate_group index, color_group index)
@@ -463,21 +459,9 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         x_position = cell_x_position(separate_group, color_group)
         if x_position is None:
             continue
-        y_data = all_y[rows]
-        densities = _density_at_points(y_data)
-        # Normalize densities to a reasonable jitter width
         # Keep SuperPlot replicate centers within the width of the SEM caps.
         max_jitter = SUPERPLOT_REPLICATE_JITTER_WIDTH if superplot else 0.35
-        if len(densities) > 0 and np.max(densities) > 0:
-            norm_densities = densities / np.max(densities)
-        else:
-            # Degenerate density (a constant column has no KDE): spread points with
-            # uniform jitter so they stay visible instead of stacking into one dot.
-            norm_densities = np.ones_like(densities)
-        # Randomly assign sign to spread points left/right
-        rng = np.random.default_rng(seed=42)
-        x_of_row[rows] = x_position + (rng.uniform(-1, 1, size=len(y_data))
-                                       * norm_densities * max_jitter)
+        x_of_row[rows] = x_position + sina_offsets(all_y[rows], max_jitter)
 
     # Collect styling subgroups before drawing each colour group's trace.
     point_buckets = {}
@@ -704,39 +688,13 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
     add_point_legend_traces(fig, shape_map, opacity_map, shape_by=shape_by, opacity_by=opacity_by)
 
     # --- 3. Add vertical dashed lines between separate sections ---
-    if separate_groups and len(separate_groups) > 1:
-        # Add vertical lines between sections using actual section boundaries
-        for section_idx in range(len(separate_sections_info) - 1):
-            current_section = separate_sections_info[section_idx]
-            next_section = separate_sections_info[section_idx + 1]
+    for line_x in layout["dividers"]:
+        fig.add_vline(x=line_x, line_dash="dash", line_color=theme_color, line_width=2)
 
-            # Calculate the end of current section and start of next section
-            current_section_end = max([x_positions[(combo[0], combo[1])] for combo in current_section['combinations']])
-            next_section_start = min([x_positions[(combo[0], combo[1])] for combo in next_section['combinations']])
-
-            # Place line at the center of the gap
-            line_x = (current_section_end + next_section_start) / 2
-            fig.add_vline(
-                x=line_x,
-                line_dash="dash",
-                line_color=theme_color,
-                line_width=2
-            )
-
-    # Build title with visual encoding information
-    title_parts = [f'Distribution of {pretty_var} by {", ".join(color_by)}']
-    if separate_by and separate_by.strip() != "":
-        title_parts.append(f'separated by: {separate_by}')
-    if opacity_by and opacity_by.strip() != "":
-        title_parts.append(f'opacity: {opacity_by}')
-    if shape_by and shape_by.strip() != "":
-        title_parts.append(f'shape: {shape_by}')
-    if subcolor_by and subcolor_by.strip() != "":
-        title_parts.append(f'subcolor: {subcolor_by}')
-
-    full_title = title_parts[0]
-    if len(title_parts) > 1:
-        full_title += f' ({", ".join(title_parts[1:])})'
+    # Title and y label name the feature and every active encoding (shared with the export).
+    labels = comparison_labels(selected_var, color_by, log_y=log_y, separate_by=separate_by,
+                               opacity_by=opacity_by, shape_by=shape_by, subcolor_by=subcolor_by)
+    full_title = labels["title"]
 
     # Configure x-axis labels and layout
     if separate_groups:
@@ -784,8 +742,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
     else:
         # Standard x-axis configuration
         xaxis_config = dict(
-            tickvals=list(range(len(compare_groups))),
-            ticktext=ordered_compare_groups,
+            tickvals=layout["tick_positions"],
+            ticktext=layout["tick_labels"],
             zeroline=False,
             tickfont=dict(color=theme_color),
             # As in the separate_by branch above; here Plotly rotates the labels itself.
@@ -805,16 +763,10 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
             trace_name = color_group
             y_data = all_y[rows]
 
-            # Calculate boxplot statistics manually to enforce 1.5 IQR whiskers
-            q1 = np.percentile(y_data, 25)
-            median = np.percentile(y_data, 50)
-            q3 = np.percentile(y_data, 75)
-            iqr = q3 - q1
-            lower_fence = q1 - 1.5 * iqr
-            lower_fence = max(lower_fence, np.min(y_data))
-            upper_fence = q3 + 1.5 * iqr
-            upper_fence = min(upper_fence, np.max(y_data))
-            mean_val = np.mean(y_data)
+            # 1.5 IQR whiskers capped at the observed extrema (shared with the export).
+            stats = box_statistics(y_data)
+            q1, median, q3 = stats["q1"], stats["median"], stats["q3"]
+            lower_fence, upper_fence, mean_val = stats["lower_fence"], stats["upper_fence"], stats["mean"]
 
             # Add Box trace (Mean as dashed line, Median as solid line)
             fig.add_trace(go.Box(
@@ -840,8 +792,7 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
                 _add_box_outline_above_gl(fig, x_position, q1, median, q3,
                                           lower_fence, upper_fence, mean_val, theme_color)
 
-    # Set y-axis label based on log transform (pretty_var defined at top)
-    y_axis_label = f"log₁₀({pretty_var})" if log_y else pretty_var
+    y_axis_label = labels["y"]
 
     # A floor only, so short labels still get a gutter; xaxis.automargin grows the
     # margin past it to whatever the rendered labels need.

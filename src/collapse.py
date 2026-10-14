@@ -1,6 +1,6 @@
 """Average single-cell measurements within replicate and plot-slot groups.
 
-Keep collapse_rows self-contained apart from pandas: export_script.py embeds it
+Keep collapse_rows self-contained apart from pandas: the src/export_script package embeds it
 with inspect.getsource(), without module state or project helpers. Tunable values
 must therefore be arguments with defaults.
 """

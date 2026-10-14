@@ -1383,7 +1383,8 @@ def test_export_inlines_a_single_feature_label_helper():
         method_params=_feature_comparison_params(selected_var="Lifetime fit_nadh: t1"))
     script = generate_script(state)
     assert script.count("def format_feature_label") == 1
-    assert "format_feature_label(SELECTED_VAR" in script  # called with engine='mpl'
+    # The y label and title reach it through the pasted comparison_labels(..., engine='mpl').
+    assert "comparison_labels(SELECTED_VAR" in script and "engine='mpl'" in script
 
 
 def test_export_modulation_label_matches_app_mpl(tmp_path, monkeypatch):
@@ -1896,9 +1897,15 @@ def test_gmm_threshold_text_matches_the_app_size(tmp_path, monkeypatch):
     assert {t.get_fontsize() for t in thresholds} == {_app_effective_annotation_size(24)}
 
 
+def _generator_source():
+    """The generator's own source: every module of the src/export_script package."""
+    package = Path(__file__).resolve().parents[1] / "src" / "export_script"
+    return "\n".join(path.read_text(encoding="utf-8") for path in sorted(package.glob("*.py")))
+
+
 def test_no_hardcoded_annotation_font_sizes_remain():
     """All exported annotation text derives its size from AXIS_LABEL_SIZE."""
-    source = (Path(__file__).resolve().parents[1] / "src" / "export_script.py").read_text(encoding="utf-8")
+    source = _generator_source()
     import re
     leftovers = re.findall(r"fontsize=\d+", source)
     assert leftovers == [], f"hardcoded annotation font sizes left: {leftovers}"
@@ -1906,7 +1913,7 @@ def test_no_hardcoded_annotation_font_sizes_remain():
 
 def test_exported_tick_font_size_derives_from_axis_label_size():
     """Ticks use axis_label_size - 2 in both renderers, independently of legend size."""
-    source = (Path(__file__).resolve().parents[1] / "src" / "export_script.py").read_text(encoding="utf-8")
+    source = _generator_source()
     assert "labelsize=LEGEND_SIZE" not in source
     assert "AXIS_LABEL_SIZE - 6" not in source
     assert "AXIS_LABEL_SIZE - 4" not in source

@@ -181,13 +181,16 @@ def _facet_axis_property(axis):
     return f"{axis[0]}axis{axis[1:]}"
 
 
-def focus_facet_label(separate_by, key):
-    """Name a promoted panel by its own column(s), e.g. ``day: Day 2``."""
+def focus_facet_label(separate_by, key, escape=True):
+    """Name a promoted panel by its own column(s), e.g. ``day: Day 2``.
+
+    Escaped for Plotly's HTML text; exported Matplotlib scripts pass escape=False.
+    """
     import html
 
     columns = [separate_by] if isinstance(separate_by, str) else list(separate_by or [])
     values = key if isinstance(key, tuple) else (key,)
-    return " · ".join(html.escape(f"{column}: {value}")
+    return " · ".join(html.escape(f"{column}: {value}") if escape else f"{column}: {value}"
                       for column, value in zip(columns, values))
 
 

@@ -84,7 +84,7 @@ def render(name):
     return {"calls": calls, "n": len(drawn), "points": drawn}
 
 def direct_scatter():
-    """scatter_with_encodings on its own, since all seven builders extract it."""
+    """scatter_with_encodings on its own, apart from the builders that paste it."""
     from src.export_script import scatter_with_encodings
     rng = np.random.default_rng(2)
     n = 120

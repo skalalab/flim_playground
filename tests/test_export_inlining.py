@@ -16,17 +16,51 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src import collapse, dataset_io
+from src import classify, collapse, dataset_io
 from src.export_script import generate_script
+from src.vis import (
+    bivar,
+    dimension_facets,
+    gmm_tables,
+    helpers,
+    histogram,
+    multivar,
+    plot_defaults,
+    superplot,
+    univar,
+)
+from src.widgets import encoding_state
 
-# The helpers src/export_script.py inlines verbatim: _build_data_loading's four, and
-# _build_collapse's one.
+# The app functions src/export_script inlines verbatim: _build_data_loading's four,
+# prepare_rows's two, and the computation each method shares with the app.
 INLINED_HELPERS = (
     dataset_io.drop_unnamed_columns,
     dataset_io.check_and_fix_df,
     dataset_io.resolve_row_id_col,
     dataset_io.coerce_majority_numeric_cols,
     collapse.collapse_rows,
+    encoding_state.drop_varying_channels,
+    classify.run_classification,
+    superplot.superplot_display_frame,
+    helpers.log10_columns,
+    helpers.sina_offsets,
+    helpers.box_statistics,
+    helpers._calculate_effect_size,
+    helpers.p_value_stars,
+    helpers.bracket_positioning_metrics,
+    helpers.plan_effect_size_brackets,
+    univar.comparison_layout,
+    univar.comparison_labels,
+    histogram.histogram_labels,
+    bivar.phasor_columns,
+    bivar.resolve_phasor_category,
+    bivar.gmm_ellipse_params,
+    bivar.distribution_ranges,
+    gmm_tables.gmm_group_title,
+    multivar.reduce_dimensions,
+    multivar.dimension_axis_titles,
+    dimension_facets.focus_facet_label,
+    plot_defaults.panel_point_size,
 )
 
 

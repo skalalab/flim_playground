@@ -251,7 +251,7 @@ def test_column_order_follows_the_input_frame():
 
 
 # ---------------------------------------------------------------------------
-# The inlining contract -- src/export_script.py copies this source verbatim
+# The inlining contract -- src/export_script (prepare_rows) copies this source verbatim
 # ---------------------------------------------------------------------------
 
 def test_the_module_imports_no_streamlit_and_nothing_from_src():

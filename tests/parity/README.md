@@ -7,7 +7,7 @@ rather than synthetic fixtures.
 `tests/test_export_script_capture.py` already covers this with small synthetic frames and
 runs in the normal pytest suite. These harnesses complement it: they are slower (14,101
 cells, real UMAP), need `example_data/`, and are meant to be run **on demand** when
-touching `src/export_script.py` or anything in `src/vis/`.
+touching `src/export_script/` or anything in `src/vis/`.
 
 They are deliberately named `parity_*.py` / `harness_*.py` so pytest does not collect them.
 These sources are tracked; everything they write under `_work/` is gitignored.

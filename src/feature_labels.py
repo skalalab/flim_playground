@@ -2,7 +2,7 @@
 
 Convert extracted column names to channel, symbol, and unit labels such as
 ``"nadh τ₁ (ps)"``. Keep format_feature_label self-contained apart from re:
-export_script.py embeds it with inspect.getsource(), including its lookup tables.
+the src/export_script package embeds it with inspect.getsource(), including its lookup tables.
 """
 import re
 

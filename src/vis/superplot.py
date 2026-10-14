@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 
-from .helpers import _density_at_points, get_point_visual_mappings, hover_field, interleave_point_batches
+from .helpers import get_point_visual_mappings, hover_field, interleave_point_batches, sina_offsets
 from .plot_defaults import (
     SUPERPLOT_OBSERVATION_MIN_SIZE,
     SUPERPLOT_OBSERVATION_OPACITY_SCALE,
@@ -50,9 +50,7 @@ def add_superplot_observations(fig, source, selected_var, color_by, separate_by,
         if x is None or color_group not in color_map:
             continue
         values = rows[selected_var].to_numpy()
-        density = _density_at_points(values)
-        norm = density / np.max(density) if len(density) and np.max(density) > 0 else np.ones(len(values))
-        xs = x + np.random.default_rng(42).uniform(-1, 1, len(values)) * norm * 0.35
+        xs = x + sina_offsets(values, 0.35)
         shapes = (rows[shape_by].map(shape_map).fillna("circle").to_numpy()
                   if shape_by and shape_map else np.repeat("circle", len(rows)))
         opacities = (rows[opacity_by].map(opacity_map).fillna(1.0).to_numpy(dtype=float)

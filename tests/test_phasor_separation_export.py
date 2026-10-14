@@ -342,3 +342,26 @@ def test_legend_clears_a_frequency_label_that_overhangs_the_axes(
     label_box = label.get_window_extent()
     assert label_box.x1 > ns["ax"].get_window_extent().x1
     assert ns["ax"].get_legend().get_window_extent().x0 >= label_box.x1
+
+
+def test_unseparated_export_can_be_separated_by_editing_its_configuration(tmp_path, monkeypatch):
+    """SEPARATE_BY is read when the script runs, as in every other method, not baked at generation."""
+    df = _faceted_df()
+    df.to_csv(tmp_path / "phasor.csv", index=False)
+    script = generate_script(_state(separate_by=None, phasor_category="Day 10"))
+    assert "SEPARATE_BY = None" in script
+    path = tmp_path / "analysis.py"
+    path.write_text(script.replace("SEPARATE_BY = None", "SEPARATE_BY = 'day'", 1), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    try:
+        ns = runpy.run_path(str(path))
+    finally:
+        plt.close("all")
+
+    assert "phasor_category" in ns, "the script ignored SEPARATE_BY"
+    assert ns["phasor_category"] == "Day 10"
+    ax = ns["fig"].axes[0]
+    assert [text.get_text() for text in ax.texts if text.get_text() == "day: Day 10"] == ["day: Day 10"]
+    context = [collection for collection in ax.collections
+               if np.isscalar(collection.get_alpha()) and collection.get_alpha() == pytest.approx(0.18)]
+    assert len(context) == 1 and len(context[0].get_offsets()) == 4

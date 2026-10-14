@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from src.export_labels import available_label_column, format_export_group_labels
+from src.feature_labels import format_feature_label
 from src.natural_sort import natural_tuple_sort
 from .helpers import _find_best_gmm, find_intersection
 
@@ -51,6 +52,27 @@ def histogram_legend_label(label, count, skewness, show_counts, *, show_skewness
         return name
     skew = f"{skewness:.3f}" if np.isfinite(skewness) else "undefined"
     return f"{name}\nskew={skew}"
+
+
+def histogram_labels(prepared, log_x, engine="plotly"):
+    """Axis labels and title shared by the app's figure and exported scripts.
+
+    Colour names are escaped for Plotly's HTML text; the feature label carries
+    the engine's own markup and is left as the formatter made it.
+    """
+    import html
+
+    pretty_var = format_feature_label(prepared["selected_var"], engine=engine)
+    gmm_mode = prepared["apply_gmm"]
+    names = ", ".join(prepared["color_by"])
+    if engine == "plotly":
+        names = html.escape(names)
+    prefix = "Gaussian Mixture Model fit of " if gmm_mode else "Frequency histogram of "
+    return {
+        "x": f"log₁₀({pretty_var})" if log_x else pretty_var,
+        "y": ("Density" if prepared["separate_by"] else "Probability Density") if gmm_mode else "Count",
+        "title": prefix + pretty_var + (f" by {names}" if prepared["color_by"] else ""),
+    }
 
 
 def _assign_subpopulation_labels(values, best_gmm, thresholds, color_group, *,

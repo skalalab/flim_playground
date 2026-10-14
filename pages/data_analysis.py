@@ -24,6 +24,7 @@ from src.export_labels import (
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import DESKTOP_APP_URL, data_extraction_available, render_top_menu
 from src.vis.bivar import (
+    phasor_columns,
     distribution_controls,
     feature_2d_distribution_plot,
     phasor_plot,
@@ -31,7 +32,7 @@ from src.vis.bivar import (
     select_phasor_category,
 )
 from src.vis.dimension_facets import focus_facet_figure
-from src.vis.helpers import apply_plot_styling, log_negative_error
+from src.vis.helpers import apply_plot_styling, log10_columns, log_negative_error
 from src.vis.multivar import dimension_reduction_plot
 from src.vis.plot_defaults import (
     DEFAULT_AXIS_LABEL_FONT_SIZE,
@@ -553,13 +554,10 @@ with col2:
 
                         # Apply log transform if requested (consistent with bivar.py)
                         if log_x:
-                            import numpy as np
-                            if (plot_df[selected_var] < 0).any():
+                            plot_df, _skipped_log = log10_columns(plot_df, [selected_var])
+                            if _skipped_log:
                                 st.error(log_negative_error(selected_var))
                                 log_x = False
-                            else:
-                                plot_df = plot_df.copy()
-                                plot_df[selected_var] = np.log10(plot_df[selected_var] + 1e-6)
                         if apply_gmm:
                             fig, gmm_df = feature_gmm_plot(plot_df, selected_var, color_by, colormap=st.session_state.plot_colormap, log_x=log_x, separate_by=separate_by, label_column=label_column)
                             data_export_ready = True
@@ -582,9 +580,7 @@ with col2:
                         st.write(f"No data available after removing rows with missing values {sad_emoji}")
                 elif method == "Phasor Plot":
                     if selected_channel is not None and selected_harmonic is not None and f is not None:
-                        feature_prefix = "Lifetime fit free_" + selected_channel + ": "
-                        g_col = f"{feature_prefix}G(1st)" if selected_harmonic == 1 else f"{feature_prefix}G(2nd)"
-                        s_col = f"{feature_prefix}S(1st)" if selected_harmonic == 1 else f"{feature_prefix}S(2nd)"
+                        g_col, s_col, _harmonic_label = phasor_columns(selected_channel, selected_harmonic)
                         if g_col not in filtered_df.columns or s_col not in filtered_df.columns:
                             st.error(f"Required phasor columns ({g_col}, {s_col}) not found in your data. {sad_emoji}")
                         elif filtered_df[[g_col, s_col]].dropna().empty:
