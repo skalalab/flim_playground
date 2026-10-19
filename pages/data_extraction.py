@@ -552,8 +552,6 @@ def render_categorical_step(col1, col2, ctx):
             if len(available_dfs) > 0:
                 st.write(f"Found {len(available_dfs)} available csv files ready to be assigned categories {happy_emoji}:")
                 st.write(available_dfs)
-            else:
-                st.error(f"No available csv files found at {df_folder_path} {sad_emoji}")
 
     with col2:
         if df_folder_path != "" and len(available_dfs) > 0:

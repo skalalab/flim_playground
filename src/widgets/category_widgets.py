@@ -5,8 +5,10 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from src.column_roles import code_span
 from src.config import get_categorical_cols, get_fov_name_col, get_unique_cell_id_col
-from src.emojis import happy_emoji
+from src.emojis import happy_emoji, sad_emoji
+from src.widgets.metadata_widgets import _permission_denied_message
 
 
 def map_categories_to_labels_widget(available_categories, combined_df, delimiter, df_folder_path):
@@ -119,6 +121,16 @@ def find_available_dfs_widget(df_folder_path, delimiter):
     if not os.path.isdir(df_folder_path):
         st.warning("Please provide a valid folder path.")
         return []
+    # Probe folder access before rglob, which can suppress OS errors and make
+    # an unreadable folder appear empty.
+    try:
+        os.listdir(df_folder_path)
+    except PermissionError as e:
+        st.error(f"{_permission_denied_message(df_folder_path, e)} {sad_emoji}")
+        return []
+    except OSError as e:
+        st.error(f"⛔ Could not read folder **{df_folder_path}**: {e} {sad_emoji}")
+        return []
 
     path = Path(df_folder_path)
     # Find all CSV files recursively
@@ -131,6 +143,7 @@ def find_available_dfs_widget(df_folder_path, delimiter):
     ]
     available_csv_files = []
     existing_cell_ids = []
+    missing_columns = 0
     prev_num_parts = 0
     for file in all_csv_files:
         try:
@@ -179,7 +192,24 @@ def find_available_dfs_widget(df_folder_path, delimiter):
                 continue
 
             available_csv_files.append(file)
+        else:
+            missing_columns += 1
 
+    if not available_csv_files:
+        folder = code_span(df_folder_path)
+        id_col, fov_col = code_span(unique_cell_id_col), code_span(fov_name_col)
+        if not all_csv_files:
+            st.error(f"No csv files found at {folder} {sad_emoji}")
+        elif missing_columns == len(all_csv_files):
+            st.error(
+                f"None of the csv files at {folder} has both the {id_col} and {fov_col} columns "
+                f"(the unique cell identifier and FOV columns named on the Configuration page) {sad_emoji}"
+            )
+        else:
+            reason = "see the warnings above"
+            if missing_columns:
+                reason = f"{missing_columns} lack a {id_col} or {fov_col} column, and the warnings above explain the rest"
+            st.error(f"None of the csv files at {folder} can be assigned categories: {reason} {sad_emoji}")
     return available_csv_files
 
 def check_and_merge_df_widget(available_dfs):
