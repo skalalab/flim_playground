@@ -82,6 +82,7 @@ from src.widgets.review_table_widget import (
     ignored_columns,
     review_gate,
     reset_upload_review,
+    show_review_toast,
 )
 from src.widgets.selection_widgets import (
     multi_feature_select_widget,
@@ -857,3 +858,5 @@ with col2:
 # A closing review may trigger another rerun when method availability changes.
 # Keep settings until every analysis widget has rendered, then resume normal cleanup.
 st.session_state.pop("_review_preserve_controls", None)
+# Show a save toast only now: a toast shown in a rerun-interrupted run unmounts unseen.
+show_review_toast()

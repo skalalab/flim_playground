@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.column_roles import (
     NO_GROUP,
     ROLE_CATEGORICAL,
+    ROLE_IGNORE,
     ROLE_NUMERICAL,
     ROLE_ROW_ID,
 )
@@ -397,9 +398,6 @@ def test_a_group_takes_every_column_the_bar_hands_it(acw, monkeypatch):
 
     assert gate.st.session_state._review_groups == {
         "nadh_t1": "morphology", "nadh_t2": "morphology"}
-    # Retain the destination for another assignment; clear only the selection ticks.
-    gen = gate.st.session_state[gate._GEN]
-    assert gate.st.session_state[f"review_group_target_{gen}"] == "morphology"
 
 
 def test_adding_a_group_makes_it_and_points_the_destination_at_it(acw, monkeypatch):
@@ -413,8 +411,7 @@ def test_adding_a_group_makes_it_and_points_the_destination_at_it(acw, monkeypat
 
     assert gate.st.session_state._review_group_names == ["lifetime"]
     assert gate.st.session_state._review_groups == {}, "Add fills nothing"
-    gen = gate.st.session_state[gate._GEN]
-    assert gate.st.session_state[f"review_group_target_{gen}"] == "lifetime"
+    assert gate.st.session_state._review_bulk_pending == "lifetime"
 
 
 def test_a_blank_name_makes_no_group(acw, monkeypatch):
@@ -471,9 +468,8 @@ def test_renaming_a_group_onto_another_merges_them(acw, monkeypatch):
     assert gate.st.session_state._review_groups == {
         "nadh_t1": "morphology", "nadh_t2": "morphology"}
     assert gate.st.session_state._review_group_names == ["morphology"]
-    # The selection follows the group, so Delete and Rename stay live on it.
-    gen = gate.st.session_state[gate._GEN]
-    assert gate.st.session_state[f"review_group_target_{gen}"] == "morphology"
+    # The group row's pick follows the group, so the ✏️ box stays on it.
+    assert gate.st.session_state._review_bulk_pending == "morphology"
 
 
 def test_a_group_cannot_be_called_uncategorized_either(acw, monkeypatch):
@@ -504,15 +500,61 @@ def test_deleting_a_group_drops_its_members_to_uncategorized(acw, monkeypatch):
     assert gate.st.session_state._review_group_names == []
 
 
-def test_only_a_measurement_can_be_picked(acw):
-    """Ignore stale selection ticks when a row has just lost its Numerical role."""
+def test_picks_cover_every_role_but_the_row_id_and_narrow_to_measurements_for_groups(acw):
+    """Role changes act on every ticked row; group changes only on ticked measurements.
+    A browser can keep a Row ID's tick from before its lock replaced the checkbox.
+    """
     acw.save_working_copy("pdl1", _WIDE_ROLES, {})
     frame = _wide_frame()
     gate._load_working_copy(frame, "pdl1")
     for col in frame.columns:
         gate.st.session_state[gate._pick_key(col)] = True
 
-    assert gate._picked_columns(frame) == ["nadh_t1", "nadh_t2"]
+    assert gate._picked_columns(frame) == ["treatment", "nadh_t1", "nadh_t2"]
+    assert gate._picked_columns(frame, numerical_only=True) == ["nadh_t1", "nadh_t2"]
+
+
+def test_a_bulk_role_change_reaches_every_column_it_is_handed(acw, monkeypatch):
+    """Columns leaving Numerical lose their groups in the same change."""
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    acw.save_working_copy("pdl1", _WIDE_ROLES, {"nadh_t1": "lifetime"})
+    gate._load_working_copy(_wide_frame(), "pdl1")
+
+    gate._apply_role(["treatment", "nadh_t1"], ROLE_IGNORE)
+
+    roles = gate.st.session_state._review_roles
+    assert (roles["treatment"], roles["nadh_t1"], roles["nadh_t2"]) == (
+        ROLE_IGNORE, ROLE_IGNORE, ROLE_NUMERICAL)
+    # Dropped here rather than by the next render's correction, whose rerun would
+    # unmount the toast before it is seen.
+    assert gate.st.session_state._review_groups == {}
+    assert "left its group" in gate.st.session_state._review_toast
+
+
+def test_a_bulk_role_change_given_no_columns_changes_nothing(acw, monkeypatch):
+    """A click on a button label one run stale can arrive with nothing ticked."""
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    acw.save_working_copy("pdl1", _WIDE_ROLES, {})
+    gate._load_working_copy(_wide_frame(), "pdl1")
+
+    gate._apply_role([], ROLE_IGNORE)
+
+    assert not gate.st.session_state.get("_review_toast")
+
+
+def test_a_save_toast_waits_until_the_page_has_rendered(acw, monkeypatch):
+    """Save closes review with st.rerun(); a toast shown before it unmounts unseen."""
+    shown = []
+    monkeypatch.setattr(gate.st, "toast", lambda body, *a, **k: shown.append(body))
+    monkeypatch.setattr(gate.st, "rerun", lambda *a, **k: None)
+    gate._load_working_copy(_frame(), gate.AUTO_DETECT)
+
+    gate._save_and_close("pdl1", ROLES, {}, [])
+    assert shown == []
+
+    gate.show_review_toast()
+    gate.show_review_toast()
+    assert len(shown) == 1 and "pdl1" in shown[0]
 
 
 # ------------------------------------------------- one read of the config per rerun
@@ -561,6 +603,7 @@ def test_a_profile_saved_inside_a_run_is_visible_to_the_next_read(acw, count_con
 def _gate_app():
     import pandas as pd
     import streamlit as st
+
     from src.widgets import review_table_widget as gate
     st.button("Replace upload", key="review_replace", on_click=gate.reset_upload_review)
     frame = pd.DataFrame(st.session_state.get("data", {

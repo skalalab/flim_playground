@@ -696,7 +696,7 @@ def _row_id_reason(df, roles):
     """
     # Row ID is optional; removing the role requests generated row numbers.
     exits = ("Give the role to another column, or to none "
-             "(rows will be identified by row number).")
+             "(rows will be uniquely identified by row number).")
     for col, role in roles.items():
         if role != ROLE_ROW_ID or col not in df.columns:
             continue

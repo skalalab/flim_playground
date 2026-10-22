@@ -9,9 +9,21 @@ from copy import deepcopy
 
 import streamlit as st
 
+from src.analysis_config import (
+    AUTO_DETECT,
+    MANAGE_LABEL,
+    MAX_PROFILES,
+    all_profile_columns,
+    delete_profile,
+    get_analysis_hints,
+    profile_roles_and_groups,
+    rename_profile,
+    save_working_copy,
+)
 from src.column_roles import (
     LABEL_ROLES,
     NO_GROUP,
+    ROLE_CATEGORICAL,
     ROLE_IGNORE,
     ROLE_LABELS,
     ROLE_NUMERICAL,
@@ -27,25 +39,25 @@ from src.dataset_io import (
     review_blocking_reason,
 )
 from src.emojis import happy_emoji, sad_emoji
+from src.natural_sort import natural_key
 from src.profile_matching import (
     exact_match,
     rank_profiles,
 )
-from src.natural_sort import natural_key
-from src.analysis_config import (
-    AUTO_DETECT,
-    MANAGE_LABEL,
-    MAX_PROFILES,
-    all_profile_columns,
-    delete_profile,
-    get_analysis_hints,
-    profile_roles_and_groups,
-    rename_profile,
-    save_working_copy,
+from src.widgets.analysis_widget_state import (
+    analysis_control_keys,
+    preserve_analysis_controls,
 )
-from src.widgets.analysis_widget_state import analysis_control_keys, preserve_analysis_controls
 
-GROUP_SECTION = "Feature group management"
+ROLE_HELP = ("Use each column's **Role** dropdown to choose how it is used:\n\n"
+             "- **Row ID**: one column of unique identifiers with no missing values. "
+             "Optional; row numbers are generated if none is assigned.\n"
+             "- **Categorical**: labels for grouping or filtering, such as treatment, "
+             "donor, or batch, even when encoded as numbers.\n"
+             "- **Numerical**: measurements to plot or analyze, such as lifetime "
+             "or cell area.\n"
+             "- **Ignore**: exclude the column from analysis.\n\n"
+             "Only Numerical columns can be assigned to feature groups.")
 GROUP_HELP = ("Each group becomes one dropdown in the feature pickers, so features are "
               "chosen from a few short lists instead of one long one. Measurements left "
               "ungrouped are collected under Uncategorized Features.")
@@ -58,6 +70,7 @@ _STATE_KEYS = (
     "_review_delete_armed", "_review_manage_open",
     "_review_configured_row_id", "_review_picks_stale", "_review_overwrite_armed",
     "_review_preserve_controls", "_review_snapshot", "_review_baseline",
+    "_review_toast", "_review_bulk_pending",
 )
 # Export needs the configured Row ID, including blank for generated row numbers.
 # Keep this key in the same file-scoped reset as the rest of review state.
@@ -71,6 +84,26 @@ _MANAGE_OPEN = "_review_manage_open"
 _OVERWRITE_ARMED = "_review_overwrite_armed"
 # Read this button key before rendering the gate; its button appears in the summary.
 _REOPEN = "review_reopen"
+# Roles the bar's role row offers. Row ID is left out: only one column can hold it.
+_BULK_ROLES = (ROLE_CATEGORICAL, ROLE_NUMERICAL, ROLE_IGNORE)
+# Reassigned before every render, so its tick always reflects the row ticks.
+_SELECT_ALL = "review_select_all"
+# Buttons above the rows that end their run with st.rerun().
+_BAR_BUTTONS = ("review_apply_role", "review_apply_group", "review_add_group",
+                "review_group_rename", "review_group_delete")
+# Row label, dropdown, button, New group, ✏️. Both rows use all five slots, because
+# Streamlit spreads gaps by column count: rows of 6 and 5 columns drift 2px apart.
+# Measured in the ~900px editor column of a 1440px window: every slot stays on one
+# line, so the bar keeps its height while the button labels change.
+_BAR_WEIGHTS = (4.8, 2.7, 2.8, 2.3, 1.2)
+# Streamlit gives a column's first checkbox an 8px top margin, which sits it 4px below
+# the centre of a vertically centred row. A collapsed label shrinks to the box and its
+# 4px top margin; padding restores the text line height that centres the box. The
+# table's border and padding total 1rem, so the same indent puts Select all over the ticks.
+_TICK_STYLE = ("<style>.st-key-review_select_all{margin-left:1rem}"
+               ".st-key-review_select_all .stCheckbox,"
+               "[class*='st-key-review_tick_'] .stCheckbox{margin-top:0 !important}"
+               "[class*='st-key-review_tick_'] label{padding-bottom:0.25rem}</style>")
 # Selection, new badge, name, role, group, preview. The group slot is wider
 # than the role slot to fit UNGROUPED_LABEL.
 _ROW_WEIGHTS = (1, 1, 5, 3, 4, 4)
@@ -158,16 +191,19 @@ def _pick_key(col):
     return f"review_tick_{_file_gen()}_{col}"
 
 
-def _picked_columns(df):
-    """Return selected measurements in file order.
+def _picked_columns(df, numerical_only=False):
+    """Return selected rows in file order, or only the selected measurements.
 
-    Read before rendering rows to include current clicks. Filter by role because
-    a hidden checkbox's session key can survive for one rerun.
+    Read before rendering rows to include current clicks. Group actions pass
+    numerical_only because only a Numerical column can sit in a group. The Row ID
+    is never picked: a browser keeps the tick it had before its lock replaced the
+    checkbox.
     """
     roles = st.session_state._review_roles
     return [col for col in df.columns
-            if roles.get(col) == ROLE_NUMERICAL
-            and st.session_state.get(_pick_key(col), False)]
+            if st.session_state.get(_pick_key(col), False)
+            and roles.get(col) != ROLE_ROW_ID
+            and (not numerical_only or roles.get(col) == ROLE_NUMERICAL)]
 
 
 def _clear_picks(columns):
@@ -215,7 +251,7 @@ def _load_working_copy(df, picked):
     # Reuse the numeric-column set from role detection; coercing again is expensive.
     st.session_state._review_numeric_cols = numeric_cols
     # Cancel calls this below rendered rows. Defer checkbox writes until the next
-    # _group_section call, before those widgets render.
+    # _bulk_bar call, before those widgets render.
     st.session_state._review_picks_stale = True
     _bump_editor()
 
@@ -351,19 +387,9 @@ def _render_gate(uploaded_file, df, profiles=None):
 
     for notice in st.session_state.pop("_review_notices", []):
         st.info(notice)
-    _group_section(df)
-    st.markdown(
-        "**Column preview**",
-        help="Use each column's **Role** dropdown to choose how it is used:\n\n"
-             "- **Row ID**: one column of unique identifiers with no missing values. "
-             "Optional; row numbers are generated if none is assigned.\n"
-             "- **Categorical**: labels for grouping or filtering, such as treatment, "
-             "donor, or batch, even when encoded as numbers.\n"
-             "- **Numerical**: measurements to plot or analyze, such as lifetime "
-             "or cell area.\n"
-             "- **Ignore**: exclude the column from analysis.\n\n"
-             "Only Numerical columns can be assigned to feature groups.",
-    )
+    # A toast reports the last bulk change without taking page height.
+    show_review_toast()
+    _bulk_bar(df)
     _editor(df)
     # Use the corrected roles to announce row numbers before they are generated.
     numbering = row_id_notice(st.session_state._review_roles)
@@ -515,8 +541,9 @@ def _editor(df):
     edited_roles, edited_groups = {}, {}
     with st.container(height=_table_height(len(df.columns)), border=True):
         header = st.columns(_ROW_WEIGHTS, vertical_alignment="center")
-        for slot, title in zip(header[2:], ("Column", "Role", "Group", "Preview")):
-            slot.caption(f"**{title}**")
+        for slot, title, tip in zip(header[2:], ("Column", "Role", "Group", "Preview"),
+                                    (None, ROLE_HELP, GROUP_HELP, None)):
+            slot.caption(f"**{title}**", help=tip)
         for col in df.columns:
             cells = st.columns(_ROW_WEIGHTS, vertical_alignment="center")
             role = cells[3].selectbox(
@@ -537,12 +564,19 @@ def _editor(df):
                 disabled=not measurement,
                 help="Only a Numerical column can sit in a group. Ungrouped measurements "
                      "fall to Uncategorized Features.")
-            # Render selection in the first cell after reading the current role,
-            # so only measurements can be selected for bulk grouping.
-            if measurement:
+            # A lock stands in for the Row ID's tick; _picked_columns ignores any tick
+            # it kept. A disabled button keeps the tooltip on the lock (a Markdown help
+            # icon wraps here); it is keyed per column because two rows hold Row ID
+            # until the correction reruns.
+            if LABEL_ROLES[role] == ROLE_ROW_ID:
+                cells[0].button(":material/lock:", key=f"review_lock_{col}",
+                                type="tertiary", disabled=True,
+                                help="Select all and bulk changes skip the Row ID. "
+                                     "Change it with its Role dropdown.")
+            else:
                 cells[0].checkbox(f"Select {col}", key=_pick_key(col),
                                   label_visibility="collapsed",
-                                  help="Tick to include in a bulk group assignment")
+                                  help="Tick to include in a bulk change")
             # Mark columns whose roles were guessed because the profile did not contain them.
             if known and col not in known:
                 cells[1].markdown(":orange-badge[new]")
@@ -567,85 +601,193 @@ def _editor(df):
         st.rerun()
 
 
-def _group_section(df):
-    """Render group creation and assignment controls above the column rows.
+def _bulk_key():
+    """Keep the group row's pick through editor corrections; reset it for a new file."""
+    return f"review_bulk_action_{_file_gen()}"
 
-    The shared name field serves Add and Rename. Delete, Rename, and Apply use
-    the selected group. This section must run before the row checkboxes because
-    it writes their session-state values.
+
+def _bulk_button_label(kind, value, n_picked, n_targets):
+    """Name the change the button makes, or why it cannot make one."""
+    if not n_picked:
+        return "Tick rows below"
+    if kind == "group":
+        if not n_targets:
+            return "No Numerical ticked"
+        return f"Ungroup {n_targets}" if value == NO_GROUP else f"Move {n_targets}"
+    if value == ROLE_IGNORE:
+        return f"Ignore {n_targets}"
+    return f"Make {n_targets} {ROLE_LABELS[value]}"
+
+
+def _point_bar_at(group):
+    """Pick a group in the group row on the next run.
+
+    Group tools render after the row's dropdown, so they cannot assign its key.
+    """
+    st.session_state._review_bulk_pending = group
+
+
+def _select_all(columns):
+    """Tick every row except the Row ID, or clear every row.
+
+    Read roles here rather than from the bar's last render: a row made the Row ID
+    since then would otherwise be ticked.
+    """
+    if st.session_state[_SELECT_ALL]:
+        roles = st.session_state._review_roles
+        for col in columns:
+            if roles.get(col) != ROLE_ROW_ID:
+                st.session_state[_pick_key(col)] = True
+    else:
+        _clear_picks(columns)
+
+
+def _bulk_bar(df):
+    """Render the role row and the group row that change the ticked rows.
+
+    This bar must run before the row checkboxes because it writes their
+    session-state values. Each row's dropdown keeps its last choice.
     """
     # Apply deferred resets before the row checkboxes render.
     if st.session_state.pop("_review_picks_stale", False):
         _clear_picks(df.columns)
     roles = st.session_state._review_roles
-    numeric = [col for col in df.columns if roles.get(col) == ROLE_NUMERICAL]
-    if not numeric:
-        # Only measurements can be grouped.
-        return
+    options = [NO_GROUP, *st.session_state._review_group_names]
+    key = _bulk_key()
+    pending = st.session_state.pop("_review_bulk_pending", None)
+    held = pending if pending in options else st.session_state.get(key, NO_GROUP)
+    # A deleted group falls back to Uncategorized, never to the next group, so the
+    # ✏️ box only acts on a group someone picked.
+    st.session_state[key] = held if held in options else NO_GROUP
+
     picked = _picked_columns(df)
-    names = st.session_state._review_group_names
+    # st.rerun() counts as a finished run, so a button here would drop the rows'
+    # unrendered ticks. Reassert them in that run only, so other runs never resend
+    # tick values over a click still in flight; the change then clears its own.
+    if any(st.session_state.get(key) for key in _BAR_BUTTONS):
+        for col in picked:
+            st.session_state[_pick_key(col)] = True
+    # Leave the Row ID out so one bulk change cannot remove the identifier by accident.
+    eligible = [col for col in df.columns if roles.get(col) != ROLE_ROW_ID]
+    st.session_state[_SELECT_ALL] = bool(eligible) and set(eligible) <= set(picked)
+
+    # Style-only st.html goes to the event container, so it adds no block gap.
+    st.html(_TICK_STYLE)
+    # Right-aligned labels make each row read as a sentence ending at its dropdown.
+    cells = st.columns(_BAR_WEIGHTS, vertical_alignment="center")
+    # Select all shares the label slot, so both rows keep the same columns.
+    with cells[0].container(horizontal=True, horizontal_alignment="distribute",
+                            vertical_alignment="center", gap=None):
+        st.checkbox("Select all", key=_SELECT_ALL, on_change=_select_all,
+                    args=(list(df.columns),), disabled=not eligible,
+                    help="Tick every row except the Row ID, or clear every row")
+        st.markdown("Ticked columns are", help=ROLE_HELP, width="content")
+    role = cells[1].selectbox(
+        "Role for ticked rows", _BULK_ROLES, index=_BULK_ROLES.index(ROLE_IGNORE),
+        key=f"review_bulk_role_{_file_gen()}", format_func=ROLE_LABELS.get,
+        label_visibility="collapsed")
+    if cells[2].button(_bulk_button_label("role", role, len(picked), len(picked)),
+                       key="review_apply_role", type="primary", width="stretch",
+                       disabled=not picked, help="Give the ticked rows the role on the left"):
+        _apply_role(picked, role)
+
+    measurements = _picked_columns(df, numerical_only=True)
+    skipped = [col for col in picked if col not in measurements]
+    numeric = ROLE_NUMERICAL in roles.values()
+    cells = st.columns(_BAR_WEIGHTS, vertical_alignment="center")
+    cells[0].markdown("Ticked **Numerical** go in group", help=GROUP_HELP,
+                      text_alignment="right")
+    # Omit index: the session value seeded above selects the option.
+    group = cells[1].selectbox(
+        "Group for ticked Numerical rows", options, key=key, format_func=_group_label,
+        label_visibility="collapsed", disabled=not numeric)
+    if cells[2].button(_bulk_button_label("group", group, len(picked), len(measurements)),
+                       key="review_apply_group", type="primary", width="stretch",
+                       disabled=not measurements,
+                       help="Put the ticked Numerical rows in the group on the left"):
+        _apply_group(measurements, group, skipped)
+    _group_section(cells[3:], group, measurements, skipped, numeric)
+
+
+def _group_section(cells, target, members, skipped, numeric):
+    """Render ➕ New group and the ✏️ box at the end of the group row.
+
+    Each names a group in a popover form, so Return submits its first button. New
+    group also moves the ticked measurements in; the ✏️ box renames or deletes
+    `target`, the group picked in the row's dropdown. Uncategorized is no group, so
+    the box stays shut on it.
+    """
     gen = st.session_state[_GEN]
-
-    # Prune a deleted or renamed destination before rendering its keyed selectbox.
-    options = [NO_GROUP] + names
-    target_key = f"review_group_target_{gen}"
-    if st.session_state.get(target_key, NO_GROUP) not in options:
-        st.session_state[target_key] = NO_GROUP
-
-    st.markdown(f"**{GROUP_SECTION}**", help=GROUP_HELP)
-    # Match column counts and total weights so the name field aligns with the
-    # destination despite the narrow Delete/Rename slots.
-    create = st.columns([3, 2, 1, 1, 2], vertical_alignment="center")
-    act = st.columns([3, 1, 1, 2, 2], vertical_alignment="center")
-
-    new_name = create[0].text_input(
-        "Group name", key=f"review_group_name_{gen}", label_visibility="collapsed",
-        placeholder="group name")
-    if create[1].button("➕ Add", key="review_add_group", width="stretch",
-                        help="Make an empty group with the name on the left"):
-        _add_group(new_name)
-
-    # Omit index: a seeded session value plus an explicit default triggers a warning.
-    # An unseeded selectbox defaults to NO_GROUP at slot 0.
-    target = act[0].selectbox(
-        "Group", options, key=target_key, label_visibility="collapsed",
-        format_func=_group_label,
-        help=f"The group Delete, Rename and Apply act on. {UNGROUPED_LABEL} is not a "
-             "group: applying it takes the ticked rows out of theirs.")
-    # The ungrouped slot cannot be renamed or deleted.
-    real = target != NO_GROUP
-    if act[1].button("🗑️", key="review_group_delete", width="stretch",
-                     disabled=not real,
-                     help="Delete the selected group. Its columns fall back to "
-                          "Uncategorized Features; no column is lost."):
-        _delete_group(target)
-    if act[2].button("✏️", key="review_group_rename", width="stretch",
-                     disabled=not real,
-                     help="Rename the selected group to the name in the box above, "
-                          "carrying its columns over. A name already in use merges the "
-                          "two, which is how a whole group moves in one action."):
-        _rename_group(target, new_name)
-    if act[3].button(f"Apply to {len(picked)}", key="review_apply_group",
-                     type="primary", width="stretch", disabled=not picked,
-                     help="Put the ticked rows in the selected group"):
-        _apply_group(picked, target)
-    # Keep Select all outside the table header so it stays visible while rows scroll.
-    everything = len(picked) == len(numeric)
-    if act[4].button("Clear" if everything else "Select all", key="review_select_all",
-                     width="stretch", help="Tick every measurement row, or none"):
-        if everything:
-            _clear_picks(numeric)
-        else:
-            for col in numeric:
-                st.session_state[_pick_key(col)] = True
-        st.rerun()
+    with cells[0].popover("➕ New group", width="stretch", disabled=not numeric,
+                          help="Make a group holding the ticked Numerical rows"), st.form(
+            "review_group_new_form", border=False):
+        name = st.text_input("Name of the new group", key=f"review_group_name_{gen}")
+        if st.form_submit_button(f"Create with {len(members)}" if members else "Create",
+                                 key="review_add_group", type="primary"):
+            _add_group(name, members, skipped)
+    shut = target == NO_GROUP or not numeric
+    with cells[1].popover("✏️", width="stretch", disabled=shut,
+                          help="Rename or delete the group picked on the left. A name "
+                               "already in use merges the two groups."), st.form(
+            "review_group_edit_form", border=False):
+        # No help icon: placed before the box, it would take the popover's opening focus.
+        new_name = st.text_input("Rename to", value="" if target == NO_GROUP else target,
+                                 key=f"review_group_rename_to_{gen}_{target}")
+        # Rename comes first because Return submits a form's first button. Stacked: the
+        # popover is too narrow for both labels on one line. AppTest finds buttons inside
+        # a disabled popover, so they repeat its disabled state.
+        if st.form_submit_button("Rename", key="review_group_rename", type="primary",
+                                 width="stretch", disabled=shut):
+            _rename_group(target, new_name)
+        if st.form_submit_button("🗑️ Delete group", key="review_group_delete",
+                                 width="stretch", disabled=shut,
+                                 help="Its columns go to Uncategorized; no column is lost."):
+            _delete_group(target)
 
 
-def _apply_group(columns, group):
+def _count(columns):
+    return "1 column" if len(columns) == 1 else f"{len(columns)} columns"
+
+
+def _named(columns, limit=3):
+    """Name up to `limit` columns for a status message, then count the rest."""
+    shown = ", ".join(code_span(col) for col in columns[:limit])
+    rest = len(columns) - limit
+    return f"{shown} and {rest} more" if rest > 0 else shown
+
+
+def _apply_role(columns, role):
+    """Give the selected columns one role and report the change in a toast.
+
+    Drop the groups of columns leaving Numerical here: left to the next editor
+    render, the correction's rerun would unmount the toast before it is seen.
+    """
+    # A click on a button label one run stale can arrive with nothing ticked.
+    if not columns:
+        return
+    groups = st.session_state._review_groups
+    lost = [] if role == ROLE_NUMERICAL else [col for col in columns if col in groups]
+    st.session_state._review_roles = {**st.session_state._review_roles,
+                                      **dict.fromkeys(columns, role)}
+    st.session_state._review_groups = {col: group for col, group in groups.items()
+                                       if col not in lost}
+    verb = "Ignored" if role == ROLE_IGNORE else f"Made {ROLE_LABELS[role]}"
+    message = f"{verb} {_count(columns)}: {_named(columns)}."
+    if lost:
+        message += (" 1 measurement left its group." if len(lost) == 1
+                    else f" {len(lost)} measurements left their group.")
+    st.session_state._review_toast = message
+    _clear_picks(columns)
+    _bump_editor()
+    st.rerun()
+
+
+def _apply_group(columns, group, skipped=()):
     """Assign selected columns to an existing group, or remove their assignments.
 
     The next render enforces role invariants, including removal of groups from
-    columns that have become non-numerical.
+    columns that have become non-numerical. The toast names the ticked `skipped`
+    rows, which keep their ticks, so they do not look ignored.
     """
     if not columns:
         return
@@ -656,12 +798,16 @@ def _apply_group(columns, group):
         else:
             groups[col] = group
     st.session_state._review_groups = groups
+    toast = (f"Ungrouped {_count(columns)}: {_named(columns)}." if group == NO_GROUP else
+             f"Moved {_count(columns)} to {code_span(group)}: {_named(columns)}.")
+    if skipped:
+        # Lead with the skip: a toast past 104 characters hides the rest behind "view more".
+        toast = f"Only Numerical columns can be grouped: skipped {_named(skipped)}. {toast}"
+    st.session_state._review_toast = toast
     # Clear completed selections so offscreen rows are not included in the next action.
+    # Ticked rows the group could not take keep their ticks for their next change.
     _clear_picks(columns)
     _bump_editor()
-    # Preserve the destination for another assignment. The new generation key
-    # can be seeded because it has not rendered yet.
-    st.session_state[f"review_group_target_{st.session_state[_GEN]}"] = group
     st.rerun()
 
 
@@ -675,10 +821,10 @@ def _group_name_error(name, allow_existing=False):
     return ""
 
 
-def _add_group(name):
-    """Create an empty group and select it as the bulk-assignment destination.
+def _add_group(name, members=(), skipped=()):
+    """Create a group, pick it in the group row, and move `members` into it.
 
-    Re-keying gives the destination an unrendered key that can be seeded safely.
+    `_apply_group` reports the move, leading with the ticked rows it `skipped`.
     """
     name = (name or "").strip()
     if not name:
@@ -689,8 +835,10 @@ def _add_group(name):
         st.warning(error)
         return
     st.session_state._review_group_names.append(name)
+    _point_bar_at(name)
+    if members:
+        _apply_group(members, name, skipped)
     _bump_editor()
-    st.session_state[f"review_group_target_{st.session_state[_GEN]}"] = name
     st.rerun()
 
 
@@ -698,7 +846,7 @@ def _rename_group(old, new):
     """Rename a group, merging its columns if the destination already exists."""
     new = (new or "").strip()
     if not new:
-        st.warning("Type the new name beside the group first.")
+        st.warning("Type the new name first.")
         return
     error = _group_name_error(new, allow_existing=True)
     if error:
@@ -710,17 +858,24 @@ def _rename_group(old, new):
         col: (new if group == old else group)
         for col, group in st.session_state._review_groups.items()}
     _bump_editor()
-    # Keep the renamed group selected under the new widget key.
-    st.session_state[f"review_group_target_{st.session_state[_GEN]}"] = new
+    # The ✏️ box renames the group row's pick, so the pick follows the new name.
+    _point_bar_at(new)
     st.rerun()
 
 
 def _delete_group(name):
+    """Delete a group; its columns fall back to Uncategorized, and the toast counts
+    them because some may sit below the table's scroll area.
+    """
+    members = [col for col, group in st.session_state._review_groups.items()
+               if group == name]
     st.session_state._review_group_names = [
         group for group in st.session_state._review_group_names if group != name]
     st.session_state._review_groups = {
         col: group for col, group in st.session_state._review_groups.items()
         if group != name}
+    st.session_state._review_toast = f"Deleted group {code_span(name)}" + (
+        f"; {_count(members)} moved to Uncategorized." if members else ".")
     _bump_editor()
     st.rerun()
 
@@ -829,12 +984,26 @@ def _save_and_close(name, roles, groups, group_names):
     st.session_state._review_source = name.strip()
     st.session_state._review_known_cols = set(roles)
     st.session_state._review_baseline = _assignments()
-    st.toast(f"Saved to {code_span(name.strip())} {happy_emoji}")
+    st.session_state._review_toast = f"Saved to {code_span(name.strip())} {happy_emoji}"
     _close_review()
+
+
+def show_review_toast():
+    """Show the toast a review action left, once.
+
+    Review actions end with st.rerun(), and closing review can rerun the page again,
+    so a toast shown in either interrupted run unmounts unseen. The open gate shows
+    it before it stops the page; after closing, the page shows it once rendered.
+    """
+    toast = st.session_state.pop("_review_toast", "")
+    if toast:
+        st.toast(toast)
 
 
 def _close_review():
     st.session_state._review_confirmed = True
+    # Reopening starts with no row ticked.
+    st.session_state._review_picks_stale = True
     st.session_state.pop("_review_snapshot", None)
     _decision()
     st.rerun()

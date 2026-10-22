@@ -12,14 +12,14 @@ import toml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from src import analysis_config as acw
 from src import dataset_io
 from src.column_roles import NO_GROUP, code_span
-from src import analysis_config as acw
 from src.widgets.filter_widgets import selection_key
 from src.widgets.review_table_widget import (
     AUTO_DETECT,
     GROUP_HELP,
-    GROUP_SECTION,
+    ROLE_HELP,
     _group_key,
 )
 
@@ -541,41 +541,152 @@ def _tick(at, col):
     return _by_key(at, "checkbox", f"review_tick_{at.session_state['_review_file_gen']}_{col}")
 
 
-def test_create_then_assign_puts_two_ticked_rows_in_one_group(page, tmp_path):
-    """Adding a group selects it as the destination; Apply updates both selected row
-    dropdowns.
-    """
-    at = _fresh_gate(page, tmp_path)
+def _bar(at):
+    return _by_key(at, "selectbox", f"review_bulk_action_{at.session_state['_review_file_gen']}")
+
+
+def _add(at, name):
     gen = at.session_state["_review_editor_gen"]
-    _by_key(at, "text_input", f"review_group_name_{gen}").set_value("shape").run(timeout=90)
+    _by_key(at, "text_input", f"review_group_name_{gen}").set_value(name).run(timeout=90)
     _by_key(at, "button", "review_add_group").click().run(timeout=90)
 
-    assert at.session_state._review_group_names == ["shape"]
-    assert at.session_state._review_groups == {}, "Add fills nothing on its own"
-    gen = at.session_state["_review_editor_gen"]
-    assert _by_key(at, "selectbox", f"review_group_target_{gen}").value == "shape"
 
-    _tick(at, "area").check().run(timeout=90)
+def test_ticked_rows_of_any_role_are_ignored_in_one_action(page, tmp_path):
+    """The bar starts on Ignore, names the change on its button and reports it after."""
+    at = _fresh_gate(page, tmp_path)
+    _tick(at, "treatment").check().run(timeout=90)
     _tick(at, "perimeter").check().run(timeout=90)
-    _by_key(at, "button", "review_apply_group").click().run(timeout=90)
+    apply = _by_key(at, "button", "review_apply_role")
+    assert apply.label == "Ignore 2"
 
+    apply.click().run(timeout=90)
+
+    roles = at.session_state._review_roles
+    assert (roles["treatment"], roles["perimeter"], roles["area"]) == (
+        "ignore", "ignore", "numerical")
+    gen = at.session_state["_review_editor_gen"]
+    assert _by_key(at, "selectbox", f"review_role_{gen}_treatment").value == "Ignore"
+    assert _tick(at, "treatment").value is False
+    assert any("treatment" in str(t.value) and "perimeter" in str(t.value)
+               for t in at.toast), [str(t.value) for t in at.toast]
+
+
+# Streamlit shows a toast's first 104 characters and hides the rest behind "view more".
+_TOAST_SHOWN = 104
+
+
+def test_a_group_move_says_which_ticked_rows_it_skipped_and_why(page, tmp_path):
+    """Only measurements can be grouped; the toast says so before Streamlit shortens it."""
+    at = _fresh_gate(page, tmp_path)
+    _add(at, "shape")                    # empty, and the bar now points at it
+    for col in ("treatment", "area", "perimeter"):
+        _tick(at, col).check().run(timeout=90)
+    apply = _by_key(at, "button", "review_apply_group")
+    assert apply.label == "Move 2"
+
+    apply.click().run(timeout=90)
+
+    assert at.session_state._review_groups == {"area": "shape", "perimeter": "shape"}
+    assert _tick(at, "treatment").value is True
+    shown = [str(t.value)[:_TOAST_SHOWN].lower() for t in at.toast]
+    assert any("treatment" in s and "only numerical columns can be grouped" in s
+               for s in shown), shown
+
+
+def test_add_puts_the_ticked_measurements_in_the_new_group(page, tmp_path):
+    """Create takes only the ticked measurements and says which ticked rows it skipped."""
+    at = _fresh_gate(page, tmp_path)
+    for col in ("treatment", "area", "perimeter"):
+        _tick(at, col).check().run(timeout=90)
+    assert _by_key(at, "button", "review_add_group").label == "Create with 2"
+
+    _add(at, "shape")
+
+    assert at.session_state._review_group_names == ["shape"]
     assert at.session_state._review_groups == {"area": "shape", "perimeter": "shape"}
     gen = at.session_state["_review_editor_gen"]
     assert _by_key(at, "selectbox", _group_key(gen, "area", True)).value == "shape"
-    # Clear completed selections so the next assignment includes only newly ticked rows.
     assert _tick(at, "area").value is False
+    assert _tick(at, "treatment").value is True, "a row the group skipped keeps its tick"
+    shown = [str(t.value)[:_TOAST_SHOWN].lower() for t in at.toast]
+    assert any("skipped" in s and "treatment" in s for s in shown), shown
+    assert _bar(at).value == "shape"
 
 
-def test_only_a_measurement_row_offers_a_tick(page, tmp_path):
-    """A group is a measurement's to hold, so a tick anywhere else could not be acted on."""
+def test_a_group_takes_only_ticked_measurements_and_the_rest_stay_ticked(page, tmp_path):
+    at = _fresh_gate(page, tmp_path)
+    _add(at, "shape")
+    assert at.session_state._review_groups == {}, "nothing was ticked"
+    assert _bar(at).value == "shape", "Add points the bar at the new group"
+    _tick(at, "treatment").check().run(timeout=90)
+    assert _by_key(at, "button", "review_apply_group").disabled, "no measurement to move"
+    _tick(at, "area").check().run(timeout=90)
+    apply = _by_key(at, "button", "review_apply_group")
+    assert apply.label == "Move 1"
+
+    apply.click().run(timeout=90)
+
+    assert at.session_state._review_groups == {"area": "shape"}
+    assert at.session_state._review_roles["treatment"] == "categorical"
+    assert _tick(at, "area").value is False
+    assert _tick(at, "treatment").value is True, "a row the group skipped keeps its tick"
+
+
+def _rename(at, old, new):
+    gen = at.session_state["_review_editor_gen"]
+    _by_key(at, "text_input", f"review_group_rename_to_{gen}_{old}").set_value(new).run(timeout=90)
+    _by_key(at, "button", "review_group_rename").click().run(timeout=90)
+
+
+def test_the_bar_follows_a_renamed_group(page, tmp_path):
+    at = _fresh_gate(page, tmp_path)
+    _add(at, "shape")
+    _rename(at, "shape", "form")
+
+    assert at.session_state._review_group_names == ["form"]
+    assert _bar(at).value == "form"
+
+
+def test_deleting_the_bars_group_falls_back_to_ungrouping(page, tmp_path):
+    """The bar falls back to Uncategorized, never to the next group, and the toast
+    reports the delete because the group's rows may sit below the scroll area.
+    """
+    at = _fresh_gate(page, tmp_path)
+    _add(at, "shape")
+    _by_key(at, "button", "review_group_delete").click().run(timeout=90)
+
+    assert _bar(at).value == NO_GROUP
+    assert any("shape" in str(t.value) for t in at.toast), [str(t.value) for t in at.toast]
+    _tick(at, "area").check().run(timeout=90)
+    assert _by_key(at, "button", "review_apply_group").label == "Ungroup 1"
+
+
+def test_rename_and_delete_act_on_the_group_row_pick(page, tmp_path):
+    """With two groups, the ✏️ box acts on the picked one, not the first."""
+    at = _fresh_gate(page, tmp_path)
+    _add(at, "shape")
+    _add(at, "form")                     # the bar now points at form, the second group
+    _rename(at, "form", "outline")
+    assert at.session_state._review_group_names == ["shape", "outline"]
+
+    _by_key(at, "button", "review_group_delete").click().run(timeout=90)
+
+    assert at.session_state._review_group_names == ["shape"]
+
+
+def test_every_row_but_the_row_id_offers_a_tick(page, tmp_path):
+    """Ticks feed role changes as well as groups, so every other role can be selected.
+    A lock with a hover note stands in for the Row ID's tick.
+    """
     at = _fresh_gate(page, tmp_path)
     file_gen = at.session_state["_review_file_gen"]
     keys = {widget.key for widget in at.checkbox}
 
-    assert f"review_tick_{file_gen}_area" in keys
-    assert f"review_tick_{file_gen}_perimeter" in keys
-    assert f"review_tick_{file_gen}_treatment" not in keys
+    assert {f"review_tick_{file_gen}_{col}" for col in ("treatment", "area", "perimeter")} <= keys
     assert f"review_tick_{file_gen}_cell_id" not in keys
+    locks = [b for b in at.button if str(b.key).startswith("review_lock_")]
+    assert [b.key for b in locks] == ["review_lock_cell_id"]
+    assert locks[0].disabled and locks[0].help
 
 
 def test_a_tick_survives_a_correction_elsewhere_in_the_table(page, tmp_path):
@@ -632,45 +743,55 @@ def test_the_group_cell_is_rekeyed_when_the_role_flips(page, tmp_path):
     assert not promoted.proto.disabled
 
 
-def test_the_group_section_explains_itself_on_hover_not_on_a_line(page, tmp_path):
-    """Group help appears in the heading tooltip without adding a caption."""
-    at = _fresh_gate(page, tmp_path, _shape_frame().assign(nadh_t1=[1.0, 2.0, 3.0],
-                                                           nadh_t2=[4.0, 5.0, 6.0]))
-    assert at.session_state._review_group_names, "expected auto-grouping to make one"
-    heading = next((m for m in at.markdown if GROUP_SECTION in str(m.value)), None)
-    assert heading is not None, [str(m.value) for m in at.markdown]
-    assert heading.proto.help == GROUP_HELP
+def test_the_role_and_group_headers_explain_themselves_on_hover(page, tmp_path):
+    """Role and group help sit on the table headers, with no section headings above."""
+    at = _fresh_gate(page, tmp_path)
+    helps = {str(c.value): c.proto.help for c in at.caption}
+
+    assert helps.get("**Role**") == ROLE_HELP
+    assert helps.get("**Group**") == GROUP_HELP
     assert "feature pickers" in GROUP_HELP
-    assert not any("organise the pickers" in str(c.value) for c in at.caption), \
-        [str(c.value) for c in at.caption]
+    assert not any(heading in str(m.value) for m in at.markdown
+                   for heading in ("Feature group management", "Column preview"))
 
 
-def test_with_no_groups_the_section_stays_and_only_add_is_live(page, tmp_path):
-    """An empty group section stays visible with Add enabled and group-dependent controls
-    disabled.
-    """
+def test_with_no_groups_only_add_is_live(page, tmp_path):
+    """Group-dependent controls stay disabled until a group exists."""
     at = _fresh_gate(page, tmp_path)   # area/perimeter: no shared prefix, so no groups
 
     assert at.session_state._review_group_names == []
-    assert any("Feature group management" in str(m.value) for m in at.markdown), \
-        [str(m.value) for m in at.markdown]
     assert _by_key(at, "button", "review_add_group").disabled is False
     assert _by_key(at, "button", "review_group_rename").disabled is True
     assert _by_key(at, "button", "review_group_delete").disabled is True
 
 
-def test_select_all_ticks_every_measurement_and_then_clears(page, tmp_path):
-    """One Apply button handles bulk assignment."""
+def test_select_all_ticks_every_row_but_the_row_id_and_then_clears(page, tmp_path):
     at = _fresh_gate(page, tmp_path)
 
-    _by_key(at, "button", "review_select_all").click().run(timeout=90)
-    assert _tick(at, "area").value is True
-    assert _tick(at, "perimeter").value is True
-    assert _by_key(at, "button", "review_select_all").label == "Clear"
+    _by_key(at, "checkbox", "review_select_all").check().run(timeout=90)
+    assert all(_tick(at, col).value for col in ("treatment", "area", "perimeter"))
+    assert _by_key(at, "button", "review_apply_role").label == "Ignore 3"
 
-    _by_key(at, "button", "review_select_all").click().run(timeout=90)
-    assert _tick(at, "area").value is False
-    assert _by_key(at, "button", "review_select_all").label == "Select all"
+    _tick(at, "area").uncheck().run(timeout=90)
+    assert _by_key(at, "checkbox", "review_select_all").value is False
+
+    _by_key(at, "checkbox", "review_select_all").check().run(timeout=90)
+    _by_key(at, "checkbox", "review_select_all").uncheck().run(timeout=90)
+    assert not any(_tick(at, col).value for col in ("treatment", "area", "perimeter"))
+
+
+def test_select_all_ticks_a_row_that_just_stopped_being_the_row_id(page, tmp_path):
+    """No correction rerun follows the demotion, so Select all's arguments from that
+    render would still leave the old Row ID out.
+    """
+    at = _fresh_gate(page, tmp_path)
+    gen = at.session_state["_review_editor_gen"]
+    _by_key(at, "selectbox", f"review_role_{gen}_cell_id").set_value("Numerical").run(timeout=90)
+    assert at.session_state["_review_editor_gen"] == gen, "a correction rerun fired"
+
+    _by_key(at, "checkbox", "review_select_all").check().run(timeout=90)
+    assert _tick(at, "cell_id").value is True
+    assert _by_key(at, "button", "review_apply_role").label == "Ignore 4"
 
 
 # ------------------------------ picking lives in the chooser, maintenance below the table
@@ -756,10 +877,19 @@ def _save_as(at, name):
     """Type `name` into the Save-as box and press whichever button the row is showing."""
     gen = at.session_state["_review_file_gen"]
     _by_key(at, "text_input", f"review_save_as_name_{gen}").set_value(name).run(timeout=90)
-    pressed = [b for b in at.button if str(b.key).startswith(f"review_save_as_")
+    pressed = [b for b in at.button if str(b.key).startswith("review_save_as_")
                and str(b.key).endswith(str(gen))]
     assert len(pressed) == 1, [b.key for b in at.button]
     return pressed[0].click().run(timeout=90)
+
+
+def test_a_save_is_confirmed_by_a_toast(page, tmp_path):
+    at = _fresh_gate(page, tmp_path)
+
+    at = _save_as(at, "pdl1")
+
+    assert any("Saved to" in str(t.value) and "pdl1" in str(t.value) for t in at.toast), \
+        [str(t.value) for t in at.toast]
 
 
 def test_saving_over_an_existing_profile_asks_first(page, tmp_path):
@@ -1095,8 +1225,10 @@ def test_actual_page_temporary_review_exports_same_uploaded_bytes(
     """Real reader, editor, capture and executable export share the active decision."""
     import copy
     import runpy
+
     import matplotlib.pyplot as plt
     from streamlit.testing.v1 import AppTest
+
     from src import export_script
 
     raw = pd.DataFrame({"cell_id": list("abcdefgh"),

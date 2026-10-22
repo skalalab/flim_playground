@@ -277,4 +277,4 @@ def row_id_notice(roles):
     """Explain generated row numbers, or return "" when a Row ID is assigned."""
     if any(role == ROLE_ROW_ID for role in roles.values()):
         return ""
-    return "Rows will be identified by row number."
+    return "Rows will be uniquely identified by row number."

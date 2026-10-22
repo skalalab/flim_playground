@@ -1,4 +1,7 @@
 """save_config replaces the previous file only once the new one is complete on disk."""
+import sys
+from pathlib import Path
+
 import pytest
 import toml
 
@@ -38,3 +41,14 @@ def test_a_completed_save_replaces_the_file_and_leaves_nothing_else(tmp_path):
 
     assert load_config(path) == replacement
     assert _other_files(path) == []
+
+
+def test_both_config_files_sit_in_the_project_root_during_development(monkeypatch):
+    """Analysis profiles live beside config.toml, not in the repository's parent."""
+    from src import analysis_config, config
+
+    monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+    root = Path(__file__).resolve().parents[1]
+
+    assert config._get_config_path() == root / "config.toml"
+    assert analysis_config._get_analysis_config_path() == root / "analysis_config.toml"

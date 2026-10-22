@@ -45,7 +45,7 @@ def _get_analysis_config_path() -> Path:
         # The first profile save creates this file outside the app payload.
         return get_persistent_dir() / "analysis_config.toml"
     else:
-        return Path(__file__).resolve().parent.parent.parent / "analysis_config.toml"
+        return Path(__file__).resolve().parent.parent / "analysis_config.toml"
 
 # Resolved once for the current runtime.
 _ANALYSIS_CONFIG_PATH = _get_analysis_config_path()
