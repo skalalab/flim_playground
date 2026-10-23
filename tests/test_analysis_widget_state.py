@@ -51,7 +51,7 @@ def test_controls_resume_without_default_warnings(controls):
     if at.number_input:
         widget = at.number_input[0]
         widget.set_value(widget.value + widget.proto.step).run(timeout=30)
-    keys = analysis_control_keys(at.session_state.filtered_state)
+    keys = analysis_control_keys(at.session_state.to_dict())
     expected = {key: at.session_state[key] for key in keys}
 
     at.checkbox(key="review_visible").check().run(timeout=30)

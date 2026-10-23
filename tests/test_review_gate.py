@@ -713,7 +713,7 @@ def test_uploader_callback_resets_even_same_name_and_headers(acw):
 from src.widgets.review_table_widget import reset_upload_review
 st.button("Replace", on_click=reset_upload_review)
 ''')
-    for key, value in at.session_state.filtered_state.items():
+    for key, value in at.session_state.to_dict().items():
         if key.startswith("_review_"):
             reset.session_state[key] = value
     reset.run().button[0].click().run()
@@ -789,7 +789,7 @@ def test_rename_updates_both_draft_and_confirmed_snapshot_source(acw):
     acw.save_working_copy("A", {**ROLES, "Length": ROLE_NUMERICAL}, {})
     at = _click(_app(), "review_reopen")
     gen = at.session_state._review_file_gen
-    at = next(w for w in at.text_input if w.key == f"review_rename_{gen}_A").set_value("renamed").run()
+    next(w for w in at.text_input if w.key == f"review_rename_{gen}_A").set_value("renamed")  # a form field: sent with the submit
     at = _click(at, "review_rename_submit_A")
     assert at.session_state._review_source == "renamed"
     assert at.session_state._review_snapshot["_review_source"] == "renamed"
@@ -827,7 +827,7 @@ def test_group_metadata_snapshot_is_independent_and_cancel_restores_temporary_gr
         acw.save_working_copy("saved", {**ROLES, "Length": ROLE_NUMERICAL}, {}, group_names=["empty"])
     at = _click(_app(), "review_reopen")
     gen = at.session_state._review_editor_gen
-    next(w for w in at.text_input if w.key == f"review_group_name_{gen}").set_value("temporary").run()
+    next(w for w in at.text_input if w.key == f"review_group_name_{gen}").set_value("temporary")
     at = _click(at, "review_add_group")
     gen = at.session_state._review_editor_gen
     next(w for w in at.selectbox if w.key == _group_key_for_test(gen, "Area")).select("temporary").run()
@@ -835,7 +835,7 @@ def test_group_metadata_snapshot_is_independent_and_cancel_restores_temporary_gr
     expected_names = list(at.session_state._review_group_names)
     at = _click(at, "review_reopen")
     gen = at.session_state._review_editor_gen
-    next(w for w in at.text_input if w.key == f"review_group_name_{gen}").set_value("discard").run()
+    next(w for w in at.text_input if w.key == f"review_group_name_{gen}").set_value("discard")
     at = _click(at, "review_add_group")
     assert at.session_state._review_snapshot["_review_group_names"] == expected_names
     at = _click(at, "review_cancel")

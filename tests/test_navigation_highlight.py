@@ -169,7 +169,7 @@ def _analysis_page(monkeypatch, url):
 def test_online_upload_links_to_the_desktop_data_extraction(monkeypatch):
     at = _analysis_page(monkeypatch, "https://flim-playground.streamlit.app/")
     assert not any("another source" in w.label for w in at.checkbox)
-    assert "_use_data_extraction" not in at.session_state.filtered_state
+    assert "_use_data_extraction" not in at.session_state.to_dict()
     assert _INSTALL_URL in at.info[0].value
     assert at.get("file_uploader")[0].proto.label == "Upload your table"
 
@@ -177,6 +177,6 @@ def test_online_upload_links_to_the_desktop_data_extraction(monkeypatch):
 def test_full_app_upload_links_to_data_extraction(monkeypatch):
     at = _analysis_page(monkeypatch, None)
     assert not any("another source" in w.label for w in at.checkbox)
-    assert "_use_data_extraction" not in at.session_state.filtered_state
+    assert "_use_data_extraction" not in at.session_state.to_dict()
     assert "[Data Extraction](/data_extraction)" in at.info[0].value
     assert at.info[0].value.startswith("**Upload a dataset to get started**: your own table or one from ")

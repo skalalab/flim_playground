@@ -327,7 +327,7 @@ def test_a_failed_fov_blocks_export_until_it_is_fixed(tmp_path, monkeypatch):
     assert not app.exception, [e.value for e in app.exception]
     assert not list(folder.glob("single_cell_features_*.csv"))      # nothing exported
     assert LAST_EFFECT_KEY not in app.session_state                 # no celebration
-    assert [s.value for s in app.success if s.value == "✅ Success!"] == ["✅ Success!"]   # one tile, the good FOV
+    assert [(s.icon, s.value) for s in app.success if s.value == "Success!"] == [("✅", "Success!")]   # one tile, the good FOV
     summary = [e.value for e in app.error if "1 of 2" in e.value]
     assert summary and "broken" in summary[0]
     run(app)                                                        # the report outlives the tiles

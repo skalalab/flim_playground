@@ -135,6 +135,8 @@ def filters_widget(df, categorical_cols):
                     key=key,
                     on_change=normalize_mode_selection,
                     args=(key,),
+                    # Streamlit's own "Select all" would pick both sentinels too, leaving "Except: every value".
+                    select_all=False,
                     help=f'Pick the {category}s to keep, or pick "{EXCEPT_LABEL}" together with '
                          'the ones to drop to keep everything else.',
                 )

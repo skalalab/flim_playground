@@ -4,8 +4,8 @@ Streamlit 1.55 (streamlit/streamlit#13887) backslash-escapes a leading heading,
 list, or quote marker in label Markdown, so ``### **Univariate**`` renders as the
 literal text ``### Univariate``. Streamlit 1.54 unwrapped the heading instead and
 showed only the bold text. No version renders a heading inside a label, so the
-marker is dead weight on the pinned version and visible garbage on newer ones.
-The lock file pins 1.54; conda or pip installs from ``pyproject.toml`` get newer.
+marker is dead weight on 1.54 and visible garbage from 1.55 on, including the
+1.66 the lock file pins.
 """
 import re
 import sys

@@ -448,8 +448,9 @@ def _manage_row(name):
     with cols[1]:
         _rename_row(name)
     with cols[2]:
+        # Streamlit 1.63+ truncates labels in columns; this one would vanish entirely.
         if st.button("🗑️", key=f"review_arm_delete_{name}",
-                     help=f"Delete {name}", width="stretch"):
+                     help=f"Delete {name}", width="stretch", wrap=True):
             st.session_state[_DELETE_ARMED] = name
             st.session_state[_MANAGE_OPEN] = True
             st.rerun()
@@ -457,7 +458,7 @@ def _manage_row(name):
 
 def _rename_row(name):
     """Use a form so Return submits the rename before closing the popover."""
-    with st.popover("✏️", help=f"Rename {name}", width="stretch"), st.form(
+    with st.popover("✏️", help=f"Rename {name}", width="stretch", wrap=True), st.form(
             f"review_rename_form_{name}", border=False):
         # Reset unsubmitted names for a new file.
         new_name = st.text_input("Rename to", value=name,
@@ -901,16 +902,17 @@ def _buttons(df, saved_names):
               for width in ((1, 2) if kind == "save_as_new" else (1,))]
     cols = st.columns([*widths, 2])
     slots = iter(cols)
+    # Streamlit 1.63+ truncates labels in columns; wrap keeps the profile name readable.
     for kind, profile in actions:
         if kind == "use":
             with next(slots):
                 if st.button("Use for this upload", key="review_use", type="primary",
-                             width="stretch", disabled=bool(blocked)):
+                             width="stretch", wrap=True, disabled=bool(blocked)):
                     _close_review()
         elif kind == "save":
             with next(slots):
                 if st.button(f"💾 Save to {profile} & use",
-                             width="stretch", disabled=bool(blocked)):
+                             width="stretch", wrap=True, disabled=bool(blocked)):
                     _save_and_close(profile, roles, groups, names)
         elif kind == "save_as_new":
             _save_as_new(next(slots), next(slots), roles, groups, names, blocked,
@@ -960,7 +962,7 @@ def _save_as_new(button_slot, name_slot, roles, groups, names, blocked, saved_na
         # Give initial-save and overwrite-confirm actions distinct widget identities.
         if st.button("⚠️ Replace profile" if armed else "💾 Save profile as",
                      key=f"review_save_as_{'confirm' if armed else 'new'}_{_file_gen()}",
-                     width="stretch", disabled=bool(blocked),
+                     width="stretch", wrap=True, disabled=bool(blocked),
                      help=f"{len(saved_names)} of {MAX_PROFILES} profiles saved. "
                           "An existing name overwrites that profile."):
             if not armed and typed in saved_names:

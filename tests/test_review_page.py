@@ -201,7 +201,7 @@ def _plotting(tmp_path, name="p", measurements=None):
 
 def _configuration(at):
     """What the user set, as the page holds it."""
-    state = at.session_state.filtered_state
+    state = at.session_state.to_dict()
     return {key: state.get(key) for key in state if "_menu_" in key} | {
         "filter": state.get(selection_key("treatment")),
         "color": state.get("vis_encoding_color_by"),
@@ -360,13 +360,13 @@ def test_plot_style_survives_switching_analysis_modules(page, tmp_path, analysis
     assert not at.get("plotly_chart")
     assert not any(w.key == "plot_point_size" for w in at.number_input)
     for _ in range(2):
-        assert {key: at.session_state.filtered_state.get(key) for key in expected} == expected
+        assert {key: at.session_state.to_dict().get(key) for key in expected} == expected
         at.run(timeout=90)
         assert not at.exception, [e.value for e in at.exception]
 
     at = at.radio[1].set_value(method).run(timeout=90)
     assert not at.exception, [e.value for e in at.exception]
-    assert {key: at.session_state.filtered_state.get(key) for key in expected} == expected
+    assert {key: at.session_state.to_dict().get(key) for key in expected} == expected
     if method == "Phasor Plot":
         phasor = json.loads(at.get("plotly_chart")[0].proto.spec)
         assert phasor["layout"]["legend"]["font"]["size"] == 16
@@ -547,7 +547,7 @@ def _bar(at):
 
 def _add(at, name):
     gen = at.session_state["_review_editor_gen"]
-    _by_key(at, "text_input", f"review_group_name_{gen}").set_value(name).run(timeout=90)
+    _by_key(at, "text_input", f"review_group_name_{gen}").set_value(name)  # form fields reach the script with the submit
     _by_key(at, "button", "review_add_group").click().run(timeout=90)
 
 
@@ -634,7 +634,7 @@ def test_a_group_takes_only_ticked_measurements_and_the_rest_stay_ticked(page, t
 
 def _rename(at, old, new):
     gen = at.session_state["_review_editor_gen"]
-    _by_key(at, "text_input", f"review_group_rename_to_{gen}_{old}").set_value(new).run(timeout=90)
+    _by_key(at, "text_input", f"review_group_rename_to_{gen}_{old}").set_value(new)
     _by_key(at, "button", "review_group_rename").click().run(timeout=90)
 
 
@@ -920,8 +920,10 @@ def test_retyping_the_name_is_the_cancel(page, tmp_path):
     at = _save_as(at, "iris")
     assert at.session_state["_review_overwrite_armed"] == "iris"
 
-    at = _save_as(at, "iris-2")   # a free name: the row goes back to offering a plain save
+    # A free name: the row goes back to offering a plain save.
+    _by_key(at, "text_input", f"review_save_as_name_{gen}").set_value("iris-2").run(timeout=90)
     assert _by_key(at, "button", f"review_save_as_new_{gen}"), "still armed after a retype"
+    at = _save_as(at, "iris-2")
     assert acw.profile_known_columns(acw._get_profile_config("iris")) == {"species", "sepal"}
     assert "iris-2" in acw.list_profiles(), acw.list_profiles()
 
@@ -1015,7 +1017,7 @@ def test_renaming_a_profile_moves_the_working_copys_save_target(page, tmp_path):
     at = _pick(_run({"pdl1": _PDL1}, current="pdl1", path=config), "pdl1")
 
     gen = at.session_state["_review_file_gen"]
-    _by_key(at, "text_input", f"review_rename_{gen}_pdl1").set_value("pdl2").run(timeout=90)
+    _by_key(at, "text_input", f"review_rename_{gen}_pdl1").set_value("pdl2")
     _by_key(at, "button", "review_rename_submit_pdl1").click().run(timeout=90)
 
     assert acw.list_profiles() == ["pdl2"]
@@ -1258,7 +1260,7 @@ def test_actual_page_temporary_review_exports_same_uploaded_bytes(
     at = AppTest.from_file(_PAGE).run(timeout=90)
     assert not at.exception, [e.value for e in at.exception]
     # Uploads enter the real gate without choosing a source.
-    assert at.session_state.filtered_state.get("_review_confirmed") is True, [m.value for m in at.error]
+    assert at.session_state.to_dict().get("_review_confirmed") is True, [m.value for m in at.error]
     at = _pencil(at)
     def role(column, value):
         nonlocal at
@@ -1347,7 +1349,7 @@ def test_same_upload_values_revalidate_and_clear_reupload_discards_temporary_rol
     at = _fresh_render(at.run(timeout=90))
     assert at.session_state.vis_df is None
     assert at.session_state.analysis_columns is None
-    assert "_review_roles" not in at.session_state.filtered_state
+    assert "_review_roles" not in at.session_state.to_dict()
     assert at.info[0].value.startswith("**Upload a dataset to get started**")
     page["frame"] = _frame().assign(Length=[1., 2., 3., 4.])
     at.run(timeout=90)
@@ -1383,7 +1385,7 @@ def test_clearing_a_confirmed_temporary_decision_discards_it_before_reupload(pag
     assert at.session_state._review_roles["Length"] == "categorical"
     page["frame"] = None
     at = _fresh_render(at.run(timeout=90))
-    assert "_review_roles" not in at.session_state.filtered_state
+    assert "_review_roles" not in at.session_state.to_dict()
     assert at.session_state.vis_df is None
     assert not at.get("download_button")
     page["frame"] = original

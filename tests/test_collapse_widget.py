@@ -137,13 +137,13 @@ def test_feature_comparison_has_one_direct_three_way_selector(page):
     at = page()
     group = at.get("button_group")[0]
     assert group.label == "Point encoding"
-    assert [option.content for option in group.options] == ["Opacity", "Subcolor", "Shape"]
+    assert group.options == ["Opacity", "Subcolor", "Shape"]
     assert group.value == "shape"
     assert "Shape by" in _labels(at)
     assert not {"Subcolor by", "Opacity by"}.intersection(_labels(at))
 
     for mode in ("subcolor", "opacity", "shape"):
-        at.get("button_group")[0].set_value([mode]).run(timeout=90)
+        at.get("button_group")[0].set_value(mode).run(timeout=90)
         assert not at.exception
         assert set(_labels(at)).intersection({"Shape by", "Subcolor by", "Opacity by"}) == {
             f"{mode.title()} by"}
@@ -153,7 +153,7 @@ def test_feature_comparison_has_one_direct_three_way_selector(page):
     at.run(timeout=90)
     assert not at.exception
     group = at.get("button_group")[0]
-    assert [option.content for option in group.options] == ["Opacity", "Shape"]
+    assert group.options == ["Opacity", "Shape"]
     assert group.value == "shape"
     assert set(_labels(at)).intersection({"Shape by", "Subcolor by", "Opacity by"}) == {
         "Shape by"}
@@ -185,7 +185,7 @@ def _colour(at):
 
 
 def _point_mode(at, mode):
-    at.get("button_group")[0].set_value([mode]).run(timeout=90)
+    at.get("button_group")[0].set_value(mode).run(timeout=90)
     assert not at.exception
     return next(box for box in at.selectbox if box.label == f"{mode.title()} by")
 
@@ -208,7 +208,7 @@ def test_switches_preserve_the_latest_column_and_clear_stays_clear(page):
 def test_clicking_the_active_segment_keeps_the_last_mode(page):
     at = page()
     _point_mode(at, "opacity")
-    at.get("button_group")[0].set_value([]).run(timeout=90)
+    at.get("button_group")[0].set_value(None).run(timeout=90)
     assert not at.exception
     assert at.get("button_group")[0].value == "opacity"
     assert "Opacity by" in _labels(at)

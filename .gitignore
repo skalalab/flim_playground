@@ -26,3 +26,6 @@ htmlcov/
 
 # Subagent-driven-development scratch (uncommitted session state)
 .superpowers/
+
+# Impeccable design-critique snapshots
+.impeccable/

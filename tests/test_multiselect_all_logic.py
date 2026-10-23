@@ -74,3 +74,27 @@ def test_already_normalized_selection_is_left_untouched():
     normalize_mode_selection(key)
     normalize_mode_selection(key)
     assert st.session_state[key] == [EXCEPT_LABEL, "feat1"]
+
+
+# --- Streamlit's own "Select all" stays off where the sentinels are options ---
+
+def _sentinel_pickers_app():
+    import pandas as pd
+
+    from src.widgets.filter_widgets import filters_widget
+    from src.widgets.selection_widgets import multi_feature_select_widget
+
+    filters_widget(pd.DataFrame({"treatment": ["A", "B", "C"]}), ["treatment"])
+    multi_feature_select_widget({"Lifetime": ["t1", "t2", "t3"]})
+
+
+def test_sentinel_pickers_hide_streamlits_select_all():
+    # It picks "All", the values and "Except:" at once; the callback then keeps
+    # "Except: every value", so the filter drops every row.
+    from streamlit.testing.v1 import AppTest
+
+    at = AppTest.from_function(_sentinel_pickers_app).run(timeout=30)
+    assert not at.exception, [e.value for e in at.exception]
+    pickers = [ms for ms in at.multiselect if ALL_LABEL in ms.options]
+    assert len(pickers) == 2
+    assert [ms.proto.select_all for ms in pickers] == [0, 0]

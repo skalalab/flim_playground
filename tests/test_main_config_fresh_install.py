@@ -39,7 +39,7 @@ def test_a_profile_name_the_config_file_cannot_store_is_refused(tmp_path, monkey
 
     boxes = [w for w in at.text_input if w.key == "new_extraction_profile_name"]
     assert boxes, [w.key for w in at.text_input]
-    boxes[0].set_value("run\\2026").run(timeout=60)
+    boxes[0].set_value("run\\2026")  # a form field: it reaches the script with the submit
     create = [b for b in at.button if "Create" in str(b.label)]
     assert create, [str(b.label) for b in at.button]
     at = create[0].click().run(timeout=60)
@@ -95,6 +95,8 @@ def test_deleting_a_profile_switches_the_selector_to_the_remaining_one(tmp_path,
 
     monkeypatch.setattr(config, "_CONFIG_PATH", tmp_path / "config.toml")
     at = AppTest.from_file(_PAGE).run(timeout=60)
+    # The only profile cannot be deleted, so save a second one first.
+    at = _create_profile(at, "experiment-A")
     at = _create_profile(at, "experiment-B")
     before = _profile_selector(at)
     assert before.value == "experiment-B"
@@ -103,7 +105,7 @@ def test_deleting_a_profile_switches_the_selector_to_the_remaining_one(tmp_path,
 
     assert not at.exception, [e.value for e in at.exception]
     after = _profile_selector(at)
-    assert after.value == "default"
+    assert after.value == "experiment-A"
     assert after.key != before.key, "selector kept its identity, so a browser would restore the deleted choice"
-    assert config.list_profiles() == ["default"]
-    assert config.get_current_profile_name() == "default"
+    assert config.list_profiles() == ["experiment-A"]
+    assert config.get_current_profile_name() == "experiment-A"

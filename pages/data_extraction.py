@@ -290,7 +290,8 @@ def render_source_controls(ctx):
     for index, (channel_key, channel_name) in enumerate(ctx.channel_names.items()):
         with checkbox_cols[index]:
             # A False default suppresses the duplication warning once the key is restored.
-            has_channel = st.checkbox(f"has {channel_name}", value=bool(control_default(st.session_state, f"has_channel_{channel_key}", True)), key=f"has_channel_{channel_key}")
+            # wrap: Streamlit 1.63+ truncates labels in columns, which would hide channel names.
+            has_channel = st.checkbox(f"has {channel_name}", value=bool(control_default(st.session_state, f"has_channel_{channel_key}", True)), key=f"has_channel_{channel_key}", wrap=True)
             if has_channel:
                 with st.expander(f"{channel_name}: {ctx.imaging_modalities[channel_key]}", expanded=False):
                     st.write(f"Feature extractors: {', '.join(ctx.selected_ch_feature_extractors[channel_key])}")

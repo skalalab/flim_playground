@@ -346,7 +346,7 @@ requires-dist = [
     { name = "sdtfile", specifier = "==2025.3.25" },
     { name = "seaborn", specifier = "==0.13.2" },
     { name = "six", specifier = "==1.17.0" },
-    { name = "streamlit", specifier = ">=1.54.0" },
+    { name = "streamlit", specifier = ">=1.63.0" },
     { name = "streamlit-sortables", specifier = ">=0.3.1" },
     { name = "threadpoolctl", specifier = "==3.6.0" },
     { name = "tifffile", specifier = ">=2025.3.30" },

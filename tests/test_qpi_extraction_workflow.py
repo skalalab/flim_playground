@@ -203,7 +203,7 @@ def test_step1_picks_one_qpi_plane_for_calibration_and_extraction(tmp_path, monk
     app = _open_step1(folder)
     picker = app.selectbox(key="QPI_channel_selectbox")
     assert (picker.label, list(picker.options)) == ("Select the channel for QPI image", ["1", "2", "3", "4"])
-    assert [image.proto.imgs[0].caption for image in app.get("imgs")] == ["ch 1 \u2705", "ch 2", "ch 3", "ch 4"]   # no photon totals
+    assert [image.proto.imgs[0].caption for image in app.get("image")] == ["ch 1 \u2705", "ch 2", "ch 3", "ch 4"]   # no photon totals
     picker.set_value(2).run(timeout=60)
     assert _export_metadata(app)["QPI_channel"].eq(1).all()
     # Step 2 corrects plane 2, the 2D fixture itself, so its largest cell (400 pixels) weighs what the fixture's does.
@@ -232,7 +232,7 @@ def test_flim_detector_picker_keeps_its_label_and_photon_captions(tmp_path, monk
     app = _open_step1(folder)
     picker = app.selectbox(key="ch1_channel_selectbox")
     assert (picker.label, list(picker.options)) == ("Select the channel for ch1 decay", ["1", "2", "3"])
-    assert [image.proto.imgs[0].caption for image in app.get("imgs")] == [
+    assert [image.proto.imgs[0].caption for image in app.get("image")] == [
         "ch 1 \u2705 \u2014 6 photons", "ch 2 \u2014 12 photons", "ch 3 \u2014 18 photons"]
     picker.set_value(2).run(timeout=60)
     assert _export_metadata(app)["ch1_channel"].eq(1).all()

@@ -228,11 +228,14 @@ def _encoding_columns(slots, merged_point_encoding):
             min-width: 0;
         }
         .st-key-vis_encoding_point_selector [data-testid="stButtonGroup"]
-        [data-baseweb="button-group"][role="radiogroup"] {
+        [role="radiogroup"] {
             flex-wrap: nowrap;
         }
+        /* Streamlit 1.54 draws BaseWeb segment buttons; 1.66 draws React Aria ones. */
         .st-key-vis_encoding_point_selector [data-testid="stButtonGroup"]
-        [data-testid^="stBaseButton-segmented_control"] {
+        [data-testid^="stBaseButton-segmented_control"],
+        .st-key-vis_encoding_point_selector [data-testid="stButtonGroup"]
+        [data-variant="segmented_control"] {
             font-size: 0.875rem;
             height: 1.75rem;
             min-height: 1.75rem;

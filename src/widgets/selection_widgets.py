@@ -185,6 +185,8 @@ def multi_feature_select_widget(feature_groups_dict, data_extraction=True, n_per
                     key=key,
                     on_change=normalize_mode_selection,
                     args=(key,),
+                    # Streamlit's own "Select all" would pick both sentinels too, leaving "Except: every feature".
+                    select_all=False,
                     help=f'Select one or more columns corresponding to {feature_group} features. '
                          f'Pick "{EXCEPT_LABEL}" together with a few to use all the others.'
                 )

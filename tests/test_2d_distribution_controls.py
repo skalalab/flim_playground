@@ -75,7 +75,7 @@ def test_fd_renders_four_aligned_slots_and_only_opacity_shape_modes():
     assert columns[0].selectbox(key=SEPARATE_KEY).label == "Separate by"
     assert columns[1].multiselect(key=vw.COLOR_BY_KEY).label == "Color by"
     assert columns[2].selectbox(key=vw.COLLAPSE_BY_KEY).label == "Collapse by"
-    assert [option.content for option in columns[3].button_group(key=MODE_KEY).options] == [
+    assert columns[3].button_group(key=MODE_KEY).options == [
         "Opacity", "Shape"]
     assert columns[3].selectbox(key=vw.PICKER_COL_KEY).label == "Shape by"
     assert {box.label for box in at.selectbox} == {"Method", "Separate by", "Collapse by", "Shape by"}
@@ -177,7 +177,7 @@ def test_fc_subcolor_and_fd_modes_preserve_independent_intent():
     run(at)
     at.selectbox(key="method").set_value("FC")
     run(at)
-    assert [option.content for option in at.button_group(key=vw.POINT_MODE_KEY).options] == [
+    assert at.button_group(key=vw.POINT_MODE_KEY).options == [
         "Opacity", "Subcolor", "Shape"]
     assert at.button_group(key=vw.POINT_MODE_KEY).value == "subcolor"
     assert at.session_state.result[4] == "patient"

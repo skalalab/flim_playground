@@ -24,31 +24,6 @@ def isolated_config_paths(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _single_selection_button_group_indices(monkeypatch):
-    """Bridge Streamlit 1.54 AppTest's scalar single-select serialization.
-
-    A real segmented control stores a scalar, while AppTest's ButtonGroup.indices
-    assumes a list (iterating a string character by character on the next rerun).
-    Normalize only that scalar case; native widgets and multi-select tests are
-    unchanged. Remove when Streamlit's test driver supports single selection.
-    """
-    from streamlit.proto.ButtonGroup_pb2 import ButtonGroup as ButtonGroupProto
-    from streamlit.testing.v1.element_tree import ButtonGroup
-
-    original = ButtonGroup.indices.fget
-
-    def indices(group):
-        value = group.value
-        if (group.proto.click_mode == ButtonGroupProto.SINGLE_SELECT
-                and not isinstance(value, list)):
-            return ([] if value is None else
-                    [group.options.index(group.format_func(value))])
-        return original(group)
-
-    monkeypatch.setattr(ButtonGroup, "indices", property(indices))
-
-
-@pytest.fixture(autouse=True)
 def _forget_bare_mode_containers():
     """Clear form state left on Streamlit generators by bare-mode widget rendering.
 

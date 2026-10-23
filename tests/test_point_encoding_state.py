@@ -112,7 +112,7 @@ def test_native_mode_changes_reuse_the_column_and_relabel_color_immediately():
         ("opacity", (["group"], "patient", None, None, None, None)),
         ("shape", (["group"], None, "patient", None, None, None)),
     ]:
-        at.get("button_group")[0].set_value([mode])
+        at.get("button_group")[0].set_value(mode)
         _run_widget(at)
         assert at.session_state["test_result"] == expected
         assert at.selectbox(key=vw.PICKER_COL_KEY).value == "patient"
@@ -123,7 +123,7 @@ def test_native_mode_changes_reuse_the_column_and_relabel_color_immediately():
 def test_clicking_the_active_segment_retains_its_mode_and_column():
     at = _new_widget({vw.AS_COLOUR_KEY: True, vw.PICKER_COL_KEY: "patient"})
     assert len(at.get("button_group")) == 1
-    at.get("button_group")[0].set_value([])
+    at.get("button_group")[0].set_value(None)
     _run_widget(at)
     assert at.session_state["vis_encoding_point_mode"] == "subcolor"
     assert at.session_state["test_result"] == (["group"], None, None, None, "patient", None)
