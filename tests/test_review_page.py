@@ -212,6 +212,12 @@ def _pencil(at):
     return _by_key(at, "button", "review_reopen").click().run(timeout=90)
 
 
+def _used(at):
+    """Enter analysis: Use closes the editor a file without an exact profile opens with."""
+    assert not at.exception, [e.value for e in at.exception]
+    return _fresh_render(_by_key(at, "button", "review_use").click().run(timeout=90))
+
+
 def _fresh_render(at):
     """Render current state after an already executed real-button handler.
 
@@ -545,6 +551,12 @@ def _bar(at):
     return _by_key(at, "selectbox", f"review_bulk_action_{at.session_state['_review_file_gen']}")
 
 
+def _bulk_role(at, role):
+    """Pick the role row's role; it starts with none so ticks alone change nothing."""
+    gen = at.session_state["_review_file_gen"]
+    return _by_key(at, "selectbox", f"review_bulk_role_{gen}").select(role).run(timeout=90)
+
+
 def _add(at, name):
     gen = at.session_state["_review_editor_gen"]
     _by_key(at, "text_input", f"review_group_name_{gen}").set_value(name)  # form fields reach the script with the submit
@@ -552,12 +564,16 @@ def _add(at, name):
 
 
 def test_ticked_rows_of_any_role_are_ignored_in_one_action(page, tmp_path):
-    """The bar starts on Ignore, names the change on its button and reports it after."""
+    """The bar starts with no role, names the chosen change and reports it after."""
     at = _fresh_gate(page, tmp_path)
     _tick(at, "treatment").check().run(timeout=90)
     _tick(at, "perimeter").check().run(timeout=90)
     apply = _by_key(at, "button", "review_apply_role")
-    assert apply.label == "Ignore 2"
+    assert (apply.label, apply.disabled) == ("Choose a role", True)
+
+    _bulk_role(at, "ignore")
+    apply = _by_key(at, "button", "review_apply_role")
+    assert (apply.label, apply.disabled) == ("Ignore 2", False)
 
     apply.click().run(timeout=90)
 
@@ -770,6 +786,7 @@ def test_select_all_ticks_every_row_but_the_row_id_and_then_clears(page, tmp_pat
 
     _by_key(at, "checkbox", "review_select_all").check().run(timeout=90)
     assert all(_tick(at, col).value for col in ("treatment", "area", "perimeter"))
+    _bulk_role(at, "ignore")
     assert _by_key(at, "button", "review_apply_role").label == "Ignore 3"
 
     _tick(at, "area").uncheck().run(timeout=90)
@@ -791,6 +808,7 @@ def test_select_all_ticks_a_row_that_just_stopped_being_the_row_id(page, tmp_pat
 
     _by_key(at, "checkbox", "review_select_all").check().run(timeout=90)
     assert _tick(at, "cell_id").value is True
+    _bulk_role(at, "ignore")
     assert _by_key(at, "button", "review_apply_role").label == "Ignore 4"
 
 
@@ -811,7 +829,7 @@ _PARTIAL = {"unique_row_id_col": "", "categorical_cols": ["treatment", "species"
 
 def test_the_profiles_panel_exists_only_inside_the_gate(page, tmp_path):
     """Profile management is visible during review and hidden beside the plot."""
-    at = _run({"pdl1": _PDL1}, current="pdl1", path=tmp_path / "analysis_config.toml")
+    at = _used(_run({"pdl1": _PDL1}, current="pdl1", path=tmp_path / "analysis_config.toml"))
     assert not [e for e in at.expander if "Manage saved profiles" in e.label], \
         [e.label for e in at.expander]                       # unpicked: chooser only
 
@@ -1074,8 +1092,8 @@ def test_what_the_reader_says_about_the_file_is_shown_while_the_gate_is_open(pag
                        "'ReadMe', was read ('Data' skipped).")
     at = _run(profiles={}, current="", path=tmp_path / "analysis_config.toml")
 
-    # Reader warnings remain visible during immediate analysis and review.
-    assert [b for b in at.button if b.key == "review_reopen"]
+    # Reader warnings remain visible in the editor a new file opens with.
+    assert [b for b in at.button if b.key == "review_use"]
     assert [m for m in at.markdown if "ReadMe" in str(m.value)], \
         f"reader warning not rendered on the chooser: {[str(m.value) for m in at.markdown][:6]}"
     at = _pick(at, AUTO_DETECT)
@@ -1151,9 +1169,8 @@ def test_dataset_rejections_keep_errors_outside_the_warning_section(page, monkey
 
     assert not at.exception, [e.value for e in at.exception]
     assert at.session_state.vis_df is None
-    assert len(at.expander) == 1
-    section = at.expander[0]
-    assert section.label == "Warning:"
+    # The open editor's note is an expander too; exactly one is the warning section.
+    [section] = [e for e in at.expander if e.label == "Warning:"]
     assert section.proto.expanded is True
     warnings = " ".join(m.value for m in section.markdown)
     assert "only the first sheet" in warnings
@@ -1175,7 +1192,7 @@ def test_upload_only_edits_survive_reopen_cancel_with_analysis_controls(page, tm
     if saved_source:
         at = _plotting(tmp_path, measurements=["Area", "Length"])
     else:
-        at = _run({}, path=config)
+        at = _used(_run({}, path=config))
         next(w for w in at.selectbox if "_menu_" in str(w.key)).select("Area").run(timeout=90)
         _by_key(at, "multiselect", selection_key("treatment")).set_value(["DMSO"]).run(timeout=90)
     before_controls = _configuration(at)
@@ -1259,9 +1276,8 @@ def test_actual_page_temporary_review_exports_same_uploaded_bytes(
     monkeypatch.setattr(export_script, "generate_script", capture)
     at = AppTest.from_file(_PAGE).run(timeout=90)
     assert not at.exception, [e.value for e in at.exception]
-    # Uploads enter the real gate without choosing a source.
-    assert at.session_state.to_dict().get("_review_confirmed") is True, [m.value for m in at.error]
-    at = _pencil(at)
+    # A file with no saved profile opens the real editor on its guess.
+    assert not at.session_state.to_dict().get("_review_confirmed"), [m.value for m in at.error]
     def role(column, value):
         nonlocal at
         gen = at.session_state._review_editor_gen
@@ -1331,7 +1347,7 @@ def test_actual_page_temporary_review_exports_same_uploaded_bytes(
 
 def test_same_upload_values_revalidate_and_clear_reupload_discards_temporary_roles(page, tmp_path):
     page["frame"]["Length"] = [1., 2., 3., 4.]
-    at = _run({}, path=tmp_path / "analysis_config.toml")
+    at = _used(_run({}, path=tmp_path / "analysis_config.toml"))
     assert at.session_state._review_confirmed
     at = _pencil(at)
     gen = at.session_state._review_editor_gen
@@ -1353,16 +1369,14 @@ def test_same_upload_values_revalidate_and_clear_reupload_discards_temporary_rol
     assert at.info[0].value.startswith("**Upload a dataset to get started**")
     page["frame"] = _frame().assign(Length=[1., 2., 3., 4.])
     at.run(timeout=90)
-    assert not at.exception
-    assert at.session_state._review_confirmed
+    _assert_review_only(at)
     assert at.session_state._review_roles["Length"] == "numerical"
 
 
 def test_new_extraction_channel_schema_uses_inference_without_profile(page, tmp_path):
     g, s = "Lifetime fit free_new: G(1st)", "Lifetime fit free_new: S(1st)"
     page["frame"] = _frame().assign(**{g: [.2, .3, .4, .5], s: [.1, .2, .3, .4]})
-    at = _run({}, path=tmp_path / "analysis_config.toml")
-    assert not at.exception
+    at = _used(_run({}, path=tmp_path / "analysis_config.toml"))
     assert at.session_state._review_confirmed
     assert at.session_state.phasor_available
     assert at.session_state._review_groups[g] == "Lifetime fit free_new"
@@ -1377,7 +1391,7 @@ def test_new_extraction_channel_schema_uses_inference_without_profile(page, tmp_
 def test_clearing_a_confirmed_temporary_decision_discards_it_before_reupload(page, tmp_path):
     page["frame"] = _frame().assign(Length=[1., 2., 3., 4.])
     original = page["frame"].copy()
-    at = _pencil(_run({}, path=tmp_path / "analysis_config.toml"))
+    at = _pencil(_used(_run({}, path=tmp_path / "analysis_config.toml")))
     gen = at.session_state._review_editor_gen
     _by_key(at, "selectbox", f"review_role_{gen}_Length").select("Categorical").run(timeout=90)
     at = _fresh_render(_by_key(at, "button", "review_use").click().run(timeout=90))
@@ -1390,8 +1404,7 @@ def test_clearing_a_confirmed_temporary_decision_discards_it_before_reupload(pag
     assert not at.get("download_button")
     page["frame"] = original
     at.run(timeout=90)
-    assert not at.exception
-    assert at.session_state._review_confirmed
+    _assert_review_only(at)
     assert at.session_state._review_roles["Length"] == "numerical"
 
 

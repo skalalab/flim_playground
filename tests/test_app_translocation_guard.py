@@ -111,7 +111,7 @@ def test_version_label_renders_inside_the_menu_bar(monkeypatch):
     # Keep the version in the navigation bar to avoid an extra vertical gap.
     assert "background-color:#f0f0f0" in bars[0]
     assert "Data Analysis" in bars[0], "nav links must survive the flex change"
-    assert "v9.9.9-test</span></div>" in bars[0], "label closes the bar div"
+    assert "v9.9.9-test</span></nav>" in bars[0], "label closes the nav bar"
 
 
 def test_translocated_launch_shows_no_version(monkeypatch):

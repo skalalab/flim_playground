@@ -62,8 +62,10 @@ _WIDE_ROLES = {"cell_id": ROLE_ROW_ID, "treatment": ROLE_CATEGORICAL,
                "nadh_t1": ROLE_NUMERICAL, "nadh_t2": ROLE_NUMERICAL}
 
 
-def test_no_profile_uses_inference_immediately(acw):
-    assert gate.review_gate(_Upload("pdl1_rep1.csv"), _frame())["profile"] is None
+def test_no_profile_opens_the_editor_on_the_guess(acw):
+    """Only an exact saved profile skips review; a guess is shown before any plot."""
+    assert gate.review_gate(_Upload("pdl1_rep1.csv"), _frame()) is None
+    assert gate._applied_profile() is None
     assert not acw._ANALYSIS_CONFIG_PATH.exists()
 
 
@@ -84,19 +86,22 @@ def test_a_file_with_one_extra_column_is_not_an_exact_match(acw):
     """Containment is deliberately not enough: auto-applying would drop a measurement."""
     acw.save_working_copy("pdl1", ROLES, {})
     wider = _frame().assign(Perimeter=[10.0, 11.0, 12.0])
-    assert gate.review_gate(_Upload("pdl1_rep3.csv"), wider)["profile"] is None
+    assert gate.review_gate(_Upload("pdl1_rep3.csv"), wider) is None
+    assert gate._applied_profile() is None
 
 
 def test_an_empty_profile_never_claims_a_file(acw):
     acw._get_profile_config("blank")
     acw._save_profile_config("blank", {})
-    assert gate.review_gate(_Upload("anything.csv"), _frame())["profile"] is None
+    assert gate.review_gate(_Upload("anything.csv"), _frame()) is None
+    assert gate._applied_profile() is None
 
 
 def test_multiple_exact_profiles_use_inference(acw):
     acw.save_working_copy("pdl1", ROLES, {})
     acw.save_working_copy("pdl1-again", ROLES, {})
-    assert gate.review_gate(_Upload("pdl1_rep2.csv"), _frame())["profile"] is None
+    assert gate.review_gate(_Upload("pdl1_rep2.csv"), _frame()) is None
+    assert gate._applied_profile() is None
 
 
 def test_the_decision_survives_a_rerun_of_the_same_file(acw):
@@ -161,11 +166,13 @@ def test_saving_inside_the_gate_does_not_slam_it_shut(acw):
 
 
 def test_a_confirmed_decision_reports_auto_detect_as_no_profile(acw):
+    gate.review_gate(_Upload("pdl1_rep1.csv"), _frame())
+    gate.st.session_state._review_confirmed = True          # Use for this upload
     assert gate.review_gate(_Upload("pdl1_rep1.csv"), _frame())["profile"] is None
 
 
 def test_a_profile_just_saved_is_the_one_the_summary_names(acw):
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     gen = at.session_state._review_file_gen
     next(w for w in at.text_input if w.key == f"review_save_as_name_{gen}").set_value("step6-check").run()
     at = _click(at, f"review_save_as_new_{gen}")
@@ -176,11 +183,11 @@ def test_a_profile_just_saved_is_the_one_the_summary_names(acw):
 # ------------------------------------------------------ the applied-profile summary
 
 
-def _summary(monkeypatch, decision):
+def _summary(monkeypatch, decision, loaded=None):
     """Capture visible summary text after removing CSS and markup."""
     shown = []
     monkeypatch.setattr(gate.st, "markdown", lambda msg, **k: shown.append(msg))
-    gate.applied_summary(decision)
+    gate.applied_summary(decision, loaded)
     without_css = re.sub(r"<style>.*?</style>", "", " ".join(shown), flags=re.DOTALL)
     return re.sub(r"<[^>]+>", "", without_css).replace("&nbsp;", " ")
 
@@ -203,13 +210,24 @@ def test_the_summary_leaves_out_the_roles_no_column_holds(acw, monkeypatch):
     assert "0 " not in shown and "FOV" not in shown and "Ignore" not in shown
 
 
+def test_the_summary_counts_only_columns_that_loaded(acw, monkeypatch):
+    """A mostly-text column marked Numerical is left out on load, so it is not counted."""
+    decision = {"roles": {"cell_id": ROLE_ROW_ID, "treatment": ROLE_CATEGORICAL,
+                          "Area": ROLE_NUMERICAL, "lod": ROLE_NUMERICAL,
+                          "notes": ROLE_IGNORE}}
+    shown = _summary(monkeypatch, decision, loaded=["cell_id", "treatment", "Area"])
+    assert "1 Categorical" in shown and "1 Numerical" in shown and "1 Ignore" in shown, shown
+
+
 def test_the_summary_calls_an_unsaved_working_copy_auto_detected(acw, monkeypatch):
+    gate.review_gate(_Upload("iris.csv"), _frame())
+    gate.st.session_state._review_confirmed = True          # Use for this upload
     shown = _summary(monkeypatch, gate.review_gate(_Upload("iris.csv"), _frame()))
     assert "Auto-detected" in shown
 
 
 def test_the_summary_reports_the_name_a_save_just_gave(acw):
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     gen = at.session_state._review_file_gen
     next(w for w in at.text_input if w.key == f"review_save_as_name_{gen}").set_value("step6-check").run()
     at = _click(at, f"review_save_as_new_{gen}")
@@ -263,7 +281,7 @@ def test_every_editor_offers_use_without_saving():
 def test_reopening_an_exact_match_offers_optional_profiles(acw):
     """Reopening retains the draft, offers optional profiles, and enables Cancel."""
     acw.save_working_copy("pdl1", ROLES, {})
-    at = _click(_app(_frame().to_dict("list")), "review_reopen")
+    at = _click(_used(_frame().to_dict("list")), "review_reopen")
 
     assert at.session_state._review_confirmed is False
     assert {"review_pick_pdl1", "review_use", "review_cancel"} <= {b.key for b in at.button}
@@ -272,7 +290,7 @@ def test_reopening_an_exact_match_offers_optional_profiles(acw):
 def test_partial_profile_is_optional_on_reopen(acw):
     acw.save_working_copy("pdl1", ROLES, {})
     wider = _frame().assign(Perimeter=[10.0, 11.0, 12.0])
-    at = _click(_app(wider.to_dict("list")), "review_reopen")
+    at = _click(_used(wider.to_dict("list")), "review_reopen")
 
     assert at.session_state._review_source == gate.AUTO_DETECT
     assert {"review_pick_pdl1", "review_use", "review_cancel"} <= {b.key for b in at.button}
@@ -281,7 +299,7 @@ def test_partial_profile_is_optional_on_reopen(acw):
 def test_a_new_file_forgets_that_the_last_one_was_reopened(acw):
     """Otherwise the second file's gate offers a Cancel that has nothing to cancel to."""
     acw.save_working_copy("pdl1", ROLES, {})
-    at = _click(_app(_frame().to_dict("list")), "review_reopen")
+    at = _click(_used(_frame().to_dict("list")), "review_reopen")
 
     at.session_state.data = {"note": ["a", "b"]}
     at.run()
@@ -579,7 +597,7 @@ def test_the_gate_reads_the_config_once_per_rerun(acw, count_config_reads):
     near = dict(ROLES)
     near.pop("Area")
     acw.save_working_copy("pdl1", near, {})
-    assert gate.review_gate(_Upload("rep1.csv"), _frame()) is not None
+    assert gate.review_gate(_Upload("rep1.csv"), _frame()) is None
     gate.reopen_gate()
     gate._load_working_copy(_frame(), gate.AUTO_DETECT)      # a pick, so all of it draws
 
@@ -634,6 +652,12 @@ def _app(data=None):
     return at
 
 
+def _used(data=None):
+    """Enter analysis: Use closes the editor a file without an exact profile opens with."""
+    at = _app(data)
+    return _click(at, "review_use") if any(b.key == "review_use" for b in at.button) else at
+
+
 def _click(at, key):
     next(b for b in at.button if b.key == key).click().run()
     assert not at.exception, [e.value for e in at.exception]
@@ -662,13 +686,23 @@ def _edit(at, column, role):
     return next(w for w in at.selectbox if w.key == f"review_role_{gen}_{column}").select(role).run()
 
 
+def _html(at):
+    """Bodies of the st.html elements, where the editor's headings render."""
+    return [element.proto.body for element in at.get("html")]
+
+
+def _intro(at):
+    """Text of the editor's opening note."""
+    return next(e for e in at.expander if e.label == gate._INTRO_LABEL).markdown[0].value
+
+
 @pytest.mark.parametrize("source", [False, True])
 def test_temporary_use_then_cancel_restores_complete_confirmed_copy(acw, source):
     if source:
         acw.save_working_copy("saved", {**ROLES, "Length": ROLE_NUMERICAL},
                               {"Area": "shape"}, group_names=["shape", "empty"])
     before = acw._ANALYSIS_CONFIG_PATH.read_bytes() if source else None
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     at = _edit(at, "cell_id", "Ignore")
     at = _edit(at, "Length", "Ignore")
     at = _click(at, "review_use")
@@ -692,8 +726,10 @@ def test_temporary_use_then_cancel_restores_complete_confirmed_copy(acw, source)
 
 def test_optional_reapply_current_saved_profile_discards_draft(acw):
     acw.save_working_copy("Auto-detect", {**ROLES, "Length": ROLE_NUMERICAL}, {})
-    at = _click(_app(), "review_reopen")
-    assert any("Apply a saved profile (optional)" in m.value for m in at.markdown)
+    at = _click(_used(), "review_reopen")
+    assert any("<h2" in body and "Apply a saved profile (optional)" in body
+               for body in _html(at))
+    assert "**Apply a saved profile**" in _intro(at)
     at = _edit(at, "Length", "Ignore")
     at = _click(at, "review_pick_Auto-detect")
     assert at.session_state._review_roles["Length"] == ROLE_NUMERICAL
@@ -703,7 +739,7 @@ def test_optional_reapply_current_saved_profile_discards_draft(acw):
 
 
 def test_uploader_callback_resets_even_same_name_and_headers(acw):
-    at = _app()
+    at = _used()
     at = _click(at, "review_reopen")
     at = _edit(at, "Length", "Ignore")
     at = _click(at, "review_use")
@@ -727,7 +763,7 @@ def test_legacy_ungrouped_exact_source_is_clean_after_noop_use(acw, group):
     acw._save_profile_config("legacy", {
         "unique_row_id_col": "cell_id", "categorical_cols": ["treatment"],
         "all_numerical_features": ["Area", "Length"], "feature_groups": {group: ["Area"]}})
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     at = _click(at, "review_use")
     assert any("<b>legacy</b>" in m.value for m in at.markdown)
     assert not any("edited for this upload" in m.value for m in at.markdown)
@@ -735,7 +771,7 @@ def test_legacy_ungrouped_exact_source_is_clean_after_noop_use(acw, group):
 
 @pytest.mark.parametrize("failed_write", [False, True])
 def test_save_clears_temporary_status_or_failure_keeps_use_available(acw, monkeypatch, failed_write):
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     at = _edit(at, "Length", "Categorical")
     gen = at.session_state._review_file_gen
     at = next(w for w in at.text_input if w.key == f"review_save_as_name_{gen}").set_value("new").run()
@@ -767,7 +803,7 @@ def test_delete_cannot_restore_deleted_source_and_keeps_editor_populated(acw, de
     acw.save_working_copy("A", roles, {})
     if delete_source != "last":
         acw.save_working_copy("B", {"Length": ROLE_CATEGORICAL, "Area": ROLE_NUMERICAL}, {})
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     if delete_source != "last":
         at = _click(at, "review_pick_B")
     deleted = "B" if delete_source == "draft" else "A"
@@ -787,7 +823,7 @@ def test_delete_cannot_restore_deleted_source_and_keeps_editor_populated(acw, de
 
 def test_rename_updates_both_draft_and_confirmed_snapshot_source(acw):
     acw.save_working_copy("A", {**ROLES, "Length": ROLE_NUMERICAL}, {})
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     gen = at.session_state._review_file_gen
     next(w for w in at.text_input if w.key == f"review_rename_{gen}_A").set_value("renamed")  # a form field: sent with the submit
     at = _click(at, "review_rename_submit_A")
@@ -799,7 +835,7 @@ def test_rename_updates_both_draft_and_confirmed_snapshot_source(acw):
 
 @pytest.mark.parametrize("save", [False, True])
 def test_only_save_teaches_categorical_hint_to_a_new_schema(acw, save):
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     at = _edit(at, "Length", "Categorical")
     if save:
         gen = at.session_state._review_file_gen
@@ -825,7 +861,7 @@ def test_only_save_teaches_categorical_hint_to_a_new_schema(acw, save):
 def test_group_metadata_snapshot_is_independent_and_cancel_restores_temporary_groups(acw, saved):
     if saved:
         acw.save_working_copy("saved", {**ROLES, "Length": ROLE_NUMERICAL}, {}, group_names=["empty"])
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     gen = at.session_state._review_editor_gen
     next(w for w in at.text_input if w.key == f"review_group_name_{gen}").set_value("temporary")
     at = _click(at, "review_add_group")
@@ -850,7 +886,7 @@ def _group_key_for_test(gen, column):
 def test_use_remains_available_at_profile_cap_and_failed_save_adds_no_slot(acw):
     for index in range(acw.MAX_PROFILES):
         acw.save_working_copy(f"p{index}", ROLES, {})
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     gen = at.session_state._review_file_gen
     next(w for w in at.text_input if w.key == f"review_save_as_name_{gen}").set_value("excess").run()
     at = _click(at, f"review_save_as_new_{gen}")
@@ -864,7 +900,8 @@ def test_use_remains_available_at_profile_cap_and_failed_save_adds_no_slot(acw):
 def test_complete_headers_include_ignored_columns_for_exact_matching(acw):
     from src.column_roles import ROLE_IGNORE
     acw.save_working_copy("complete", {**ROLES, "noise": ROLE_IGNORE}, {})
-    assert gate.review_gate(_Upload("same.csv"), _frame())["profile"] is None
+    assert gate.review_gate(_Upload("same.csv"), _frame()) is None
+    assert gate._applied_profile() is None
     gate.reset_upload_review()
     decision = gate.review_gate(_Upload("same.csv"), _frame().assign(noise=["x", "y", "z"]))
     assert decision["profile"] == "complete"
@@ -894,7 +931,7 @@ def test_saved_profile_schema_changes_count_as_upload_edits(acw, absent):
     if absent:
         roles["absent"] = ROLE_NUMERICAL
     acw.save_working_copy("partial", roles, {})
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     at = _click(at, "review_pick_partial")
     at = _click(at, "review_use")
     assert any("partial · edited for this upload" in m.value for m in at.markdown)
@@ -912,7 +949,7 @@ def test_no_usable_measurement_opens_populated_editor_and_blocks_both_acceptance
 
 
 def test_noop_use_keeps_auto_detected_status_and_does_not_write(acw):
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     at = _click(at, "review_use")
     assert at.session_state._review_confirmed
     assert any("<b>Auto-detected</b>" in m.value for m in at.markdown)
@@ -922,7 +959,7 @@ def test_noop_use_keeps_auto_detected_status_and_does_not_write(acw):
 def test_exact_name_save_as_overwrite_confirmation_works_at_cap(acw):
     for index in range(acw.MAX_PROFILES):
         acw.save_working_copy(f"p{index}", ROLES, {})
-    at = _click(_app(), "review_reopen")
+    at = _click(_used(), "review_reopen")
     gen = at.session_state._review_file_gen
     next(w for w in at.text_input if w.key == f"review_save_as_name_{gen}").set_value("p0").run()
     before = acw._ANALYSIS_CONFIG_PATH.read_bytes()
@@ -935,3 +972,40 @@ def test_exact_name_save_as_overwrite_confirmation_works_at_cap(acw):
     assert at.session_state._review_source == "p0"
     assert len(acw.list_profiles()) == acw.MAX_PROFILES
     assert set(acw.profile_roles_and_groups("p0")[0]) == {"cell_id", "treatment", "Area", "Length"}
+
+
+def test_a_doubtful_guess_is_flagged_until_its_role_changes(acw):
+    """The box and the row's ⚠️ follow the live role, so fixing the row clears both."""
+    at = _app({"cell_id": list(range(45)), "plate": [1, 2, 3] * 15,
+               "Area": [i + 0.5 for i in range(45)]})
+    assert any("`plate` (Numerical)" in m.value for m in at.markdown)
+    assert any("<h2" in body and "Check these guesses (1)" in body for body in _html(at))
+    assert [t.value for t in at.text if t.value.startswith("⚠️")]
+    assert "**Check these guesses**" in _intro(at)
+    assert "**Apply a saved profile**" not in _intro(at)
+
+    at = _edit(at, "plate", "Categorical")
+    assert not any("Check these guesses" in body for body in _html(at))
+    assert "**Check these guesses**" not in _intro(at)
+    assert not [t.value for t in at.text if t.value.startswith("⚠️")]
+
+
+def test_a_doubt_offers_its_fix_in_one_click(acw):
+    """The box's button applies the suggested role without finding the row."""
+    at = _app({"cell_id": list(range(45)), "plate": [1, 2, 3] * 15,
+               "Area": [i + 0.5 for i in range(45)]})
+    at = _click(at, "review_fix_plate")
+    assert at.session_state._review_roles["plate"] == ROLE_CATEGORICAL
+    assert not any("Check these guesses" in body for body in _html(at))
+
+
+def test_a_placeholder_column_stays_flagged_as_numerical(acw):
+    """Numerical would drop numbers mixed with "below LOD", so its flag stays until Ignore."""
+    at = _app({"cell_id": list(range(40)), "Area": [i + 0.5 for i in range(40)],
+               "lod": [str(i + 0.5) if i % 4 else "below LOD" for i in range(40)]})
+    at = _edit(at, "lod", "Numerical")
+    assert at.session_state._review_roles["lod"] == ROLE_NUMERICAL
+    assert any("rows say `below LOD`" in m.value for m in at.markdown)
+    at = _click(at, "review_fix_lod")
+    assert at.session_state._review_roles["lod"] == ROLE_IGNORE
+    assert not any("Check these guesses" in body for body in _html(at))

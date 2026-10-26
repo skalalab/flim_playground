@@ -92,8 +92,10 @@ def install_page_table(monkeypatch, isolated_config_paths):
     review or forcing confirmation. The callback-capable uploader holds a table.
     """
     import io
+
     import streamlit as st
     import toml
+
     from src import dataset_io
 
     def install(frame, groups, row_id="cell_id", delimiter=",", categories=None):

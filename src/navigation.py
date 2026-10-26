@@ -78,7 +78,8 @@ def data_extraction_available():
 
 def _link_style(active):
     # Negative vertical margins cancel the padding so the pill does not grow the bar.
-    style = "margin:-2px 4px -2px 0; padding:2px 8px; text-decoration:none;"
+    # The bar stays light in dark mode, so links keep the light theme's blue (dark mode's is 2.5:1 here).
+    style = "margin:-2px 4px -2px 0; padding:2px 8px; text-decoration:none; color:#0054a3;"
     if active:
         # The current page reads as a place, not a link: a bold white pill in the body text colour.
         style += " background-color:#fff; color:#31333f; font-weight:bold; border-radius:6px; box-shadow:0 1px 2px rgba(0,0,0,0.15);"
@@ -177,13 +178,16 @@ def render_top_menu(space_below="0"):
         /* A column-opening "Fields of view:" heading sits level with the neighbouring
            widget label, which unlike a heading carries no top padding. */
         div[class*="st-key-fov_heading"] h5 {padding-top: 0;}
+        /* Captions keep the page's full text color, dark on light pages and light on dark
+           ones, like the plots' text: Streamlit fades them to 60%, 3.7:1 on white. */
+        [data-testid="stCaptionContainer"] {opacity: 1;}
         </style>
         """, unsafe_allow_html=True
     )
 
     only = _only_page()
     menu_html = f"""
-    <div style='background-color:#f0f0f0; padding:10px; margin-bottom:{space_below}; border-bottom:1px solid #ccc; display:flex; align-items:baseline;'>"""
+    <nav aria-label='Pages' style='background-color:#f0f0f0; padding:10px; margin-bottom:{space_below}; border-bottom:1px solid #ccc; display:flex; align-items:baseline;'>"""
 
     if only:
         # The page that rendered is the only place to be, whatever the URL says.
@@ -192,7 +196,7 @@ def render_top_menu(space_below="0"):
     <a href='/{only}' style='{_link_style(True)}'>{link_2_name(only)}</a>"""
         menu_html += (
             f"<a href='{DESKTOP_APP_URL}' target='_blank' rel='noopener' "
-            "style='margin-left:auto; font-size:0.8em;'>"
+            "style='margin-left:auto; font-size:0.8em; color:#0054a3;'>"
             "Data Extraction: get the desktop app ↗</a>"
         )
         version_margin = "margin-left:12px"
@@ -226,7 +230,7 @@ def render_top_menu(space_below="0"):
             f"aria-label='Quit' style='{_link_style(False)} margin-left:12px;'>{_POWER_ICON}</a>"
         )
 
-    st.markdown(menu_html + "</div>", unsafe_allow_html=True)
+    st.markdown(menu_html + "</nav>", unsafe_allow_html=True)
 
     # macOS asks each new build whether it may use the folder holding its settings,
     # the one the .app is in. Until someone clicks Allow, every read there fails.

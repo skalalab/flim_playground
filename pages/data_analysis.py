@@ -12,6 +12,7 @@ from src.dataset_io import (
     _render_reject,
     _render_warning,
     interpret_table,
+    message_color,
     read_table,
     resolve_effective_fov_col,
 )
@@ -396,11 +397,14 @@ with col1:
                     decision["roles"], decision["groups"], decision["group_names"])
                 categorical_cols = args["categorical_cols"]
                 row_id_label = args["unique_row_id_col"] or "ID"
+                # Above the reader's warnings, so the way back to review stays in view.
+                summary_slot = st.container()
                 df, feature_groups_dict, upload_complete, unique_row_id_col = interpret_table(
                     raw, categorical_cols, args["unique_row_id_col"], None,
                     ignored_cols=args["ignored_cols"], feature_groups=args["feature_groups"],
                     scope_warning=scope_warning, use_data_extraction=False)
-                applied_summary(decision)
+                with summary_slot:
+                    applied_summary(decision, None if df is None else df.columns)
     except Exception as e:
         st.error(f"Failed to process the uploaded file: {e} {sad_emoji}")
         df, feature_groups_dict, upload_complete, delimiter = None, None, False, ","
@@ -848,11 +852,11 @@ with col2:
                     _render_plot_and_controls(fig, _build_params)
 
         else:
-            st.markdown(f"<h5 style='text-align: center; color: red'>No data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)
+            st.markdown(f"<h5 style='text-align: center; color: {message_color('#b91c1c', 'red')}'>No data available after filtering {sad_emoji}</h5>", unsafe_allow_html=True)
 
     elif uploaded_file is None:
         st.info("**Upload a dataset to get started**: your own table or one from "
-                f"[Data Extraction]({extraction_link}). Its columns will be automatically parsed {happy_emoji}.")
+                f"[Data Extraction]({extraction_link}). You'll check how its columns are read before any plot {happy_emoji}.")
 
 
 # A closing review may trigger another rerun when method availability changes.

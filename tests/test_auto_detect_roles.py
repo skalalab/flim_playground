@@ -117,3 +117,39 @@ def test_rescued_numeric_strings_keep_the_normal_interpretation_warning(monkeypa
     assert complete and interpreted["feature"].isna().sum() == 1
     assert "1 non-numeric value" in captured[0]
     assert df["feature"].tolist() == values
+
+
+def test_doubtful_columns_flag_codes_and_row_labels_but_not_measurements():
+    """Flags point at guesses worth checking: few whole-number levels or near-unique text."""
+    n = 2000
+    df = pd.DataFrame({
+        "plate": [1, 2, 3] * 666 + [1, 2],
+        # 60 levels are under 10% of rows but over the cap, like pixel areas.
+        "area": [100 + i % 60 for i in range(n)],
+        "lifetime": [0.5 + i % 3 for i in range(n)],
+        "notes": [f"note {i}" for i in range(n)],
+        # Varied but repeated text could not be a Row ID.
+        "label": [f"s{i % 1500}" for i in range(n)],
+        "treatment": ["DMSO", "drug"] * (n // 2),
+        # Comma decimals and percentages are numbers the reader keeps as text.
+        "tau": [f"{i},5" for i in range(n)],
+        "pct": [f"{i / 10:.1f}%" for i in range(n)],
+        # A measurement with placeholder text, and doses beside "control", a category.
+        "lod": [str(0.5 + i) if i % 4 else "below LOD" for i in range(n)],
+        "dose": [["0", "10", "100", "control"][i % 4] for i in range(n)],
+    })
+    doubts = dataset_io.doubtful_columns(df, dataset_io.numeric_column_names(df))
+    assert {col: (roles, fix) for col, (roles, fix, _msg) in doubts.items()} == {
+        "plate": ((ROLE_NUMERICAL,), ROLE_CATEGORICAL),
+        "notes": ((ROLE_CATEGORICAL,), ROLE_IGNORE),
+        "label": ((ROLE_CATEGORICAL,), ROLE_IGNORE),
+        "tau": ((ROLE_CATEGORICAL, ROLE_NUMERICAL), ROLE_IGNORE),
+        "pct": ((ROLE_CATEGORICAL, ROLE_NUMERICAL), ROLE_IGNORE),
+        "lod": ((ROLE_CATEGORICAL, ROLE_NUMERICAL), ROLE_IGNORE)}
+    assert doubts["plate"][2].startswith(
+        "`plate` (Numerical): 3 whole-number values in 2,000 rows.")
+    assert "500 rows say `below LOD`" in doubts["lod"][2]
+    assert "decimal commas (`0,5`)" in doubts["tau"][2]
+    assert "extra characters (`0.0%`)" in doubts["pct"][2]
+    assert "make it the Row ID" in doubts["notes"][2]
+    assert "Row ID" not in doubts["label"][2]

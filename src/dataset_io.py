@@ -9,6 +9,8 @@ from pandas.errors import EmptyDataError, ParserError
 
 from src.column_roles import (
     NO_GROUP,
+    ROLE_CATEGORICAL,
+    ROLE_IGNORE,
     ROLE_NUMERICAL,
     ROLE_ROW_ID,
     UNGROUPED_LABEL,
@@ -398,6 +400,15 @@ def _plain_quoted(text):
     return f"'{text}'"
 
 
+def _looks_comma_decimal(series):
+    """Whether every sampled non-null value of a text column is a comma-decimal number."""
+    if pd.api.types.is_numeric_dtype(series):
+        return False
+    values = series.dropna().head(_HINT_SAMPLE_ROWS)
+    return not values.empty and bool(
+        values.astype(str).str.strip().str.fullmatch(_COMMA_DECIMAL.pattern).all())
+
+
 def _comma_decimal_hint(df, mark=_plain_quoted):
     """Suggest decimal-point formatting when a text column looks comma-decimal.
 
@@ -407,18 +418,93 @@ def _comma_decimal_hint(df, mark=_plain_quoted):
     for Markdown review messages.
     """
     for col in df.columns:
-        if pd.api.types.is_numeric_dtype(df[col]):
-            continue
-        values = df[col].dropna().head(_HINT_SAMPLE_ROWS)
-        if values.empty:
-            continue
-        if values.astype(str).str.strip().str.fullmatch(_COMMA_DECIMAL.pattern).all():
-            example = str(values.iloc[0]).strip()
+        if _looks_comma_decimal(df[col]):
+            example = str(df[col].dropna().iloc[0]).strip()
             return (f"\nNote: values like '{example}' in {mark(col)} "
                     "write the decimal point as a comma, so they are "
                     "read as text rather than numbers. Re-export the table with a full stop as "
                     "the decimal point.")
     return ""
+
+
+# Few whole-number levels suggest codes such as day, well or plate. The cap keeps
+# whole-valued measurements unflagged: pixel areas take ~1,100 levels in 14,000 cells.
+_CODE_LEVEL_SHARE, _CODE_MAX_LEVELS = 0.1, 50
+# Text this varied would put nearly every row into a filter's option list.
+_LABEL_MIN_LEVELS, _LABEL_LEVEL_SHARE = 50, 0.5
+# Mostly varied numbers plus some text is a measurement with placeholders such as
+# "below LOD"; a few numeric levels (doses beside "control") stay a plain category.
+_MOSTLY_NUMBERS, _MEASUREMENT_MIN_LEVELS = 0.5, 10
+# Numbers written as text with thousands separators or a trailing % or unit
+# (1,234.5; 45.2%; 12.5 nm) parse once these are removed.
+_THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}(?!\d))")
+# shortcut: an ID such as 1001a also reads as a number with a unit; require a space
+# before units if real ID columns trip it.
+_UNIT_SUFFIX = re.compile(r"\s*(%|[A-Za-zµμ°Å/]+)$")
+
+
+def doubtful_columns(df, numeric_cols):
+    """Return {column: (roles, fix, message)} for guesses worth a second look.
+
+    A message applies only while its column holds one of `roles`, and `fix` is the
+    role the editor offers as a one-click change. Nothing is changed here. Numbers
+    the reader keeps as text (decimal commas, units, placeholders) are named as such.
+    """
+    doubts = {}
+    for col in df.columns:
+        series = df[col]
+        if col in numeric_cols:
+            if pd.api.types.is_bool_dtype(series):
+                continue
+            values = pd.to_numeric(series, errors="coerce").dropna()
+            levels = values.nunique()
+            if (len(values) and (values % 1 == 0).all()
+                    and levels < _CODE_LEVEL_SHARE * len(values)
+                    and levels <= _CODE_MAX_LEVELS):
+                doubts[col] = ((ROLE_NUMERICAL,), ROLE_CATEGORICAL, (
+                    f"{code_span(col)} (Numerical): {levels} whole-number "
+                    f"value{'' if levels == 1 else 's'} in "
+                    f"{len(values):,} rows. If it labels groups such as day, well or "
+                    "plate, make it Categorical."))
+        elif _looks_comma_decimal(series):
+            if series.nunique() > _MEASUREMENT_MIN_LEVELS:
+                doubts[col] = ((ROLE_CATEGORICAL, ROLE_NUMERICAL), ROLE_IGNORE, (
+                    f"{code_span(col)} looks like numbers written with decimal commas "
+                    f"({code_span(str(series.dropna().iloc[0]).strip())}). Re-export the "
+                    "table with a full stop as the decimal point to use it as Numerical, "
+                    "or Ignore it."))
+        else:
+            values = series.dropna().astype(str)
+            numbers = pd.to_numeric(values, errors="coerce")
+            text = values[numbers.isna()]
+            levels = values.nunique()
+            if (len(text) and numbers.notna().mean() >= _MOSTLY_NUMBERS
+                    and numbers.nunique() > _MEASUREMENT_MIN_LEVELS):
+                # The analysis reads a column as numbers only when at most 1% is text.
+                doubts[col] = ((ROLE_CATEGORICAL, ROLE_NUMERICAL), ROLE_IGNORE, (
+                    f"{code_span(col)} is mostly numbers, but {len(text):,} rows say "
+                    f"{code_span(text.value_counts().index[0])}. As Numerical it would be "
+                    "left out; put numbers or blanks in those cells in your file, or "
+                    "Ignore it."))
+            elif levels > _LABEL_MIN_LEVELS and levels > _LABEL_LEVEL_SHARE * len(values):
+                sample = values.head(_HINT_SAMPLE_ROWS).str.strip()
+                bare = sample.str.replace(_THOUSANDS, "", regex=True).str.replace(
+                    _UNIT_SUFFIX, "", regex=True)
+                if pd.to_numeric(bare, errors="coerce").notna().mean() >= _MOSTLY_NUMBERS:
+                    doubts[col] = ((ROLE_CATEGORICAL, ROLE_NUMERICAL), ROLE_IGNORE, (
+                        f"{code_span(col)} looks like numbers with extra characters "
+                        f"({code_span(sample.iloc[0])}). Remove them in your file to plot "
+                        "it, or Ignore it."))
+                else:
+                    # Unique and complete, it could identify rows.
+                    advice = ("A filter would list all {:,}. If each value names one row, "
+                              "make it the Row ID; otherwise Ignore it unless you group by it."
+                              if levels == len(series) else
+                              "A filter would list all {:,}; Ignore it unless you group by it.")
+                    doubts[col] = ((ROLE_CATEGORICAL,), ROLE_IGNORE, (
+                        f"{code_span(col)} (Categorical): {levels:,} different values. "
+                        + advice.format(levels)))
+    return doubts
 
 
 def _as_html(msg):
@@ -429,19 +515,29 @@ def _as_html(msg):
     return re.sub(r"\n+", "<br>", html.escape(msg.strip()))
 
 
+def message_color(light, dark):
+    """Return the shade of a colored message that is readable in this theme.
+
+    CSS orange and red fail AA contrast on a white page, and the darker shades fail
+    on a dark one. Assume light until the browser reports its theme: a wrong guess
+    there costs the most contrast.
+    """
+    return dark if st.context.theme.type == "dark" else light
+
+
 def _render_warning(warning_msg):
     """Render accumulated warnings in an initially expanded section."""
     if warning_msg:
         with st.expander("Warning:", expanded=True):
-            st.markdown(f"<h5 style='text-align: center; color: orange'>{_as_html(warning_msg)}</h5>",
-                        unsafe_allow_html=True)
+            st.markdown(f"<h5 style='text-align: center; color: {message_color('#b45309', 'orange')}'>"
+                        f"{_as_html(warning_msg)}</h5>", unsafe_allow_html=True)
 
 
 def _render_reject(error_msg, warning_msg=""):
     """Render a rejection, warnings first — they are context for the error."""
     _render_warning(warning_msg)
-    st.markdown(f"<h5 style='text-align: center; color: red'>{_as_html(error_msg)}</h5>",
-                unsafe_allow_html=True)
+    st.markdown(f"<h5 style='text-align: center; color: {message_color('#b91c1c', 'red')}'>"
+                f"{_as_html(error_msg)}</h5>", unsafe_allow_html=True)
     st.write(f"Therefore, we cannot extract data from your uploaded file {sad_emoji}")
 
 

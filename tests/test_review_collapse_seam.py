@@ -62,7 +62,7 @@ def page(tmp_path, monkeypatch, isolated_config_paths):
 
 
 def _gated(page, **session):
-    """Valid auto-detection enters analysis through the actual gate."""
+    """A valid guess enters analysis through the actual gate once Use is clicked."""
     from streamlit.testing.v1 import AppTest
 
     at = AppTest.from_file(_PAGE)
@@ -70,6 +70,8 @@ def _gated(page, **session):
         at.session_state[key] = value
     at.run(timeout=90)
     assert not at.exception, at.exception
+    from tests.test_review_page import _fresh_render
+    at = _fresh_render(next(b for b in at.button if b.key == "review_use").click().run(timeout=90))
     assert at.session_state._review_confirmed
     assert not (page / "analysis_config.toml").exists()
     return at

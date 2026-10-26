@@ -1,4 +1,6 @@
+import pandas as pd
 import streamlit as st
+
 from src.natural_sort import natural_tuple_sort
 from src.widgets.analysis_widget_state import number_input_default
 from src.widgets.multiselect_modes import (
@@ -8,7 +10,6 @@ from src.widgets.multiselect_modes import (
     excluded_items,
     normalize_mode_selection,
 )
-import pandas as pd
 
 
 def selection_key(category):
@@ -111,9 +112,12 @@ def filters_widget(df, categorical_cols):
             df, categories_to_filter, effective_selections, exempt=exclude_mode
         )
 
-        cols = st.columns(len(categories_to_filter))
+        # At most four filters a row: one row of 22 left each about 40 px wide.
+        per_row = min(len(categories_to_filter), 4)
         for i, category in enumerate(categories_to_filter):
-            with cols[i]:
+            if i % per_row == 0:
+                cols = st.columns(per_row)
+            with cols[i % per_row]:
                 offered = reachable[category]
                 if category in exclude_mode:
                     # Keep excluded values offered even when unreachable, preserving

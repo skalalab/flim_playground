@@ -1,8 +1,8 @@
 import streamlit as st
 from streamlit_sortables import sort_items
 
-from src.natural_sort import natural_tuple_sort
 from src.emojis import sad_emoji
+from src.natural_sort import natural_tuple_sort
 from src.vis.dimension_facets import as_facet_key, facet_focus_from_click
 from src.vis.plot_defaults import (
     DEFAULT_AXIS_LABEL_FONT_SIZE,

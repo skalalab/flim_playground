@@ -36,6 +36,7 @@ from src.column_roles import (
 )
 from src.dataset_io import (
     build_working_copy,
+    doubtful_columns,
     review_blocking_reason,
 )
 from src.emojis import happy_emoji, sad_emoji
@@ -61,6 +62,29 @@ ROLE_HELP = ("Use each column's **Role** dropdown to choose how it is used:\n\n"
 GROUP_HELP = ("Each group becomes one dropdown in the feature pickers, so features are "
               "chosen from a few short lists instead of one long one. Measurements left "
               "ungrouped are collected under Uncategorized Features.")
+# Tints the doubt box like Streamlit's warning in either theme, without an alert role.
+# About six warnings show before the list scrolls, keeping the table in view.
+_DOUBTS_STYLE = ("<style>.st-key-review_doubts{background:rgba(255,227,18,.1);"
+                 "border-radius:.5rem;padding:.75rem 1rem}"
+                 ".st-key-review_doubt_lines{max-height:26rem;overflow-y:auto}</style>")
+# Section headings screen readers can jump to, drawn like the bold lines they replaced.
+# st.html, because Streamlit gives Markdown headings an invisible link that takes focus.
+_HEADING = ("<h2 style='font-size:1rem;font-weight:700;line-height:1.6;padding:0;"
+            "margin:0'>{}</h2>")
+# Opens every review, expanded until the user folds it: one line per section on screen,
+# led by its title, tying the roles to the analysis controls a user has seen.
+_INTRO_LABEL = "**How to customize Data Analysis for your data**"
+_INTRO = ("{guessed}\n\n{sections}\n\n"
+          "Fix any row in the table, then **Use for this upload**, or **Save** so files with "
+          "the same columns skip this step.")
+_INTRO_CHOOSER = ("- **Apply a saved profile**: reuse the roles and groups saved for a "
+                  "similar table.")
+_INTRO_DOUBTS = "- **Check these guesses**: likely mistakes, each with a one-click fix."
+_INTRO_BAR = ("- **Bulk Column Role Assignment**: give the ticked rows one role. "
+              "**Categorical** columns become filters and Color by options; **Numerical** "
+              "columns are the features you plot; **Ignored** columns are left out.\n"
+              "- **Feature Group Management**: each group of Numerical columns becomes one "
+              "dropdown in the feature pickers.")
 
 # Clear the working copy and review state together when the file fingerprint changes.
 _STATE_KEYS = (
@@ -70,7 +94,7 @@ _STATE_KEYS = (
     "_review_delete_armed", "_review_manage_open",
     "_review_configured_row_id", "_review_picks_stale", "_review_overwrite_armed",
     "_review_preserve_controls", "_review_snapshot", "_review_baseline",
-    "_review_toast", "_review_bulk_pending",
+    "_review_toast", "_review_bulk_pending", "_review_doubts",
 )
 # Export needs the configured Row ID, including blank for generated row numbers.
 # Keep this key in the same file-scoped reset as the rest of review state.
@@ -250,6 +274,7 @@ def _load_working_copy(df, picked):
     st.session_state._review_known_cols = set(profile_roles)
     # Reuse the numeric-column set from role detection; coercing again is expensive.
     st.session_state._review_numeric_cols = numeric_cols
+    st.session_state._review_doubts = doubtful_columns(df, numeric_cols)
     # Cancel calls this below rendered rows. Defer checkbox writes until the next
     # _bulk_bar call, before those widgets render.
     st.session_state._review_picks_stale = True
@@ -267,44 +292,41 @@ def _applied_profile():
     return None if source in (None, AUTO_DETECT) else source
 
 
-def applied_summary(decision):
+def applied_summary(decision, loaded=None):
     """Show the applied profile or auto-detection label and assigned role counts.
 
-    Count the full role decision, including columns removed during loading.
+    Count the full role decision, including Ignored columns removed during loading.
+    Given `loaded`, the loaded frame's columns, Categorical and Numerical count only
+    columns that loaded: a mostly-text column marked Numerical is left out.
     """
     roles = decision.get("roles") or {}
     if not roles:
         return
     counts = dict.fromkeys(ROLE_LABELS, 0)
-    for role in roles.values():
+    for col, role in roles.items():
+        if (loaded is not None and role in (ROLE_CATEGORICAL, ROLE_NUMERICAL)
+                and col not in loaded):
+            continue
         counts[role] = counts.get(role, 0) + 1
     # Omit the optional single Row ID from the role-count summary.
     tally = " · ".join(f"{n} {ROLE_LABELS[role]}" for role, n in counts.items()
                        if n and role != ROLE_ROW_ID)
     name = _status()
     # The summary provides review access even when an exact match skips the gate.
-    # Content-width children and nowrap keep the pencil beside the summary text.
-    with st.container(key="review_summary", horizontal=True,
-                      vertical_alignment="center", gap=None):
+    # The counts above the button say what it fixes.
+    with st.container(key="review_summary", gap="small"):
         # Inline the style to avoid an extra layout gap and keep this line with the upload.
         # Escape the user-provided profile name at its HTML interpolation point.
         st.markdown(
-            # Keep the pencil on the same line without shrinking its click target.
-            "<style>.st-key-review_summary{margin-top:-0.5rem;flex-wrap:nowrap}"
-            # Reset wrapper margins and align each wrapper to the text line height.
-            ".st-key-review_summary>div:first-child,.st-key-review_summary .stMarkdown,"
-            ".st-key-review_summary .stMarkdown div"
-            "{height:1.5rem;display:flex;align-items:center;margin-bottom:0}"
-            ".st-key-review_reopen{flex:0 0 auto}"
-            ".st-key-review_reopen button{min-height:0;height:1.5rem;padding:0 0.4rem}"
-            ".st-key-review_reopen p{line-height:1.5rem}</style>"
-            "<div style='font-size:0.875rem;opacity:0.65;margin:0;line-height:1.5rem;"
-            f"white-space:nowrap'><b>{html.escape(name)}</b>:&nbsp;{tally}</div>",
-            unsafe_allow_html=True, width="content")
+            "<style>.st-key-review_summary{margin-top:-0.5rem}</style>"
+            "<div style='font-size:0.875rem;opacity:0.75;line-height:1.5rem'>"
+            f"<b>{html.escape(name)}</b>:&nbsp;{tally}</div>",
+            unsafe_allow_html=True)
         # Handle the click in review_gate before its slot renders, so review opens
         # and analysis settings are preserved in the same run.
-        st.button("✏️", key=_REOPEN, type="tertiary",
-                  help="Review this file's columns again")
+        st.button("✏️ Fix Categorical & Numerical features", key=_REOPEN,
+                  help="Choose which columns are filters and Color by options, which "
+                       "are plottable features, and how features are grouped.")
 
 
 def _decision():
@@ -357,7 +379,8 @@ def review_gate(uploaded_file, df):
         profiles = all_profile_columns()
         matched = exact_match(set(df.columns), profiles)
         _load_working_copy(df, matched or AUTO_DETECT)
-        st.session_state._review_confirmed = not review_blocking_reason(
+        # Only a saved profile's exact match skips review; a guess is shown first.
+        st.session_state._review_confirmed = bool(matched) and not review_blocking_reason(
             df, st.session_state._review_roles)
 
     control_keys = st.session_state.get("_review_preserve_controls")
@@ -377,20 +400,32 @@ def review_gate(uploaded_file, df):
 def _render_gate(uploaded_file, df, profiles=None):
     """Render optional saved profiles, the populated editor, exits, and management."""
     name = getattr(uploaded_file, "name", "the uploaded file")
+    # Filled after the rows, so it lists only the sections this run shows.
+    intro = st.container()
     # Render the filename literally inside the Markdown caption.
     st.caption(f"Read {len(df.columns)} columns × {len(df):,} rows from {code_span(name)}")
 
     if profiles is None:
         profiles = all_profile_columns()
     saved_names = list(profiles)
-    _chooser(df, profiles)
+    sections = [_INTRO_CHOOSER] if _chooser(df, profiles) else []
 
     for notice in st.session_state.pop("_review_notices", []):
         st.info(notice)
     # A toast reports the last bulk change without taking page height.
     show_review_toast()
+    # Filled after the rows, so the box reflects this run's role edits.
+    doubts_box = st.container()
     _bulk_bar(df)
-    _editor(df)
+    flags = _editor(df)
+    if flags:
+        _doubts(doubts_box, flags)
+        sections.append(_INTRO_DOUBTS)
+    # No icon: it would take the place of the arrow that shows the note folds.
+    intro.expander(_INTRO_LABEL, expanded=True).markdown(_INTRO.format(
+        guessed="" if _applied_profile()
+        else "We guessed each column's role from its name and values.",
+        sections="\n".join([*sections, _INTRO_BAR])))
     # Use the corrected roles to announce row numbers before they are generated.
     numbering = row_id_notice(st.session_state._review_roles)
     if numbering:
@@ -399,17 +434,38 @@ def _render_gate(uploaded_file, df, profiles=None):
     _manage_profiles(saved_names, df)
 
 
+def _doubts(box, flags):
+    """List doubtful guesses above the bulk bar, each with its one-click fix.
+
+    The buttons use callbacks: they render after the rows, and a rerun from here
+    would drop the state of the Save controls below, which have not rendered yet.
+    """
+    # The title sits on the tinted box with no gap, as the bulk bar's titles sit on their rows.
+    with box.container(gap=None):
+        # The count matters once the list scrolls: overlay scrollbars stay hidden.
+        st.html(_DOUBTS_STYLE + _HEADING.format(f"⚠️ Check these guesses ({len(flags)})"))
+        with st.container(key="review_doubts"), st.container(key="review_doubt_lines",
+                                                             gap="small"):
+            for col, (_roles, fix, message) in flags.items():
+                text, action = st.columns([5, 1.3], vertical_alignment="center")
+                text.markdown(message)
+                action.button("Ignore" if fix == ROLE_IGNORE else f"Make {ROLE_LABELS[fix]}",
+                              key=f"review_fix_{col}", width="stretch",
+                              on_click=_apply_role, args=([col], fix),
+                              kwargs={"rerun": False})
+
+
 def _chooser(df, profiles):
-    """Offer related saved profiles in rank order on every editor opening."""
+    """Offer related saved profiles in rank order on every editor opening; return if any."""
     fits = [fit for fit in rank_profiles(set(df.columns), profiles) if fit.shared]
     if not fits:
-        return
-    st.markdown("**Apply a saved profile (optional)**")
+        return False
+    st.html(_HEADING.format("Apply a saved profile (optional)"))
     picked = st.session_state.get("_review_source")
     for fit in fits:
         _pick_row(df, fit.name, f"{fit.name}  —  {len(fit.shared)} shared · "
                   f"{len(fit.missing)} missing · {len(fit.new)} new", picked)
-    st.caption("Applying a profile replaces the draft below and keeps review open.")
+    return True
 
 
 def _pick_row(df, name, label, picked):
@@ -529,10 +585,14 @@ def _editor(df):
 
     Names and previews use plain text because they come from the file.
     Validate cross-row rules after collecting edits and re-key corrected rows.
+    Return {column: (roles, fix, message)} for guessed columns whose live role
+    looks doubtful.
     """
     roles = st.session_state._review_roles
     groups = st.session_state._review_groups
     known = st.session_state.get("_review_known_cols") or set()
+    doubts = st.session_state.get("_review_doubts") or {}
+    flags = {}
     # Use the same numeric classification for previews and role detection.
     numeric_cols = st.session_state.get("_review_numeric_cols") or set()
     role_options = list(ROLE_LABELS.values())
@@ -581,8 +641,14 @@ def _editor(df):
             # Mark columns whose roles were guessed because the profile did not contain them.
             if known and col not in known:
                 cells[1].markdown(":orange-badge[new]")
+            doubt = doubts.get(col)
+            # A saved profile's choice was already made, so only guesses are flagged.
+            if doubt and col not in known and LABEL_ROLES[role] in doubt[0]:
+                flags[col] = doubt
             cells[2].text(col)
-            cells[5].text(column_preview(df[col], numeric=col in numeric_cols))
+            cells[5].text(("⚠️ " if col in flags else "")
+                          + column_preview(df[col], numeric=col in numeric_cols),
+                          help=flags[col][2] if col in flags else None)
             edited_roles[col] = LABEL_ROLES[role]
             if group != NO_GROUP:
                 edited_groups[col] = group
@@ -600,6 +666,7 @@ def _editor(df):
         st.session_state._review_notices = notices
         _bump_editor()
         st.rerun()
+    return flags
 
 
 def _bulk_key():
@@ -615,6 +682,8 @@ def _bulk_button_label(kind, value, n_picked, n_targets):
         if not n_targets:
             return "No Numerical ticked"
         return f"Ungroup {n_targets}" if value == NO_GROUP else f"Move {n_targets}"
+    if value is None:
+        return "Choose a role"
     if value == ROLE_IGNORE:
         return f"Ignore {n_targets}"
     return f"Make {n_targets} {ROLE_LABELS[value]}"
@@ -674,8 +743,11 @@ def _bulk_bar(df):
 
     # Style-only st.html goes to the event container, so it adds no block gap.
     st.html(_TICK_STYLE)
+    # Each row sits under its title with no gap, the way a label sits on its widget.
     # Right-aligned labels make each row read as a sentence ending at its dropdown.
-    cells = st.columns(_BAR_WEIGHTS, vertical_alignment="center")
+    with st.container(gap=None):
+        st.html(_HEADING.format("Bulk Column Role Assignment"))
+        cells = st.columns(_BAR_WEIGHTS, vertical_alignment="center")
     # Select all shares the label slot, so both rows keep the same columns.
     with cells[0].container(horizontal=True, horizontal_alignment="distribute",
                             vertical_alignment="center", gap=None):
@@ -683,19 +755,24 @@ def _bulk_bar(df):
                     args=(list(df.columns),), disabled=not eligible,
                     help="Tick every row except the Row ID, or clear every row")
         st.markdown("Ticked columns are", help=ROLE_HELP, width="content")
+    # No preset role, and secondary buttons: a ticked row never offers a change the
+    # user did not choose, and Use for this upload stays the one primary action.
     role = cells[1].selectbox(
-        "Role for ticked rows", _BULK_ROLES, index=_BULK_ROLES.index(ROLE_IGNORE),
+        "Role for ticked rows", _BULK_ROLES, index=None, placeholder="Choose a role…",
         key=f"review_bulk_role_{_file_gen()}", format_func=ROLE_LABELS.get,
         label_visibility="collapsed")
     if cells[2].button(_bulk_button_label("role", role, len(picked), len(picked)),
-                       key="review_apply_role", type="primary", width="stretch",
-                       disabled=not picked, help="Give the ticked rows the role on the left"):
+                       key="review_apply_role", width="stretch",
+                       disabled=not picked or role is None,
+                       help="Give the ticked rows the role on the left"):
         _apply_role(picked, role)
 
     measurements = _picked_columns(df, numerical_only=True)
     skipped = [col for col in picked if col not in measurements]
     numeric = ROLE_NUMERICAL in roles.values()
-    cells = st.columns(_BAR_WEIGHTS, vertical_alignment="center")
+    with st.container(gap=None):
+        st.html(_HEADING.format("Feature Group Management"))
+        cells = st.columns(_BAR_WEIGHTS, vertical_alignment="center")
     cells[0].markdown("Ticked **Numerical** go in group", help=GROUP_HELP,
                       text_alignment="right")
     # Omit index: the session value seeded above selects the option.
@@ -703,7 +780,7 @@ def _bulk_bar(df):
         "Group for ticked Numerical rows", options, key=key, format_func=_group_label,
         label_visibility="collapsed", disabled=not numeric)
     if cells[2].button(_bulk_button_label("group", group, len(picked), len(measurements)),
-                       key="review_apply_group", type="primary", width="stretch",
+                       key="review_apply_group", width="stretch",
                        disabled=not measurements,
                        help="Put the ticked Numerical rows in the group on the left"):
         _apply_group(measurements, group, skipped)
@@ -757,11 +834,12 @@ def _named(columns, limit=3):
     return f"{shown} and {rest} more" if rest > 0 else shown
 
 
-def _apply_role(columns, role):
+def _apply_role(columns, role, rerun=True):
     """Give the selected columns one role and report the change in a toast.
 
     Drop the groups of columns leaving Numerical here: left to the next editor
     render, the correction's rerun would unmount the toast before it is seen.
+    A button callback passes rerun=False, since the script reruns after it anyway.
     """
     # A click on a button label one run stale can arrive with nothing ticked.
     if not columns:
@@ -780,7 +858,8 @@ def _apply_role(columns, role):
     st.session_state._review_toast = message
     _clear_picks(columns)
     _bump_editor()
-    st.rerun()
+    if rerun:
+        st.rerun()
 
 
 def _apply_group(columns, group, skipped=()):

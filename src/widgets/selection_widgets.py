@@ -1,12 +1,14 @@
 import re
 
 import streamlit as st
+
 from src.widgets.multiselect_modes import (
     ALL_LABEL,
     EXCEPT_LABEL,
     chosen_items,
     normalize_mode_selection,
 )
+
 """
 This module contains functions to create single and multiple selection widgets.
 """
