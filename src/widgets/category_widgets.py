@@ -56,6 +56,7 @@ def map_categories_to_labels_widget(available_categories, combined_df, delimiter
                         f"Slots for **{cat}**",
                         options=slots,
                         key=f"slot_{cat}",
+                        select_all=False,
                     )
                     # Store the indices of selected slots instead of the actual values
                     selected_indices = [slots.index(slot) for slot in selected_slots]

@@ -355,6 +355,7 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
                 separate_by = st.multiselect(
                     "Separate by", present_categories, key=DR_SEPARATE_BY_KEY,
                     max_selections=2,
+                    select_all=False,
                     help="Choose up to two categorical columns. One selected feature "
                          "creates one column of maps. With two, the first sets rows "
                          "and the second sets columns. "
@@ -458,6 +459,7 @@ def visual_encoding_channels_widget(filtered_df, categorical_cols, color_based=T
             color_multiselect_label(merged_point_encoding, point_mode == "subcolor"),
             available_for_color,
             key=COLOR_BY_KEY,
+            select_all=False,
             help=("Groups that share a color. Histograms and GMM fits use individual "
                  "observations within each category and color group."
                  if histogram else

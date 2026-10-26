@@ -133,6 +133,7 @@ def render_derived_features_widget(cfg, active_profile):
         operands = st.multiselect(
             "Operands (each becomes A, B, C… in the order picked)",
             available, key=f"df_ops_{active_profile}_{gen}",
+            select_all=False,
         )
         alias_hint = ",  ".join(
             f"{a} = {c}" for a, c in zip(alias_names(len(operands)), operands)

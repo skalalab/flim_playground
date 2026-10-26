@@ -4,12 +4,12 @@ import streamlit as st
 
 from src.emojis import happy_emoji, sad_emoji
 from src.vis.plot_defaults import DEFAULT_AXIS_LABEL_FONT_SIZE, DEFAULT_LEGEND_FONT_SIZE
-from src.widgets.visualization_widgets import plot_config_widget
 from src.widgets.analysis_widget_state import (
     categorical_default,
     control_default,
     number_input_default,
 )
+from src.widgets.visualization_widgets import plot_config_widget
 
 CLASSIFIER_OPTIONS = ["Random Forest", "Gradient Boosting", "SVM", "Logistic Regression"]
 
@@ -178,6 +178,7 @@ def classifier_options_widget(df, categorical_cols, fov_name_col, selected_featu
                 default=control_default(st.session_state, "classify_by_multiselect",
                                         categorical_default(available_categories)),
                 key="classify_by_multiselect",
+                select_all=False,
             )
         else:
             classify_by_options = []
