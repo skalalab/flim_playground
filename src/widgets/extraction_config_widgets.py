@@ -2,14 +2,14 @@
 
 import streamlit as st
 
-from src.config import DEFAULT_2D_DECAY_DURATION_NS, default_laser_rate
+from src.config import DEFAULT_2D_DECAY_DURATION_NS, FIT_FREE_BACKGROUND_METHODS, default_laser_rate
 from src.widgets.laser_rate_widget import laser_rate_input
 
 
 _FLIM_SETTINGS_KEY = "_extraction_flim_settings"
 _SHARED_FIELDS = (
     "laser_rate", "fit_free_calibration", "fluorescence_lifetime_standard_lifetime",
-    "duration", "time_bins",
+    "fit_free_background", "duration", "time_bins",
 )
 
 
@@ -64,7 +64,7 @@ def render_shared_flim_settings(cfg, profile, has_flim):
                 break
         with st.container(border=True):
             st.subheader("Shared FLIM settings", help="Applies to all FLIM channels.")
-            cols = st.columns(3 if has_fit_free else 1)
+            cols = st.columns(4 if has_fit_free else 1)
             with cols[0]:
                 input_type = st.selectbox(
                     "FLIM input format", cfg["flim_decay_input_types"],
@@ -101,6 +101,26 @@ def render_shared_flim_settings(cfg, profile, has_flim):
                             key=f"fluorescence_lifetime_standard_lifetime_{input_type}_{profile}",
                         )
                         st.caption("Provide channel-specific Fluorescence lifetime standard file suffixes below in the File suffixes section.")
+                with cols[3]:
+                    background = settings.get("fit_free_background", FIT_FREE_BACKGROUND_METHODS[0])
+                    settings["fit_free_background"] = st.selectbox(
+                        "Fit free background subtraction method", FIT_FREE_BACKGROUND_METHODS,
+                        index=FIT_FREE_BACKGROUND_METHODS.index(background) if background in FIT_FREE_BACKGROUND_METHODS else 0,
+                        key=f"fit_free_background_{input_type}_{profile}",
+                        help=(
+                            "Background subtracted from each cell's decay before the phasor:\n\n"
+                            "- **Tail mean**: mean of the last 10% of time bins.\n"
+                            "- **Pre-rise median**: median of the bins before the rise, stopping 5 bins short of the peak "
+                            "(the last 30 bins if the peak is in the first 10), as FLIMKit estimates it; never below 0.\n"
+                            "- **No correction**: decays are used as given.\n\n"
+                            "Bins that go negative after subtraction are kept: setting them to 0 would bias the phasor. "
+                            "Both estimates assume the bins they read hold only background. At 80 MHz, fluorescence "
+                            "with lifetimes beyond about 2 ns has not died out when the next pulse arrives, so it is "
+                            "still in the tail and before the rise, and either estimate removes some of it. "
+                            "Pre-rise median gives 0 for low-count decays whose early bins are mostly empty. "
+                            "Use No correction for decays already offset-removed."
+                        ),
+                    )
             if input_type == "Decay (2D)":
                 cols = st.columns(2)
                 with cols[0]:

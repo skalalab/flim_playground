@@ -5,6 +5,8 @@ import math
 from os import PathLike
 from pathlib import Path
 
+from src.column_roles import code_span
+from src.config import FIT_FREE_BACKGROUND_METHODS
 from src.file_io import validate_ptu_reference_timing
 from src.qpi import BACKGROUND_METHODS, OPD_UNITS
 
@@ -87,6 +89,7 @@ def _validate_paths(fov_df, channel_name, file_types):
 def prepare_extraction(
     fov_df, channels, *, fov_name_col, unique_cell_id_col,
     derived_features=(), laser_rate=None, fit_free_calibration_method=None,
+    fit_free_background=FIT_FREE_BACKGROUND_METHODS[0],
     fluorescence_lifetime_standard_lifetime=None,
 ):
     """Return ``(error_msg, settings_dict)`` without modifying the FOV table.
@@ -226,8 +229,13 @@ def prepare_extraction(
             return "Laser rate must be a positive finite number for fit-free extraction.", None
         if fit_free_calibration_method not in ("IRF", _STANDARD):
             return "Fit-free calibration method must be IRF or Fluorescence Lifetime Standard.", None
+        if fit_free_background not in FIT_FREE_BACKGROUND_METHODS:
+            return (f"Fit-free background {code_span(fit_free_background)} is not one of: "
+                    f"{', '.join(FIT_FREE_BACKGROUND_METHODS)}. Choose it again on the Configuration page "
+                    "and click Update Configuration."), None
         settings["laser_rate"] = rate
         settings["fit_free_calibration_method"] = fit_free_calibration_method
+        settings["fit_free_background"] = fit_free_background
         if fit_free_calibration_method == _STANDARD:
             lifetime = _number(fluorescence_lifetime_standard_lifetime)
             if lifetime is None or lifetime <= 0:

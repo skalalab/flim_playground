@@ -6,6 +6,7 @@ from scipy import ndimage
 from skimage.measure import regionprops
 
 from src.cell_texture import granularity, mass_displacement, radial_distribution
+from src.config import FIT_FREE_BACKGROUND_METHODS
 from src.decay_io import read_decay
 from src.file_io import (
     file_identity,
@@ -47,6 +48,18 @@ def get_offset(decay_curve):
     tail_mean = np.mean(tail_segment)
 
     return tail_mean
+
+def get_prerise_offset(decay_curve):
+    """Estimate background as the median of the bins before the decay rises.
+
+    Port of FLIMKit's ``estimate_bg`` (flimkit/FLIM/fit_tools.py): the median of
+    ``decay[:peak - 5]``, the bins that stop 5 short of the peak. When the peak is in
+    the first 10 bins, fewer than 5 qualify and the last 30 bins are used instead.
+    Never below 0, so a low-count decay whose pre-rise bins are mostly 0 gives 0.
+    """
+    end = max(0, int(np.argmax(decay_curve)) - 5)
+    region = decay_curve[:end] if end >= 5 else decay_curve[-30:]
+    return max(float(np.median(region)), 0.0)
 
 def extract_texture_features_from_arrays(intensity_image, mask, fov_name, feature_prefix):
     """Per-cell intensity-texture features, cropping each ROI to its bounding box.
@@ -477,9 +490,9 @@ def extract_fit_results(channel_name, decay_curves, results, num_components, shi
     return warning_msg, single_cell_features_fov
 
 def get_raw_phasor(decay_curve, h, w, time_axis=None, full_period=False):
-    # Zero-total decays have undefined phasor coordinates.
+    # Decays with no positive total (possible without clipping) have undefined phasor coordinates.
     total = np.sum(decay_curve)
-    if total == 0:
+    if total <= 0:
         return np.nan, np.nan
     # the truncated time axis case
     if not full_period:
@@ -489,8 +502,13 @@ def get_raw_phasor(decay_curve, h, w, time_axis=None, full_period=False):
         _, g_raw, s_raw = phasor.phasor_from_signal(decay_curve, harmonic=h)
     return g_raw, s_raw
 
-def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf=None,fluorescence_lifetime_standard_image=None, fluorescence_lifetime_standard_lifetime=None, fluorescence_lifetime_standard_time_axis=None):
-    """Return an error and per-cell calibrated phasor features for a channel."""
+def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf=None,fluorescence_lifetime_standard_image=None, fluorescence_lifetime_standard_lifetime=None, fluorescence_lifetime_standard_time_axis=None, background_method="Tail mean"):
+    """Return an error and per-cell calibrated phasor features for a channel.
+
+    ``background_method`` is one of ``config.FIT_FREE_BACKGROUND_METHODS``.
+    """
+    if background_method not in FIT_FREE_BACKGROUND_METHODS:
+        return f"Error: unknown fit-free background {background_method!r} for {channel_name}", pd.DataFrame()
     if len(decay_curves) == 0:
         return f"Error: No decay curves found for {channel_name}", pd.DataFrame()
 
@@ -541,10 +559,11 @@ def extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, c
         if cell_id not in single_cell_features_fov:
             single_cell_features_fov[cell_id] = {}
 
-        # Subtract estimated background and clip negative bins to zero.
-        offset = get_offset(decay_curve)
-        decay_curve = decay_curve - offset
-        decay_curve = np.clip(decay_curve, 0, None)
+        # Negative bins stay: clipping noise around zero adds counts and biases the phasor.
+        if background_method == "Tail mean":
+            decay_curve = decay_curve - get_offset(decay_curve)
+        elif background_method == "Pre-rise median":
+            decay_curve = decay_curve - get_prerise_offset(decay_curve)
 
         # Calculate raw phasor coordinates.
         g_raw, s_raw = get_raw_phasor(decay_curve, h=1, w=w, time_axis=time_axis, full_period=full_period)
@@ -581,7 +600,7 @@ def extract_intensity_sum_2d(channel_name, decay_curves, single_cell_features_fo
     return single_cell_features_fov
 
 
-def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method=None, fluorescence_lifetime_standard_image=None, fluorescence_lifetime_standard_lifetime=None, fluorescence_lifetime_standard_time_axis=None, fixed_lifetimes=None):
+def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method=None, fluorescence_lifetime_standard_image=None, fluorescence_lifetime_standard_lifetime=None, fluorescence_lifetime_standard_time_axis=None, fixed_lifetimes=None, background_method="Tail mean"):
     need_to_fit = False
     shifted_irf = None
     shift_required = (
@@ -658,7 +677,7 @@ def extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free,
             return "Error: laser_rate not found in metadata. Set it in the Numerical step before preparing extraction.", pd.DataFrame()
         if calibration_method is None:
             return f"Error: Calibration method is not provided for {channel_name}", pd.DataFrame()
-        error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf, fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis)
+        error_msg, single_cell_fit_free_features_fov = extract_fit_free_results(channel_name, decay_curves, laser_rate, duration, calibration_method, shifted_irf, fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis, background_method=background_method)
         if error_msg != "":
             return error_msg, pd.DataFrame()
         single_cell_fit_free_features_fov = pd.DataFrame.from_dict(single_cell_fit_free_features_fov, orient='index')
@@ -738,6 +757,7 @@ def _fov_extraction_cached(metadata, metadata_dict, input_files):
         if imaging_modality == "FLIM":  
             fit = "Lifetime fit" in selected_feature_extractors
             fit_free = "Lifetime fit free" in selected_feature_extractors
+            background_method = metadata_dict.get("fit_free_background", "Tail mean")
             if fit_free:
                 calibration_method = metadata_dict["fit_free_calibration_method"]
                 if calibration_method == "Fluorescence Lifetime Standard":
@@ -758,7 +778,7 @@ def _fov_extraction_cached(metadata, metadata_dict, input_files):
 
             if fit or fit_free:
                 fixed_lifetimes = metadata_dict[channel_name].get("fixed_lifetimes", {})
-                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method, fluorescence_lifetime_standard_image=fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime=fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis=fluorescence_lifetime_standard_time_axis, fixed_lifetimes=fixed_lifetimes)
+                error_msg, single_cell_lifetime_features = extract_lifetime_features(metadata, channel_name, input_type, fit, fit_free, fov_col_name, calibration_method, fluorescence_lifetime_standard_image=fluorescence_lifetime_standard_image, fluorescence_lifetime_standard_lifetime=fluorescence_lifetime_standard_lifetime, fluorescence_lifetime_standard_time_axis=fluorescence_lifetime_standard_time_axis, fixed_lifetimes=fixed_lifetimes, background_method=background_method)
                 if error_msg != "":
                     return error_msg, pd.DataFrame()
                 fov_feature_dfs.append(single_cell_lifetime_features)

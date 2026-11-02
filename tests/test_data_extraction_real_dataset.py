@@ -64,8 +64,14 @@ def _check_calibrated_phasors(features, metadata, raw_curves, irf, cell_ids=None
     for row in metadata.to_dict("records"):
         fov = row["image_name"]
         raw = raw_curves[fov]
-        tail_start = int(raw.shape[1] * 0.9)
-        corrected = np.maximum(raw - raw[:, tail_start:].mean(axis=1, keepdims=True), 0)
+        if row.get("fit_free_background", "Tail mean") == "Pre-rise median":
+            peaks = raw.argmax(axis=1)
+            assert (peaks >= 10).all()  # so FLIMKit's last-30-bins fallback never applies
+            background = [max(np.median(curve[:peak - 5]), 0) for curve, peak in zip(raw, peaks)]
+            corrected = raw - np.array(background)[:, None]
+        else:
+            tail_start = int(raw.shape[1] * 0.9)
+            corrected = raw - raw[:, tail_start:].mean(axis=1, keepdims=True)
         angular_frequency = 2 * np.pi * row["laser_rate"]
         times = np.arange(raw.shape[1]) * row["duration"] / raw.shape[1]
         basis = np.exp(1j * angular_frequency * times[:, None] * np.array([1, 2]))
@@ -98,13 +104,13 @@ def _check_calibrated_phasors(features, metadata, raw_curves, irf, cell_ids=None
         )
 
 
-@pytest.mark.parametrize(("mode", "lifetime_extractors"), [
-    ("fit_only", ["Lifetime fit"]),
-    ("fit_free_only", ["Lifetime fit free"]),
-    ("fit_and_fit_free", ["Lifetime fit", "Lifetime fit free"]),
+@pytest.mark.parametrize(("mode", "lifetime_extractors", "background"), [
+    ("fit_only", ["Lifetime fit"], None),
+    ("fit_free_only", ["Lifetime fit free"], "Tail mean"),
+    ("fit_and_fit_free", ["Lifetime fit", "Lifetime fit free"], "Pre-rise median"),
 ])
 def test_real_tcell_extraction_from_configuration_through_export(
-    tmp_path, monkeypatch, mode, lifetime_extractors,
+    tmp_path, monkeypatch, mode, lifetime_extractors, background,
 ):
     started = time.monotonic()
     summary = {"mode": mode, "stage": "setup", "source_sha256": {}}
@@ -164,6 +170,7 @@ def test_real_tcell_extraction_from_configuration_through_export(
     if has_fit_free:
         app.number_input(key=f"laser_rate_{_INPUT}_default_mhz").set_value(80.0)
         app.radio(key=f"fit_free_calibration_{_INPUT}_default").set_value("IRF")
+        app.selectbox(key=f"fit_free_background_{_INPUT}_default").set_value(background)
     app.text_input(key=f"ch1_{_INPUT}_Decay_default").set_value("_filtered.csv")
     app.text_input(key=f"ch1_{_INPUT}_IRF_default").set_value("IRF.txt")
     _button(app, "Update Configuration").click()
@@ -173,6 +180,7 @@ def test_real_tcell_extraction_from_configuration_through_export(
     assert saved["ch1"][_INPUT]["selected_feature_extractors"] == extractors
     assert ("laser_rate" in saved[_INPUT]) == has_fit_free
     assert ("fit_free_calibration" in saved[_INPUT]) == has_fit_free
+    assert saved[_INPUT].get("fit_free_background") == background
 
     app.switch_page("pages/data_extraction.py")
     run(app, "open_extraction")
@@ -192,6 +200,7 @@ def test_real_tcell_extraction_from_configuration_through_export(
     if has_fit_free:
         assert metadata["laser_rate"].eq(0.08).all()
         assert metadata["fit_free_calibration_method"].eq("IRF").all()
+        assert metadata["fit_free_background"].eq(background).all()
 
     _step(app, _NUMERIC_STEP)
     run(app, "configure_numeric_extraction")

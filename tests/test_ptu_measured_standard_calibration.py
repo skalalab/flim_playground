@@ -73,7 +73,7 @@ def _independent_calibration(curve, reference_phasor, ideal_standard, basis, ome
     """Complex sums and ratios; does not call PhasorPy or application helpers."""
     counts = np.asarray(curve, dtype=np.float64)
     if subtract_background:
-        counts = np.maximum(counts - counts[int(len(counts) * 0.9):].mean(), 0)
+        counts = counts - counts[int(len(counts) * 0.9):].mean()
     measured = counts @ basis / counts.sum()
     calibrated = measured / reference_phasor * ideal_standard
     first = calibrated[0]

@@ -310,6 +310,10 @@ def get_selected_feature_extractors(input_types: dict, channel_keys: list) -> di
 # Window default for a 2D decay table; the laser-rate seed assumes one period per window.
 DEFAULT_2D_DECAY_DURATION_NS = 20.0
 
+# Background estimate subtracted from each cell's decay before the phasor; the first is the default.
+# "No correction", not "None": pandas reads "None" in the metadata CSV back as NaN.
+FIT_FREE_BACKGROUND_METHODS = ("Tail mean", "Pre-rise median", "No correction")
+
 def get_default_2D_decay_config() -> tuple:
     cfg = _load_active_profile_cfg()
     default_duration = cfg.get("Decay (2D)", {}).get("duration", DEFAULT_2D_DECAY_DURATION_NS)
@@ -396,6 +400,11 @@ def get_fit_free_calibration_method(input_type: str) -> tuple[str, float | str]:
         return method, fluorescence_lifetime_standard_lifetime
     else:
         return method, ""
+
+def get_fit_free_background(input_type: str) -> str:
+    """Return the fit-free background method for the input type, Tail mean when unset."""
+    cfg = _load_active_profile_cfg()
+    return cfg.get(input_type, {}).get("fit_free_background", FIT_FREE_BACKGROUND_METHODS[0])
 
 def get_fixed_lifetimes(channel_key: str, input_type: str) -> dict:
     """Return the fixed-lifetime dict for a channel/input_type pair.

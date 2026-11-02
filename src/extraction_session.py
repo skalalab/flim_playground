@@ -74,8 +74,8 @@ class ExtractionSession:
     def _sync_settings(self):
         """Write settings into the existing row interface used by extraction."""
         for key in ("duration", "time_bins", "laser_rate", "fit_free_calibration_method",
-                    "fluorescence_lifetime_standard_lifetime", "fitting_algo", "fitting_mode",
-                    "fix_shift"):
+                    "fluorescence_lifetime_standard_lifetime", "fit_free_background",
+                    "fitting_algo", "fitting_mode", "fix_shift"):
             if key in self.settings:
                 self.metadata_df[key] = self.settings[key]
         self.metadata_df["derived_features"] = json.dumps(self.settings.get("derived_features", []))

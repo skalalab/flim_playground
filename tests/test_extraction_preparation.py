@@ -137,6 +137,19 @@ def test_calibration_method_determines_required_reference_and_shift(tmp_path, fi
         assert settings["fluorescence_lifetime_standard_lifetime"] == 4.0
 
 
+def test_fit_free_background_defaults_to_tail_mean_and_rejects_unknown(tmp_path):
+    fovs = _fovs(tmp_path)
+    channels = {"ch1": _channel(extractors=["Lifetime fit free"])}
+    kwargs = {"laser_rate": 0.04, "fit_free_calibration_method": "IRF"}
+
+    err, settings = _prepare(fovs, channels, **kwargs)
+    assert err == "" and settings["fit_free_background"] == "Tail mean"
+    err, settings = _prepare(fovs, channels, fit_free_background="Pre-rise median", **kwargs)
+    assert err == "" and settings["fit_free_background"] == "Pre-rise median"
+    err, settings = _prepare(fovs, channels, fit_free_background="median", **kwargs)
+    assert err.startswith("Fit-free background `median` is not one of") and settings is None
+
+
 def test_prefitted_lifetime_only_needs_no_decay_timing_channel_or_shift(tmp_path):
     fovs = _fovs(tmp_path, kinds=("Mask", "SPCImage t1", "a1", "t2"))
     fovs = fovs.drop(columns=["time_bins", "duration", "ch1_channel"])

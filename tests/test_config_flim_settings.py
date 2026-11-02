@@ -95,10 +95,12 @@ def test_hidden_shared_values_survive_saving_and_reopening(
     at.radio(key=f"fit_free_calibration_{input_type}_default").set_value(
         "Fluorescence Lifetime Standard").run()
     at.number_input(key=f"fluorescence_lifetime_standard_lifetime_{input_type}_default").set_value(3.5).run()
+    at.selectbox(key=f"fit_free_background_{input_type}_default").set_value("Pre-rise median").run()
     expected = {
         "laser_rate": 0.12,
         "fit_free_calibration": "Fluorescence Lifetime Standard",
         "fluorescence_lifetime_standard_lifetime": 3.5,
+        "fit_free_background": "Pre-rise median",
     }
     if input_type == _TABULAR:
         at.number_input(key=f"{_TABULAR}_duration_default").set_value(24.0).run()
@@ -126,6 +128,7 @@ def test_hidden_shared_values_survive_saving_and_reopening(
     assert at.number_input(key=f"laser_rate_{input_type}_default_mhz").value == 120.0
     assert at.radio(key=f"fit_free_calibration_{input_type}_default").value == expected["fit_free_calibration"]
     assert at.number_input(key=f"fluorescence_lifetime_standard_lifetime_{input_type}_default").value == 3.5
+    assert at.selectbox(key=f"fit_free_background_{input_type}_default").value == "Pre-rise median"
     if input_type == _TABULAR:
         assert at.number_input(key=f"{_TABULAR}_duration_default").value == 24.0
         assert at.number_input(key=f"{_TABULAR}_time_bins_default").value == 512

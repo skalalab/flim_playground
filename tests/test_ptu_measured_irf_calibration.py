@@ -203,7 +203,7 @@ def test_synthetic_ptu_calibrates_against_measured_irf(tmp_path, monkeypatch):
             cell_id = f"synthetic_irf_sample_{label}"
             curve = expected_image[mask == label].sum(axis=0, dtype=np.uint64)
             np.testing.assert_array_equal(curves[cell_id], curve)
-            corrected = np.maximum(curve.astype(float) - curve[int(bins * 0.9):].mean(), 0)
+            corrected = curve.astype(float) - curve[int(bins * 0.9):].mean()
             uncalibrated = _phasor(corrected, basis)
             expected = uncalibrated / reference_phasor
             actual = np.array([

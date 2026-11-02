@@ -5,6 +5,7 @@ import pytest
 import tifffile
 
 from src import fov_extraction
+from src.config import FIT_FREE_BACKGROUND_METHODS
 from src.file_io import load_image
 
 
@@ -85,9 +86,9 @@ def test_standard_tiff_calibration_matches_complex_ratio(
     )
 
     assert error == ""
-    # Keep the established sample-only background subtraction and clipping.
+    # The tail-mean background is subtracted from the sample only, unclipped.
     background = np.mean(sample[int(len(sample) * 0.9):])
-    corrected_sample = np.maximum(sample - background, 0)
+    corrected_sample = sample - background
     measured_sample = _complex_phasor(corrected_sample, time, harmonic)
     measured_reference = _complex_phasor(reference.sum(axis=(0, 1)), time, harmonic)
     expected = measured_sample * _known_standard_phasor(harmonic) / measured_reference
@@ -105,7 +106,43 @@ def test_irf_calibration_keeps_complex_division(duration):
     )
 
     assert error == ""
-    corrected_sample = np.maximum(sample - np.mean(sample[int(len(sample) * 0.9):]), 0)
+    corrected_sample = sample - np.mean(sample[int(len(sample) * 0.9):])  # unclipped
+    for harmonic in (1, 2):
+        expected = _complex_phasor(corrected_sample, time, harmonic) / _complex_phasor(
+            irf, time, harmonic
+        )
+        assert _coordinates(results["cell"], harmonic) == pytest.approx(expected, abs=1e-12)
+
+
+def test_unknown_background_method_is_an_error():
+    error, results = fov_extraction.extract_fit_free_results(
+        "ch1", {"cell": np.ones(96)}, LASER_RATE, 12.5, "IRF", shifted_irf=np.ones(96),
+        background_method="None",
+    )
+    assert error == "Error: unknown fit-free background 'None' for ch1" and results.empty
+
+
+@pytest.mark.parametrize("duration", [12.5, 8.0], ids=["full_period", "truncated"])
+@pytest.mark.parametrize("method", FIT_FREE_BACKGROUND_METHODS)
+def test_background_method_sets_what_is_subtracted(duration, method):
+    time = np.arange(96) * duration / 96
+    rise = np.clip((time - 0.8) / 0.2, 0, None)
+    ripple = np.where(np.arange(96) % 2, 1.0, -1.0)  # some corrected bins go negative, so a clip would show
+    sample = 100 * np.exp(-time / 2.1) * (1 - np.exp(-rise)) + 8 + ripple
+    irf = np.exp(-0.5 * ((time - 0.8) / 0.2) ** 2)
+
+    error, results = fov_extraction.extract_fit_free_results(
+        "ch1", {"cell": sample}, LASER_RATE, duration, "IRF", shifted_irf=irf,
+        background_method=method,
+    )
+
+    assert error == ""
+    peak = int(np.argmax(sample))
+    corrected_sample = {
+        "Tail mean": sample - np.mean(sample[int(len(sample) * 0.9):]),
+        "Pre-rise median": sample - np.median(sample[:peak - 5]),
+        "No correction": sample,
+    }[method]
     for harmonic in (1, 2):
         expected = _complex_phasor(corrected_sample, time, harmonic) / _complex_phasor(
             irf, time, harmonic

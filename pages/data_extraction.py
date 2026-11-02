@@ -12,6 +12,7 @@ from src.config import (
     get_current_profile_name,
     get_decay_input_type,
     get_derived_features,
+    get_fit_free_background,
     get_fit_free_calibration_method,
     get_fixed_lifetimes,
     get_fov_name_col,
@@ -77,6 +78,7 @@ class ExtractionContext:
     fov_name_col: str
     fit_free_calibration_method: object
     fluorescence_lifetime_standard_lifetime: object
+    fit_free_background: str
     fixed_lifetimes: dict
     derived_features: list
     unique_cell_id_col: str
@@ -105,6 +107,7 @@ def build_context():
         fov_name_col=fov_name_col,
         fit_free_calibration_method=fit_free_calibration_method,
         fluorescence_lifetime_standard_lifetime=fluorescence_lifetime_standard_lifetime,
+        fit_free_background=get_fit_free_background(decay_input_type),
         fixed_lifetimes={key: get_fixed_lifetimes(key, input_types[key]) for key in channel_names},
         derived_features=get_derived_features(),
         unique_cell_id_col=get_unique_cell_id_col(),
@@ -392,6 +395,7 @@ def render_preparation(col1, col2, ctx):
             derived_features=ctx.derived_features, laser_rate=laser_rate,
             fit_free_calibration_method=source["fit_free_calibration_method"],
             fluorescence_lifetime_standard_lifetime=source["fluorescence_lifetime_standard_lifetime"],
+            fit_free_background=ctx.fit_free_background,
         )
         if error_msg:
             st.error(error_msg)

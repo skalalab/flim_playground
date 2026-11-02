@@ -12,7 +12,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.vis.helpers import add_interleaved_points_trace
-from src.fov_extraction import get_offset
+from src.fov_extraction import get_offset, get_prerise_offset
 
 
 def _grouped(n=60):
@@ -67,3 +67,18 @@ def test_get_offset_is_mean_of_last_10_percent():
     assert get_offset(curve) == pytest.approx(expected)
     # Distinguish the expected mean from the median.
     assert get_offset(curve) != pytest.approx(np.median(curve[180:]))
+
+
+def test_prerise_offset_is_flimkit_pre_peak_median():
+    curve = np.r_[np.full(39, 3.0), [50.0], [9.0, 4.0, 7.0, 6.0, 5.0], [1000.0], np.linspace(500, 20, 80)]
+    # Peak at bin 45, so bins 0-39 count: thirty-nine 3s and one 50 (median 3, mean 4.2).
+    assert get_prerise_offset(curve) == 3.0
+    # Fewer than 5 bins before the peak: median of the last 30 bins.
+    early = np.r_[[50.0, 1000.0], np.linspace(500, 10, 60)]
+    assert get_prerise_offset(early) == pytest.approx(np.median(early[-30:]))
+    # A peak at bin 10 leaves exactly 5 bins (0-4); one bin earlier falls back.
+    at_ten = np.r_[np.full(5, 2.0), np.full(5, 7.0), [1000.0], np.linspace(500, 20, 40)]
+    assert get_prerise_offset(at_ten) == 2.0
+    assert get_prerise_offset(at_ten[1:]) == pytest.approx(np.median(at_ten[-30:]))
+    # Never below zero (offset-removed input can have a negative baseline).
+    assert get_prerise_offset(np.r_[np.full(20, -2.0), [100.0], np.full(20, 1.0)]) == 0.0
