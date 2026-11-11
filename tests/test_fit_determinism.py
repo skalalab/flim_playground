@@ -13,8 +13,8 @@ import src.fit as fitmod
 from src.fit import fit_curves
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..",
-                        "example_data", "Data_Extraction", "T_cell_activation")
-DURATION = 12.5
+                        "example_data", "Data_Extraction", "2d_decay")
+DURATION = 20.0
 N_CURVES = 12  # > _MIN_CURVES_FOR_PARALLEL so the parallel path is exercised
 
 

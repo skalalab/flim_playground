@@ -23,7 +23,7 @@ from src import config
 from src.fit_helper import irf_shift
 
 _ROOT = Path(__file__).resolve().parents[1]
-_DATA = _ROOT / "example_data/Data_Extraction/T_cell_activation"
+_DATA = _ROOT / "example_data/Data_Extraction/2d_decay"
 _INPUT = "Decay (2D)"
 _CHANNEL = "NADH"
 _FOV_COUNTS = {"Tcell_Act": 342, "Tcell_Qui": 351, "Tcell_bckgrnd": 103}
@@ -156,7 +156,7 @@ def test_real_tcell_extraction_from_configuration_through_export(
     run(app, "choose_2d_input")
     app.text_input(key="channel_name_ch1_default").set_value(_CHANNEL)
     app.multiselect(key=f"{_INPUT}_ch1_feature_extractors_default").set_value(extractors)
-    app.number_input(key=f"{_INPUT}_duration_default").set_value(12.5)
+    app.number_input(key=f"{_INPUT}_duration_default").set_value(20.0)
     app.number_input(key=f"{_INPUT}_time_bins_default").set_value(200)
     app.multiselect(key="categorical_cols_default").set_value(["condition"])
     run(app, "select_extractors")
@@ -168,7 +168,7 @@ def test_real_tcell_extraction_from_configuration_through_export(
     if has_fit:
         app.number_input(key=f"num_components_ch1_{_INPUT}_default").set_value(2)
     if has_fit_free:
-        app.number_input(key=f"laser_rate_{_INPUT}_default_mhz").set_value(80.0)
+        app.number_input(key=f"laser_rate_{_INPUT}_default_mhz").set_value(50.0)
         app.radio(key=f"fit_free_calibration_{_INPUT}_default").set_value("IRF")
         app.selectbox(key=f"fit_free_background_{_INPUT}_default").set_value(background)
     app.text_input(key=f"ch1_{_INPUT}_Decay_default").set_value("_filtered.csv")
@@ -193,12 +193,12 @@ def test_real_tcell_extraction_from_configuration_through_export(
     metadata_path = Path(app.session_state["prepared_extraction"].metadata_path)
     metadata = pd.read_csv(metadata_path)
     assert set(metadata["image_name"]) == set(_FOV_COUNTS)
-    assert metadata["duration"].eq(12.5).all()
+    assert metadata["duration"].eq(20.0).all()
     assert metadata["time_bins"].eq(200).all()
     assert ("laser_rate" in metadata) == has_fit_free
     assert ("fit_free_calibration_method" in metadata) == has_fit_free
     if has_fit_free:
-        assert metadata["laser_rate"].eq(0.08).all()
+        assert metadata["laser_rate"].eq(0.05).all()
         assert metadata["fit_free_calibration_method"].eq("IRF").all()
         assert metadata["fit_free_background"].eq(background).all()
 
@@ -250,7 +250,7 @@ def test_real_tcell_extraction_from_configuration_through_export(
         t1 = features[f"Lifetime fit_{_CHANNEL}: t1"]
         t2 = features[f"Lifetime fit_{_CHANNEL}: t2"]
         assert (t1 > 0).all() and (t2 >= t1).all()
-        assert (t2 <= 12500).all()  # ns input duration -> ps lifetime output.
+        assert (t2 <= 20000).all()  # ns input duration -> ps lifetime output.
     if has_fit_free:
         prefix = f"Lifetime fit free_{_CHANNEL}: "
         modulation = np.hypot(features[prefix + "G(1st)"], features[prefix + "S(1st)"])

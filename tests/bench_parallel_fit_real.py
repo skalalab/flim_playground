@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.fit import fit_curves, _MIN_CURVES_FOR_PARALLEL
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..",
-                        "example_data", "Data_Extraction", "T_cell_activation")
+                        "example_data", "Data_Extraction", "2d_decay")
 
 
 def load_real_data():
@@ -36,7 +36,7 @@ def run_benchmark(fitting_algo, fitting_mode, num_components):
     decays, irf = load_real_data()
     n_curves = len(decays)
     time_bins = len(decays[0])
-    duration = 12.5  # typical for TCSPC
+    duration = 20.0  # 200 bins over the 50 MHz laser period
 
     print(f"\n{'='*60}")
     print(f"  REAL DATA — {n_curves} cells, {time_bins} bins")
