@@ -29,3 +29,6 @@ htmlcov/
 
 # Impeccable design-critique snapshots
 .impeccable/
+
+# Local test data (not for the repo)
+fp_data/
