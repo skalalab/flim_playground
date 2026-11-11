@@ -169,7 +169,7 @@ rm -rf ~/.config/flim-playground ~/.cache/numba
 
 ### Option 2: Build from source
 
-Requirements: Python 3.11 or newer and [uv](https://docs.astral.sh/uv/).
+Requirements: Python 3.11, 3.12, or 3.13 (3.14 is not yet supported) and [uv](https://docs.astral.sh/uv/).
 
 ```bash
 git clone https://github.com/skalalab/flim_playground.git
