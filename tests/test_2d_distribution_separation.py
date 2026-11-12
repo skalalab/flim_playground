@@ -6,7 +6,7 @@ import pytest
 import streamlit as st
 
 from src.column_roles import code_span
-from src.vis import distribution_2d, dimension_facets, helpers
+from src.vis import dimension_facets, distribution_2d, helpers
 
 
 def frame():
@@ -73,6 +73,18 @@ def settings():
     st.session_state.plot_show_group_counts = True
     yield
     st.session_state.clear()
+
+
+def test_panels_without_shape_or_opacity_keep_one_style_per_trace():
+    fig, _, _ = distribution_2d.feature_2d_distribution_plot(
+        frame(), "id", None, "x", "y", color_by=["treatment"], separate_by="day",
+        analysis_options={"log_x": False, "log_y": False,
+                          "marginal_plot_type": "gaussian fit", "fit_regression": False,
+                          "fit_gmm": False, "max_components": 2, "min_weight_threshold": .1})
+    traces = role(fig, "points")
+    assert any((t.xaxis or "x") != "x" for t in traces)
+    assert all(t.marker.symbol == "circle" and np.ndim(t.marker.opacity) == 0
+               for t in traces)
 
 
 def test_every_level_gets_one_panel_in_natural_order_with_a_right_hand_label():

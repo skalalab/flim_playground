@@ -6,6 +6,9 @@ import streamlit as st
 
 # Add the project root to the Python path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
+from src.analysis_config import (
+    working_copy_arguments,
+)
 from src.collapse import collapse_rows
 from src.dataset_io import (
     SUPPORTED_SUFFIXES,
@@ -24,24 +27,12 @@ from src.export_labels import (
 )
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import DESKTOP_APP_URL, data_extraction_available, render_top_menu
+from src.vis.dimension_facets import focus_facet_figure
+from src.vis.dimension_reduction import dimension_reduction_plot
 from src.vis.distribution_2d import (
     distribution_controls,
     feature_2d_distribution_plot,
     render_distribution_component_tables,
-)
-from src.vis.phasor import (
-    phasor_columns,
-    phasor_plot,
-    select_phasor_category,
-)
-from src.vis.dimension_facets import focus_facet_figure
-from src.vis.helpers import apply_plot_styling, log10_columns, log_negative_error
-from src.vis.dimension_reduction import dimension_reduction_plot
-from src.vis.plot_defaults import (
-    DEFAULT_AXIS_LABEL_FONT_SIZE,
-    DEFAULT_COLORMAP,
-    DEFAULT_LEGEND_FONT_SIZE,
-    DEFAULT_POINT_SIZE,
 )
 from src.vis.feature_comparison import (
     feature_comparison_plot,
@@ -51,8 +42,17 @@ from src.vis.feature_histogram import (
     feature_histogram_plot,
     render_histogram_summaries,
 )
-from src.analysis_config import (
-    working_copy_arguments,
+from src.vis.helpers import apply_plot_styling, log10_columns, log_negative_error
+from src.vis.phasor import (
+    phasor_columns,
+    phasor_plot,
+    select_phasor_category,
+)
+from src.vis.plot_defaults import (
+    DEFAULT_AXIS_LABEL_FONT_SIZE,
+    DEFAULT_COLORMAP,
+    DEFAULT_LEGEND_FONT_SIZE,
+    DEFAULT_POINT_SIZE,
 )
 from src.widgets.analysis_widget_state import (
     control_default,
@@ -81,8 +81,8 @@ from src.widgets.review_table_widget import (
     applied_summary,
     configured_row_id,
     ignored_columns,
-    review_gate,
     reset_upload_review,
+    review_gate,
     show_review_toast,
 )
 from src.widgets.selection_widgets import (
@@ -707,6 +707,11 @@ with col2:
 
                 @st.fragment
                 def _render_plot_and_controls(base_fig, build_params):
+                    # A colormap, group-count or axis-label change left base_fig stale.
+                    # Rebuild before copying and drawing it (0.7 s at 200k points);
+                    # Streamlit 1.64+ keeps the widgets this run has not rendered yet.
+                    if _plot_build_params() != build_params:
+                        st.rerun(scope="app")
                     # Styling mutates traces and adds legend entries; copy the base figure
                     # so fragment reruns do not accumulate those changes.
                     fig = go.Figure(base_fig)
@@ -833,8 +838,8 @@ with col2:
                         _extra["facet_focus"] = facet_focus
                     _export_script_button(method, uploaded_file, categorical_cols, color_by, opacity_by, shape_by, separate_by, subcolor_by, delimiter=delimiter, **_extra)
 
-                    # Rerun only after all fragment widgets register; an earlier rerun
-                    # lets Streamlit clean up their state and reset their values.
+                    # Requests raised by this run's widgets (the reorder flag, a palette
+                    # pruned by plot_config_widget, a facet click) are known only here.
                     rebuild = (st.session_state.pop("_plot_needs_rebuild", False)
                                or _plot_build_params() != build_params)
                     # A click on the grid only changes which slot draws what, so

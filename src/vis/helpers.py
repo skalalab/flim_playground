@@ -8,12 +8,12 @@ from sklearn.mixture import GaussianMixture
 from src.emojis import sad_emoji
 from src.natural_sort import natural_tuple_sort
 from src.vis.plot_defaults import (
-    panel_point_size,
-    get_context_theme_color,
     SUPERPLOT_OBSERVATION_MIN_SIZE,
     SUPERPLOT_OBSERVATION_SIZE_SCALE,
     SUPERPLOT_REPLICATE_SIZE_SCALE,
     WEBGL_POINT_THRESHOLD,
+    get_context_theme_color,
+    panel_point_size,
 )
 
 
@@ -635,12 +635,16 @@ def add_interleaved_points_trace(
             customdata_vals = (columns['customdata'][start_idx:end_idx]
                                if 'customdata' in columns else None)
 
-            # Keep per-point symbol and opacity arrays: batches can mix styling subgroups,
-            # and apply_plot_styling uses these sequences to build legend entries.
-            batch_shape_groups = columns['shape_group'][start_idx:end_idx]
-            batch_opacity_groups = columns['opacity_group'][start_idx:end_idx]
-            marker_symbols = [shape_map[g] if g is not None and shape_map else 'circle' for g in batch_shape_groups]
-            marker_opacities = [opacity_map[g] if g is not None and opacity_map else 0.8 for g in batch_opacity_groups]
+            # An active shape or opacity channel stays per point, since batches can mix
+            # styling subgroups. An inactive one is a single value: Plotly validates a
+            # per-point list entry by entry, which costs seconds at 200k points.
+            # Facet code slices only per-point values (np.ndim > 0).
+            marker_symbols = ([shape_map[g] if g is not None else 'circle'
+                               for g in columns['shape_group'][start_idx:end_idx]]
+                              if shape_map else 'circle')
+            marker_opacities = ([opacity_map[g] if g is not None else 0.8
+                                 for g in columns['opacity_group'][start_idx:end_idx]]
+                                if opacity_map else 0.8)
 
             # Only show legend for the first batch of each color
             show_in_legend = (batch_idx == 0)

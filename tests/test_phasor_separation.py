@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 import streamlit as st
 
-from src.vis import phasor, helpers
+from src.vis import helpers, phasor
 
 G = "Lifetime fit free_ch1: G(1st)"
 S = "Lifetime fit free_ch1: S(1st)"
@@ -48,6 +48,17 @@ def points(fig, axis="x"):
 def context(fig):
     return [t for t in fig.data if isinstance(t.meta, dict)
             and t.meta.get("phasor_role") == "context" and t.visible is not False]
+
+
+def test_category_views_without_shape_or_opacity_keep_one_style_per_trace(settings):
+    fig, _ = phasor.phasor_plot(frame(), "id", None, "ch1", color_by=["treatment"],
+                                separate_by="day")
+    for level in fig.layout.meta["phasor_categories"]:
+        phasor.select_phasor_category(fig, level)
+        traces = points(fig)
+        assert traces
+        assert all(t.marker.symbol == "circle" and np.ndim(t.marker.opacity) == 0
+                   for t in traces)
 
 
 def test_category_views_partition_retained_rows_with_global_encodings(settings):

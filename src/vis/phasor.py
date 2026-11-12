@@ -10,7 +10,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from .dimension_facets import category_panel_rows
-from .helpers import add_interleaved_points_trace, format_group_label, get_point_visual_mappings, hover_field
+from .helpers import (
+    add_interleaved_points_trace,
+    format_group_label,
+    get_point_visual_mappings,
+    hover_field,
+)
 from .plot_defaults import PANEL_CONTEXT_COLOR, get_context_theme_color
 
 
@@ -238,7 +243,9 @@ def _compose_phasor_categories(base, df, panels, separate_by, row_id_col,
                     spec[field] = np.asarray(value)[keep]
             spec["text"] = df.iloc[row_positions[keep]][row_id_col].to_numpy()
             for field in ("symbol", "opacity"):
-                spec["marker"][field] = np.asarray(getattr(trace.marker, field))[keep]
+                value = getattr(trace.marker, field)
+                if np.ndim(value):  # A single style already covers the kept points.
+                    spec["marker"][field] = np.asarray(value)[keep]
             group = trace.legendgroup
             spec.update(name=format_group_label(group, counts[group], show_counts),
                         xaxis="x", yaxis="y", showlegend=False,

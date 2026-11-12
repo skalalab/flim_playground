@@ -11,8 +11,8 @@ import plotly.graph_objects as go
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from src.vis.helpers import add_interleaved_points_trace
 from src.fov_extraction import get_offset, get_prerise_offset
+from src.vis.helpers import add_interleaved_points_trace
 
 
 def _grouped(n=60):
@@ -58,6 +58,52 @@ def test_interleave_does_not_touch_global_random_state():
                                  ["X", "Y"], "id", "cd")
     got = [random.random() for _ in range(5)]
     assert got == expected, "function must not consume/reset the global random stream"
+
+
+def _point_traces(fig):
+    return [tr for tr in fig.data if tr.text is not None]
+
+
+def test_points_without_shape_or_opacity_carry_one_style_per_trace():
+    """Plotly validates a per-point style list one entry at a time (seconds at 200k
+    points), so without a Shape or Opacity channel each trace sends one value."""
+    grouped, color_map = _grouped()
+    fig = go.Figure()
+    add_interleaved_points_trace(fig, grouped, color_map, None, None,
+                                 ["X", "Y"], "id", "cd")
+    traces = _point_traces(fig)
+    assert traces
+    for tr in traces:
+        assert tr.marker.symbol == "circle"
+        assert tr.marker.opacity == 0.8
+
+
+@pytest.mark.parametrize("channels", ["shape", "opacity", "both"])
+def test_active_channels_keep_per_point_styles(channels):
+    """A batch mixes styling subgroups, so an active channel stays per point;
+    an inactive one still collapses to a single value."""
+    n = 60
+    df = pd.DataFrame({"X": np.arange(n, dtype=float), "Y": np.arange(n, dtype=float),
+                       "id": [f"cell_{i}" for i in range(n)], "cd": np.arange(n)})
+    shape_map = {"s1": "circle", "s2": "square"} if channels != "opacity" else None
+    opacity_map = {"o1": 1.0, "o2": 0.4} if channels != "shape" else None
+    first, second = df.iloc[:30], df.iloc[30:]
+    grouped = [(("A", "s1" if shape_map else None, "o1" if opacity_map else None), first),
+               (("A", "s2" if shape_map else None, "o2" if opacity_map else None), second)]
+    fig = go.Figure()
+    add_interleaved_points_trace(fig, grouped, {"A": "rgba(0,0,0,0.6)"},
+                                 shape_map, opacity_map, ["X", "Y"], "id", "cd")
+    in_first = set(first["id"])
+    for tr in _point_traces(fig):
+        if shape_map:
+            assert list(tr.marker.symbol) == [
+                "circle" if i in in_first else "square" for i in tr.text]
+        else:
+            assert tr.marker.symbol == "circle"
+        if opacity_map:
+            assert list(tr.marker.opacity) == [1.0 if i in in_first else 0.4 for i in tr.text]
+        else:
+            assert tr.marker.opacity == 0.8
 
 
 def test_get_offset_is_mean_of_last_10_percent():

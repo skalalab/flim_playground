@@ -1,8 +1,7 @@
-import warnings
 import html
+import warnings
 
 import numpy as np
-
 from sklearn.preprocessing import StandardScaler
 
 warnings.filterwarnings(action='ignore', category=FutureWarning, module='sklearn.utils.deprecation')
@@ -14,10 +13,11 @@ import streamlit as st
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
-from .plot_defaults import (
-    PANEL_CONTEXT_ALPHA,
-    PANEL_CONTEXT_COLOR,
-    get_context_theme_color,
+from .dimension_facets import (
+    dimension_facet_groups,
+    dimension_facet_layout,
+    dimension_ranges,
+    normalize_dimension_categories,
 )
 from .helpers import (
     add_interleaved_points_trace,
@@ -25,10 +25,10 @@ from .helpers import (
     hover_field,
     point_trace_class,
 )
-
-from .dimension_facets import (
-    dimension_facet_groups, dimension_facet_layout, dimension_ranges,
-    normalize_dimension_categories,
+from .plot_defaults import (
+    PANEL_CONTEXT_ALPHA,
+    PANEL_CONTEXT_COLOR,
+    get_context_theme_color,
 )
 
 
@@ -185,7 +185,9 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
                 if value is not None:
                     spec[field] = np.asarray(value)[keep]
             for field in ("symbol", "opacity"):
-                spec["marker"][field] = np.asarray(getattr(trace.marker, field))[keep]
+                value = getattr(trace.marker, field)
+                if np.ndim(value):  # A single style already covers the kept points.
+                    spec["marker"][field] = np.asarray(value)[keep]
             spec.update(xaxis=xaxis, yaxis=yaxis, showlegend=False,
                         meta=dict(facet_role="points", facet_slot=slot))
             fig.add_trace(scatter_cls(**spec))

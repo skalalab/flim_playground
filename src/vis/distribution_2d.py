@@ -14,7 +14,12 @@ from src.column_roles import code_span
 from src.export_labels import available_label_column, format_export_group_labels
 from src.feature_labels import format_feature_label
 from src.widgets.visualization_widgets import gmm_hyperParams_widget
-from .dimension_facets import category_facet_groups, category_panel_rows, dimension_facet_layout
+
+from .dimension_facets import (
+    category_facet_groups,
+    category_panel_rows,
+    dimension_facet_layout,
+)
 from .gmm_tables import gmm_component_table, gmm_group_title, gmm_tables_html
 from .helpers import (
     _find_best_gmm,
@@ -24,7 +29,13 @@ from .helpers import (
     log10_columns,
     log_negative_error,
 )
-from .plot_defaults import OVERVIEW_MODEL_WIDTH, PANEL_CONTEXT_ALPHA, PANEL_CONTEXT_COLOR, PANEL_MODEL_WIDTH, get_context_theme_color
+from .plot_defaults import (
+    OVERVIEW_MODEL_WIDTH,
+    PANEL_CONTEXT_ALPHA,
+    PANEL_CONTEXT_COLOR,
+    PANEL_MODEL_WIDTH,
+    get_context_theme_color,
+)
 
 MARGINAL_OPTIONS = ['None', 'gaussian fit', 'boxplot', 'violin']
 
@@ -384,7 +395,9 @@ def feature_2d_distribution_plot(df, unique_row_id_col, fov_name_col, selected_x
                         spec[field] = np.asarray(value)[keep]
                 spec['text'] = result_df.iloc[row_positions[keep]][unique_row_id_col].to_numpy()
                 for field in ('symbol', 'opacity'):
-                    spec['marker'][field] = np.asarray(getattr(trace.marker, field))[keep]
+                    value = getattr(trace.marker, field)
+                    if np.ndim(value):  # A single style already covers the kept points.
+                        spec['marker'][field] = np.asarray(value)[keep]
                 # One shared legend on the overview reports whole-dataset counts,
                 # so the base trace's name and legend flag are kept verbatim.
                 spec.update(xaxis=xaxis, yaxis=yaxis,

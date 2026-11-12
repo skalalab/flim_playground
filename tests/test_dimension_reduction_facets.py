@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 import streamlit as st
 
-from src.vis import helpers, dimension_reduction
+from src.vis import dimension_reduction, helpers
 
 
 @pytest.fixture
@@ -34,6 +34,16 @@ def points(fig, axis="x"):
     return {str(i): (x, y, t.marker.color, s, a)
             for t in foreground(fig, axis)
             for i, x, y, s, a in zip(t.text, t.x, t.y, t.marker.symbol, t.marker.opacity)}
+
+
+def test_facets_without_shape_or_opacity_keep_one_style_per_trace(frame):
+    fig = dimension_reduction.dimension_reduction_plot(
+        frame, "id", "fov", ["x", "y"], colored_by=["type"], method="PCA",
+        separate_by=["state"])
+    traces = foreground(fig)
+    assert any((t.xaxis or "x") != "x" for t in traces)
+    assert all(t.marker.symbol == "circle" and np.ndim(t.marker.opacity) == 0
+               for t in traces)
 
 
 @pytest.mark.parametrize("separate", [[], ["type"], ["type", "state"], ["state", "type"]])
