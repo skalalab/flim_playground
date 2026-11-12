@@ -16,7 +16,11 @@ from scipy.stats import gaussian_kde, median_abs_deviation, ttest_ind
 from src.column_roles import code_span
 from src.feature_labels import format_feature_label
 from src.widgets.analysis_widget_state import number_input_default
-from src.widgets.visualization_widgets import comparison_overlay_widget, comparison_pair_widget
+from src.widgets.visualization_widgets import (
+    comparison_overlay_widget,
+    comparison_pair_widget,
+)
+
 from .helpers import (
     _palette_rgb,
     _sorted_levels,
@@ -36,7 +40,6 @@ from .plot_defaults import (
     SUPERPLOT_REPLICATE_SIZE_SCALE,
     get_context_theme_color,
 )
-
 
 # Match Plotly's box width for unit-spaced groups: (1 - boxgap) * (1 - boxgroupgap).
 # Both gaps default to 0.3; whiskers span half the box width.
@@ -64,6 +67,11 @@ def _add_box_outline_above_gl(fig, x, q1, median, q3, lower_fence, upper_fence, 
         fig.add_shape(type="line", x0=x, x1=x, y0=base, y1=fence, line=outline, **common)
         fig.add_shape(type="line", x0=x - cap, x1=x + cap, y0=fence, y1=fence,
                       line=outline, **common)
+
+
+def _per_point(style, mask):
+    """Subset a per-point marker style; a single value applies to every point as is."""
+    return style[mask] if np.ndim(style) else style
 
 
 def comparison_layout(compare_groups, separate_groups, present_cells, custom_order=None,
@@ -329,8 +337,12 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         if fov_name_col is not None:
             bucket["customdata"].append(point_customdata.to_numpy())
         # Constant within a subgroup because they come from the group key, so repeat
-        # rather than read one per row.
-        bucket["symbol"].append(np.repeat(marker_symbol, len(y_data)))
+        # rather than read one per row. Symbols go per point only for an active Shape
+        # channel: Plotly validates a string list entry by entry (0.7 s at 200k points).
+        # Opacity stays per point, unlike add_interleaved_points_trace: a WebGL trace
+        # with one symbol and one opacity blends colours differently (up to 2/255).
+        if shape_map:
+            bucket["symbol"].append(np.repeat(marker_symbol, len(y_data)))
         bucket["opacity"].append(np.repeat(marker_opacity, len(y_data)))
         # Allocate value arrays only when subcolor is active.
         if subcolor_of:
@@ -365,6 +377,8 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         # `columns` is built with `if chunks`, so the key is simply absent when the
         # frame has no FOV column.
         customdata_all = columns.get("customdata")
+        # Absent like customdata without a Shape channel: one symbol for the trace.
+        symbols = columns.get("symbol", "circle")
         # Only what both branches share. The matched branch draws a masked subset, so
         # symbol and opacity are passed per call rather than baked in here.
         marker_kwargs = dict(size=point_size, line=dict(width=0.5, color='DarkSlateGrey'))
@@ -385,7 +399,7 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
             fig.add_trace(scatter_cls(
                 x=columns["x"], y=columns["y"],
                 name=format_group_label(color_group, group_counts.get(color_group), show_counts),
-                marker=dict(color=color_map[color_group], symbol=columns["symbol"],
+                marker=dict(color=color_map[color_group], symbol=symbols,
                             opacity=columns["opacity"], **marker_kwargs),
                 showlegend=show_legend,
                 legendgroup=color_group,
@@ -410,7 +424,7 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
                 x=columns["x"][mask], y=columns["y"][mask],
                 name=format_group_label(value, subcolor_counts.get(value), show_counts),
                 marker=dict(color=subcolor_of[value],
-                            symbol=columns["symbol"][mask],
+                            symbol=_per_point(symbols, mask),
                             opacity=columns["opacity"][mask], **marker_kwargs),
                 showlegend=show_entry,
                 # Use a control-character separator to prevent ordinary group names from
@@ -754,8 +768,9 @@ def add_superplot_observations(fig, source, selected_var, color_by, separate_by,
             continue
         values = rows[selected_var].to_numpy()
         xs = x + sina_offsets(values, 0.35)
+        # One symbol without a Shape channel; opacity stays per point, as in the primary layer.
         shapes = (rows[shape_by].map(shape_map).fillna("circle").to_numpy()
-                  if shape_by and shape_map else np.repeat("circle", len(rows)))
+                  if shape_by and shape_map else "circle")
         opacities = (rows[opacity_by].map(opacity_map).fillna(1.0).to_numpy(dtype=float)
                      if opacity_by and opacity_map else np.ones(len(rows))) * SUPERPLOT_OBSERVATION_OPACITY_SCALE
         labels = rows[row_id_col].to_numpy() if row_id_col in rows else rows.index.astype(str).to_numpy()
@@ -774,7 +789,7 @@ def add_superplot_observations(fig, source, selected_var, color_by, separate_by,
                 marker=dict(size=max(SUPERPLOT_OBSERVATION_MIN_SIZE,
                                      point_size * SUPERPLOT_OBSERVATION_SIZE_SCALE),
                             color=subcolor_map[value] if subcolor_map else color_map[color_group],
-                            symbol=shapes[mask], opacity=opacities[mask],
+                            symbol=_per_point(shapes, mask), opacity=opacities[mask],
                             line=dict(width=0)),
                 hovertemplate=hover, meta={"superplot_role": "observation"},
                 **({"zorder": 0} if scatter_cls is go.Scatter else {})))

@@ -751,7 +751,11 @@ def reorder_x_axis_widget(filtered_df, selected_var, color_by, separate_by):
         if not group_by_cols:
             temp_df_groups = ["all_data"]
         else:
-            temp_df_groups = filtered_df[group_by_cols].astype(str).agg('::'.join, axis=1).unique()
+            # The plot's group labels, built the same way as helpers._prepare_group_data.
+            labels = filtered_df[group_by_cols[0]].astype(str)
+            for column in group_by_cols[1:]:
+                labels = labels + '::' + filtered_df[column].astype(str)
+            temp_df_groups = labels.unique()
 
         cmp_groups = natural_tuple_sort(temp_df_groups, delimiter='::')
 
