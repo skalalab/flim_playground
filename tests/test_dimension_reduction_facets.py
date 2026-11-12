@@ -46,6 +46,21 @@ def test_facets_without_shape_or_opacity_keep_one_style_per_trace(frame):
                for t in traces)
 
 
+def test_facets_select_panel_points_by_row_position_not_string_ids(frame, monkeypatch):
+    """numpy compares object arrays element by element in np.isin, so matching
+    string IDs to panels cost about 40 minutes at 600k cells."""
+    real_isin = np.isin
+
+    def no_string_isin(a, b, *args, **kwargs):
+        if np.asarray(a).dtype == object or np.asarray(b).dtype == object:
+            raise AssertionError("np.isin over string identifiers")
+        return real_isin(a, b, *args, **kwargs)
+
+    monkeypatch.setattr(np, "isin", no_string_isin)
+    fig = plot(frame, separate_by=["type", "state"])
+    assert any((t.xaxis or "x") != "x" for t in foreground(fig))
+
+
 @pytest.mark.parametrize("separate", [[], ["type"], ["type", "state"], ["state", "type"]])
 def test_facets_reuse_global_coordinates_and_encodings(frame, separate):
     baseline = points(plot(frame))

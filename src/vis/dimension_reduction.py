@@ -105,6 +105,14 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
             label += "_"
         axis_columns.append(label)
     df_reduced[axis_columns] = coordinates.iloc[:, :2].to_numpy()
+    # Traces are built with row positions as their labels, so panels select points
+    # by position: np.isin on string IDs compares element by element (minutes at
+    # 600k cells). Every drawn trace gets the identifiers back for its hover.
+    row_column = "_dr_row"
+    while row_column in df_reduced.columns:
+        row_column += "_"
+    df_reduced[row_column] = np.arange(len(df_reduced))
+    identifiers = df_reduced[unique_row_id_col].to_numpy()
     axis_titles = dimension_axis_titles(coordinates, exp_var)
     x_range, y_range = dimension_ranges(*coordinates.iloc[:, :2].to_numpy().T)
     composition = dimension_facet_layout(groups, x_range, y_range)
@@ -125,18 +133,21 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
         hover += hover_field(fov_name_col, "%{customdata}")
     add_interleaved_points_trace(
         fig=overview, grouped=grouped, color_map=color_map, shape_map=shape_map,
-        opacity_map=opacity_map, axis_labels=axis_columns, text_col=unique_row_id_col,
+        opacity_map=opacity_map, axis_labels=axis_columns, text_col=row_column,
         customdata_col=fov_name_col, hovertemplate=hover, show_counts=show_counts,
     )
     displayed_points = len(df) * (1 + len(groups["panels"]))
     scatter_cls = point_trace_class(displayed_points)
     fig = go.Figure()
-    for trace in overview.data:
+    trace_rows = {}  # Overview trace index -> its points' row positions.
+    for index, trace in enumerate(overview.data):
         if trace.text is None:  # Shape/opacity legend swatches contain no points.
             fig.add_trace(trace)
         else:
+            rows = trace_rows[index] = np.asarray(trace.text, dtype=int)
             spec = trace.to_plotly_json()
             spec.pop("type")
+            spec["text"] = identifiers[rows]
             # The slot a trace was built into is what a promotion trades on.
             spec["meta"] = dict(facet_role="points", facet_slot=0)
             fig.add_trace(scatter_cls(**spec, xaxis="x", yaxis="y"))
@@ -170,20 +181,20 @@ def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_featu
                 hoverinfo="skip", showlegend=False,
                 meta=dict(facet_role="context", facet_slot=slot),
             ))
-        identifiers = df_reduced.loc[mask, unique_row_id_col].to_numpy()
-        for trace in overview.data:
-            if trace.text is None:
-                continue
-            keep = np.isin(trace.text, identifiers)
+        mask = np.asarray(mask, dtype=bool)
+        for trace_index, rows in trace_rows.items():
+            keep = mask[rows]
             if not keep.any():
                 continue
+            trace = overview.data[trace_index]
             spec = trace.to_plotly_json()
             spec.pop("type")
             # Read original arrays: to_plotly_json may serialize numeric arrays.
-            for field in ("x", "y", "text", "customdata"):
+            for field in ("x", "y", "customdata"):
                 value = getattr(trace, field)
                 if value is not None:
                     spec[field] = np.asarray(value)[keep]
+            spec["text"] = identifiers[rows[keep]]
             for field in ("symbol", "opacity"):
                 value = getattr(trace.marker, field)
                 if np.ndim(value):  # A single style already covers the kept points.
