@@ -14,3 +14,12 @@ developmentMode = false
 [client]
 showErrorDetails = false 
 showSidebarNavigation = false
+
+# Newer Streamlit darkened the default accent to #c53948 / #cf4250, which mutes
+# multiselect chips, buttons, and sliders. Keep the brighter pre-redesign red.
+# Set per base theme so the light/dark switch keeps working.
+[theme.light]
+primaryColor = "#FF4B4B"
+
+[theme.dark]
+primaryColor = "#FF4B4B"
