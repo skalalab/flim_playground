@@ -95,6 +95,7 @@ _STATE_KEYS = (
     "_review_configured_row_id", "_review_picks_stale", "_review_overwrite_armed",
     "_review_preserve_controls", "_review_snapshot", "_review_baseline",
     "_review_toast", "_review_bulk_pending", "_review_doubts",
+    "_review_blocked_memo", "_review_previews",
 )
 # Export needs the configured Row ID, including blank for generated row numbers.
 # Keep this key in the same file-scoped reset as the rest of review state.
@@ -176,6 +177,28 @@ def _fingerprint(uploaded_file, df):
 
 def _file_gen():
     return st.session_state.get(_FILE_GEN, 0)
+
+
+def file_generation():
+    """The counter that changes whenever the uploaded file does."""
+    return _file_gen()
+
+
+def _blocking_reason(df, roles):
+    """review_blocking_reason, remembered until the file or a role changes (1.2 s at 1M rows)."""
+    key = (_file_gen(), tuple(sorted(roles.items())))
+    memo = st.session_state.get("_review_blocked_memo")
+    if not memo or memo[0] != key:
+        memo = st.session_state._review_blocked_memo = (key, review_blocking_reason(df, roles))
+    return memo[1]
+
+
+def _preview(df, col, numeric):
+    """column_preview, remembered for the file: every row's preview rescanned its column each rerun."""
+    previews = st.session_state.setdefault("_review_previews", {})
+    if (col, numeric) not in previews:
+        previews[(col, numeric)] = column_preview(df[col], numeric=numeric)
+    return previews[(col, numeric)]
 
 
 def _table_height(columns):
@@ -380,7 +403,7 @@ def review_gate(uploaded_file, df):
         matched = exact_match(set(df.columns), profiles)
         _load_working_copy(df, matched or AUTO_DETECT)
         # Only a saved profile's exact match skips review; a guess is shown first.
-        st.session_state._review_confirmed = bool(matched) and not review_blocking_reason(
+        st.session_state._review_confirmed = bool(matched) and not _blocking_reason(
             df, st.session_state._review_roles)
 
     control_keys = st.session_state.get("_review_preserve_controls")
@@ -647,7 +670,7 @@ def _editor(df):
                 flags[col] = doubt
             cells[2].text(col)
             cells[5].text(("⚠️ " if col in flags else "")
-                          + column_preview(df[col], numeric=col in numeric_cols),
+                          + _preview(df, col, col in numeric_cols),
                           help=flags[col][2] if col in flags else None)
             edited_roles[col] = LABEL_ROLES[role]
             if group != NO_GROUP:
@@ -973,7 +996,7 @@ def _buttons(df, saved_names):
     groups = st.session_state._review_groups
     names = st.session_state._review_group_names
     source = _applied_profile()
-    blocked = review_blocking_reason(df, roles)
+    blocked = _blocking_reason(df, roles)
     actions = exit_actions(source, bool(st.session_state.get("_review_snapshot")))
 
     # Save-as uses adjacent slots for its button and name field.

@@ -14,9 +14,7 @@ from src.dataset_io import (
     SUPPORTED_SUFFIXES,
     _render_reject,
     _render_warning,
-    interpret_table,
     message_color,
-    read_table,
     resolve_effective_fov_col,
 )
 from src.emojis import happy_emoji, sad_emoji
@@ -27,6 +25,7 @@ from src.export_labels import (
 )
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import DESKTOP_APP_URL, data_extraction_available, render_top_menu
+from src.table_session import clear_table_session, current_interpretation, current_read
 from src.vis.dimension_facets import focus_facet_figure
 from src.vis.dimension_reduction import dimension_reduction_plot
 from src.vis.distribution_2d import (
@@ -62,6 +61,7 @@ from src.widgets.analysis_widget_state import (
 from src.widgets.classification_widgets import (
     CLASSIFIER_OPTIONS,
     classification_plot_widget,
+    classification_result,
     classifier_hyperparams_widget,
     classifier_options_widget,
 )
@@ -81,6 +81,7 @@ from src.widgets.plot_layout import (
 from src.widgets.review_table_widget import (
     applied_summary,
     configured_row_id,
+    file_generation,
     ignored_columns,
     reset_upload_review,
     review_gate,
@@ -381,8 +382,11 @@ with col1:
     decision = None
     df, feature_groups_dict, upload_complete, delimiter = None, None, False, ","
     try:
-        if uploaded_file is not None:
-            raw, _read_meta, delimiter, scope_warning, error_msg = read_table(uploaded_file)
+        if uploaded_file is None:
+            clear_table_session(st.session_state)
+        else:
+            raw, _read_meta, delimiter, scope_warning, error_msg = current_read(
+                st.session_state, uploaded_file, file_generation())
             if error_msg != "":
                 _render_reject(error_msg, scope_warning)
             else:
@@ -400,10 +404,8 @@ with col1:
                 row_id_label = args["unique_row_id_col"] or "ID"
                 # Above the reader's warnings, so the way back to review stays in view.
                 summary_slot = st.container()
-                df, feature_groups_dict, upload_complete, unique_row_id_col = interpret_table(
-                    raw, categorical_cols, args["unique_row_id_col"], None,
-                    ignored_cols=args["ignored_cols"], feature_groups=args["feature_groups"],
-                    scope_warning=scope_warning, use_data_extraction=False)
+                df, feature_groups_dict, upload_complete, unique_row_id_col = current_interpretation(
+                    st.session_state, uploaded_file, file_generation(), args, scope_warning)
                 with summary_slot:
                     applied_summary(decision, None if df is None else df.columns)
     except Exception as e:
@@ -641,18 +643,9 @@ with col2:
                     if error_msg:
                         st.error(error_msg)
                     else:
-                        from src.classify import run_classification
-
-                        error_msg, results = run_classification(
-                            df_classify,
-                            classification_method,
-                            splits,
-                            sampling_method,
-                            apply_class_weight,
-                            threshold_method,
-                            classifier_params=classifier_params,
-                            random_state=42,
-                        )
+                        error_msg, results = classification_result(
+                            st.session_state, df_classify, classification_method, splits,
+                            sampling_method, apply_class_weight, threshold_method, classifier_params)
                         if error_msg:
                             st.error(f"{error_msg} {sad_emoji}")
                         else:

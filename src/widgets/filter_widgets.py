@@ -81,8 +81,9 @@ def resolve_selections(df, categories, selections, exempt=()):
 
 def filters_widget(df, categorical_cols):
 
-    # Filtered at the end based on all selections.
-    final_filtered_df = df.copy()
+    # Filtered at the end based on all selections. Not a copy: each filter below builds
+    # a new frame, and an unfiltered 1M-row table would be copied on every rerun.
+    final_filtered_df = df
 
     categories_to_filter = [category for category in categorical_cols if category in df.columns and df[category].nunique() > 1]
     if categories_to_filter:

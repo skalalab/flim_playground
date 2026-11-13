@@ -692,24 +692,23 @@ def read_table(uploaded_file):
     return df, read_meta, delimiter, scope_warning, ""
 
 
-def interpret_table(df, categorical_cols, unique_row_id_col, fov_name_col,
+def interpret_frame(df, categorical_cols, unique_row_id_col, fov_name_col,
                     ignored_cols=None, feature_groups=None, scope_warning="",
                     use_data_extraction=True):
     """Validate and prepare a parsed frame using the supplied column roles and groups.
 
-    Return (df, feature_groups, upload_complete, row_id_col), including the resolved
-    identifier name when row numbers are generated. The caller supplies the
+    Return (df, feature_groups, upload_complete, row_id_col, warnings, error) and draw
+    nothing, so the result can be kept between reruns. The caller supplies the
     confirmed column decisions independently of the current profile.
     Group structural, cleanup, and feature warnings in one section, in that order.
     """
     # Kept for the hint below: check_and_fix_df returns None when it fails.
     table = df
     df, warning_msg, error_msg = check_and_fix_df(df, categorical_cols, unique_row_id_col, fov_name_col)
+    # Include sheet-scope warnings as context for interpretation errors.
     warning_msg = scope_warning + warning_msg
     if error_msg != "":
-        # Include sheet-scope warnings as context for interpretation errors.
-        _render_reject(error_msg + _comma_decimal_hint(table), warning_msg)
-        return None, None, False, unique_row_id_col
+        return None, None, False, unique_row_id_col, warning_msg, error_msg + _comma_decimal_hint(table)
 
     # Resolve after normalization and before feature selection excludes the ID.
     df, row_id_col = resolve_row_id_col(df, unique_row_id_col)
@@ -719,16 +718,38 @@ def interpret_table(df, categorical_cols, unique_row_id_col, fov_name_col,
         feature_groups=feature_groups)
     warning_msg += feature_warning
     if error_msg != "":
-        _render_reject(error_msg + _comma_decimal_hint(table), warning_msg)
-        return None, None, False, row_id_col
+        return None, None, False, row_id_col, warning_msg, error_msg + _comma_decimal_hint(table)
 
     # Only extraction config designates a FOV column; user tables may omit one.
     if use_data_extraction and fov_name_col and resolve_effective_fov_col(df, fov_name_col) is None:
         warning_msg += (f"Warning: the FOV column '{fov_name_col}' was not found. "
                         "The FOV name is left out of hover text.\n")
+    return df, feature_groups_dict, True, row_id_col, warning_msg, ""
+
+
+def render_interpretation(upload_complete, warning_msg, error_msg):
+    """Draw interpret_frame's messages: the rejection, or the warnings and the success line."""
+    if not upload_complete:
+        _render_reject(error_msg, warning_msg)
+        return
     _render_warning(warning_msg)
     st.write(f"Data uploaded successfully {happy_emoji}")
-    return df, feature_groups_dict, True, row_id_col
+
+
+def interpret_table(df, categorical_cols, unique_row_id_col, fov_name_col,
+                    ignored_cols=None, feature_groups=None, scope_warning="",
+                    use_data_extraction=True):
+    """Interpret a parsed frame and draw its messages.
+
+    Return (df, feature_groups, upload_complete, row_id_col), including the resolved
+    identifier name when row numbers are generated.
+    """
+    df, feature_groups_dict, upload_complete, row_id_col, warning_msg, error_msg = interpret_frame(
+        df, categorical_cols, unique_row_id_col, fov_name_col, ignored_cols=ignored_cols,
+        feature_groups=feature_groups, scope_warning=scope_warning,
+        use_data_extraction=use_data_extraction)
+    render_interpretation(upload_complete, warning_msg, error_msg)
+    return df, feature_groups_dict, upload_complete, row_id_col
 
 
 def load_table(uploaded_file, categorical_cols):

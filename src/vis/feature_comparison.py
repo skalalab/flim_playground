@@ -275,7 +275,7 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
             continue
         # Keep SuperPlot replicate centers within the width of the SEM caps.
         max_jitter = SUPERPLOT_REPLICATE_JITTER_WIDTH if superplot else 0.35
-        x_of_row[rows] = x_position + sina_offsets(all_y[rows], max_jitter)
+        x_of_row[rows] = x_position + _cached_sina_offsets(all_y[rows], max_jitter)
 
     # Collect styling subgroups before drawing each colour group's trace.
     point_buckets = {}
@@ -767,7 +767,7 @@ def add_superplot_observations(fig, source, selected_var, color_by, separate_by,
         if x is None or color_group not in color_map:
             continue
         values = rows[selected_var].to_numpy()
-        xs = x + sina_offsets(values, 0.35)
+        xs = x + _cached_sina_offsets(values, 0.35)
         # One symbol without a Shape channel; opacity stays per point, as in the primary layer.
         shapes = (rows[shape_by].map(shape_map).fillna("circle").to_numpy()
                   if shape_by and shape_map else "circle")
@@ -1264,6 +1264,15 @@ def sina_offsets(values, max_jitter, seed=42):
         normalized = np.ones_like(densities)
     rng = np.random.default_rng(seed=seed)
     return rng.uniform(-1, 1, size=len(values)) * normalized * max_jitter
+
+
+@st.cache_data(show_spinner=False, max_entries=64)
+def _cached_sina_offsets(values, max_jitter, seed=42):
+    """sina_offsets, kept for unchanged values: the density is 2.5 s of every rebuild at 1M rows.
+
+    App only. Exports paste the plain sina_offsets above.
+    """
+    return sina_offsets(values, max_jitter, seed)
 
 
 def box_statistics(values):
