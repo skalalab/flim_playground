@@ -15,7 +15,7 @@ def test_the_cached_spread_equals_the_plain_one():
 
 
 def test_the_density_is_computed_once_for_unchanged_values(monkeypatch):
-    fc._cached_sina_offsets.clear()
+    fc._sina_offsets_for.clear()
     calls, real = [], fc.sina_offsets
     monkeypatch.setattr(fc, "sina_offsets", lambda *a, **k: (calls.append(1), real(*a, **k))[1])
     values = np.random.default_rng(2).normal(size=2_000)
@@ -25,6 +25,26 @@ def test_the_density_is_computed_once_for_unchanged_values(monkeypatch):
     fc._cached_sina_offsets(values + 1, 0.35)
     fc._cached_sina_offsets(values, 0.2)
     assert len(calls) == 3
+
+
+def test_one_changed_value_in_a_large_group_is_not_served_the_old_spread(monkeypatch):
+    """Streamlit hashes a sample of an array past 500,000 values; the key must cover every value."""
+    fc._sina_offsets_for.clear()
+    calls, real = [], fc.sina_offsets
+    monkeypatch.setattr(fc, "sina_offsets", lambda *a, **k: (calls.append(1), real(*a, **k))[1])
+    values = np.random.default_rng(3).normal(size=600_000)
+    edited = values.copy()
+    edited[123_456] += 5.0
+    fc._cached_sina_offsets(values, 0.35)
+    fc._cached_sina_offsets(edited, 0.35)
+    assert len(calls) == 2
+
+
+def test_the_spread_cache_is_bounded_in_entries_and_age():
+    import inspect
+
+    decorator = inspect.getsource(fc._sina_offsets_for).splitlines()[0]
+    assert "max_entries=32" in decorator and "ttl=600" in decorator
 
 
 def test_exports_paste_the_plain_spread():
@@ -67,6 +87,14 @@ def test_changed_data_retrains(fits):
     state = {}
     classification_widgets.classification_result(state, _data(), *BASE)
     classification_widgets.classification_result(state, _data(1.0), *BASE)
+    assert len(fits) == 2
+
+
+def test_the_same_rows_in_another_order_retrain(fits):
+    """The train/test split depends on row order, and an exported script would refit."""
+    state = {}
+    classification_widgets.classification_result(state, _data(), *BASE)
+    classification_widgets.classification_result(state, _data().iloc[::-1].reset_index(drop=True), *BASE)
     assert len(fits) == 2
 
 

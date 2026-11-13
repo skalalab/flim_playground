@@ -298,8 +298,8 @@ def main():
 if __name__ == '__main__':
     import multiprocessing
     multiprocessing.freeze_support()
-    if len(sys.argv) == 4 and sys.argv[1] == "--read-workbook":
+    if len(sys.argv) >= 4 and sys.argv[1] == "--read-workbook":
         # The bundle starts itself this way to read a spreadsheet under a memory cap.
         from src.spreadsheet_child import main as read_workbook
-        sys.exit(read_workbook(sys.argv[2], sys.argv[3]))
+        sys.exit(read_workbook(*sys.argv[2:5]))
     main()

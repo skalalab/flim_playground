@@ -6,9 +6,13 @@ import psutil
 
 # An upload may use this share of the memory that is free when it arrives.
 MEMORY_SHARE = 0.5
-# Peak bytes per cell of a delimited table through read, review and interpretation.
-# Measured before the rerun path was trimmed: 53 (57 float columns) to 112 (two short columns).
-TEXT_BYTES_PER_CELL = 110
+# Peak memory of a delimited table through read, review and interpretation, as bytes per
+# cell plus bytes per row (the row ID and per-row overheads). Fitted to three measured
+# 1M-row-scale tables: 13 mixed columns 1.05 GB, 57 float columns 2.6 GB, 30M x 2 6.6 GB.
+# A single per-cell figure had to be 110 to cover the tall table and then refused wide
+# numeric tables a laptop can hold.
+TEXT_BYTES_PER_CELL = 45
+TEXT_BYTES_PER_ROW = 135
 # The online demo's container is documented at about 2.7 GB; the host's own free-memory
 # figure is not the container's, so the demo counts down from this instead.
 HOSTED_MEMORY_BYTES = 2_400_000_000
@@ -49,7 +53,7 @@ def text_refusal(filename, file_bytes, rows, columns, *, hosted, budget):
     if hosted and rows * columns > HOSTED_MAX_CELLS:
         return cells_refusal(filename, rows, columns)
     # The server holds the uploaded bytes as well as the table parsed from them.
-    need = file_bytes + rows * columns * TEXT_BYTES_PER_CELL
+    need = file_bytes + rows * columns * TEXT_BYTES_PER_CELL + rows * TEXT_BYTES_PER_ROW
     if need <= budget:
         return ""
     if hosted:

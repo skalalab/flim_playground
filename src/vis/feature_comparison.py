@@ -7,6 +7,8 @@ already-collapsed frame.
 """
 from itertools import combinations
 
+import hashlib
+
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
@@ -1272,13 +1274,20 @@ def sina_offsets(values, max_jitter, seed=42):
     return rng.uniform(-1, 1, size=len(values)) * normalized * max_jitter
 
 
-@st.cache_data(show_spinner=False, max_entries=64)
+@st.cache_data(show_spinner=False, max_entries=32, ttl=600)
+def _sina_offsets_for(digest, _values, max_jitter, seed):
+    return sina_offsets(_values, max_jitter, seed)
+
+
 def _cached_sina_offsets(values, max_jitter, seed=42):
     """sina_offsets, kept for unchanged values: the density is 2.5 s of every rebuild at 1M rows.
 
-    App only. Exports paste the plain sina_offsets above.
+    App only; exports paste the plain sina_offsets above. Keyed on a digest of every
+    value, because Streamlit hashes only a sample of an array past 500,000 elements.
     """
-    return sina_offsets(values, max_jitter, seed)
+    values = np.ascontiguousarray(values, dtype=float)
+    digest = hashlib.blake2b(values.tobytes(), digest_size=16).hexdigest()
+    return _sina_offsets_for(digest, values, max_jitter, seed)
 
 
 def box_statistics(values):

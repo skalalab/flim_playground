@@ -42,12 +42,32 @@ def _peak_bytes():
     return peak if sys.platform == "darwin" else peak * 1024
 
 
-def main(input_path, output_path):
-    """Child entry point: pickle ("ok", frame, sheet_names, peak) or ("error", text) to output_path."""
+def _cap_address_space(extra_bytes):
+    """Linux: have the kernel refuse allocations past the budget, whatever the watchdog sees.
+
+    The watchdog polls from a Python thread, which another session's long call can
+    stall. Not exercised on Linux from the development machine.
+    """
+    if extra_bytes <= 0 or not sys.platform.startswith("linux"):
+        return
+    import resource
+
+    limit = psutil.Process().memory_info().vms + extra_bytes
+    resource.setrlimit(resource.RLIMIT_AS, (limit, limit))
+
+
+def main(input_path, output_path, memory_limit="0"):
+    """Child entry point: pickle the outcome to output_path.
+
+    ("ok", frame, sheet_names, peak), ("error", reader message) or ("memory",).
+    """
+    _cap_address_space(int(memory_limit))
     try:
         # From bytes, as the server always read uploads: the format comes from the content.
         frame, sheet_names = parse_workbook(io.BytesIO(Path(input_path).read_bytes()))
         result = ("ok", frame, sheet_names, _peak_bytes())
+    except MemoryError:
+        result = ("memory",)
     except Exception as error:  # noqa: BLE001 - whatever the reader raises goes back as its message
         result = ("error", str(error) or type(error).__name__)
     with open(output_path, "wb") as out:
@@ -75,8 +95,9 @@ def read_workbook_capped(data, *, memory_limit, time_limit):
         env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [_ROOT, os.environ.get("PYTHONPATH")])))
         try:
             child = subprocess.Popen(
-                [*child_command(), source, result], cwd=_ROOT, env=env,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                [*child_command(), source, result, str(memory_limit)], cwd=_ROOT, env=env,
+                # No inherited standard input: a windowed bundle has none to hand over.
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         except OSError:
             return "failed", None
@@ -98,6 +119,8 @@ def read_workbook_capped(data, *, memory_limit, time_limit):
                 outcome = pickle.load(saved)
         except Exception:  # noqa: BLE001 - a missing, cut-off or garbage result is one failure
             outcome = None
+    if outcome == ("memory",):
+        return "memory", None
     if isinstance(outcome, tuple) and len(outcome) == 2 and outcome[0] == "error":
         return "error", str(outcome[1])
     if isinstance(outcome, tuple) and len(outcome) == 4 and outcome[0] == "ok":
@@ -110,4 +133,4 @@ def read_workbook_capped(data, *, memory_limit, time_limit):
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(*sys.argv[1:3]))
+    raise SystemExit(main(*sys.argv[1:4]))

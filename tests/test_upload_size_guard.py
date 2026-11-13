@@ -5,6 +5,8 @@ parsed in a capped child process, never in the server. A refusal reaches the pag
 read_table's error text.
 """
 import io
+import threading
+import time
 from pathlib import Path
 
 import pandas as pd
@@ -76,6 +78,52 @@ def test_short_rows_are_judged_by_what_pandas_would_allocate(monkeypatch):
     monkeypatch.setattr(table_budget, "memory_budget_bytes", lambda hosted: 100_000_000)
     monkeypatch.setattr(pd, "read_csv", lambda *a, **k: pytest.fail("the parser ran"))
     assert "is too large" in dataset_io.read_table(_upload(payload))[4]
+
+
+# Shapes where pandas would build far more cells than the first record suggests. Each is
+# under 250 KB and cost the server 0.5 to 1 GB before the parser was gated on a
+# rectangular file.
+UNDERCOUNTED = {
+    "first_data_row_wider_than_the_header": b"a,b\n" + b"1," * 1999 + b"1\n" + b"1,2\n" * 20_000,
+    "header_cell_past_the_csv_field_limit": (b"A" * 140_000 + b"," + ",".join(f"c{i}" for i in range(1000)).encode()
+                                             + b"\n" + b"1\n" * 30_000),
+    "whitespace_only_first_line": b" \n" + ",".join(f"c{i}" for i in range(1000)).encode() + b"\n" + b"1\n" * 30_000,
+    "no_separator_in_the_sample": b"a\n" + b"A" * 70_000 + b"," * 999 + b"\n" + b"1\n" * 30_000,
+}
+
+
+@pytest.mark.parametrize("name", UNDERCOUNTED)
+def test_pandas_never_parses_a_file_it_would_pad_past_the_count(monkeypatch, name):
+    monkeypatch.setattr(pd, "read_csv", lambda *a, **k: pytest.fail("the parser ran"))
+    df, *_rest, error = dataset_io.read_table(_upload(UNDERCOUNTED[name]))
+    assert df is None and error.startswith("Error:")
+
+
+def test_an_unclosed_quote_is_still_named_as_such():
+    df, *_rest, error = dataset_io.read_table(_upload(b'a,b\n1,"2\n3,4\n5,6\n'))
+    assert df is None and "unclosed quotation mark" in error
+
+
+def test_two_uploads_are_admitted_one_after_the_other(monkeypatch):
+    """The second upload's budget is read only after the first parse has finished."""
+    events, real = [], pd.read_csv
+
+    def slow_parse(*a, **k):
+        events.append("parse starts")
+        time.sleep(0.3)
+        frame = real(*a, **k)
+        events.append("parse ends")
+        return frame
+
+    monkeypatch.setattr(pd, "read_csv", slow_parse)
+    monkeypatch.setattr(table_budget, "memory_budget_bytes", lambda hosted: (events.append("budget"), 10**12)[1])
+    threads = [threading.Thread(target=dataset_io.read_table,
+                                args=(_upload(f"a,b\n{i},2\n".encode(), f"concurrent{i}.csv"),)) for i in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert events == ["budget", "parse starts", "parse ends"] * 2
 
 
 def test_the_online_demo_refuses_more_than_five_million_cells(monkeypatch):

@@ -1,3 +1,4 @@
+import hashlib
 from itertools import combinations
 
 import pandas as pd
@@ -251,9 +252,11 @@ def classification_result(state, df_classify, method, splits, sampling_method, c
     The page reruns on every interaction; without this a rerun that changes nothing
     retrains the model (16 s to 113 s at 1M rows). One fit is kept per session.
     """
-    key = (int(pd.util.hash_pandas_object(df_classify, index=False).sum()), df_classify.shape,
-           tuple(df_classify.columns), method, splits, sampling_method, class_weight, threshold_method,
-           repr(sorted((classifier_params or {}).items())))
+    # Row hashes in order, not their sum: the train/test split depends on row order.
+    rows = hashlib.blake2b(pd.util.hash_pandas_object(df_classify, index=False).to_numpy().tobytes(),
+                           digest_size=16).hexdigest()
+    key = (rows, df_classify.shape, tuple(df_classify.columns), method, splits, sampling_method,
+           class_weight, threshold_method, repr(sorted((classifier_params or {}).items())))
     memo = state.get("_classification_memo")
     if not memo or memo[0] != key:
         from src.classify import run_classification

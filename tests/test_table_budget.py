@@ -28,10 +28,19 @@ def test_hosted_budget_shrinks_as_the_server_fills(monkeypatch):
     assert [table_budget.memory_budget_bytes(hosted=True) for _ in range(3)] == [1_000_000_000, 200_000_000, 0]
 
 
+def test_the_estimate_tracks_the_three_measured_tables():
+    """Measured peaks before any plot: 1M x 13 mixed 1.05 GB, 1M x 57 floats 2.6 GB, 30M x 2 6.6 GB."""
+    def need(rows, columns):
+        return rows * columns * table_budget.TEXT_BYTES_PER_CELL + rows * table_budget.TEXT_BYTES_PER_ROW
+    assert 0.6e9 < need(1_000_000, 13) < 1.3e9
+    assert 2.2e9 < need(1_000_000, 57) < 3.2e9
+    assert 5.9e9 < need(30_000_000, 2) < 7.9e9
+
+
 def test_desktop_refusal_states_the_numbers():
     text = table_budget.text_refusal("big.csv", 177_000_000, 30_000_000, 2, hosted=False, budget=1_000_000_000)
     assert text == ("Error: 'big.csv' is too large to open on this computer. It has about 30,000,000 rows × "
-                    "2 columns (60,000,000 cells), which needs about 6.8 GB of memory; 1.0 GB can be used "
+                    "2 columns (60,000,000 cells), which needs about 6.9 GB of memory; 1.0 GB can be used "
                     "right now. Filter or split the table and upload it again.")
 
 

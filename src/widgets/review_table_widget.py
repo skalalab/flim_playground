@@ -184,11 +184,6 @@ def file_generation():
     return _file_gen()
 
 
-def review_needs_table():
-    """Whether this run's gate reads the table: no decision is confirmed, or review is reopening."""
-    return not st.session_state.get("_review_confirmed") or bool(st.session_state.get(_REOPEN))
-
-
 def _blocking_reason(df, roles):
     """review_blocking_reason, remembered until the file or a role changes (1.2 s at 1M rows)."""
     key = (_file_gen(), tuple(sorted(roles.items())))

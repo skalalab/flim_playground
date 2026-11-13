@@ -2,6 +2,7 @@ import csv
 import html
 import io
 import re
+import threading
 
 import pandas as pd
 import streamlit as st
@@ -143,16 +144,26 @@ def text_grid(uploaded_file, delimiter):
     uploaded_file.seek(0)
     stream = io.TextIOWrapper(uploaded_file, encoding="utf-8", errors="replace")
     try:
+        # csv.Error (a field past the csv module's size limit) is left to the caller to refuse.
         columns = next((len(row) for row in csv.reader(stream, delimiter=delimiter) if row), 0)
-    except csv.Error:
-        # A field past the csv module's size limit: count separators in the first line instead.
-        columns = None
     finally:
         stream.detach()
         uploaded_file.seek(0)
-    if columns is None:
-        columns = _sample_text(uploaded_file).split("\n", 1)[0].count(delimiter) + 1
     return records, columns
+
+
+def _unreadable_text(filename, error):
+    """The refusal for a delimited file the csv module cannot walk."""
+    return (f"Error: '{filename}' cannot be read as a table: {error}. Check for a missing line "
+            "break or an unclosed quotation mark.")
+
+
+def _odd_quotes(uploaded_file):
+    """Whether the file holds an odd number of quotation marks: one is probably unclosed."""
+    uploaded_file.seek(0)
+    odd = uploaded_file.read().count(b'"') % 2 == 1
+    uploaded_file.seek(0)
+    return odd
 
 
 def _is_hosted():
@@ -164,7 +175,10 @@ def _is_hosted():
 
 def _text_refusal(uploaded_file, filename, delimiter):
     """Why a delimited upload is too large to parse here, or ""."""
-    rows, columns = text_grid(uploaded_file, delimiter)
+    try:
+        rows, columns = text_grid(uploaded_file, delimiter)
+    except csv.Error as error:
+        return _unreadable_text(filename, error)
     size = uploaded_file.seek(0, io.SEEK_END)
     uploaded_file.seek(0)
     hosted = _is_hosted()
@@ -203,6 +217,9 @@ def suffix_of_name(name):
 def suffix_of(uploaded_file):
     """Lowercased extension of an upload, ".csv" for anything without one."""
     return suffix_of_name(getattr(uploaded_file, "name", ""))
+
+
+_ADMISSION = threading.Lock()
 
 
 class TableRefused(Exception):
@@ -263,28 +280,41 @@ def _read_table_cached(uploaded_file, suffix):
         meta = {"sheets": sheet_names}
     else:
         delimiter, viable, present, unusable = _resolve_delimiter(uploaded_file)
-        # Check full-file field counts unless the delimiter is ambiguous.
+        # Check full-file field counts unless the delimiter is ambiguous. With no candidate
+        # in the sample, still check under the separator pandas will use: pandas pads every
+        # row to the widest it meets, so it must only see a rectangular file.
         ragged = None
-        for char in ([delimiter] if len(viable) == 1 else () if viable else present):
-            found = _first_ragged_line(uploaded_file, char)
-            if found:
-                line_no, n_fields, expected = found
-                ragged = (_DELIMITER_NAMES[char], expected, line_no, n_fields)
-                break
-        parse_error = None
+        checked = [delimiter] if len(viable) == 1 else () if viable else present
         try:
-            df = pd.read_csv(uploaded_file, index_col=False, sep=delimiter, low_memory=False)
-        except EmptyDataError:
-            # Empty text can contain whitespace or a BOM despite having nonzero size.
-            df, parse_error = pd.DataFrame(), "empty"
-        except ParserError:
-            # Odd quote parity suggests an unclosed quoted value; doubled escapes
-            # contribute an even count.
-            uploaded_file.seek(0)
-            odd_quotes = uploaded_file.read().count(b'"') % 2 == 1
-            uploaded_file.seek(0)
+            for char in ([*checked, delimiter] if not viable and delimiter not in checked else checked):
+                found = _first_ragged_line(uploaded_file, char)
+                if found:
+                    line_no, n_fields, expected = found
+                    ragged = (_DELIMITER_NAMES[char], expected, line_no, n_fields)
+                    break
+        except csv.Error as error:
+            filename = getattr(uploaded_file, "name", "") or "the uploaded file"
+            raise TableRefused(_unreadable_text(filename, error)) from error
+        parse_error = None
+        if len(viable) > 1 or unusable or ragged:
+            # _diagnose_table rejects these files, so there is nothing to parse; parsing
+            # first built rows x the widest row (an 84 KB file cost 800 MB).
             df = pd.DataFrame()
-            parse_error = "unbalanced_quote" if odd_quotes else "unreadable"
+            if ragged:
+                # What the parser's own error used to be sorted into; an odd number of
+                # quotation marks is reported before the uneven row it usually causes.
+                parse_error = "unbalanced_quote" if _odd_quotes(uploaded_file) else "unreadable"
+        else:
+            try:
+                df = pd.read_csv(uploaded_file, index_col=False, sep=delimiter, low_memory=False)
+            except EmptyDataError:
+                # Empty text can contain whitespace or a BOM despite having nonzero size.
+                df, parse_error = pd.DataFrame(), "empty"
+            except ParserError:
+                # Odd quote parity suggests an unclosed quoted value; doubled escapes
+                # contribute an even count.
+                df = pd.DataFrame()
+                parse_error = "unbalanced_quote" if _odd_quotes(uploaded_file) else "unreadable"
         meta = {"delimiter": delimiter, "viable_delimiters": viable,
                 "present_delimiters": present, "unusable_delimiter": unusable,
                 "ragged": ragged, "parse_error": parse_error}
@@ -673,16 +703,19 @@ def read_table(uploaded_file):
     if mismatch != "":
         return None, {}, delimiter, "", mismatch
     suffix = suffix_of(uploaded_file)
-    if suffix not in SPREADSHEET_SUFFIXES:
-        # Count the table before parsing: a 177 MB CSV can need 7 GB.
-        delimiter = _resolve_delimiter(uploaded_file)[0]
-        refusal = _text_refusal(uploaded_file, filename, delimiter)
-        if refusal:
-            return None, {}, delimiter, "", refusal
-    try:
-        df, read_meta = _read_table_cached(uploaded_file, suffix)
-    except TableRefused as refused:
-        return None, {}, delimiter, "", str(refused)
+    # One upload is admitted and read at a time: the budget is the memory free right now,
+    # and two uploads arriving together would otherwise each be promised all of it.
+    with _ADMISSION:
+        if suffix not in SPREADSHEET_SUFFIXES:
+            # Count the table before parsing: a 177 MB CSV can need 7 GB.
+            delimiter = _resolve_delimiter(uploaded_file)[0]
+            refusal = _text_refusal(uploaded_file, filename, delimiter)
+            if refusal:
+                return None, {}, delimiter, "", refusal
+        try:
+            df, read_meta = _read_table_cached(uploaded_file, suffix)
+        except TableRefused as refused:
+            return None, {}, delimiter, "", str(refused)
     # Spreadsheet exports use comma as their text delimiter.
     delimiter = read_meta.get("delimiter", ",")
     # Structural errors must be resolved before column roles are applied.
