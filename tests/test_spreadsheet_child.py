@@ -122,6 +122,24 @@ def test_the_child_is_started_without_the_servers_standard_input(monkeypatch):
     assert seen["stdin"] is subprocess.DEVNULL
 
 
+def test_a_windows_virtual_environment_starts_the_real_interpreter(monkeypatch):
+    """Its python.exe only relays to the interpreter, so the cap would watch the relay, not the reader."""
+    relay, real = r"C:\app\.venv\Scripts\python.exe", r"C:\Python311\python.exe"
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(sys, "executable", relay)
+    monkeypatch.setattr(sys, "_base_executable", real, raising=False)
+    seen = {}
+
+    def spy(command, **kwargs):
+        seen.update(kwargs, command=command)
+        raise OSError("not started")
+
+    monkeypatch.setattr(spreadsheet_child.subprocess, "Popen", spy)
+    assert spreadsheet_child.read_workbook_capped(b"x", memory_limit=10**9, time_limit=5) == ("failed", None)
+    assert seen["command"][:3] == [real, "-m", "src.spreadsheet_child"]
+    assert seen["env"]["__PYVENV_LAUNCHER__"] == relay      # so the real interpreter finds the environment
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows processes are not ended by signals")
 def test_a_child_killed_by_a_signal_under_the_cap_ran_out_of_memory(monkeypatch):
     """Under a hard limit the reader aborts when an allocation is refused, before it can report."""

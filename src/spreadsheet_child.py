@@ -75,10 +75,22 @@ def main(input_path, output_path, memory_limit="0"):
     return 0
 
 
+def _real_interpreter():
+    """The interpreter to start when it is not sys.executable, else None.
+
+    In a Windows virtual environment python.exe only relays: it starts the real
+    interpreter as its own child, so a watchdog on the relay measures and stops the
+    wrong process while the reader runs uncapped. multiprocessing starts the real one
+    for the same reason (bpo-35797).
+    """
+    base = getattr(sys, "_base_executable", None) or sys.executable
+    return base if sys.platform == "win32" and base != sys.executable else None
+
+
 def child_command():
     if getattr(sys, "frozen", False):
         return [sys.executable, WORKBOOK_CHILD_FLAG]
-    return [sys.executable, "-m", "src.spreadsheet_child"]
+    return [_real_interpreter() or sys.executable, "-m", "src.spreadsheet_child"]
 
 
 def read_workbook_capped(data, *, memory_limit, time_limit):
@@ -93,6 +105,9 @@ def read_workbook_capped(data, *, memory_limit, time_limit):
         with open(source, "wb") as out:
             out.write(data)
         env = dict(os.environ, PYTHONPATH=os.pathsep.join(filter(None, [_ROOT, os.environ.get("PYTHONPATH")])))
+        if _real_interpreter():
+            # Tells the real interpreter which environment's packages to use.
+            env["__PYVENV_LAUNCHER__"] = sys.executable
         try:
             child = subprocess.Popen(
                 [*child_command(), source, result, str(memory_limit)], cwd=_ROOT, env=env,
