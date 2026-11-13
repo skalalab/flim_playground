@@ -266,3 +266,19 @@ def test_tsne_offers_no_parallel_option():
     at = _run(AppTest.from_function(app))
     assert not at.checkbox
     assert "parallel" not in at.session_state.test_result
+
+
+def test_a_chart_too_large_for_the_browser_shows_a_message_and_keeps_controls(page, monkeypatch):
+    from src.widgets import plot_layout
+
+    monkeypatch.setattr(plot_layout, "BROWSER_STRING_LIMIT", 10)
+    at = AppTest.from_file(PAGE).run(timeout=90)
+    at.radio[0].set_value("**Multivariate**")
+    for key, value in {SEPARATE_KEY: ["patient"], "analysis_control_dr_method": "PCA",
+                       "ms_Uncategorized Features": ["feature_x", "feature_y"]}.items():
+        at.session_state[key] = value
+    at.run(timeout=90)
+    assert not at.exception, [e.value for e in at.exception]
+    assert any("too many points" in error.value for error in at.error), [e.value for e in at.error]
+    assert not at.get("plotly_chart")
+    assert "plot_point_size" in [widget.key for widget in at.number_input]

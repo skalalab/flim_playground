@@ -74,6 +74,7 @@ from src.widgets.filter_widgets import filters_widget, selection_key
 from src.widgets.multiselect_modes import ALL_LABEL, chosen_items
 from src.widgets.plot_layout import (
     dimension_reduction_chart,
+    figure_size_message,
     phasor_chart,
     square_2d_plot,
 )
@@ -743,7 +744,12 @@ with col2:
                         focus_facet_figure(fig, facet_focus)
                     fig = apply_plot_styling(fig, st.session_state.plot_point_size, st.session_state.plot_axis_label_size, st.session_state.plot_legend_size)
                     facet_event = None
-                    if method == "2D Feature Distribution":
+                    # A chart past the server's message limit or the browser's string
+                    # limit would only show a raw error; explain it and keep the controls.
+                    size_message = figure_size_message(fig, separated=bool(separate_by))
+                    if size_message:
+                        st.error(size_message)
+                    elif method == "2D Feature Distribution":
                         if separate_by:
                             facet_event = dimension_reduction_chart(
                                 fig,
@@ -753,8 +759,6 @@ with col2:
                                 on_select="rerun", selection_mode="points")
                         else:
                             square_2d_plot(fig, key=f"plot_chart_2d_{method}")
-                        if display_table:
-                            st.markdown(display_table, unsafe_allow_html=True)
                     elif method == "Dimension Reduction":
                         facet_event = dimension_reduction_chart(
                             fig, key=f"plot_chart_{method}{facet_chart_suffix(focus_key)}",
@@ -763,6 +767,8 @@ with col2:
                         phasor_chart(fig, key=f"plot_chart_{method}")
                     else:
                         st.plotly_chart(fig, width='stretch', key=f"plot_chart_{method}")
+                    if method == "2D Feature Distribution" and display_table:
+                        st.markdown(display_table, unsafe_allow_html=True)
                     if method == "Feature Histogram":
                         if data_export_ready and "gmm_component_tables" in fig.layout.meta:
                             component_tables = fig.layout.meta["gmm_component_tables"]

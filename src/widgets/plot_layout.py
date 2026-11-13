@@ -1,5 +1,76 @@
 """Responsive layout for the 2D distribution's square plotting area."""
+import numpy as np
 import streamlit as st
+
+# Chrome and Edge cannot build a longer string. Streamlit's chart serializes
+# Plotly's copy of the whole figure to apply its theme, so a larger figure fails
+# in the browser with "RangeError: Invalid string length".
+BROWSER_STRING_LIMIT = 2**29 - 24
+# Plotly sends a number array as base64 (about 11 characters a value) and, once
+# drawn, keeps the decoded copy beside it as _inputArray, which JSON writes as
+# "index":value. Measured in Chrome at 600k points: 49 characters a coordinate.
+SENT_CHARS_PER_NUMBER = 11
+BROWSER_CHARS_PER_NUMBER = 50
+# Let charts come close to each limit. In Chrome the browser estimate ran about
+# 2% above the measured copy (246M at 600k points, 411M at 1M), so 97% of the
+# estimate is about 95% of the real limit.
+SIZE_HEADROOM = 0.97
+
+
+def _per_point_arrays(fig):
+    """Every array a figure sends point by point: coordinates, labels and styles."""
+    for trace in fig.data:
+        for name in ("x", "y", "text", "customdata"):
+            yield getattr(trace, name, None)
+        marker = getattr(trace, "marker", None)
+        for name in ("color", "size", "symbol", "opacity"):
+            yield getattr(marker, name, None) if marker is not None else None
+
+
+def _array_chars(values, chars_per_number):
+    if values is None or np.ndim(values) == 0:
+        return 0
+    array = np.asarray(values)
+    if array.size == 0:
+        return 0
+    if array.dtype.kind in "biuf":
+        return array.size * chars_per_number
+    # Strings travel as a JSON list: their own length plus quotes and a comma.
+    sample = array.ravel()[::max(1, array.size // 1000)]
+    return int(array.size * (np.mean([len(str(value)) for value in sample]) + 3))
+
+
+def sent_figure_chars(fig):
+    """Rough length of the figure JSON the server sends to the browser."""
+    return sum(_array_chars(values, SENT_CHARS_PER_NUMBER) for values in _per_point_arrays(fig))
+
+
+def browser_figure_chars(fig):
+    """Rough length of the string Streamlit's chart builds from Plotly's copy."""
+    return sum(_array_chars(values, BROWSER_CHARS_PER_NUMBER) for values in _per_point_arrays(fig))
+
+
+def _max_message_chars():
+    # Megabytes; the figure JSON is ASCII, one byte a character.
+    return st.get_option("server.maxMessageSize") * 1e6
+
+
+def figure_size_message(fig, separated=False):
+    """A message to show instead of a chart too large to send or draw, else None.
+
+    Past either limit the chart would only show a raw error: Streamlit's message
+    size error on the server, or a RangeError from the browser.
+    """
+    if (browser_figure_chars(fig) <= SIZE_HEADROOM * BROWSER_STRING_LIMIT
+            and sent_figure_chars(fig) <= SIZE_HEADROOM * _max_message_chars()):
+        return None
+    points = sum(np.size(trace.x) for trace in fig.data
+                 if getattr(trace, "x", None) is not None and np.size(trace.x) > 1)
+    advice = ("Separate by draws every point again in each panel, so choose fewer "
+              "Separate by levels or filter the data to fewer rows."
+              if separated else "Filter the data to fewer rows.")
+    return (f"This chart has too many points for the browser to draw: {points:,} points "
+            f"in one chart. {advice}")
 
 
 def phasor_chart(fig, *, key):
