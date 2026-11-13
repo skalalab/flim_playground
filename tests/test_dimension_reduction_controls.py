@@ -237,3 +237,32 @@ def test_facets_offer_group_counts_without_a_color_group(page):
     assert page["state"]["color_by"] == []
     assert page["state"]["separate_by"] == ["patient"]
     assert page["state"]["show_group_counts"] is True
+
+
+def _umap_hyperparams_app():
+    import streamlit as st
+
+    from src.widgets.visualization_widgets import umap_hyperParams_widget
+
+    st.session_state.test_result = umap_hyperParams_widget()
+
+
+def test_umap_parallel_checkbox_starts_off_and_reaches_the_hyperparameters():
+    at = _run(AppTest.from_function(_umap_hyperparams_app))
+    assert at.session_state.test_result["parallel"] is False
+    at.checkbox(key="analysis_control_umap_parallel").check()
+    _run(at)
+    assert at.session_state.test_result["parallel"] is True
+
+
+def test_tsne_offers_no_parallel_option():
+    def app():
+        import streamlit as st
+
+        from src.widgets.visualization_widgets import tsne_hyperParams_widget
+
+        st.session_state.test_result = tsne_hyperParams_widget()
+
+    at = _run(AppTest.from_function(app))
+    assert not at.checkbox
+    assert "parallel" not in at.session_state.test_result

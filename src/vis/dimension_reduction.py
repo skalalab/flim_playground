@@ -39,6 +39,7 @@ def reduce_dimensions(X, method="UMAP", hyperParam_dict=None, n_components=2, ra
     locked ``dimension_reduction`` wrapper below.
     """
     hyperParam_dict = hyperParam_dict or {}
+    parallel = hyperParam_dict.get('parallel', False)
     exp_var = None
     # Standardize features before dimensionality reduction.
     X_std = StandardScaler().fit_transform(X)
@@ -55,8 +56,12 @@ def reduce_dimensions(X, method="UMAP", hyperParam_dict=None, n_components=2, ra
 
         umap_neighbors = hyperParam_dict.get('n_neighbors', 15)
         umap_min_dist = hyperParam_dict.get('min_dist', 0.1)
+        # umap-learn runs on one thread whenever it has a seed, so a parallel run
+        # goes unseeded and its layout changes from one computation to the next.
         reducer = umap.UMAP(n_neighbors=umap_neighbors, min_dist=umap_min_dist,
-                            metric='euclidean', n_components=n_components, random_state=random_state)
+                            metric='euclidean', n_components=n_components,
+                            random_state=None if parallel else random_state,
+                            n_jobs=-1 if parallel else 1)
         df = pd.DataFrame(reducer.fit_transform(X_std), columns=["UMAP1", "UMAP2"])
     elif method == "t-SNE":
         perplexity = hyperParam_dict.get('perplexity', 15)
@@ -75,11 +80,15 @@ def dimension_axis_titles(coordinates, exp_var):
     return titles
 
 
+# Process-wide, not per session: UMAP calls numba parallel functions, and numba's
+# default workqueue threading layer aborts the whole process when two threads enter
+# them at once, seeded or not, so two sessions running UMAP together would crash it.
+_DR_LOCK = threading.Lock()
+
+
 @st.cache_data()
 def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, random_state=42):
-    if 'dr_lock' not in st.session_state:
-        st.session_state.dr_lock = threading.Lock()
-    with st.session_state.dr_lock:
+    with _DR_LOCK:
         return reduce_dimensions(X, method, hyperParam_dict, n_components, random_state)
 
 def dimension_reduction_plot(df, unique_row_id_col, fov_name_col, selected_features, colored_by=None, opacity_by=None, shape_by=None, colormap="tab10", method="UMAP", hyperParam_dict=None, row_id_label="ID", separate_by=None):

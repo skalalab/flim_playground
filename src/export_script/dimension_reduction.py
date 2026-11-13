@@ -169,10 +169,14 @@ else:
 def _config_lines(state: dict) -> list[str]:
     mp = state.get("method_params", {})
     focus = mp.get("facet_focus")
+    hyper_params = mp.get('hyperParam_dict', {})
+    unseeded = (mp.get('dr_method', 'PCA') == "UMAP" and hyper_params.get("parallel"))
     return [
         f"SELECTED_FEATURES = {mp.get('selected_features', [])!r}",
         f"DR_METHOD = {mp.get('dr_method', 'PCA')!r}",
-        f"HYPER_PARAMS = {mp.get('hyperParam_dict', {})!r}",
+        f"HYPER_PARAMS = {hyper_params!r}"
+        + ("  # parallel UMAP runs unseeded: set 'parallel' False for a repeatable layout"
+           if unseeded else ""),
         f"SEPARATE_BY = {state.get('separate_by') or []!r}  # ordered row and column categories",
         (f"FOCUS_CATEGORY = {tuple(focus) if focus else None!r}"
          "  # panel promoted into the overview slot; None → the whole dataset"),

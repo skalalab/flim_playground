@@ -1,5 +1,8 @@
 """Dimension Reduction computation shared by the app's cached wrapper and exported scripts."""
 import sys
+import threading
+import time
+import types
 from pathlib import Path
 
 import numpy as np
@@ -34,3 +37,53 @@ def test_focus_facet_label_escapes_for_plotly_unless_told_not_to():
 
     assert focus_facet_label(["day", "line"], ("D<1", "x")) == "day: D&lt;1 · line: x"
     assert focus_facet_label("day", "D<1", escape=False) == "day: D<1"
+
+
+def test_parallel_umap_runs_unseeded_on_every_core(monkeypatch):
+    # umap-learn falls back to one thread whenever it has a seed.
+    calls = []
+
+    class FakeUMAP:
+        def __init__(self, **kwargs):
+            calls.append(kwargs)
+
+        def fit_transform(self, X):
+            return np.zeros((len(X), 2))
+
+    monkeypatch.setitem(sys.modules, "umap", types.SimpleNamespace(UMAP=FakeUMAP))
+    X = pd.DataFrame(np.random.default_rng(0).normal(size=(10, 3)))
+    reduce_dimensions(X, "UMAP", {})
+    reduce_dimensions(X, "UMAP", {"parallel": True})
+    assert [(c["random_state"], c["n_jobs"]) for c in calls] == [(42, 1), (None, -1)]
+
+
+def test_cached_wrapper_runs_one_reduction_at_a_time_across_sessions(monkeypatch):
+    # numba's workqueue layer aborts the process when two threads run UMAP at once,
+    # so the lock must hold across sessions, not only within one.
+    from src.vis import dimension_reduction as dr
+
+    active, peak, guard = [0], [0], threading.Lock()
+
+    def slow_reduce(*args):
+        with guard:
+            active[0] += 1
+            peak[0] = max(peak[0], active[0])
+        time.sleep(0.05)
+        with guard:
+            active[0] -= 1
+        return pd.DataFrame(), None
+
+    class SessionStatePerThread(threading.local):
+        # Each thread stands in for a browser session with its own Session State.
+        def __contains__(self, key):
+            return key in self.__dict__
+
+    monkeypatch.setattr(dr, "reduce_dimensions", slow_reduce)
+    monkeypatch.setattr(dr, "st", types.SimpleNamespace(session_state=SessionStatePerThread()))
+    threads = [threading.Thread(target=dr.dimension_reduction.__wrapped__,
+                                args=(pd.DataFrame({"a": [i]}),)) for i in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert peak[0] == 1

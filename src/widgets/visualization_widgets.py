@@ -540,6 +540,12 @@ def umap_hyperParams_widget():
             key="analysis_control_umap_min_dist",
         )
         umap_hyperParams_dict["min_dist"] = min_dist
+    umap_hyperParams_dict["parallel"] = st.checkbox(
+        "Parallel", key="analysis_control_umap_parallel",
+        help="Use every CPU core: several times faster on large tables. UMAP can "
+             "only run in parallel without a fixed random seed, so the layout changes "
+             "each time it is recomputed, and an exported script will not reproduce it exactly.",
+    )
 
     return umap_hyperParams_dict
 

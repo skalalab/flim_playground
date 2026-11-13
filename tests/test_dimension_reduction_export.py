@@ -552,3 +552,16 @@ def test_the_canvas_holds_the_legend_labels_and_titles(tmp_path, monkeypatch, se
     state = _state(separate_by, focus=focus)
     state.update(axis_label_size=24, legend_size=18)
     assert_canvas_holds_everything(_run(tmp_path, monkeypatch, state)["fig"])
+
+
+def test_parallel_umap_export_notes_its_unseeded_layout():
+    from src.export_script.dimension_reduction import _config_lines
+
+    def hyper_line(state):
+        return next(line for line in _config_lines(state) if line.startswith("HYPER_PARAMS"))
+
+    state = _state(method="UMAP")
+    state["method_params"]["hyperParam_dict"]["parallel"] = True
+    assert "'parallel': True" in hyper_line(state) and "unseeded" in hyper_line(state)
+    state["method_params"]["dr_method"] = "t-SNE"
+    assert "unseeded" not in hyper_line(state)
