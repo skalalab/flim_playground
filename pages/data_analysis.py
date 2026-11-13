@@ -25,7 +25,7 @@ from src.export_labels import (
 )
 from src.export_script import generate_script, get_effect_size_threshold_capture
 from src.navigation import DESKTOP_APP_URL, data_extraction_available, render_top_menu
-from src.table_session import clear_table_session, current_interpretation, current_read
+from src.table_session import clear_table_session, current_interpretation, current_read, release_raw
 from src.vis.dimension_facets import focus_facet_figure
 from src.vis.dimension_reduction import dimension_reduction_plot
 from src.vis.distribution_2d import (
@@ -85,6 +85,7 @@ from src.widgets.review_table_widget import (
     ignored_columns,
     reset_upload_review,
     review_gate,
+    review_needs_table,
     show_review_toast,
 )
 from src.widgets.selection_widgets import (
@@ -386,7 +387,7 @@ with col1:
             clear_table_session(st.session_state)
         else:
             raw, _read_meta, delimiter, scope_warning, error_msg = current_read(
-                st.session_state, uploaded_file, file_generation())
+                st.session_state, uploaded_file, file_generation(), need_table=review_needs_table())
             if error_msg != "":
                 _render_reject(error_msg, scope_warning)
             else:
@@ -406,6 +407,8 @@ with col1:
                 summary_slot = st.container()
                 df, feature_groups_dict, upload_complete, unique_row_id_col = current_interpretation(
                     st.session_state, uploaded_file, file_generation(), args, scope_warning)
+                # The plots read only the analysis frame; review re-reads the file if it reopens.
+                release_raw(st.session_state)
                 with summary_slot:
                     applied_summary(decision, None if df is None else df.columns)
     except Exception as e:

@@ -159,13 +159,19 @@ def feature_comparison_plot(df, unique_row_id_col, fov_name_col, selected_var, c
         add_boxplot = overlay == "Boxplot"
         connect_means = st.checkbox("Connect means", value=False, key=f"connect_means_{selected_var}_{'_'.join(color_by)}_{separate_by or ''}")
 
-    # Create a working copy to avoid modifying the original dataframe
-    df = df.copy()
+    def read_columns(frame, row_id, fov):
+        wanted = (row_id, fov, selected_var, *color_by, shape_by, opacity_by, separate_by, subcolor_by)
+        return list(dict.fromkeys(column for column in wanted if column in frame.columns))
+
+    # A working copy of only the columns the plot reads: copying a whole wide table
+    # costs hundreds of MB per rebuild at 1M rows.
+    df = df[read_columns(df, unique_row_id_col, fov_name_col)].copy()
     superplot = overlay == "SuperPlot"
     if superplot:
         if source_df is None:
             raise ValueError("SuperPlot requires the original observations before Collapse by.")
-        source_df = source_df.dropna(subset=[selected_var]).copy().reset_index(drop=True)
+        source_df = (source_df[read_columns(source_df, source_row_id_col, source_fov_name_col)]
+                     .dropna(subset=[selected_var]).reset_index(drop=True))
 
     # Apply log transform if requested (consistent with distribution_2d.py)
     if log_y:

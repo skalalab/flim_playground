@@ -101,6 +101,30 @@ def test_clearing_forgets_the_upload(reads):
     assert len(reads) == 2
 
 
+def test_a_released_table_keeps_its_header_and_costs_no_read(reads):
+    state = {}
+    table_session.current_interpretation(state, UPLOAD, 1, ARGS, "")
+    table_session.release_raw(state)
+    held = table_session.current_read(state, UPLOAD, 1, need_table=False)[0]
+    assert len(held) == 0 and list(held.columns) == ["id", "g", "v"] and len(reads) == 1
+
+
+def test_review_and_a_new_decision_get_the_whole_table_back(reads):
+    state = {}
+    table_session.current_interpretation(state, UPLOAD, 1, ARGS, "")
+    table_session.release_raw(state)
+    assert len(table_session.current_interpretation(state, UPLOAD, 1, {**ARGS, "categorical_cols": []}, "")[0]) == 2
+    table_session.release_raw(state)
+    assert len(table_session.current_read(state, UPLOAD, 1, need_table=True)[0]) == 2 and len(reads) == 3
+
+
+def test_nothing_is_released_before_an_interpretation_exists(reads):
+    state = {}
+    table_session.current_read(state, UPLOAD, 1)
+    table_session.release_raw(state)
+    assert len(state["_table_session"].read[0]) == 2
+
+
 def test_interpret_table_draws_what_it_always_drew(monkeypatch):
     drawn = []
     monkeypatch.setattr(dataset_io, "_render_warning", lambda message: drawn.append(("warning", message)))
@@ -211,5 +235,18 @@ def test_the_stored_table_is_not_modified_by_the_page(page):
         ignored_cols=args["ignored_cols"], feature_groups=args["feature_groups"], use_data_extraction=False)[0]
     session = at.session_state["_table_session"]
     pd.testing.assert_frame_equal(session.interpretation[0], fresh)
-    pd.testing.assert_frame_equal(session.read[0], _frame())
     assert at.session_state.analysis_columns == list(fresh.columns)
+    # Once the decision is confirmed only the analysis frame is held; the raw table keeps its header.
+    assert len(session.read[0]) == 0 and list(session.read[0].columns) == list(_frame().columns)
+
+
+def test_reopening_review_shows_real_values_and_cancel_resumes(page):
+    from tests.test_review_page import _fresh_render
+
+    at = _shown()
+    at.run(timeout=90)
+    at = next(b for b in at.button if b.key == "review_reopen").click().run(timeout=90)
+    previews = " ".join(str(t.value) for t in at.text)
+    assert not at.exception and "DMSO" in previews and "empty" not in previews
+    at = _fresh_render(next(b for b in at.button if b.key == "review_cancel").click().run(timeout=90))
+    assert at.session_state._review_confirmed and not at.exception and page["interpret"] == 1
