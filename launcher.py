@@ -302,4 +302,8 @@ if __name__ == '__main__':
         # The bundle starts itself this way to read a spreadsheet under a memory cap.
         from src.spreadsheet_child import main as read_workbook
         sys.exit(read_workbook(*sys.argv[2:5]))
+    if len(sys.argv) == 5 and sys.argv[1] == "--self-test":
+        # Release check: read one workbook and refuse another through that helper.
+        from src.spreadsheet_child import self_test
+        sys.exit(self_test(*sys.argv[2:5]))
     main()

@@ -15,7 +15,7 @@ import pytest
 from streamlit.runtime.uploaded_file_manager import UploadedFile, UploadedFileRec
 
 from src import dataset_io, spreadsheet_child, table_budget
-from tests.hostile_workbooks import (
+from tests.abnormal_workbooks import (
     far_cell_xlsx,
     formatting_only_far_cell_xlsx,
     libreoffice_filler_ods,
@@ -144,7 +144,7 @@ def test_the_example_tables_still_open(path):
     assert dataset_io.read_table(_upload(path.read_bytes(), path.name))[4] == ""
 
 
-HOSTILE = {
+ABNORMAL = {
     "far_valued_cell.xlsx": lambda: far_cell_xlsx("CV", 1_048_576),
     "ods_repeat_counts.ods": lambda: repeat_ods(rows=1_000_000, columns=50),
     "long_shared_text.xlsx": lambda: long_shared_text_xlsx(3_000, 100_000),
@@ -154,12 +154,12 @@ HOSTILE = {
 
 
 @pytest.mark.capped_child
-@pytest.mark.parametrize("name", HOSTILE)
-def test_a_hostile_workbook_is_refused_without_the_server_parsing_it(monkeypatch, name):
+@pytest.mark.parametrize("name", ABNORMAL)
+def test_an_abnormal_workbook_is_refused_without_the_server_parsing_it(monkeypatch, name):
     monkeypatch.setattr(table_budget, "memory_budget_bytes", lambda hosted: 300_000_000)
     monkeypatch.setattr(spreadsheet_child, "parse_workbook", lambda source: pytest.fail("parsed in the server"))
     before = psutil.Process().memory_info().rss
-    df, *_rest, error = dataset_io.read_table(_upload(HOSTILE[name](), name))
+    df, *_rest, error = dataset_io.read_table(_upload(ABNORMAL[name](), name))
     assert df is None and "needs more memory than can be used here (300 MB)" in error
     assert psutil.Process().memory_info().rss - before < 200_000_000
 

@@ -57,6 +57,45 @@ jobs:
       - name: Build with PyInstaller
         run: uv run pyinstaller Flim-Playground.spec --clean
 
+      # The built app reads spreadsheets by starting itself as a memory-capped helper.
+      # If that fails on a platform, every spreadsheet upload there is refused, so
+      # check it in the build itself: one ordinary workbook must open and one abnormal
+      # workbook must be refused. Windows starts the app through Start-Process, which
+      # gives the windowed app no console, as a double-click does. The time limit is for
+      # a windowed app that fails to start: it shows a dialog and never exits.
+      - name: Self-test the spreadsheet helper inside the built app
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          uv run python -c "from tests.abnormal_workbooks import far_cell_xlsx, mixed_workbook; open('selftest_good.xlsx', 'wb').write(mixed_workbook(50)); open('selftest_abnormal.xlsx', 'wb').write(far_cell_xlsx('CV', 1048576))"
+          status=0
+          case "$RUNNER_OS" in
+            Windows) powershell -NoProfile -Command "\$p = Start-Process -FilePath (Resolve-Path 'dist/Flim-Playground/Flim-Playground.exe').Path -WorkingDirectory (Get-Location).Path -ArgumentList '--self-test','selftest_good.xlsx','selftest_abnormal.xlsx','selftest_report.txt' -Wait -PassThru; exit \$p.ExitCode" || status=$? ;;
+            macOS)   dist/Flim-Playground.app/Contents/MacOS/Flim-Playground --self-test selftest_good.xlsx selftest_abnormal.xlsx selftest_report.txt || status=$? ;;
+            Linux)   dist/Flim-Playground/Flim-Playground --self-test selftest_good.xlsx selftest_abnormal.xlsx selftest_report.txt || status=$? ;;
+          esac
+          if [ -f selftest_report.txt ]; then
+            tr -d '\r' < selftest_report.txt | while read -r line; do echo "::notice title=Self-test ${{ matrix.name }}::$line"; done
+          else
+            echo "::error title=Self-test ${{ matrix.name }}::the built app wrote no report (exit code $status)"
+            status=1
+          fi
+          exit "$status"
+
+      # Not on release builds: the upload-guard tests start real helper processes, so
+      # a manual build also exercises the Linux memory limit and the Windows process
+      # handling outside the bundle (the way the online demo and a run from source do).
+      - name: Run the upload guard tests on this platform
+        if: ${{ !cancelled() && github.event_name != 'release' }}
+        shell: bash
+        run: |
+          status=0
+          uv run pytest tests/test_spreadsheet_child.py tests/test_upload_size_guard.py tests/test_table_budget.py -q -p no:cacheprovider > guard_tests.txt 2>&1 || status=$?
+          cat guard_tests.txt
+          echo "::notice title=Guard tests ${{ matrix.name }}::$(tail -1 guard_tests.txt)"
+          { grep -E '^(FAILED|ERROR) ' guard_tests.txt || true; } | while read -r line; do echo "::error title=Guard tests ${{ matrix.name }}::$line"; done
+          exit "$status"
+
       # All three platforms ship onedir builds (fast startup, no per-launch
       # self-extraction). macOS and Linux are tarred so the executable bit
       # survives download (zip strips it): macOS wraps the onedir in

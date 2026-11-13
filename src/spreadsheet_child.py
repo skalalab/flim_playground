@@ -128,8 +128,34 @@ def read_workbook_capped(data, *, memory_limit, time_limit):
         if max(top, outcome[3]) > memory_limit:
             return "memory", None
         return "ok", (outcome[1], outcome[2])
-    # No usable result: a child that died large ran out of memory; otherwise it just failed.
-    return ("memory" if top >= memory_limit / 2 else "failed"), None
+    # No usable result. A child that died large, or was ended by a signal (the reader
+    # aborts when a hard limit refuses an allocation), ran out of memory; otherwise it failed.
+    return ("memory" if top >= memory_limit / 2 or child.returncode < 0 else "failed"), None
+
+
+def self_test(good_path, abnormal_path, report_path):
+    """Release check, run inside the built app: open one workbook and refuse another.
+
+    Goes through the same helper an upload uses, so it shows the built app can start
+    itself as the reader on this platform. Writes what happened and PASS or FAIL to
+    report_path; returns 0 or 1.
+    """
+    # One cap for both, near the smallest budget the app grants: the ordinary workbook
+    # must fit under the limit that stops the abnormal one.
+    lines, passed, cap = [], False, 300_000_000
+    try:
+        status, result = read_workbook_capped(Path(good_path).read_bytes(), memory_limit=cap, time_limit=120)
+        opened = status == "ok" and len(result[0]) > 0
+        lines.append("ordinary workbook under a 300 MB cap: " + (
+            f"ok, {result[0].shape[0]} rows x {result[0].shape[1]} columns"
+            if status == "ok" else f"{status} {result or ''}".strip()))
+        refused = read_workbook_capped(Path(abnormal_path).read_bytes(), memory_limit=cap, time_limit=120)[0]
+        lines.append(f"abnormal workbook under a 300 MB cap: {refused}")
+        passed = opened and refused != "ok"
+    except Exception as error:  # noqa: BLE001 - a windowed app that raises shows a dialog; the report is its only output
+        lines.append(f"error: {type(error).__name__}: {error}")
+    Path(report_path).write_text("\n".join([*lines, "PASS" if passed else "FAIL"]) + "\n")
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":
