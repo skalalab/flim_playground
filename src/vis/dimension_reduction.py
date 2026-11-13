@@ -52,16 +52,21 @@ def reduce_dimensions(X, method="UMAP", hyperParam_dict=None, n_components=2, ra
         exp_var = pca.explained_variance_ratio_ * 100
     elif method == "UMAP":
         # Importing UMAP compiles numerical routines; defer it until needed.
+        import numba
         import umap
+        from joblib import cpu_count
 
         umap_neighbors = hyperParam_dict.get('n_neighbors', 15)
         umap_min_dist = hyperParam_dict.get('min_dist', 0.1)
         # umap-learn runs on one thread whenever it has a seed, so a parallel run
         # goes unseeded and its layout changes from one computation to the next.
+        # joblib's count honours a container's CPU quota, which numba's default
+        # (n_jobs=-1) ignores; numba rejects more threads than its pool holds.
         reducer = umap.UMAP(n_neighbors=umap_neighbors, min_dist=umap_min_dist,
                             metric='euclidean', n_components=n_components,
                             random_state=None if parallel else random_state,
-                            n_jobs=-1 if parallel else 1)
+                            n_jobs=min(cpu_count(), numba.config.NUMBA_NUM_THREADS)
+                            if parallel else 1)
         df = pd.DataFrame(reducer.fit_transform(X_std), columns=["UMAP1", "UMAP2"])
     elif method == "t-SNE":
         perplexity = hyperParam_dict.get('perplexity', 15)

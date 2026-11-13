@@ -39,8 +39,11 @@ def test_focus_facet_label_escapes_for_plotly_unless_told_not_to():
     assert focus_facet_label("day", "D<1", escape=False) == "day: D<1"
 
 
-def test_parallel_umap_runs_unseeded_on_every_core(monkeypatch):
+def test_parallel_umap_runs_unseeded_on_the_cores_it_may_use(monkeypatch):
     # umap-learn falls back to one thread whenever it has a seed.
+    import joblib
+    import numba
+
     calls = []
 
     class FakeUMAP:
@@ -53,8 +56,14 @@ def test_parallel_umap_runs_unseeded_on_every_core(monkeypatch):
     monkeypatch.setitem(sys.modules, "umap", types.SimpleNamespace(UMAP=FakeUMAP))
     X = pd.DataFrame(np.random.default_rng(0).normal(size=(10, 3)))
     reduce_dimensions(X, "UMAP", {})
+    # A container's CPU quota (seen by joblib) caps the threads...
+    monkeypatch.setattr(joblib, "cpu_count", lambda: 3)
+    monkeypatch.setattr(numba.config, "NUMBA_NUM_THREADS", 64)
     reduce_dimensions(X, "UMAP", {"parallel": True})
-    assert [(c["random_state"], c["n_jobs"]) for c in calls] == [(42, 1), (None, -1)]
+    # ...and so does a smaller numba pool, which would reject a larger request.
+    monkeypatch.setattr(numba.config, "NUMBA_NUM_THREADS", 2)
+    reduce_dimensions(X, "UMAP", {"parallel": True})
+    assert [(c["random_state"], c["n_jobs"]) for c in calls] == [(42, 1), (None, 3), (None, 2)]
 
 
 def test_cached_wrapper_runs_one_reduction_at_a_time_across_sessions(monkeypatch):
