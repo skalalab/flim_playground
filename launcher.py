@@ -6,13 +6,13 @@ when bundled with PyInstaller.
 """
 
 import os
+import platform
 import secrets
+import socket
 import sys
+import threading
 import time
 import webbrowser
-import socket
-import threading
-import platform
 
 BROWSER_POLL_INTERVAL = 5
 BROWSER_IDLE_TIMEOUT = 30
@@ -216,7 +216,10 @@ def run_streamlit_app(main_script):
             "--server.fileWatcherType",
             "none",
             "--server.headless",
-            "true"
+            "true",
+            # The memory budget, not the 200 MB default, decides what the desktop app opens.
+            "--server.maxUploadSize",
+            "2000",
         ]
 
         # Open the browser after server startup, with a bounded wait.
@@ -295,4 +298,8 @@ def main():
 if __name__ == '__main__':
     import multiprocessing
     multiprocessing.freeze_support()
+    if len(sys.argv) == 4 and sys.argv[1] == "--read-workbook":
+        # The bundle starts itself this way to read a spreadsheet under a memory cap.
+        from src.spreadsheet_child import main as read_workbook
+        sys.exit(read_workbook(sys.argv[2], sys.argv[3]))
     main()

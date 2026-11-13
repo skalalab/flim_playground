@@ -86,7 +86,7 @@ def dimension_axis_titles(coordinates, exp_var):
 _DR_LOCK = threading.Lock()
 
 
-@st.cache_data()
+@st.cache_data(max_entries=8)
 def dimension_reduction(X, n_components=2, method="UMAP", hyperParam_dict={}, random_state=42):
     with _DR_LOCK:
         return reduce_dimensions(X, method, hyperParam_dict, n_components, random_state)

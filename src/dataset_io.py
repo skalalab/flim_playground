@@ -7,6 +7,11 @@ import pandas as pd
 import streamlit as st
 from pandas.errors import EmptyDataError, ParserError
 
+from src import spreadsheet_child, table_budget
+from src.analysis_config import (
+    get_fov_name_col_analysis,
+    get_unique_row_id_col,
+)
 from src.column_roles import (
     NO_GROUP,
     ROLE_CATEGORICAL,
@@ -22,10 +27,6 @@ from src.column_roles import (
 )
 from src.config import get_all_feature_extractors
 from src.emojis import happy_emoji, sad_emoji
-from src.analysis_config import (
-    get_fov_name_col_analysis,
-    get_unique_row_id_col,
-)
 
 # Calamine formats accepted by exported scripts, including formats the uploader omits.
 SPREADSHEET_SUFFIXES = (".xlsx", ".xlsm", ".xlsb", ".xls", ".ods")
@@ -125,6 +126,52 @@ def _resolve_delimiter(uploaded_file):
     return delimiter, viable, present, unusable
 
 
+def text_grid(uploaded_file, delimiter):
+    """Return (records, columns) pandas would allocate for a delimited file, without parsing it.
+
+    Records are counted from line breaks, so quoted line breaks overcount, the safe
+    direction. Columns come from the whole first record: pandas pads every shorter row
+    to the header's width. Stream the input and leave it rewound.
+    """
+    uploaded_file.seek(0)
+    breaks, last = 0, b"\n"
+    while chunk := uploaded_file.read(1 << 20):
+        # A CRLF split across two chunks counts twice, which only overcounts.
+        breaks += chunk.count(b"\n") + chunk.count(b"\r") - chunk.count(b"\r\n")
+        last = chunk[-1:]
+    records = breaks + (last not in (b"\n", b"\r"))
+    uploaded_file.seek(0)
+    stream = io.TextIOWrapper(uploaded_file, encoding="utf-8", errors="replace")
+    try:
+        columns = next((len(row) for row in csv.reader(stream, delimiter=delimiter) if row), 0)
+    except csv.Error:
+        # A field past the csv module's size limit: count separators in the first line instead.
+        columns = None
+    finally:
+        stream.detach()
+        uploaded_file.seek(0)
+    if columns is None:
+        columns = _sample_text(uploaded_file).split("\n", 1)[0].count(delimiter) + 1
+    return records, columns
+
+
+def _is_hosted():
+    """Whether this is the online demo, whose memory every visitor shares."""
+    from src.navigation import data_extraction_available
+
+    return not data_extraction_available()
+
+
+def _text_refusal(uploaded_file, filename, delimiter):
+    """Why a delimited upload is too large to parse here, or ""."""
+    rows, columns = text_grid(uploaded_file, delimiter)
+    size = uploaded_file.seek(0, io.SEEK_END)
+    uploaded_file.seek(0)
+    hosted = _is_hosted()
+    return table_budget.text_refusal(filename, size, rows, columns, hosted=hosted,
+                                     budget=table_budget.memory_budget_bytes(hosted))
+
+
 def drop_unnamed_columns(df):
     """Drop pandas-generated "Unnamed: N" headers unless every header is unnamed.
 
@@ -158,7 +205,48 @@ def suffix_of(uploaded_file):
     return suffix_of_name(getattr(uploaded_file, "name", ""))
 
 
-@st.cache_data(show_spinner=False)
+class TableRefused(Exception):
+    """An upload that was not read; its text is the reader message for the page."""
+
+
+def _read_workbook(uploaded_file):
+    """Return (first sheet, sheet names) parsed in the capped child process.
+
+    The server never opens a workbook itself: a 1.6 KB file can make the reader
+    allocate past 8 GB. Raise TableRefused when the child is stopped or the table is
+    too large for the online demo, and ValueError with the reader's own message.
+    """
+    filename = getattr(uploaded_file, "name", "") or "the uploaded file"
+    hosted = _is_hosted()
+    budget = table_budget.memory_budget_bytes(hosted)
+    seconds = table_budget.HOSTED_WORKBOOK_SECONDS if hosted else table_budget.DESKTOP_WORKBOOK_SECONDS
+    if hosted and budget < table_budget.WORKBOOK_MIN_BYTES:
+        raise TableRefused(table_budget.busy_refusal(filename))
+    uploaded_file.seek(0)
+    data = uploaded_file.read()
+    uploaded_file.seek(0)
+    status, result = spreadsheet_child.read_workbook_capped(data, memory_limit=budget, time_limit=seconds)
+    if status == "error":
+        raise ValueError(result)
+    if status != "ok":
+        raise TableRefused(table_budget.workbook_refusal(
+            filename, status, hosted=hosted, budget=budget, seconds=seconds))
+    df, sheet_names = result
+    if hosted and df.shape[0] * df.shape[1] > table_budget.HOSTED_MAX_CELLS:
+        raise TableRefused(table_budget.cells_refusal(filename, *df.shape))
+    return df, sheet_names
+
+
+# Tests swap _read_workbook for the in-process reader; this keeps the real one reachable.
+_REAL_READ_WORKBOOK = _read_workbook
+
+
+def _read_workbook_in_process(uploaded_file):
+    """The same parse without the child, for tests that do not exercise the cap."""
+    return spreadsheet_child.parse_workbook(uploaded_file)
+
+
+@st.cache_data(show_spinner=False, max_entries=3, ttl=1800)
 def _read_table_cached(uploaded_file, suffix):
     """Cache the raw parse and return (df, reader_metadata).
 
@@ -166,15 +254,12 @@ def _read_table_cached(uploaded_file, suffix):
     Rewind upload buffers around reads: Streamlit includes UploadedFile position
     in cache keys. Pass suffix separately because bare BytesIO keys use contents.
     Keep CSV-only parser options out of the spreadsheet branch and stringify its
-    headers explicitly.
+    headers explicitly. A refused workbook raises, so the refusal is not cached.
     """
     uploaded_file.seek(0)
     if suffix in SPREADSHEET_SUFFIXES:
         # One open gives both the sheet names and the first sheet's frame.
-        with pd.ExcelFile(uploaded_file, engine="calamine") as workbook:
-            sheet_names = [str(name) for name in workbook.sheet_names]
-            df = workbook.parse(sheet_name=0)
-        df.columns = [str(col) for col in df.columns]
+        df, sheet_names = _read_workbook(uploaded_file)
         meta = {"sheets": sheet_names}
     else:
         delimiter, viable, present, unusable = _resolve_delimiter(uploaded_file)
@@ -588,7 +673,16 @@ def read_table(uploaded_file):
     if mismatch != "":
         return None, {}, delimiter, "", mismatch
     suffix = suffix_of(uploaded_file)
-    df, read_meta = _read_table_cached(uploaded_file, suffix)
+    if suffix not in SPREADSHEET_SUFFIXES:
+        # Count the table before parsing: a 177 MB CSV can need 7 GB.
+        delimiter = _resolve_delimiter(uploaded_file)[0]
+        refusal = _text_refusal(uploaded_file, filename, delimiter)
+        if refusal:
+            return None, {}, delimiter, "", refusal
+    try:
+        df, read_meta = _read_table_cached(uploaded_file, suffix)
+    except TableRefused as refused:
+        return None, {}, delimiter, "", str(refused)
     # Spreadsheet exports use comma as their text delimiter.
     delimiter = read_meta.get("delimiter", ",")
     # Structural errors must be resolved before column roles are applied.

@@ -145,7 +145,7 @@ def _prepare_group_data(df, group_by_cols, new_group_col_name, overlap_point=Tru
     return unique_groups, color_map
 
 
-@st.cache_data(show_spinner=False)
+@st.cache_data(show_spinner=False, max_entries=256)
 def _find_best_gmm(data, max_components=3, min_weight_threshold=0.1, random_state=42):
     """
     Finds the best Gaussian Mixture Model (GMM) based on BIC, subject to constraints.

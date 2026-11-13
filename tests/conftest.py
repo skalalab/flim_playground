@@ -9,6 +9,22 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "capped_child: read workbooks through the real capped child process")
+
+
+@pytest.fixture(autouse=True)
+def _in_process_workbooks(request, monkeypatch):
+    """Parse workbooks in the test process unless a test asks for the capped child.
+
+    The child costs a process start per read; only the tests that prove the cap use it.
+    """
+    if request.node.get_closest_marker("capped_child"):
+        return
+    from src import dataset_io
+    monkeypatch.setattr(dataset_io, "_read_workbook", dataset_io._read_workbook_in_process)
+
+
 @pytest.fixture
 def isolated_config_paths(tmp_path, monkeypatch):
     """Isolate both config files and guard the repository's saved settings."""
