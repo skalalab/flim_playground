@@ -75,8 +75,11 @@ def _check_calibrated_phasors(features, metadata, raw_curves, irf, cell_ids=None
         angular_frequency = 2 * np.pi * row["laser_rate"]
         times = np.arange(raw.shape[1]) * row["duration"] / raw.shape[1]
         basis = np.exp(1j * angular_frequency * times[:, None] * np.array([1, 2]))
-        with np.errstate(invalid="ignore"):
-            signal = corrected @ basis / corrected.sum(axis=1, keepdims=True)
+        totals = corrected.sum(axis=1, keepdims=True)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            # Unclipped subtraction can leave a near-empty cell a total <= 0 (Mosaic05's 1-photon
+            # cell sums to -8.8); its phasor is undefined, as in get_raw_phasor.
+            signal = np.where(totals > 0, corrected @ basis / totals, np.nan)
         shifted_irf = irf_shift(irf, row[f"{_CHANNEL}_shift"])
         reference = shifted_irf @ basis / shifted_irf.sum()
         calibrated = signal / reference

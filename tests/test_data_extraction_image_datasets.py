@@ -1,8 +1,9 @@
 """Opt-in extraction workflows for the external measured image datasets.
 
-Set FLIM_REAL_DATA_ROOT to the flim_playground_example_data folder and run this
-module with pytest. All input files are copied before the app opens them; only
-the configuration path is redirected. No extraction or fitting code is mocked.
+Set FLIM_REAL_DATA_ROOT to the repository's example_data folder (its prefitted outputs sit in
+Data_Extraction/3d_decay_1channel/SPCImage_prefitted/) and run this module with pytest. All input
+files are copied before the app opens them; only the configuration path is redirected. No
+extraction or fitting code is mocked.
 """
 
 import hashlib

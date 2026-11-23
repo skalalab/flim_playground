@@ -1,7 +1,7 @@
 """QPI acceptance against the neutrophil fixture and the lab's cleaned modules.
 
-Set FLIM_REAL_DATA_ROOT to the flim_playground_example_data folder (the fixture is its
-QPI_neutrophil subfolder; its README is authoritative). Set QPI_LAB_MODULES to a folder holding
+Set QPI_FIXTURE_DIR to the neutrophil fixture folder (its README is authoritative; the FOV files
+sit beside reference/ or in a data/ subfolder). Set QPI_LAB_MODULES to a folder holding
 the lab's cleaned qpi_calibration.py and qpi_single_cell_measurements.py to run the oracle tests
 too. Thresholds are the values measured on 2026-09-15 (plan, "Measured facts"), not the spec's.
 """
@@ -45,21 +45,28 @@ _LAB_COLUMNS = {"dry_mass_pg": "dry_mass_pg", "dry_mass_variance": "dry_mass_var
 
 @pytest.fixture(scope="module")
 def fixture_root():
-    configured = os.environ.get("FLIM_REAL_DATA_ROOT")
+    configured = os.environ.get("QPI_FIXTURE_DIR")
     if not configured:
-        pytest.skip("Set FLIM_REAL_DATA_ROOT to the external example-data folder.")
-    root = Path(configured).expanduser().resolve() / "QPI_neutrophil"
-    assert root.is_dir(), root
+        pytest.skip("Set QPI_FIXTURE_DIR to the QPI neutrophil fixture folder.")
+    root = Path(configured).expanduser().resolve()
+    assert (root / "reference").is_dir(), root
     return root
 
 
 @pytest.fixture(scope="module")
-def fovs(fixture_root):
+def input_dir(fixture_root):
+    """The FOV files: beside reference/, as the README lays them out, or in a data/ subfolder."""
+    data = fixture_root / "data"
+    return data if data.is_dir() else fixture_root
+
+
+@pytest.fixture(scope="module")
+def fovs(fixture_root, input_dir):
     """{stem: (raw_um, mask, reference_um)} for the four FOVs; files hold metres."""
     out = {}
     for stem in _FOVS:
-        raw = qpi.to_um(tifffile.imread(fixture_root / f"{stem}_WaveFront.tiff"), "m")
-        mask = tifffile.imread(fixture_root / f"{stem}_WaveFront_cellpose.tiff")
+        raw = qpi.to_um(tifffile.imread(input_dir / f"{stem}_WaveFront.tiff"), "m")
+        mask = tifffile.imread(input_dir / f"{stem}_WaveFront_cellpose.tiff")
         ref = qpi.to_um(tifffile.imread(fixture_root / "reference" / "bg_corrected" / f"{stem}_WaveFront.tiff"), "m")
         assert raw.shape == mask.shape == ref.shape == (552, 552)
         out[stem] = (raw, mask, ref)
@@ -197,10 +204,12 @@ def test_lab_oracle_cell_stats_agree_on_cells_without_negative_pixels(fovs, lab)
     assert compared >= 1, "no cell without negative pixels on the reference image"
 
 
-def test_full_workflow_flim_plus_qpi_on_the_fixture(fixture_root, tmp_path, monkeypatch):
+def test_full_workflow_flim_plus_qpi_on_the_fixture(input_dir, tmp_path, monkeypatch):
     """Configuration page -> folder preparation -> mixed calibration -> extraction, on the real fixture."""
     data_dir = tmp_path / "data"
-    shutil.copytree(fixture_root, data_dir, ignore=shutil.ignore_patterns("reference", "README.md", "*f.sdt", "Ch1_*", "Ch2_*"))
+    # Earlier app runs leave their outputs among the inputs; the export below must be this run's.
+    shutil.copytree(input_dir, data_dir, ignore=shutil.ignore_patterns(
+        "reference", "README.md", "*f.sdt", "Ch1_*", "Ch2_*", "fov_metadata_*", "single_cell_features_*"))
     config_path = tmp_path / "config.toml"
     monkeypatch.setattr(config, "_CONFIG_PATH", config_path)
 
