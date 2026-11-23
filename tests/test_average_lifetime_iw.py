@@ -94,6 +94,7 @@ def test_extract_spcimage_fit_results_tm_iw(monkeypatch):
     }
     
     monkeypatch.setattr("src.fov_extraction.load_image", lambda path: images[path])
+    monkeypatch.setattr("src.file_io.load_image", lambda path: images[path])      # masks read through file_io.load_mask
     
     metadata = {
         "ch1_Mask": "ch1_Mask",

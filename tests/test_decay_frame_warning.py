@@ -21,14 +21,17 @@ def _fresh_scan(monkeypatch):
     """The scan is st.cache_data'd: identical (paths, labels) across tests would replay a stale result.
     Only the file readers are faked; the scan and the warning helper run for real."""
     mw._scan_decay_files.clear()
+    mw._scan_masks.clear()
     monkeypatch.setattr(mw, "get_fov_name_col", lambda: "image_name")
     monkeypatch.setattr(mw, "read_decay_metadata", lambda path: ("", 12.5))
     monkeypatch.setattr(
         mw, "read_decay_with_frames",
         lambda path, channel=-1: ("", (np.ones((2, 4, 4, 8), dtype=np.uint32), FRAMES[path])),
     )
+    monkeypatch.setattr(mw, "load_mask", lambda path: np.ones((4, 4), dtype=np.uint16))  # one cell over the 4x4 grid
     yield
     mw._scan_decay_files.clear()
+    mw._scan_masks.clear()
 
 
 def _fov_df(paths, channels=("NADH",)):
@@ -65,7 +68,7 @@ def test_two_channels_sharing_a_multi_detector_file_list_it_once():
 
 def _two_channel_step_one(df):
     """Drive Step 1's channel check the way the page does, with both FLIM channels
-    reading the same multi-detector files; masks only need to be present as columns."""
+    reading the same multi-detector files; the faked mask reader serves both mask columns."""
     df["NADH_Mask"] = df["FAD_Mask"] = "mask.tiff"
     return mw.check_assign_channel_widget(
         df,

@@ -457,6 +457,7 @@ def test_spcimage_emitter_matches_schema(n, monkeypatch):
         "t2": np.full((2, 2), 2.5), "a2": np.full((2, 2), 15.0), "t3": np.full((2, 2), 4.0),
     }
     monkeypatch.setattr("src.fov_extraction.load_image", lambda path: images[path])
+    monkeypatch.setattr("src.file_io.load_image", lambda path: images[path])      # masks read through file_io.load_mask
     metadata = {f"{CH}_Mask": "m", f"{CH}_SPCImage t1": "t1", f"{CH}_a1": "a1",
                 f"{CH}_t2": "t2", f"{CH}_a2": "a2", f"{CH}_t3": "t3", "fov": "fov_1"}
 

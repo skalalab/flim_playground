@@ -22,7 +22,7 @@ from src.decay_io import (
     read_decay_with_frames,
 )
 from src.emojis import sad_emoji
-from src.file_io import load_image, read_image_axes
+from src.file_io import MaskError, load_mask, read_image_axes
 from src.widgets.analysis_widget_state import control_default, number_input_default
 from src.widgets.laser_rate_widget import laser_rate_input
 
@@ -421,7 +421,7 @@ def check_raw_decay_data(fov_df, channel_name):
     mask_column_name = f"{channel_name}_Mask"
     if decay_column_name not in fov_df.columns:
         return "Error: No decay data found. Please check the data.", [], None, None, None
-    # Only check mask-column presence here; mask paths are not scan-cache inputs.
+    # The mask is read after the decay checks, by _scan_masks; its paths are not decay-scan cache inputs.
     if mask_column_name not in fov_df.columns:
         return "Error: No mask data found. Please check the data.", [], None, None, None
 
@@ -450,6 +450,11 @@ def check_raw_decay_data(fov_df, channel_name):
     # get the first shape: CYXT or YXT
     shape = scan.shape_list[0]
     laser_rep_time = scan.laser_rep_time_list[0]
+    if len(shape) in (3, 4):  # every FOV shares this shape, so each mask must match its (Y, X)
+        decay_paths = _column_values(fov_df, decay_column_name)
+        error_msg = _mask_size_error(fov_df, channel_name, "decay file", decay_paths, [shape[-3:-1]] * len(decay_paths))
+        if error_msg != "":
+            return error_msg, [], None, None, None
     if len(shape) == 3:
         # single channel per file: nothing to assign, so nothing to preview
         return "", [-1], shape, laser_rep_time, None
@@ -528,11 +533,11 @@ def check_raw_2D_decay_data(fov_df, channel_name):
 
 
 @st.cache_data(show_spinner="Reading images...")
-def _scan_intensity_images(intensity_paths, mask_paths, image_label):
-    """Check that each image is 2D or a stack of planes, with a 2D mask of the same (Y, X).
+def _scan_intensity_images(intensity_paths, image_label):
+    """Check that each image is 2D or a stack of planes; ``_scan_masks`` checks the masks.
 
     A stack keeps one axis besides Y and X once tifffile drops size-1 axes: C, S, or the
-    unlabelled I/Q. Cache by both path tuples because both files are read. ``image_label``
+    unlabelled I/Q. ``image_label``
     ("Intensity" or "QPI") names the image in errors. Return
     ``(error_msg, (dimension_list, available_planes, preview_images))`` with file-specific
     errors: the (planes, Y, X) of every FOV, or the (Y, X) of a 2D image, which is read whole and
@@ -543,13 +548,23 @@ def _scan_intensity_images(intensity_paths, mask_paths, image_label):
     dimension_list = []
     empty_images = []
     plane_has_signal = preview_images = None
-    for image_path, mask_path in zip(intensity_paths, mask_paths):
+    for image_path in intensity_paths:
         try:
             image_data, axes = read_image_axes(image_path)
         except Exception as e:
             return f"Error reading {image_label} image: {image_path}: {e}", None
         if np.iscomplexobj(image_data):  # no single intensity or OPD to measure
             return f"Error: {image_label} image {image_path} holds complex numbers. Save a real-valued image.", None
+        if image_data.dtype == bool:  # a thresholded mask; bool arithmetic also crashes the texture features
+            return (f"Error: {image_label} image {image_path} is 1-bit black and white, so it holds no measured values. "
+                    "Select the original image, not a thresholded mask."), None
+        low, high = image_data.min(), image_data.max()
+        if low == 0 and high == 1 and ((image_data == 0) | (image_data == 1)).all():  # the same mask saved as 8/16-bit or float
+            return (f"Error: {image_label} image {image_path} holds no values other than 0 and 1, so it is a thresholded "
+                    "mask, not measured values. Select the original image."), None
+        if image_label == "Intensity" and low < 0:  # texture takes fractions of a cell's intensity; QPI path differences are signed
+            return (f"Error: Intensity image {image_path} has negative values (lowest {float(low):g}). Intensity features "
+                    "need values of 0 or more: use the raw image, or clip it at 0."), None
         extra = [(axis, size) for axis, size in zip(axes, image_data.shape) if axis not in "YX"]
         if len(extra) > 1 or any(axis not in "CSIQ" for axis, _ in extra):
             listed = ", ".join(f"{tifffile.TIFF.AXES_NAMES.get(axis, axis)} ({axis}×{size})" for axis, size in extra)
@@ -567,15 +582,6 @@ def _scan_intensity_images(intensity_paths, mask_paths, image_label):
             if not lit.any():
                 empty_images.append(image_path)
             plane_has_signal |= lit
-        # check for the consistency of the shape between the intensity image and the mask image
-        try:
-            mask_data = load_image(mask_path)
-        except Exception as e:
-            return f"Error reading mask image: {mask_path}: {e}", None
-        if len(mask_data.shape) != 2:
-            return f"Error: Mask image {mask_path} is not a 2D array", None
-        if planes.shape[1:] != mask_data.shape:
-            return f"Error: {image_label} image {image_path} and mask image {mask_path} have different shapes: {planes.shape[1:]} != {mask_data.shape}", None
     if plane_has_signal is None:
         return "", (dimension_list, [-1], None)
     if empty_images:
@@ -586,11 +592,53 @@ def _scan_intensity_images(intensity_paths, mask_paths, image_label):
     return "", (dimension_list, available_planes, preview_images)
 
 
+@st.cache_data(show_spinner="Reading masks...")
+def _scan_masks(mask_paths):
+    """Step 1's side of ``file_io.load_mask``, the mask rule extraction reads with, for every
+    channel that has a mask whatever its modality.
+
+    Return ``(error_msg, shapes)``: each FOV's (Y, X) in path order, for the callers that
+    know their data's size.
+    """
+    shapes = []
+    for mask_path in mask_paths:
+        try:
+            mask = load_mask(mask_path)
+        except MaskError as e:
+            return f"Error: {e}", None
+        except Exception as e:
+            return f"Error reading mask image: {mask_path}: {e}", None
+        shapes.append(mask.shape)
+    return "", shapes
+
+
+def check_raw_mask_data(fov_df, channel_name):
+    """Apply ``_scan_masks`` to the channel's ``{channel}_Mask`` column; ``(error_msg, shapes)``."""
+    mask_column_name = f"{channel_name}_Mask"
+    if mask_column_name not in fov_df.columns:
+        return f"Error: Mask path not found for {channel_name}", None
+    return _scan_masks(_column_values(fov_df, mask_column_name))
+
+
+def _mask_size_error(fov_df, channel_name, data_label, data_paths, data_shapes):
+    """The first FOV whose mask's (Y, X) differs from its data's, as an error; "" when all match."""
+    error_msg, mask_shapes = check_raw_mask_data(fov_df, channel_name)
+    if error_msg != "":
+        return error_msg
+    mask_paths = _column_values(fov_df, f"{channel_name}_Mask")
+    for data_path, data_shape, mask_path, mask_shape in zip(data_paths, data_shapes, mask_paths, mask_shapes):
+        if tuple(data_shape) != tuple(mask_shape):
+            return f"Error: {data_label} {data_path} and mask image {mask_path} have different shapes: {tuple(data_shape)} != {tuple(mask_shape)}"
+    return ""
+
+
 def check_raw_intensity_data(fov_df, channel_name, image_file_type="Intensity (2D)"):
     """Validate one image channel (intensity or QPI wavefront, 2D or a stack) against its mask.
 
-    ``image_file_type`` names the path column, ``{channel}_{image_file_type}``; the checks are
-    shape-only (axes, image and mask equal, consistent across FOVs), so signed floats pass.
+    ``image_file_type`` names the path column, ``{channel}_{image_file_type}``. The image checks
+    are axes, shape and values: no complex, 1-bit or 0-and-1-only image, and no negative
+    Intensity values (QPI path differences are signed); the mask meets ``_scan_masks``' rule
+    and the image's (Y, X).
     Return ``(error_msg, (dims, available_planes, preview_images))``: the (Y, X) every FOV
     shares, the planes Step 1 may offer ([-1] for a 2D image) and the first FOV's planes.
     """
@@ -601,14 +649,15 @@ def check_raw_intensity_data(fov_df, channel_name, image_file_type="Intensity (2
     if mask_column_name not in fov_df.columns:
         return f"Error: Mask path not found for {channel_name}", None
 
-    error_msg, scan = _scan_intensity_images(
-        _column_values(fov_df, intensity_column_name),
-        _column_values(fov_df, mask_column_name),
-        image_label=image_file_type.removesuffix(" (2D)"),
-    )
+    intensity_paths = _column_values(fov_df, intensity_column_name)
+    image_label = image_file_type.removesuffix(" (2D)")
+    error_msg, scan = _scan_intensity_images(intensity_paths, image_label=image_label)
     if error_msg != "":
         return error_msg, None
     dimension_list, available_planes, preview_images = scan
+    error_msg = _mask_size_error(fov_df, channel_name, f"{image_label} image", intensity_paths, [dims[-2:] for dims in dimension_list])
+    if error_msg != "":
+        return error_msg, None
 
     if len(set(dimension_list)) > 1:
         return f"Inconsistent fov dimensions found for channel {channel_name}. Please check the data.", None
@@ -627,6 +676,7 @@ def clear_folder_scan_caches():
     _scan_decay_files.clear()
     _scan_2d_decay_files.clear()
     _scan_intensity_images.clear()
+    _scan_masks.clear()
     clear_ptu_reference_cache()
     # The shift caches key on metadata paths, so replacing a reference in place
     # otherwise leaves the old shifts visible. The extraction caches also key on each
@@ -723,6 +773,10 @@ def check_assign_channel_widget(fov_df, selected_channels, flim_decay_input_type
     has_flim = has_3_4D_decay = has_intensity_only = False
     for i, (channel_key, channel_name) in enumerate(selected_channels.items()):
         imaging_modality = imaging_modalities[channel_key]
+        if f"{channel_name}_Mask" in fov_df.columns:  # one mask rule for every modality, even one Step 1 reads no data for
+            error_msg, _ = check_raw_mask_data(fov_df, channel_name)
+            if error_msg != "":
+                return error_msg, None
         if imaging_modality in ("Intensity-only", "QPI"):
             has_intensity_only = True
             image_file_type = "Intensity (2D)" if imaging_modality == "Intensity-only" else "QPI (2D)"

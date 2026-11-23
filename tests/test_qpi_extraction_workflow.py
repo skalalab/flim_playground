@@ -14,6 +14,7 @@ import tifffile
 from qpi_fixtures import (
     CELL1_MASS_PG,
     CONSTANTS,
+    FLIM_INPUT,
     QPI_INPUT,
     flim_channel,
     qpi_channel,
@@ -31,7 +32,7 @@ from test_data_extraction_real_dataset import (
 from test_ptu_references import write_reference
 
 from src.file_io import load_image
-from src.fov_extraction import fov_extraction
+from src.fov_extraction import extract_intensity_features, fov_extraction
 from src.metadata import background_columns, pending_calibration, prepare_extraction
 from src.qpi import DEFAULT_BACKGROUND
 from src.widgets import metadata_widgets as mw
@@ -119,6 +120,56 @@ def test_check_raw_intensity_data_reads_the_named_image_column(tmp_path):
     assert "Intensity (2D) image path not found" in err
 
 
+def _write_bad_masks(folder, mask):
+    """Masks every modality refuses, keyed by the start of the error each one gets."""
+    paths = {name: folder / f"{name}_mask.tiff" for name in ("binary", "float", "negative")}
+    tifffile.imwrite(paths["binary"], mask > 0)
+    tifffile.imwrite(paths["float"], mask.astype(np.float32) + 0.5)       # whole-number floats are cast instead
+    tifffile.imwrite(paths["negative"], np.where(mask == 2, -2, mask.astype(np.int32)))
+    return {
+        f"Error: Mask image {paths['binary']} is 1-bit black and white": paths["binary"],
+        f"Error: Mask image {paths['float']} holds float32 values that are not whole numbers": paths["float"],
+        f"Error: Mask image {paths['negative']} has negative labels": paths["negative"],
+    }
+
+
+def test_a_whole_number_float_mask_reads_as_its_integer_labels(tmp_path):
+    wavefront, mask_path, mask = write_qpi_fov(tmp_path, "fov1")
+    image = tmp_path / "intensity.tiff"                                     # Intensity images are never negative
+    tifffile.imwrite(image, tifffile.imread(wavefront) - tifffile.imread(wavefront).min())
+    float_mask = tmp_path / "float_mask.tiff"
+    tifffile.imwrite(float_mask, mask.astype(np.float32))
+    fov_df = pd.DataFrame({"image_name": ["fov1"], "ch1_Intensity (2D)": [str(image)], "ch1_Mask": [str(float_mask)]})
+    err, _ = mw.check_raw_intensity_data(fov_df, "ch1")
+    assert err == ""                                                        # Step 1 accepts it
+    features = {}
+    for path in (mask_path, float_mask):                                    # and extraction reads it as the uint16 labels
+        row = pd.Series({"image_name": "fov1", "ch1_Intensity (2D)": str(image), "ch1_Mask": str(path)})
+        err, dfs = extract_intensity_features(row, "ch1", "image_name", "Intensity (2D)", ["Intensity morphology", "Intensity texture"], [])
+        assert err == "", err
+        features[path] = pd.concat(dfs, axis=1)
+    assert list(features[float_mask].index) == ["fov1_1", "fov1_2"]
+    pd.testing.assert_frame_equal(features[float_mask], features[mask_path])
+
+
+@pytest.mark.parametrize("input_type", [FLIM_INPUT, "Decay (3/4D) pixel-prefitted"])
+def test_every_flim_mask_meets_the_image_channels_mask_rule(tmp_path, input_type):
+    # A prefitted fit-only channel reads no decay in Step 1, so only the mask check sees its mask.
+    write_flim_fov(tmp_path, "fov1", grid=(2, 3))
+    mask = np.zeros((2, 3), dtype=np.uint16)
+    mask[0, :2], mask[1, 2] = 1, 2
+    transposed = tmp_path / "transposed_mask.tiff"
+    tifffile.imwrite(transposed, np.ones((3, 2), dtype=np.uint16))
+    cases = _write_bad_masks(tmp_path, mask)
+    if input_type == FLIM_INPUT:      # only a decay channel has data whose size Step 1 knows
+        cases[f"Error: decay file {tmp_path / 'fov1.ptu'} and mask image {transposed} have different shapes: (2, 3) != (3, 2)"] = transposed
+    extractors = ["Lifetime fit free"] if input_type == FLIM_INPUT else ["Lifetime fit"]
+    for expected, mask_path in cases.items():
+        fov_df = pd.DataFrame({"image_name": ["fov1"], "ch1_Decay": [str(tmp_path / "fov1.ptu")], "ch1_Mask": [str(mask_path)]})
+        err, result = mw.check_assign_channel_widget(fov_df, {"ch1": "ch1"}, input_type, {"ch1": "FLIM"}, {"ch1": extractors})
+        assert err.startswith(expected) and result is None, err
+
+
 @pytest.mark.parametrize(("image_file_type", "label"), [("Intensity (2D)", "Intensity"), (QPI_INPUT, "QPI")])
 def test_check_raw_intensity_data_errors_name_the_image_kind(tmp_path, image_file_type, label):
     wavefront, mask_path, mask = write_qpi_fov(tmp_path, "fov1")
@@ -127,12 +178,24 @@ def test_check_raw_intensity_data_errors_name_the_image_kind(tmp_path, image_fil
     tifffile.imwrite(short_mask, mask[:-1])
     complex_image = tmp_path / "complex.tiff"
     tifffile.imwrite(complex_image, mask.astype(np.complex64))
+    binary_image = tmp_path / "binary.tiff"
+    tifffile.imwrite(binary_image, mask > 0)          # 1-bit, as thresholded masks are saved; it once crashed granularity
+    zero_one = tmp_path / "zero_one.tiff"
+    tifffile.imwrite(zero_one, (mask > 0).astype(np.uint16))      # the same mask saved as 16-bit, as in Lauren's FITC files
+    image = tmp_path / "image.tiff"
+    tifffile.imwrite(image, mask.astype(np.float32) + 1)          # valid for both kinds: positive, more than two values
+    bad_masks = _write_bad_masks(tmp_path, mask)
     cases = {
+        **{prefix: (image, path) for prefix, path in bad_masks.items()},
+        f"Error: {label} image {zero_one} holds no values other than 0 and 1": (zero_one, mask_path),
         f"Error: {label} image {stack} has extra axes besides Y and X: depth (Z×2)": (stack, mask_path),
         f"Error: {label} image {complex_image} holds complex numbers. Save a real-valued image.": (complex_image, mask_path),
-        f"Error: {label} image {wavefront} and mask image {short_mask} have different shapes": (wavefront, short_mask),
+        f"Error: {label} image {binary_image} is 1-bit black and white": (binary_image, mask_path),
+        f"Error: {label} image {image} and mask image {short_mask} have different shapes": (image, short_mask),
         f"Error reading {label} image: {absent}": (absent, mask_path),
     }
+    if label == "Intensity":      # QPI path differences are signed; the wavefront's are, and QPI accepts it above
+        cases[f"Error: Intensity image {wavefront} has negative values (lowest -"] = (wavefront, mask_path)
     for expected, (image, mask_file) in cases.items():
         fov_df = pd.DataFrame({"image_name": ["fov1"], f"ch1_{image_file_type}": [str(image)], "ch1_Mask": [str(mask_file)]})
         mw._scan_intensity_images.clear()
@@ -422,7 +485,8 @@ def test_the_calibration_preview_follows_an_overwritten_image(tmp_path, monkeypa
 
 
 def _failing_once(monkeypatch, path_fragment):
-    """Make the first ``load_image`` of a matching path raise, as a dropped network share would."""
+    """Make the first image or mask read of a matching path raise, as a dropped network share would."""
+    from src import file_io
     from src import fov_extraction as fe
     real = fe.load_image
     failed = []
@@ -434,6 +498,7 @@ def _failing_once(monkeypatch, path_fragment):
         return real(path, channel)
 
     monkeypatch.setattr(fe, "load_image", flaky)
+    monkeypatch.setattr(file_io, "load_image", flaky)      # masks read through file_io.load_mask
     return failed
 
 

@@ -43,6 +43,34 @@ def load_image(path: Union[str, pathlib.PurePath], channel: int = -1) -> np.ndar
         return tifffile.imread(path)
     raise ValueError(f"Unsupported file extension '{path.suffix}'. Supported: .asc, .tiff, .tif")
 
+class MaskError(ValueError):
+    """A mask that breaks the label rule; the message names the file."""
+
+
+def load_mask(path):
+    """Read a cell mask as integer labels: 0 for background, a positive number per cell.
+
+    The one mask rule: Step 1 checks every channel's masks with it and extraction reads them
+    with it, so a mask Step 1 accepts reads the same way everywhere. Whole-number floats are
+    cast, since float labels crash texture and name decay cells "fov_1.0"; 1-bit, fractional,
+    non-finite and negative labels raise ``MaskError``.
+    """
+    mask = load_image(path)
+    if mask.ndim != 2:
+        raise MaskError(f"Mask image {path} is not a 2D array")
+    if mask.dtype == bool:
+        raise MaskError(f"Mask image {path} is 1-bit black and white, so its cells cannot be told apart. "
+                        "Save a label image with one number per cell.")
+    if not np.issubdtype(mask.dtype, np.integer):
+        if not (np.issubdtype(mask.dtype, np.floating) and np.isfinite(mask).all() and (mask == np.round(mask)).all()):
+            raise MaskError(f"Mask image {path} holds {mask.dtype} values that are not whole numbers, so they are not "
+                            "cell labels. Save the labels as integers.")
+        mask = mask.astype(np.int64)
+    if mask.min() < 0:
+        raise MaskError(f"Mask image {path} has negative labels. Use 0 for background and a positive number per cell.")
+    return mask
+
+
 def file_identity(path):
     """``(size, mtime_ns)`` of *path*, or None when it cannot be read.
 
@@ -139,7 +167,7 @@ def get_decay_curves(metadata_df, input_type, channel_name, time_bins, shift=Tru
         if "Decay (3/4D)" in input_type:
             mask_path = row.get(f'{channel_name}_Mask', None)
             try:
-                mask = load_image(mask_path)
+                mask = load_mask(mask_path)
             except Exception as e:
                 return f"Error reading the mask file for {fov_name_col} {fov_name} at {mask_path}: {e}", None  
             channel_no = row.get(f'{channel_name}_channel', None)

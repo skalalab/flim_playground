@@ -15,6 +15,7 @@ from src.file_io import (
     get_lifetime_standard,
     input_file_identities,
     load_image,
+    load_mask,
 )
 from src.fit import fit_curves
 from src.fit_helper import (
@@ -136,11 +137,7 @@ def get_intensity_morphology_features(metadata, channel_name, fov_col_name, mask
     feature_prefix = f"Intensity morphology_{channel_name}: "
     mask_morphology_features = ["area", "perimeter", "solidity", "eccentricity", "major_axis_length", "minor_axis_length", "circularity"]
 
-    try:
-        mask_props = regionprops(label_image=mask)
-    except TypeError:
-        error_msg = f"Error processing mask for {channel_name}: Mask appears to be in boolean format. Please ensure the mask is properly labeled with integer values for different regions."
-        return error_msg, pd.DataFrame()
+    mask_props = regionprops(label_image=mask)  # file_io.load_mask has made it integer labels
 
     fov_name = metadata[fov_col_name]
     single_cell_morph_features_fov = {}
@@ -184,7 +181,7 @@ def _corrected_qpi_image_cached(wavefront_path, mask_path, opd_unit, method, deg
     except Exception as e:  # noqa: BLE001
         return f"Error reading the QPI image {wavefront_path}: {e}", None
     try:
-        mask = load_image(mask_path)
+        mask = load_mask(mask_path)
     except Exception as e:  # noqa: BLE001
         return f"Error reading the mask file {mask_path}: {e}", None
     if image.ndim != 2 or image.shape != mask.shape:
@@ -306,7 +303,7 @@ def extract_spcimage_fit_results(metadata, channel_name, num_components, fov_col
     intensity_images = {}
 
     try:
-        mask = load_image(metadata[f"{channel_name}_Mask"])
+        mask = load_mask(metadata[f"{channel_name}_Mask"])
     except Exception as e:
         return _read_fail_msg(channel_name, "mask", metadata[f"{channel_name}_Mask"], e), pd.DataFrame()
 
@@ -719,7 +716,7 @@ def extract_intensity_features(metadata, channel_name, fov_col_name, input_type,
         return "", feature_dfs
 
     try:
-        mask = load_image(metadata[f"{channel_name}_Mask"])
+        mask = load_mask(metadata[f"{channel_name}_Mask"])
     except Exception as e:
         return _read_fail_msg(channel_name, "mask", metadata[f"{channel_name}_Mask"], e), feature_dfs
 
