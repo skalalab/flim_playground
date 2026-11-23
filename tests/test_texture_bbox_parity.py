@@ -12,9 +12,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from src.cell_texture import granularity, radial_distribution, mass_displacement
+from src.cell_texture import granularity, mass_displacement, radial_distribution
 from src.fov_extraction import extract_texture_features_from_arrays
-
 
 # Full-frame reference
 
@@ -75,7 +74,7 @@ def test_bbox_crop_matches_full_frame():
     intensity, mask = _make_frame()
     prefix = "Intensity texture_nadh: "
 
-    oracle = _full_frame_texture_oracle(intensity, mask, "FOV1", prefix)
+    oracle = _full_frame_texture_oracle(intensity.astype(np.float64), mask, "FOV1", prefix)  # extraction reads float64
     got = extract_texture_features_from_arrays(intensity, mask, "FOV1", prefix)
 
     # same cells, same columns, same order
@@ -108,3 +107,19 @@ def test_adjacent_cell_intensity_does_not_leak():
     other = extract_texture_features_from_arrays(intensity2, mask, "FOV1", prefix)
 
     pd.testing.assert_series_equal(base.loc["FOV1_3"], other.loc["FOV1_3"])
+
+
+@pytest.mark.parametrize("dtype", [np.int8, np.int16, np.int32, np.float16])
+def test_texture_reads_any_numeric_image_as_its_float64_values(dtype):
+    """Signed integers wrapped in granularity's cell_image - opened_image, a silently wrong
+    value; float16 crashed the opening and overflowed intensity_sum to inf."""
+    intensity, mask = _make_frame()
+    rng = np.random.default_rng(1)
+    if np.issubdtype(dtype, np.integer):
+        info = np.iinfo(dtype)
+        image = rng.integers(info.min, info.max, intensity.shape, dtype=dtype, endpoint=True)
+    else:
+        image = rng.uniform(0, 60000, intensity.shape).astype(dtype)      # sums far past float16's 65504
+    got = extract_texture_features_from_arrays(image, mask, "FOV1", "")
+    expected = extract_texture_features_from_arrays(image.astype(np.float64), mask, "FOV1", "")
+    pd.testing.assert_frame_equal(got, expected, check_exact=True)

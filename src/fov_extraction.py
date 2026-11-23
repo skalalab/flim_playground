@@ -69,6 +69,8 @@ def extract_texture_features_from_arrays(intensity_image, mask, fov_name, featur
     the largest granularity radius to cover erosion followed by dilation and
     preserve full-frame results. Reapply the cell mask to exclude neighboring cells.
     """
+    # As qpi.to_um does: signed integers wrap in granularity's subtraction, float16 crashes the opening.
+    intensity_image = np.asarray(intensity_image, dtype=np.float64)
     granularity_values = [1, 3, 5, 7]
     radial_distribution_values = [1, 2, 3, 4]
     pad = 2 * max(granularity_values)
