@@ -316,14 +316,18 @@ def get_irf(metadata_df, channel_name, time_bins):
         return "", reference.curve
     
     try:
-        if str(irf_path).endswith(".csv"):
-            irf = np.loadtxt(irf_path, delimiter=",").flatten()
-        else:
-            irf = np.loadtxt(irf_path)
+        irf = np.loadtxt(irf_path, delimiter="," if Path(irf_path).suffix.lower() == ".csv" else None)
     except Exception as e:
         return f"Error: IRF file not found or unreadable for {channel_name} at {irf_path}: {e}", None
+    if irf.ndim == 2 and irf.shape[1] == 2:
+        # Column 1 is the time-bin axis; one that does not rise means two IRFs side by side.
+        if not np.all(np.diff(irf[:, 0]) > 0):
+            return f"IRF for {channel_name} has two columns, but the first is not a rising time-bin axis.", None
+        irf = irf[:, 1]
     if irf.ndim != 1:
-        return f"IRF must be 1D. Got {irf.ndim}D array with shape {irf.shape}.", None
+        return (f"IRF for {channel_name} must be one column (IRF values) or two columns (time bin, IRF value). "
+                f"Got shape {irf.shape}."), None
     if len(irf) != time_bins:
-        return f"IRF length mismatch with specified time bins. IRF length: {len(irf)}, time bins: {time_bins}.", None
+        return (f"IRF for {channel_name} has {len(irf)} values, but the decay data has {time_bins} time bins. "
+                "Provide one value per time bin."), None
     return "", irf
